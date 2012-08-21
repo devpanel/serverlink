@@ -53,6 +53,7 @@ resolve_local_dir() {
 
   if [ ${base:0:1} == "/" ]; then
     echo $(dirname "$base")
+    return 0
   elif [ ${#base} -gt 2 -a ${base:0:2} == "./" ]; then
     base=${base#./}
     dir_name=$(dirname "$base")
@@ -65,19 +66,6 @@ resolve_local_dir() {
   elif [ ${#base} -gt 2 -a ${base:0:3} == "../" ]; then
     echo $(dirname "$PWD/$base")
   else
-    bin=$(basename "$base")
-    if hash "$bin"; then
-      bin_path=$(hash -t "$bin")
-      if [ -x "$bin_path" ]; then
-        echo $(dirname "$bin_path")
-        return 0
-      else
-        echo "resolve_local_dir(): unable to determine local directory (1)" 1>&2
-        return 1
-      fi
-    else
-      echo "resolve_local_dir(): unable to determine local directory (2)" 1>&2
-      return 1
-    fi
+    return 1
   fi 
 }
