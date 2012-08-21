@@ -1,0 +1,3 @@
+#!/bin/sh
+auth_file=/opt/webenabled/config/auth
+cat "$auth_file"

@@ -1,0 +1,97 @@
+#!/bin/sh
+
+READERS="$PERMS_DIR/readers"
+WRITERS="$PERMS_DIR/writers"
+CREATORS="$PERMS_DIR/creators"
+CGIT_PUBLIC="$PERMS_DIR/.cgit-public-ok"
+
+#echo $READERS
+#echo $WRITERS
+#echo $PERMS_DIR
+#echo $PERMS_USER
+#echo $PERMS
+
+PERMS_BRANCH="$PERMS_BRANCH"
+
+LOCKFILE="$PERMS_DIR/.lock"
+CONFFILE="$PERMS_DIR/.lock."
+RESULT=1
+
+work() {
+    case "$PERMS" in
+              #ARG3   - permissions - r,rw,none or '-' to delete rule
+        # +r access for the repo
+        'r+r')
+            #echo "$PERMS_USER"
+            grep "^$PERMS_USER\$" "$READERS" >/dev/null 2>&1 || \
+                echo "$PERMS_USER" >>"$READERS"
+            ;;
+        # -r access for the repo
+        'r-r')
+            sed -i "/^$PERMS_USER\$/d" "$READERS"
+            ;;
+        # +w access for the branch
+        'b+w')
+            #echo "$PERMS_USER"
+            grep "^$PERMS_USER\$" "$READERS" >/dev/null 2>&1 || \
+                echo "$PERMS_USER" >>"$READERS"
+            grep "^$PERMS_USER:refs/heads/$PERMS_BRANCH\$" "$WRITERS" >/dev/null 2>&1 || \
+                echo "$PERMS_USER:refs/heads/$PERMS_BRANCH" >>"$WRITERS"
+            ;;
+        # -w access for the branch
+        'b-w')
+            #echo "/^$PERMS_USER:$PERMS_BRANCH\$/d"
+            sed -i "/^$PERMS_USER:.*$PERMS_BRANCH\$/d" "$WRITERS"
+            ;;
+        # +create new branches (+write to all branches)
+        'b+c')
+            grep "^$PERMS_USER\$" "$CREATORS" >/dev/null 2>&1 || \
+                echo "$PERMS_USER" >>"$CREATORS"
+            ;;
+        # -create new branches
+        'b-c')
+            sed -i "/^$PERMS_USER\$/d" "$CREATORS"
+            ;;
+        'r+p')
+            touch "$CGIT_PUBLIC"
+            ;;
+        'r-p')
+            rm -f "$CGIT_PUBLIC"
+            ;;
+        *)
+			echo "FAIL (Unknow permissions: '$PERMS', type 'help' to get help)"
+            RESULT=2
+            exit
+    esac
+
+    RESULT=0
+}
+
+LOCK_TRIES=0
+DEADLOCK_TIME=10
+
+while [ $LOCK_TRIES -le 10 ]; do
+if ln -s "$CONFFILE" "$LOCKFILE" &>/dev/null ; then
+    trap 'rm "$LOCKFILE" ; trap - EXIT ; exit 255' HUP INT QUIT ABRT KILL SEGV PIPE
+    trap 'rm "$LOCKFILE" ; trap - EXIT ; exit $RESULT' EXIT
+    work
+    exit
+else
+    if [ -h "$LOCKFILE" ]; then
+            CURRENT_TIME=$(date +%s)
+            LOCKFILE_MTIME=$(stat --format=%Y "$LOCKFILE")
+        if [ -n "$LOCKFILE_MTIME" ]; then
+            if [ $(($CURRENT_TIME - $LOCKFILE_MTIME)) -gt $DEADLOCK_TIME ]; then
+                echo "$0: lockfile '$LOCKFILE' looks too old (more than $DEADLOCK_TIME seconds)"
+                rm "$LOCKFILE"
+            fi
+        fi
+    fi
+    sleep 0.1
+	LOCK_TRIES=$(($LOCK_TRIES + 1))
+fi
+done
+
+echo "FAIL $0: cannot lock '$LOCKFILE'"
+RESULT=2
+exit

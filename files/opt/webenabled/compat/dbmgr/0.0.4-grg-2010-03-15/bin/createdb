@@ -1,0 +1,102 @@
+#!/bin/bash
+# Options:
+#   -i  pass mysql passwd via stdin
+#   -c# pass ~b_USER/.my.cnf via fd #
+
+self="$0"
+n=0
+while [ -h "$self" ]
+do
+ self=`readlink "$self"`
+ n=`expr $n + 1`
+ [ $n -ge 10 ] && break
+done
+
+dir=`dirname "$self"`
+
+
+#DBMGR_VER=0.0.2-grg-2009-07-07
+#DBMGR_DIR="/opt/dbmgr/$DBMGR_VER"
+DBMGR_BINDIR=`dirname "$self"`
+
+DB_HOME_BASE="/home/clients/databases"
+
+opt_i=""
+opt_c=""
+while getopts "ic:" OPTOPT
+do
+  case "$OPTOPT" in
+    i) opt_i='-db-password-stdin';;
+    c) opt_c="$OPTARG";;
+    *) exit 1;;
+  esac
+done
+shift `expr $OPTIND - 1`
+
+
+USER="$1"
+shift
+ADDON="$*"
+
+# add the ending slash
+DBMGR_BINDIR="${DBMGR_BINDIR%%/}/"
+DB_HOME_BASE="${DB_HOME_BASE%%/}/"
+
+TYPE=mysql
+
+function usage() {
+	echo "`basename $0` account"
+	echo
+	echo "where:"
+	echo "        account - non-existing system account to run daemon"
+	echo
+	exit 1
+}
+
+[ -z "$USER" ] && usage
+[ "$TYPE" != "mysql" ] && usage
+
+if [ x"$USER" == x$(id -nu "$USER" 2>/dev/null) ]; then
+	echo "Sorry, but adding database for existing user not implemented yet"
+	exit 3
+fi
+
+DATA_DIR="${DB_HOME_BASE%%/}/$USER/$TYPE"
+
+"$DBMGR_BINDIR"daemon-add -t "$TYPE" -u "$USER" -d "$DATA_DIR" $ADDON #&> /dev/null
+if [ "$?" -ne 0 ]; then
+	echo "Error adding daemon to the configuration"
+	exit 4
+fi
+
+# if .my.cnf is passed as input via fd
+if [ -n "$opt_c" ]
+then
+  if ! su -s /bin/sh -l -c 'cat >>.my.cnf' "$USER" <&"$opt_c"
+  then
+	echo "Error creating .my.cnf"
+	exit 6
+  fi
+fi
+
+"$DBMGR_BINDIR"daemon-start -t "$TYPE" -u "$USER" -d "$DATA_DIR" $ADDON #&>/dev/null
+if [ "$?" -ne 0 ]; then
+	echo "Error starting daemon"
+	exit 5
+fi
+
+"$DBMGR_BINDIR"user-add -t "$TYPE" -u "$USER" -d "$DATA_DIR" --db-user=admin --db-admin
+if [ "$?" -ne 0 ]; then
+	echo "Error adding admin user to the running daemon"
+	exit 5
+fi
+
+# this is a hack
+w_USER=${USER/b_/w_}
+"$DBMGR_BINDIR"user-add $opt_i -t "$TYPE" -u "$USER" -d "$DATA_DIR" "--db-user=$w_USER" --db-admin
+if [ "$?" -ne 0 ]; then
+	echo "Error adding w_user to the running daemon"
+	exit 5
+fi
+
+echo "Completed"

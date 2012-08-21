@@ -1,0 +1,1 @@
+/opt/webenabled/config/os/pathnames/etc/skel.sql

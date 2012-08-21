@@ -1,0 +1,97 @@
+#!/bin/bash
+error()
+{
+  echo "ERROR${@+:}$@" >&2
+  exit 1
+}
+verbose()
+{
+  echo "$@" | sed 's/^/ignore-quota: /' >&2
+}
+
+quota_adjust()
+{
+  local action="$1" quota_output="$2"
+  local quota_output_without_headers=$(echo "$quota_output"|sed 1,2d )
+  local changed=1
+  local quota_fs quota_blocks quota_blocks_soft quota_blocks_hard 
+  local quota_files quota_files_soft quota_files_hard
+  local ARG1 ARG2 ARG3 ARG4
+  if [ -n "$quota_output_without_headers" ]
+  then
+  while read quota_fs quota_blocks quota_blocks_soft quota_blocks_hard ARG1 ARG2 ARG3 ARG4
+  do
+     quota_blocks="${quota_blocks%\*}"
+     echo "$quota_blocks" | egrep -q '^[0-9]+$' || error "invalid quota format '$quota_blocks'"
+     # check for empty grace value
+     if [ -z "$ARG4" ]
+     then
+       quota_files_soft="$ARG2"
+       quota_files_hard="$ARG3"
+     else
+       quota_files_soft="$ARG3"
+       quota_files_hard="$ARG4"
+     fi
+     local future_blocks=`expr $quota_blocks + $required_blocks` || error "expr"
+     local new_quota_blocks_soft=$quota_blocks_soft
+     local new_quota_blocks_hard=$quota_blocks_hard
+     if [ $future_blocks -ne $quota_blocks ]
+     then
+       [ $quota_blocks_soft -ne 0 -a $future_blocks -gt $quota_blocks_soft ] && new_quota_blocks_soft=$future_blocks
+       [ $quota_blocks_hard -ne 0 -a $future_blocks -gt $quota_blocks_hard ] && new_quota_blocks_hard=$future_blocks
+     fi
+     if [ $new_quota_blocks_soft -ne $quota_blocks_soft -o $new_quota_blocks_hard -ne $quota_blocks_hard ]
+     then
+       case $action in
+         increase)
+           if [ $changed = 1 ]
+           then
+             verbose "$quota_output"
+           fi
+           verbose $action: setquota "$user" $new_quota_blocks_soft $new_quota_blocks_hard $quota_files_soft $quota_files_hard $quota_fs
+           setquota "$user" $new_quota_blocks_soft $new_quota_blocks_hard $quota_files_soft $quota_files_hard $quota_fs >&2 ||
+           error "Cannot increase quota"
+	   ;;
+	 restore)
+           verbose $action: setquota "$user" $quota_blocks_soft $quota_blocks_hard $quota_files_soft $quota_files_hard $quota_fs
+           setquota "$user" $quota_blocks_soft $quota_blocks_hard $quota_files_soft $quota_files_hard $quota_fs >&2 ||
+           error "Cannot restore quota"
+	   ;;
+       esac
+       changed=0
+     fi
+  done <<< "$quota_output_without_headers"
+  fi
+  return $changed
+}
+
+if [ $# -lt 3 ]
+then
+  echo "Usage: $0 user blocks command ..." >&2
+  exit 1
+fi
+user="$1"
+required_blocks="$2"
+shift 2
+id "$user" >/dev/null || error "No such user '$user'"
+echo "$required_blocks" | egrep -q '^[0-9]+$' || error "Invalid number of blocks: $required_blocks"
+if [ -x /usr/bin/quota ] && [ -x /usr/sbin/setquota ]
+then
+  quota_output="`/usr/bin/quota \"$user\"`"
+  if quota_adjust increase "$quota_output"
+  then
+    verbose "`/usr/bin/quota \"$user\"`"
+    verbose "Running $@"
+    verbose "---"
+    "$@"
+    status="$?"
+    verbose "---"
+    quota_adjust restore "$quota_output"
+    verbose "`/usr/bin/quota \"$user\"`"
+    exit "$status"
+  else
+    exec "$@"
+  fi
+else
+  exec "$@"
+fi

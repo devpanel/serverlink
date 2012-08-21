@@ -1,0 +1,91 @@
+wordpress_get_users() {
+  sql_query_result "select user_login from wp_users where user_login <> ''"
+}
+
+wordpress_genpass() {
+  "$dir/genpass"
+}
+
+wordpress_encrypt() {
+  local password="$1"
+  echo -n "$password"|"$dir/wordpress-crypt.php"
+}
+
+wordpress_set_password() {
+  local user="$1"
+  local encrypted_password="$2"
+  local salt
+
+  sql_query "update wp_users set user_pass = '$encrypted_password' where user_login = '$user';"
+}
+
+wordpress_set_email() {
+  local user="$1"
+  local email="$2"
+
+  sql_query "update wp_users set user_email = '$email' where user_login = '$user';"
+  sql_query "update wp_options set option_value='$email' where option_name='admin_email'"
+}
+
+wordpress_get_email() {
+  local user="$1"
+
+  sql_query_result "select user_email from wp_users where user_login = '$user'"
+}
+
+wordpress_get_admin_user() {
+  sql_query_result "select user_login from wp_users where user_login = 'admin'"
+}
+
+wordpress_set_sitename()
+{
+   sql_query "update wp_options set option_value='http://$fqdn' where option_name='siteurl'" || return 1
+   sql_query "update wp_options set option_value='http://$fqdn' where option_name='home'" || return 1
+}
+
+wordpress_update_php_config()
+{
+  keys=`lftp -c 'set cmd:at-exit;set xfer:max-redirections 16; \
+  cat "http://api.wordpress.org/secret-key/1.1";'`
+  keys=`echo $keys | sed 's#[/&$\]#*#ig'`
+
+  if [ -n "$keys" ]; then
+    auth_key=$(echo $keys | sed 's#); define#);\n define#ig' | sed -n '1p')
+    secure_auth_key=$(echo $keys | sed 's#); define#);\n define#ig' | sed -n '2p')
+    logged_in_key=$(echo $keys | sed 's#); define#);\n define#ig' | sed -n '3 p')
+    nonce_key=$(echo $keys | sed 's#); define#);\n define#ig' | sed -n '4p')
+
+    echo "
+     s/^[[:space:]]*define[[:space:]]*([[:space:]]*'AUTH_KEY'.*$/$authkey/
+     s/^[[:space:]]*define[[:space:]]*([[:space:]]*'SECURE_AUTH_KEY'.*$/$secure_auth_key/
+     s/^[[:space:]]*define[[:space:]]*([[:space:]]*'LOGGED_IN_KEY'.*$/$logged_in_key/
+     s/^[[:space:]]*define[[:space:]]*([[:space:]]*'NONCE_KEY'.*$/$nonce_key/
+    " | run_ised "$home/public_html/$vhost/wp-config.php"
+  fi
+
+  echo "
+     s/^[[:space:]]*define[[:space:]]*([[:space:]]*'DB_USER'.*/define('DB_USER', '$mysql_user');/
+     s/^[[:space:]]*define[[:space:]]*([[:space:]]*'DB_PASSWORD'.*/define('DB_PASSWORD', '$sedphpencoded_mysql_password');/
+     s/^[[:space:]]*define[[:space:]]*([[:space:]]*'DB_HOST'.*/define('DB_HOST', '$mysql_host:$mysql_port');/
+     s/^[[:space:]]*define[[:space:]]*([[:space:]]*'DB_NAME'.*/define('DB_NAME', '$hosting_database');/
+  " | run_ised "$home/public_html/$vhost/wp-config.php"
+}
+
+wordpress_set_upload_path()
+{
+  sql_query "update wp_options set option_value = '$home/public_html/$vhost/wp-content/uploads' where option_name = 'upload_path'" || return 1
+}
+
+wordpress_custom() {
+  if [ -z "$opt_n" ]; then
+    echo "Setting site URL"
+    wordpress_set_sitename || error "Cannot set sitename"
+  fi
+
+  echo "Updating wp-config.php"
+  wordpress_update_php_config || error "Cannot update wp-config.php"
+
+  echo "Setting upload path"
+  wordpress_set_upload_path || error "Cannot set upload path"
+}
+

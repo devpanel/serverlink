@@ -1,0 +1,66 @@
+radiant_get_users() {
+  sql_query_result "select login from users where login <> ''"
+}
+
+radiant_genpass() {
+  "$dir/genpass"
+}
+
+radiant_encrypt() {
+  local password="$1"
+
+  # can't encrypt pass here, because needs a salt. Let's generate both on _set_password()
+  echo -n "$password"
+}
+
+radiant_set_password() {
+  local user="$1"
+  local password="$2"
+  local salt=$(head -c 1000 /dev/urandom | sha1sum | cut -d' ' -f 1)
+
+  local encrypted_pass=$(echo -n "--$salt--$password--"| sha1sum | cut -d' ' -f 1)
+
+  sql_query "update users set password = '$encrypted_pass', salt = '$salt' where login = '$user';"
+}
+
+radiant_set_email() {
+  local user="$1"
+  local email="$2"
+
+  sql_query "update users set email = '$email' where login = '$user';"
+}
+
+radiant_get_admin_user() {
+  sql_query_result "select login from users where admin order by id limit 1"
+}
+
+radiant_get_email() {
+  local user="$1"
+
+  sql_query_result "select email from users where login = '$user'"
+}
+
+radiant_update_config()
+{
+  local config="$home/radiant/config/database.yml"
+  local tab=$(echo -e '\t')
+
+  echo "/^production:/,\$ {
+    s/^[ $tab]*database:.*/  database: radiant/;
+    s/^[ $tab]*host:.*/  host: $mysql_host/;
+    s/^[ $tab]*port:.*/  port: $mysql_port/;
+    s/^[ $tab]*username:.*/  username: $mysql_user/;
+    s/^[ $tab]*password:.*/  password: $mysql_password/;
+}" | run_ised "$config"
+
+
+}
+
+radiant_custom()
+{
+  if [ -n "$opt_n" ]; then
+    echo "Updating database.yml"
+    radiant_update_config || error "Cannot update database.yml"
+  fi
+}
+

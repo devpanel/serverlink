@@ -1,0 +1,170 @@
+#!/bin/sh
+# Options:
+# -P - replicate shadow
+# -n - do not activate apache vhost (used for hosting_link)
+
+opt_P=0 options=""
+
+while getopts "Pn" OPTOPT
+do
+  case "$OPTOPT" in
+    P) opt_P=1;;
+    n) options="$options${options+ }-n";;
+    *) exit 1;;
+  esac
+done
+shift `expr $OPTIND - 1`
+
+run()
+{
+  echo "  running $@"
+  "$@"
+}
+run_su()
+{
+  echo "  running su -l -c '$@' $user" >&2
+  su -l -c "$*" "$user"
+}
+
+dir=`dirname $0`
+bin_dir="$dir/../bin"
+vhost="$1"
+archive_dir="$2"
+archive_id="$archive_dir/id"
+user="w_$vhost"
+shift
+shift
+if ! old_vhost=`cat "$archive_id"`
+then
+  echo "Cannot read $archive_id" >&2
+  exit 1
+fi
+old_user="w_$old_vhost"
+date=`date  +'%Y%m%d'`
+archive_file="$archive_dir/$old_user.tgz"
+apache_config_dir="$dir/../../config/os/pathnames/etc/apache_vhosts"
+apache_group=`cat "$dir/../../config/os/names/apache.group"`
+chcgi="$dir/../../config/os/pathnames/sbin/chcgi"
+conf="$apache_config_dir/$user.conf"
+archive_conf="$archive_dir/apache_$old_vhost.conf"
+logs_dir="$dir/../../config/os/pathnames/var/log/apache_vhosts/$user"
+archive_logs="$archive_dir/logs_$old_vhost.tgz"
+archive_shadow="$archive_dir/$old_user.shadow"
+archive_crontab="$archive_dir/crontab"
+home_prefix=/home/clients/websites
+
+locked()
+{
+  egrep -q '^Use[[:space:]]+Vhost-[^[:space:]]+-locked\>' "$archive_conf"
+}
+
+if  `id -u "$user" 2>/dev/null >/dev/null`
+then
+  echo "User $user must not exist" >&2
+  exit 1
+fi
+if ! default_domain=`cat /opt/webenabled/config/names/default` || [ -z "$default_domain" ] 
+then
+  error "No default domain"
+fi
+
+echo -e "n\nn\ny"| run $dir/create-virtwww $options "$vhost" "$vhost.$default_domain" || exit 1
+config_dir=/opt/webenabled/config/vhosts/$vhost
+[ $# = 0 ] && set -- "$vhost.$default_domain"
+default_name="$1"
+run $dir/config-vhost-names "$vhost" '*' "$default_name" '+' "$@" || exit 1
+if locked 
+then
+  echo "Restoring the locked state of apache cofig"
+  if ! run $dir/lock-vhost-apache "$vhost" 
+  then
+  echo "Cannot restore apache config in locked state" >&2; exit 1
+  fi
+fi
+
+home="`eval \"echo ~$user\"`"
+
+if ! [ -d "$home" ]
+then
+  echo "Home dir $home does not exist" >&2
+  exit 1
+fi
+
+if ! echo "$home" | grep -q "^$home_prefix/"
+then
+  echo "Home dir $home is outside $home_prefix, why???" >&2
+  exit 1
+fi
+
+rm -rf "$home"
+
+if ! [ -d "$logs_dir" ]
+then
+  echo "Logdir $logs_dir does not exist" >&2
+  exit 1
+fi
+
+abort_if_not_exist()
+{
+  local file="$1"
+  if ! [ -r "$file" ]
+  then
+    echo "$file does not exist" >&2
+    exit 1
+  fi
+}
+
+abort_if_not_exist "$archive_file"
+abort_if_not_exist "$archive_logs"
+abort_if_not_exist "$archive_conf"
+
+
+echo "Restoring $home from $archive_file"
+run mkdir "$home" || exit 1
+run chown "$user":$apache_group "$home" || exit 1
+run_su tar -C "$home" -zxpf - <"$archive_file" || exit 1
+run "$chcgi" "$user" +2
+run "$chcgi" "$user" +7
+if [ o"$vhost" != o"$old_vhost" ]
+then
+  run_su mv public_html/$old_vhost public_html/$vhost || exit 1
+  # ignore errors
+  run_su mv public_html/$old_vhost-usage public_html/$vhost-usage
+fi
+run_su ln -snf $logs_dir logs || exit 1
+
+#FIXME: .htpasswd for phpmyadmin
+run_su 'echo >.htpasswd'
+
+#FIXME: 
+#restoring crontab of a locked vhost doesn't work
+#It's better to get rid of automatic crontab modifications in all cases
+echo "Restoring crontab from $archive_crontab"
+crontab_contents="`cat \"$archive_crontab\"`" || exit 1
+echo "$crontab_contents"
+if [ -n "$crontab_contents" ]
+then
+  echo "$crontab_contents" | run_su crontab -|| exit 1
+  run_su "$bin_dir/update-vhost-crontab" || exit 1
+else
+  echo no crontab
+fi
+
+if [ $opt_P = 1 ] 
+then
+  if [ -s "$archive_shadow" ]
+  then
+    echo "Restoring the password from $archive_shadow"
+    password=`cut -d: -f2 "$archive_shadow"` || exit 1
+    echo "$user:$password" | chpasswd -e || exit 1
+  else
+    echo "No shadow file"
+  fi
+fi
+
+#echo "Replacing apache config with $archive_conf"
+#run cp "$archive_conf" "$conf"
+
+#echo "Archiving $logs_dir to $archive_logs"
+#run mkdir -p "$archive_dir"
+#run tar -C "$logs_dir" -zcf "$archive_logs" .

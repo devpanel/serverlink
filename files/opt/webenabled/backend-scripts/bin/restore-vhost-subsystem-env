@@ -1,0 +1,36 @@
+#!/bin/sh
+dir="`dirname \"$0\"`"
+config="`cat`"
+error()
+{
+  echo "ERROR${1+: }$@" >&2
+  exit 1
+}
+setvar()
+{
+  local config_var="$1"
+  local optional="$2"
+  local value=
+  if ! value="`echo \"$config\" | grep \"^$config_var=\"`" 
+  then
+    if [ o"$optional" = o"1" ]
+    then
+      value=""
+    else
+      error "setvar:$config_var"
+    fi
+  else
+    value="${value#"$config_var="}"
+  fi
+  value="${value#"$config_var="}"
+  local env_var="WEBENABLED_HOSTING_LINK_`echo \"$config_var\"|tr a-z A-Z`"
+  export "$env_var"="$value"
+}
+setvar mysql_user
+setvar mysql_password
+setvar mysql_host
+setvar mysql_port
+setvar mysql_database
+setvar base_url
+setvar php_force_db_driver 1
+exec "$dir/restore-vhost-subsystem" "$@" || error

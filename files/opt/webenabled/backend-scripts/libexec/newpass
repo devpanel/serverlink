@@ -1,0 +1,137 @@
+#!/bin/bash
+usage() {
+  local prog=$(basename "$0")
+
+  echo \
+"
+Usage: $prog [ options ] <username>
+
+  Options:
+    -i                Receive new password from stdin
+    -q                Don't print password to stdout after changing.
+
+"
+
+  exit 1
+}
+
+error()
+{
+  echo "ERROR${@+:} $@" >&2
+  exit 1
+}
+
+generate_password() {
+  local PWGEN
+  PWGEN=`$dir_bin/passgen2`
+  if [ -z "$PWGEN" ]; then
+    echo "generate_password(): Cannot generate a password" 1>&2
+    return 1
+  fi
+
+  echo "$PWGEN"
+  return 0
+}
+
+change_password() {
+  local user="$1"
+  local pass="$2"
+
+  ( echo "$pass" ; sleep 1 ; echo "$pass" ) | \
+      "$dir/ignore-quota" "$user" 8 /usr/bin/passwd "$user" >/dev/null 2>/dev/null
+
+  return $?
+}
+
+# main()
+unset pass_from_stdin password dont_print_pw OPTIND
+getopt_flags='iq'
+if [ -z "$dir" ]; then
+  dir=`dirname "$0"`
+  [ "$dir" == "." ] && dir="$PWD"
+fi
+dir_bin="$dir/../bin"
+
+[ $# -lt 1 ] && usage  # received no args, show usage
+
+while getopts $getopt_flags OPTS; do
+  case $OPTS in
+    i)
+      pass_from_stdin=1
+      ;;
+    q)
+      dont_print_pw=1
+      ;;
+  esac
+done
+[ -n "$OPTIND" -a $OPTIND -gt 1 ] && shift $(( $OPTIND - 1 ))
+
+[ $# -lt 1 -o -z "$1" -o "$1" == '' ] && usage
+user="$1"
+
+case "$user" in
+  w_?*|r_owner|root) :;;
+  *) error "will only change passwords for w_* users";;
+esac
+
+uid=`id -u -- "$user" 2>/dev/null` || error "Invalid user"
+if [ $uid = 0 ] && [ o"$user" != o"r_owner" -a "$user" != "root" ]
+then 
+  error "Will not change superuser's password"
+fi
+
+# now the actual password changing code
+if [ -n "$pass_from_stdin" ]; then # -i received, get password from stdin
+  while [ -z "$password" ]; do
+    echo -n "Reading password from stdin: " 1>&2
+    read password
+    [ -z "$password" ] \
+      && echo "Error: received an empty password. Please, try again." 1>&2
+  done
+
+  change_password "$user" "$password"
+  status=$?
+  if [ $status -eq 0 ]; then
+    echo "Sucessfully changed password for user '$user'." 1>&2
+    [ ! -n "$dont_print_pw" ] &&  echo "$password"
+    exit 0
+  else
+    echo "Error changing password for user '$user'." 1>&2
+    exit $status
+  fi
+else
+  # Sometimes, passgen2 generates passwords considered weak; 3 attempts
+  # should be enough :-) (GRG)
+  for i in 1 2 3
+  do
+    PWGEN=$(generate_password)
+    if [ $? -ne 0 ]; then
+      echo "Error generating password." 1>&2
+      continue # trying again
+    fi
+
+    change_password "$user" "$PWGEN"
+    status=$?
+
+    if [ $status -eq 0 ]; then
+      break
+    else
+      echo "Password refused (attempt $i/3)" 1>&2
+    fi
+  done
+
+  if [ -n "$status" -a $status -eq 0 ]; then
+    echo "Password sucessfully changed for user '$user'." 1>&2
+    [ ! -n "$dont_print_pw" ] && echo "$PWGEN"
+    exit 0
+  else
+    echo -n "Error changing password for user '$user'. " 1>&2
+    if [ -n "$status" ]; then
+      echo "Passwd returned code: $status" 1>&2
+      exit $status
+    else
+      echo 1>&2
+      exit 1
+    fi
+  fi
+fi

@@ -1,0 +1,33 @@
+#!/bin/sh
+dir=`dirname $0`
+dir_bin="$dir/../bin"
+
+error()
+{ 
+  echo "ERROR${1+: }$1" >&2
+  exit 1
+}
+
+for i
+do
+  echo "$i"|egrep -q '^[-_.@A-Za-z0-9]*$' || error "Invalid character in the command line"
+done
+
+opt_s="" opt_a=""
+
+while getopts "a:s:" OPTOPT
+do
+  case "$OPTOPT" in
+    s) [ -n "$OPTARG" ] || error "Empty argument"; opt_s="-s $OPTARG";;
+    a) [ -n "$OPTARG" ] || error "Empty argument"; opt_a="-a $OPTARG";;
+    *) error;;
+  esac
+done
+shift `expr $OPTIND - 1`
+
+vhost="$1"
+shift
+user="w_$vhost"
+# using mode archive: it's OK to operate on a locked vhost
+$dir/check-vhost-name archive "$vhost" || exit 1
+su -l -c "~/etc/rc.webenabled.control $opt_s $opt_a $*" "$user" || error

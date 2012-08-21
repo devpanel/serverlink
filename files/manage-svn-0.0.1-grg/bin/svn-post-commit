@@ -1,0 +1,47 @@
+#!/bin/sh
+
+# POST-COMMIT HOOK
+#
+# JCD 02-06-10
+# Modified by (GM) on 2010-03-12
+
+if [ -z "$2" ]; then
+        echo "Usage: ${0##*/} repository revision"
+        exit 1
+fi
+
+REPOS="$1"
+REV="$2"
+CR="
+"
+DATA=$(svnlook info $REPOS -r $REV)
+
+LINE="${DATA%%$CR*}"
+DATA="${DATA#$LINE$CR}"
+USER="$LINE"
+
+LINE="${DATA%%$CR*}"
+DATA="${DATA#$LINE$CR}"
+DATESTAMP="$LINE"
+
+LINE="${DATA%%$CR*}"
+DATA="${DATA#$LINE$CR}"
+MSGLEN="$LINE"
+
+LINE="${DATA%%$CR*}"
+DATA="${DATA#$LINE$CR}"
+MSG="$LINE"
+
+INSTANCE=$(id -un)
+INSTANCE="${INSTANCE#s_}"
+
+REPO="${REPOS%/}"
+REPO="${REPO##*/}"
+
+curl --data 'type=SVN' \
+        --data-urlencode "user=$USER" \
+        --data-urlencode "revision=$REV" \
+        --data-urlencode "message=$MSG" \
+        --data-urlencode "repo=$REPO" \
+        --data-urlencode "instance=$INSTANCE" \
+        'https://www.webenabled.com/we_message/api/create'

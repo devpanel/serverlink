@@ -1,0 +1,338 @@
+2008-12-23 (grg)
+	* config-vhost-names-default,config-auth-keygen: Use a temporary file to make config changes atomic
+	* archive-vhost/restore-vhost/clone-vhost: Only archive/restore shadow files if the new option -P is specified
+	* remove-vhost-web: run groupdel after userdel w_USER
+2009-01-19 (grg, jcd)
+	* Added clone-vz (grg)
+	* Added mantis support (jcd)
+	* Added htaccess-lock-vhost (jcd)
+2009-01-30-jcd
+	* Added support for OMB and a scratch/empty application
+	* Added initial htaccess lock script
+2009-01-31-grg
+	* newpass: new version without extra dependencies; the old version is renamed to newpass.expect
+2009-02-02-jcd
+	* Drupal 7: Added support for new settings.php file format (db, user, passwd, etc..)
+	* Drupal 7: Added support for new password encryption (drupal7-crypt.php)
+	* passgen2: Modified code slightly in the newpass file because it was giving an error (Could not generate a password) no matter what
+	* elgg: Initial support added
+	* WP: Support for keys in wp-config.php
+2009-02-02-jcd
+	* Added .htaccess to mantis, moved root dir to mantis, modified restore-vhost-subsytem to support these changes
+2009-02-04-2-grg
+	* config-auth-keygen: generate ssh2/rsa keys
+	* sbin/client: use ssh2/rsa keys by default, resort to ssh1/rsa in case of failure (backward comp.)
+2009-02-04-3-grg
+	* config-auth-keygen: do not chown/chgrp ssh/local (masters have global, slaves do not have w_we)
+2009-03-04-jcd
+	* added password optional as second argument to htaccess script
+2009-03-20-jcd
+	* added public key script for vhosts (set and remove)
+2009-03-29-grg
+	* fixed the bug with 'server' ignoring the exit code of the exec'ed command
+2009-04-06-jcd
+	* fixed bugs in public key script where grep was not working properly
+2009-04-08-jcd
+	* added silverstripe support
+2009-06-07-jcd
+	* cannot find Vhost macros (added the regex i flag libexec/config-vhost-upgrade, libexec/config-vhost-apache
+2009-06-16-grg
+	* 1. apache config (phpmyadmin.conf): use basic auth for phpmyadmin with ~/.webenabled.net/.htpasswd.phpmyadmin
+	* 2. /usr/local/sbin/phpMyAdmin.fix: use ~/.webenabled.net/.htpasswd.phpmyadmin instead of ~/.htpasswd
+	* 3. /usr/local/sbin/phpMyAdmin.fix: -f option to read the password from ~/.mysql.passwd
+	* 4. restore-vhost: run 'phpMyAdmin.fix -f'
+	* 5. restore-vhost: write .mysql.passwd to .webenabled/private, creating symlinks for backward compatibility
+	* 6. restore-vhost-subsystem: write seed app passwords to ~/.webenabled/private/SEED_APP.passwd
+		(also available via the 'web.passwd' symlink, also creating the ~/SEED_APP.passwd
+		for backard compatibility)
+2009-06-20-grg
+	* clone-vhost,restore-vhost,restore-vhost-db: new option -i to pass mysql regular user passwod via stdin
+	* clone-vhost: seed app admin password is initially identical to mysql user passwd
+			(the latter being either randomly generated or passed via the -i option)
+	* clone-vhost: mysql user password is printed to stdout as 'webenabled_private_mysql_password w_USER:PASSWORD'
+	* chpass-vhost-subsystem: new option '-i' to pass the seed app admin password via stdin
+	* chpass-vhost-subsystem: new option '-I' to set seed app admin password identical to mysql user passwd
+				(may disappear in the future; do not use from the WE site scripts)
+	* /opt/dmbgr: new version 0.0.2-grg-2009-06-20 is required for 'clone-vhost -i' to work
+		(see also /opt/dmbgr/current/ChangeLog)
+2009-07-15-grg
+	* public-key-vhost: fixed shell escaping bug
+
+2009-07-17-jon
+	* Drupal CiviCRM: setting up seed code for sites/default/civicrm.settings.php
+        * Someone please review commented out function in restore-vhost-subsystem to make sure this will run 
+correctly. 
+
+2009-07-31-grg
+	* archive-vhost: now creates a .tgz archive, not a dir
+	* remove-vhost: now creates a .tgz archive, not a dir
+	* archive-vhost: new -u option to place the archive in ~w_VHOST/public_html/gen/archive
+	* archive-vhost-list [LABEL]: new script to get a list of user's archives with their size and checksums
+	* archive-vhost-transfer LABEL: new script to read ~w_VHOST/public_html/gen/LABEL from a remote server 
+					(for internal use)
+	* archive-vhost-action: auxiliary script run by archive-vhost-list archive-vhost-transfer under user's account
+	* restore-vhost: now only accepts '-' (.tgz passed via stdin)
+	* restore-vhost: now runs vhost-archive.fix along with phpMyAdmin.fix
+	* restore-vhost-multiserver: reads the archive from the source server (using archive-vhost-transfer) and sends it
+				to restore-vhost on the target server (as stdin)
+	* vhost-archive.fix: based on phpMyAdmin.fix, updates ~/.webenabled.private/.htpasswd.archive
+	* /opt/apache/config/conf/include/vhost-archive.conf: macro to protect the archive/ area
+	* /opt/apache/config/conf/include/virtwww.conf: modified to use vhost-archive.conf
+
+2009-08-01-grg
+	* archive-vhost: allow spaces in the archive name
+2009-08-25-grg DESCRIPTION INCOMPLETE
+	* archive-vhost-db: does not include CREATE DATABASE and USE into SQL dumps
+	* restore-vhost-db: now executes CREATE DATABASE before feeding a dump to mysql
+	* create-virtwww: moved from /usr/local/sbin/ to /opt/webenabled/*/libexec/
+	* clone-vhost,restore-vhost,restore-vhost-web,create-virtwww: new option -n:
+				do not activate Apache vhost (used for hosting_link)
+	* /opt/apache/config/conf/include/virtwww.conf: new 'no-op' macro Vhost-simple-dummy (used for hosting_link)
+	* chpass-vhost-subsystem: fixed a bug in processing passwords containing a colon
+	* chpass-vhost-subsystem: if WEBENABLED_HOSTING_LINK_* env are defined, 
+				use them for updating settings.php instead of .mysql.passwd
+	* chpass-vhost-subsystem: new option -n:
+				do not touch the database, only update settings.php
+	* /home/export: new account
+2009-08-01-grg.wp_fix-2009-10-01-grg
+	* restore-vhost-subsystem: set wordpress upload path
+2009-08-27-grg
+	* bin/ised: a new script to be used instead of 'sed -i'
+	* restore-vhost-subsystem: use ised instead of 'sed -i' in order to not wipe setting.php symlinks
+2009-10-20-grg
+	* restore-vhost-subsystem: set wordpress upload path
+2009-10-23-grg
+	* restore-vhost-subsystem: preserve file permissions when modifying .htaccess in mantis_update_config
+2009-10-28-grg
+	* restore-vhost-web: do not modify crontab commands (static crontabs are to be used now)
+	* restore-vhost-web: invoke a new script, update-vhost-crontab, to randomize crontab timespecs
+	* update-vhost-crontab: randomize crontab timespecs
+2009-10-31-jcd
+	* restore-vhost-subsystem: fixed mantis bug when cloning of a clone (not from base)
+        * restore-vhost-subsystem: removal of temporary directory for silverstripe app 
+2009-11-01-grg
+	* restore-vhost-subsystem: support for mysqli in drupal's settings.php
+2009-11-04-jcd
+	* restore-vhost-subsystem: added tmp_path and log_path to joomla configuration.php substitution
+	* restore-vhost: removed civicrm from list of supported applications since it is not actually supported
+2009-11-23-jcd
+	* restore-vhost-subsystem: clear Drupal table sessions
+2009-12-07-jcd
+	* restore-vhost-subsystem: replace vhost home dir in .php/php.ini (not the best method but works OK)
+2009-12-17-grg
+	* restore-vhost-subsystem: use WEBENABLED_HOSTING_LINK_BASE_URL for Drupal's settings.php
+	* restore-vhost-subsystem: urlencode the MySQL password for Drupal's settings.php
+	* export-vhost: rewrite_base setting
+	* archive-vhost-db: exclude information_schema from the databases to be archived (new mysqld refuses to do this)
+2010-01-05-jcd
+	* restore-vhost-subsystem: Clear silverstripe cache with run rm -rf "..." in the custom function
+2010-02-09-jcd
+	* restore-vhost-subsystem: Added support for LimeSurvey seed (1.87)
+2010-02-10-grg (merged with 2009-11-28-grg from dp217's Ubuntu/Pantheon)
+	* all scripts: use config/os/pathnames/ instead of hardcoded absolute pathnames to locate
+			chcgi, apachectl, htpasswd, apache configs, apache logs, edquota
+	* remove-vhost,archive-vhost*: eliminated dependency on lockfile(1)
+	* create-virtwww: check for existence of the nagios group before trying to chgrp
+	* create-virtwww,remove-vhost-web: check for existence of wit.conf before trying to append to it
+	* restore-vhost-web: do not install an empty crontab
+	* phpMyAdmin.fix: moved from /usr/local/sbin to /opt/webenabled/current/bin
+	* passgen,passgen2: moved from /usr/local/bin to /opt/webenabled/current/bin
+	* /opt/suexec: copied to /opt/webenabled/compat (to be used on non-Owl systems) 
+	* /etc/skel.sql: copied to /opt/webenabled/compat (to be used on non-Owl systems)
+	* create-virtwww: get the list of supplementary groups from config/os/names/groups
+	* create-virtwww,restore-vhost-web: get the name of apache's group from config/os/names/apache.group
+	* remove-vhost-web: move removed apache configs to config/os/pathnames/etc/apache_vhosts_removed
+	* config-vhost-apache: move old apache configs to config/os/pathnames/etc/apache_vhosts_removed
+	* restore-vhost-subsystem: use gsub instead of gensub for mawk compatibility
+	* ised: do not use the 'function' keyword for shell compatibility
+	* restore-vhost-subsystem,ised: use /bin/echo to pass "\\1" because of incompatible behaviour of dash's echo
+2010-03-01-jcd
+	* restore-vhost-subsystem: Added get_admin_user function (returns the admin username)
+	* Added Drush 2.1 under bin (need symlink in /usr/local/bin for it to work obviously)
+2010-03-07-jcd
+	* archive-vhost-action: Added mtime and re-ordered list of backups
+2010-03-08-jcd
+	* phpmyadmin-token: Retrieve the token for gaining access to phpmyadmin. Bypass basic auth
+	* create-virtwww: Added phpmyadmin-token generation using passgen
+2010-03-15-grg
+	* archive-vhost-db: store ~b_USER/.my.cnf in the archive
+	* restore-vhost-db: restore ~b_USER/.my.cnf by passing it to createdb (REQUIRES NEW /opt/dbmgr)
+	* dbmgr/createdb: new option -c# to pass the contents ~b_USER/.my.cnf via fd #
+	* restore-vhost-subsystem: use WEBENABLED_HOSTING_LINK_BASE_URL for Joomla's configuration.php
+2010-03-22-jcd
+	* rawlogs-list: List the last N log entries in USER_access-log and USER_error-log.
+2010-03-23-jcd
+	* drush: Initial version of drush interface.
+2010-03-23-2-grg
+	* export-vhost,restore-vhost-subsystem: new P2P param php_force_db_driver={mysql|mysqli}
+2010-03-29-jcd
+	* drush: Additional drush options and allow more than one option for $2 
+2010-04-01-jcd
+	* restore-vhost-subsystem: Updated sed replace for new Mantis 1.2
+2010-04-06-grg
+	* restore-vhost-subsystem: Do not urlencode the mysql password for Drupal 7
+2010-04-17-jcd
+	* drush: Installed Drush 3 RC4
+2010-04-20-jcd
+	* restore-vhost-subsystem: Added support for CiviCRM 3 sitting on top of Drupal
+2010-04-21-jcd
+	* config-vhost-quota: Added quota-scipts to bin and the initial quota management script
+2010-04-25-jcd
+	* Drush 3.0: Added/Upgraded to Drush 3.0 final.
+2010-04-25-jcd.vz_fix-grg
+	* clone-vz: remote_server=uranus.hwn.initsoft.com
+2010-04-27-jcd
+	* drush-we: Added to support custom Drupal installs. Initially only supports language and profile choice (using custom drush command)
+2010-05-06-grg
+	* archive-vhost: added another pair of double quotes to [ o`dirname "$archive_dir"` = o"." ]
+2010-05-16-grg
+	* import-vhost: new script to import sites
+	* restore-vhost-subsystem: remove base_url from settings.php if WEBENABLED_HOSTING_LINK_BASE_URL='none'
+2010-05-22-jcd
+	* zencart: Added zencart to the list of supported apps. Presently ZenCart 1.3
+2010-05-27-grg
+	* restore-vhost-subsystem: handle Drupal usernames with whitespace properly
+2010-06-07-jcd
+	* restore-vhost-subsystem: wordpress admin_email option set to created users email when e-mail is updated 
+2010-06-12-grg
+	* restore-vhost-web: use config/os/pathnames when creating the ~w_USER/logs symlink
+2010-06-19-grg:
+	* restore-vhost: when writing .my.cnf, enclose the password in single quotes escaping inner signle quotes as \' and backslashes as \\
+	* phpMyAdmin.fix,vhost-archive.fix: support ':' in passwords
+2010-06-19-2-grg:
+	* ignore-quota: new script
+	* lock-vhost, unlock-vhost, newpass: use ignore-quota
+2010-06-23-grg:
+	* archive-vhost-multiserver: new script
+	* archive-vhost-store: new auxiliary script used by archive-vhost-multiserver
+	* archive-vhost: now uses archive-vhost-store as well
+2010-06-26-grg:
+	* remove-user: new script for running userdel logging out the user first when needed
+	* remove-user-utmp: new binary tool to remove stale users from utmp used by remove-user
+	* remove-user-utmp.c: source code, to be comiled with gcc -lutil
+	* remove-vhost-web: now uses remove-user
+	* remove-vhost-db: now uses remove-user
+2010-07-13-grg:
+	* restore-vhost-subsystem: fixed a bug introduced in 2010-05-27-grg that prevented the custom password from being read from stdin
+2010-07-20-grg:
+	* ignore-quota: operate correctly when there are no quotas
+2010-07-31-jcd:
+	* audit-entries: added for FLH opterations
+2010-08-03-grg: 
+	* config-vhost-apache, lock-vhost-apache: understand 'Vhost-simple-SSL-wildcard'
+2010-08-12-grg: 
+	* export-vhost: accept the options -i and -p and pass them to restore-vhost
+	* clone-vhost,restore-vhost: fixed a bug that prevented options -i and -p from working when both are specified
+2010-08-13-grg: 
+	* restore-vhost: if found, run ~/etc/rc.webenabled.restore, then ~/etc/rc.webenabled.local
+2010-08-22-grg
+	* restore-vhost_subsystem: properly escape replacement strings for sed
+2010-08-23-grg
+	* restore-vhost_subsystem: added redmine
+2010-09-13-grg
+	* phpMyAdmin.fix: fixed a bug triggered by passwords containing spaces
+2010-11-16-grg
+	* config-vz-plan: new script for activating VPS plans by setting openvz limits
+2010-12-02-grg:
+	* config-vhost-subsystem: new script for calling custom procedures from ~w_VHOST/etc/rc.webenabled.control.d/
+2010-12-14-grg:
+	* clone-vz: create new VEs on pear
+	* config-vz-plan: connect to both uranus and pear
+2010-12-15-grg:
+	* archive-vhost-multiserver: direct data transfers between the source and target servers
+	* archive-vhost-multiserver-proxy: auxiliary script used by archive-vhost-multiserver
+	* client: the new WEBENABLED_IDENTITY env. var may now override the public ssh key used by default
+	* config-auth-tmp-keygen, config-auth-tmp-authorized_keys, remove-auth-tmp-authorized_keys remove-auth-tmp-private:
+		new scripts for managing one-time (temporary) ssh keys used for direct data transfers between two servers,
+		as implemented in archive-vhost-multiserver
+2010-12-21-jcd-2:
+	* Merged VMM code from 2010-11-15-vmm which was the rewrite of restore-vhost-subsystem
+	* Added support for PivotX, Moodle, MediaWiki, Vanilla Forums, OpenCart
+2010-12-24-jcd:
+	* Added fn_exists to restore-vhost-subsystem.
+	* Implemented one fn_exist call for hook_encrypt. But eventually should use this call so that all hooks are optional.
+2010-12-31-grg:
+	* webenabled-version: new script get the value of the /opt/webenabled/current symlink
+	* clone-vhost: direct data transfers between the source and target servers (still disabled for security reasons)
+	* clone-vhost-proxy: auxiliary script used by archive-vhost-multiserver
+2011-01-12-grg:
+	* clone-vz: use config/names/openvz.default to determine the default openvz server
+2011-01-31-grg:
+	* archive-vhost-web: don't fail if tar for apache logs fails (workaround, to be fixed later)
+	* restore-vhost: support directories instead of stdin again
+2011-03-02-grg:
+	* passgen (gena10) replaced with a x86_64-compatible version (gcc -m32 -static done on x86_64)
+	* passgen2 replaced with a static x86_64-compatible version version of pwqgen
+	* restore-vhost-subsystem:  replace 'source' (unknown to Ubuntu sh) with '.'
+2011-03-06-grg
+	* bin/*.php: use /opt/webenabled/config/os/pathnames/bin/php instead of /usr/local/bin/php
+2011-03-08-grg
+	* config-dns-add_vps_records: new script
+	* clone-vz new script: accept an optional domain name, use config-dns-add_vps_records
+2011-03-10-grg
+	* config-dns-add_vps_records: use ssh -2
+2011-03-18-grg
+	* export-vhost: don't use a temporary file
+2011-04-02-vmm
+	???
+2011-04-04-grg
+	* config/os/pathnames/etc/ssl/: 
+		WARNING: upgrading to this version of the scripts requires creation
+		of this dir with the 'certs' and 'keys' symlinks in it
+	* include/virtwww.conf: proxy SITE-gen/-ctl/ssh/ to http://localhost:2222/
+	* include/virtwww.conf: SSL support for SITE-gen
+	* include/virtwww.conf: use config/os/pathnames/etc/ssl instead of /etc/ssl
+	* create-virtwww, config/pathnames/apache-macro: 
+		an alternative macro name may be specified instead of 'Vhost-simple'. Using
+		Vhost-simple-SSL-wildcard enables SSL for all newly created vhosts
+2011-04-05-grg
+	* config/features/enabled/cloud9: optional flag
+		WARNING! Enabling this flag requires creation of
+		(possibly empty) config/vhosts/*/apache-include/cloud9 files
+		for all existing vhosts
+	* config/vhosts/*/apache-include/cloud9: optional include file
+	* added support for Vhost-simple-SSL-wildcard-dummy missing from the previous version
+	* compat/cloud9
+	* include/virtwww.conf,include/cloud9.conf: new macros
+		WARNING! Uncommenting the cloud9 call in include/virtwww.conf
+		requires enabling the config/features/enabled/cloud9 flag
+	* create-virtwww,restore-vhost: create include files for cloud9
+
+2011-04-05-grg
+	* bin/*crypt*: do not use fopen('/dev/stdin'), which fails on Ubuntu's php
+
+2011-07-04-vmm
+	* libexec/crontab-vhost-get:
+		= added better error handling
+		- does not removes custom comments anymore
+
+	* libexec/crontab-vhost-edit:
+		+ runs more commands as the w_user (instead of r_we)
+		+ added the capability of receiving contents from stdin
+		- removed the functionality of receiving contents as cmdline arguments
+
+	* bin/restore-vhost-subsystem:
+		= added the end-of-options string (--) before some arguments, for
+		programs not to try to parse as options arguments that started with a dash
+
+2011-07-20-vmm
+	* libexec/htaccess-unlock-vhost:
+		+ added delimiter strings to locks made by CloudEnabled
+
+	* libexec/htaccess-lock-vhost:
+		+ accepts more than one user from stdin
+		+ sets passwords while locking
+
+	* libexec/htaccess-lock-status-vhost:
+		= changed the command to check status (now checks for the delimiter)
+		= changed most commands to run with su, not as root
+
+	* renamed bin/htpasswd-perl.pl to bin/htpasswd-bulk
+	* libexec/mysql-password-vhost:
+		= fixed minor sed escaping problems
+		= properly encoded password string. simplified su line to update password files
+		= updated the htpasswd script to the new proper name: bin/htpasswd-bulk
+
+2012-04-07:
+	+ added scripts bin/git-import  libexec/server-reboot
+

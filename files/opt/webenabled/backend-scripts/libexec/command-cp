@@ -1,0 +1,15 @@
+#!/bin/sh
+dir=`dirname $0`
+dir_bin="$dir/../bin"
+vhost="$1"
+cp_src="$2"
+cp_dest="$3"
+param="$4"
+user="w_$vhost"
+
+# using mode archive: it's OK to operate on a locked vhost
+$dir/check-vhost-name archive "$vhost" || exit 1
+
+su -l -c "cp $param $cp_src $cp_dest" $user
+exit 0
+

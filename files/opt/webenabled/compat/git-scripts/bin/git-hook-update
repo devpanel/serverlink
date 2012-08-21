@@ -1,0 +1,20 @@
+#!/bin/bash
+
+REF="$1"
+OLD="$2"
+NEW="$3"
+
+# 40 0
+ZEROS="0000000000000000000000000000000000000000"
+
+# owner may write anywhere
+[ "$REAL_USER" = "$USER" ] && exit 0
+
+#if [ "$OLD" = "$ZEROS" ]; then
+    grep -- "^$REAL_USER\$" "$GIT_DIR/creators" &>/dev/null && exit 0
+#fi
+
+grep -- "^$REAL_USER:$REF\$" "$GIT_DIR/writers" &>/dev/null && exit 0
+
+echo "$REAL_USER is not allowed to write to this repository."
+exit 1

@@ -1,0 +1,57 @@
+#!/bin/sh
+
+dir=`dirname $0`
+skel_sql="$dir/../../config/skel.sql"
+
+umask 077
+
+parse_arguments() {
+
+  for arg do
+    case "$arg" in
+      --user=*) user=`echo "$arg" | sed -e "s;--user=;;"` ;;
+      --datadir=*)	datadir=`echo "$arg" | sed -e "s;--datadir=;;"`
+    			datadir="${datadir%%/}"
+			datadir="${datadir%%/mysql}"
+    			;;
+      --version=*) version=`echo "$arg" | sed -e "s;--version=;;"` ;;
+
+      *)
+	    echo "Usage: $0 --user=user --datadir=datadir --version=db_version"
+	    exit 1
+        ;;
+    esac
+  done
+}
+
+parse_arguments "$@"
+
+test -z "$user" -o "x`id -un`" = "x$user" && exit 1
+test -z "$datadir" -o ! -d "$datadir" && exit 1
+test -z "$version" -o ! -d "$skel_sql/mysql/$version" && exit 1
+
+# Make a check here
+for srcdir in $skel_sql/mysql/$version/*; do
+    if test -d "$datadir/${srcdir##$skel_sql/mysql/$version/}"; then
+	# Incosistent state :( Some dirs already copied, others - not
+	# Fix this in future
+	exit 2
+    fi
+    cp -a "$srcdir" "$datadir" || exit 2
+    chmod -R u+rwX "$datadir/${srcdir##$skel_sql/mysql/$version/}" || exit 2
+    chmod -R go-rwx "$datadir/${srcdir##$skel_sql/mysql/$version/}" || exit 2
+    chown -R "$user:" "$datadir/${srcdir##$skel_sql/mysql/$version/}" || exit 2
+done
+
+if test ! -d "$datadir/tmp"; then
+    mkdir -p "$datadir/tmp" || exit 2
+    chown "$user:" "$datadir/tmp" || exit 2
+fi
+
+if test ! -d "$datadir/log"; then
+    mkdir -p "$datadir/log" || exit 2
+    chown "$user:" "$datadir/log" || exit 2
+fi
+
+# Success
+exit 0

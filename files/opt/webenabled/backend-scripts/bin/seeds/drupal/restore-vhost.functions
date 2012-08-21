@@ -1,0 +1,191 @@
+#!/bin/sh
+
+drupal_get_users()
+{
+  sql_query_result "select name from users where name <> ''"
+}
+
+drupal_genpass()
+{
+  "$dir/genpass"
+}
+
+drupal_encrypt()
+{
+  local password="$1"
+  if version=`sql_query_result "select schema_version from system where name = 'system' and type = 'module'"` &&
+  [ -n "$version" ] &&
+  [ $version -ge 7000 ]
+  then
+    echo -n "$password"|"$dir/drupal7-crypt.php"
+  else
+    echo -n "$password"|md5sum|sed 's/  -$//'
+  fi
+}
+
+drupal_set_password()
+{ 
+  local user="$1" encrypted_password="$2"
+  local token salt
+
+  sql_query "update users set pass = '$encrypted_password' where name = '$user';"
+}
+
+drupal_set_email()
+{
+  local user="$1" email="$2"
+  sql_query "update users set mail = '$email' where name = '$user';"
+}
+
+
+drupal_get_email()
+{
+  local user="$1"
+  sql_query_result "select mail from users where name = '$user';"
+}
+
+drupal_get_admin_user()
+{
+  sql_query_result "select name from users where uid = 1"
+}
+
+drupal_set_drupal6_sitename()
+{
+  local old_fqdn
+  if old_fqdn=`sql_query_result "select * from variable where name='site_name'"` &&
+     [ -n "$old_fqdn" ]
+  then
+    echo Found, changing site_name to $fqdn
+    sql_query "update variable set value=concat('s:', length('$fqdn'), ':\"', '$fqdn', '\"') where name='site_name'" || error
+    #if [ -z "$email" ]
+    #then
+    #  error "Empty admin's email"
+    #else
+      echo "Changing site_mail to admin's email $email"
+      sql_query "update variable set value=concat('s:', length('$email'), ':\"', '$email', '\"') where name='site_mail'" || error
+    #fi
+  else
+    echo Not found
+  fi
+}
+
+drupal_base_url_sed_script=":a
+s|^[[:space:]]*\\\$base_url[[:space:]]*=[[:space:]]*'[^']*';|\\\$base_url = '$WEBENABLED_HOSTING_LINK_BASE_URL';|
+tb
+\$a\\
+\\\$base_url = '$WEBENABLED_HOSTING_LINK_BASE_URL';
+n
+ba
+:b
+{
+n
+bb
+}
+"
+
+drupal_base_url_none_sed_script="s|^[[:space:]]*\\\$base_url[[:space:]]*=[[:space:]]*'[^']*';||"
+
+drupal_update_php_config()
+{
+  local perms1=`stat -L -c%a "$home/public_html/$vhost/sites/default"` || exit 1
+  local perms2=`stat -L -c%a "$home/public_html/$vhost/sites/default/settings.php"` || exit 1
+  run chmod +w "$home/public_html/$vhost/sites/default" || exit 1
+  run chmod +w "$home/public_html/$vhost/sites/default/settings.php" || exit 1
+  local driver
+  if version=`sql_query_result "select schema_version from system where name = 'system ' and type = 'module'"` \
+    && [ -n "$version" ] && [ $version -ge 7000 ]
+  then
+    driver='\1'
+    if [ -n "$WEBENABLED_HOSTING_LINK_PHP_FORCE_DB_DRIVER" ]
+    then
+      driver="$WEBENABLED_HOSTING_LINK_PHP_FORCE_DB_DRIVER"
+    fi
+    /bin/echo "
+           s/^[[:space:]]*'driver'[[:space:]]*=>[[:space:]]*'\\([^']*\\)'[[:space:]]*,/    'driver' => '$driver',/
+           s/^[[:space:]]*'username'[[:space:]]*=>[[:space:]]*.*/    'username' => '$mysql_user',/
+           s/^[[:space:]]*'password'[[:space:]]*=>[[:space:]]*.*/    'password' => '$sedphpencoded_mysql_password',/
+           s/^[[:space:]]*'host'[[:space:]]*=>[[:space:]]*.*/    'host' => '$mysql_host',/
+           s/^[[:space:]]*'port'[[:space:]]*=>[[:space:]]*.*/    'port' => '$mysql_port',/
+           s/^[[:space:]]*'database'[[:space:]]*=>[[:space:]]*.*/    'database' => '$hosting_database',/
+    " | run_ised "$home/public_html/$vhost/sites/default/settings.php"
+  else
+    driver='\2'
+    if [ -n "$WEBENABLED_HOSTING_LINK_PHP_FORCE_DB_DRIVER" ]
+    then
+      driver="$WEBENABLED_HOSTING_LINK_PHP_FORCE_DB_DRIVER"
+    fi
+    /bin/echo "s|^\\(\\\$db_url = '\\)\\(mysqli*\\):.*|\\1$driver://$mysql_user:$urlencoded_mysql_password@$mysql_host:$mysql_port/$hosting_database';|" |
+    run_ised "$home/public_html/$vhost/sites/default/settings.php" || exit 1
+  fi
+  if [ -n "$WEBENABLED_HOSTING_LINK_BASE_URL" ]
+  then
+    if [ o"$WEBENABLED_HOSTING_LINK_BASE_URL" = o"none" ]
+    then
+      echo "$drupal_base_url_none_sed_script" |
+      run_ised "$home/public_html/$vhost/sites/default/settings.php" || exit 1
+    else
+      echo "$drupal_base_url_sed_script" |
+      run_ised "$home/public_html/$vhost/sites/default/settings.php" || exit 1
+    fi
+
+    # removing the file_temporary_path before exporting the site
+    run_mysql -B -D drupal -e "DELETE FROM variable WHERE name = 'file_temporary_path';"
+
+  else
+    # if the site is not to be exported, then add a custom temp dir
+    # to fix a know problem in drupal dealing with tmp files (when multiple
+    # users share /tmp)
+
+    local is_tmp_set
+    is_tmp_set=$(mysql -B -D drupal -N -e "SELECT * FROM variable WHERE name = 'file_temporary_path'")
+    local tmp_dir="/tmp/.private/$user_web"
+    local tmp_sql_str
+    if [ -n "$is_tmp_set" ]; then
+      tmp_sql_str="UPDATE variable SET value = 's:${#tmp_dir}:\"$tmp_dir\";' WHERE name = 'file_temporary_path'"
+    else
+      tmp_sql_str="INSERT INTO variable VALUES ( 'file_temporary_path', 's:${#tmp_dir}:\"$tmp_dir\";');"
+    fi
+
+    run_mysql -B -D drupal -e "$tmp_sql_str" 
+  fi
+      
+  run chmod "$perms1" "$home/public_html/$vhost/sites/default" || exit 1
+  run chmod "$perms2" "$home/public_html/$vhost/sites/default/settings.php" || exit 1
+}
+
+drupal_update_civicrm_config() {
+  if [ -f "$home/public_html/$vhost/sites/default/civicrm.settings.php" ]; then
+    /bin/echo "
+     s/^[[:space:]]*define([[:space:]]*'CIVICRM_UF_DSN'[[:space:]]*,[[:space:]]*'mysql:\/\/.*/define('CIVICRM_UF_DSN', 'mysql:\/\/$mysql_user:$urlencoded_mysql_password@$mysql_host:$mysql_port\/drupal\?new_link=true');/
+     s/^[[:space:]]*define([[:space:]]*'CIVICRM_DSN'[[:space:]]*,[[:space:]]*'mysql:\/\/.*/define('CIVICRM_DSN', 'mysql:\/\/$mysql_user:$urlencoded_mysql_password@$mysql_host:$mysql_port\/drupal\?new_link=true');/
+     s/^[[:space:]]*\$civicrm_root[[:space:]]*=[[:space:]]*.*/\$civicrm_root = '\/home\/clients\/websites\/$mysql_user\/public_html\/$vhost\/sites\/all\/modules\/civicrm';/
+     s/^[[:space:]]*define([[:space:]]*'CIVICRM_TEMPLATE_COMPILEDIR'[[:space:]]*,[[:space:]]*'.*/define('CIVICRM_TEMPLATE_COMPILEDIR', '\/home\/clients\/websites\/$mysql_user\/public_html\/$vhost\/sites\/default\/files\/civicrm\/templates_c\/');/
+     s/^[[:space:]]*define([[:space:]]*'CIVICRM_TEMPLATE_COMPILEDIR'[[:space:]]*,[[:space:]]*'.*/define('CIVICRM_TEMPLATE_COMPILEDIR', '\/home\/clients\/websites\/$mysql_user\/public_html\/$vhost\/sites\/default\/files\/civicrm\/templates_c\/');/
+     s/^[[:space:]]*define([[:space:]]*'CIVICRM_UF_BASEURL'[[:space:]]*,[[:space:]]*'.*/define('CIVICRM_UF_BASEURL', 'htpp:\/\/$fqdn\/');/
+    " | run_ised "$home/public_html/$vhost/sites/default/civicrm.settings.php"
+
+    echo "
+           s/w_[[:alnum:]]\{2,6\}/$mysql_user/g
+           s/\/public_html\/[[:alnum:]]\{2,6\}\/sites/\/public_html\/$vhost\/sites/g
+    " | run_ised "$home/public_html/$vhost/sites/default/files/civicrm/templates_c/en_US/ConfigAndLog/Config.IDS.ini"
+
+    civicrm_domain=`sql_query_result "select config_backend from civicrm_domain where id = 1"`
+    new_civicrm_domain=`echo "$civicrm_domain"|"$dir/civicrm-domain-update.php" "$mysql_user" "$fqdn"`
+    `sql_query_result "update civicrm_domain set config_backend = '$new_civicrm_domain' where id = 1"`
+  fi
+}
+drupal_custom()
+{
+  if [ -z "$opt_n" ]
+  then
+    echo 'Clearing table cache (ignore errors)'
+    sql_clear_table cache
+    echo 'Clearing table sessions (ignore errors)'
+    sql_clear_table sessions
+    echo 'Checking for drupal6 variables (ignore errors)'
+    drupal_set_drupal6_sitename
+  fi
+  echo "Updating settings.php"
+  drupal_update_php_config || error "Cannot update settings.php"
+  drupal_update_civicrm_config || error "Cannot update civicrm.settings.php"
+}

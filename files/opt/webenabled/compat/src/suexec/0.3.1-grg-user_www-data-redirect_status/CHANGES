@@ -1,0 +1,22 @@
+gm4: added .pl extension to the allowed list of scripts
+gm5: changed lstat(script) to stat(script) to allow execution of symbolic links
+gm6: increased mem limit to 32Mb from 20Mb, relaxed public_html/cgi requirement
+
+gm8: increased limits: process per user - 50, adress space 64Mb, CPU time 30, real time 120, number of files 256
+
+gm10: changed name of map file from /etc/suexec/config.dat to /etc/suexec/suexec.map
+changed log file name from cgi.log to cgi_log to allow logrotation by *_log wildcard.
+gm10-alarm3600: modified by Solar: set alarm() to 3600.
+
+gm11: implemented user-defined interpretors logic
+
+gm12: increased memory limit from 64MB to 140MB
+
+0.2.13: adjusted for Apache 2.
+0.2.14: fixed a bug with determining CGI permissions extracted from suexec.map
+0.2.15: increased the alarm() timeout from 60 to 3610
+0.2.16: skipped RLIMIT_CPU for FastCGI
+0.2.17: added HTTPS into safe variables list
+0.2.18: increased the NPROC limit from 100 to 250
+
+0.3.0: packaged as an RPM package, reverted NPROC back to 100, added umask 022 before the script execution

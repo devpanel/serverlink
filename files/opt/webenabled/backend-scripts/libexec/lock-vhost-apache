@@ -1,0 +1,74 @@
+#!/bin/sh
+dir=`dirname "$0"`
+vhost="$1"
+user="w_$vhost"
+apache_config_dir="$dir/../../config/os/pathnames/etc/apache_vhosts"
+apache_config="$apache_config_dir/$user.conf"
+apache_config_locked="$apache_config.locked"
+$dir/check-vhost-name lock "$vhost" || exit 1
+apachectl="$dir/../../config/os/pathnames/sbin/apachectl"
+
+backup()
+{ 
+  local filename="$1"
+  if [ -f "$filename" ]
+  then
+     TMP=`mktemp "$filename.renamed.XXXXXXXX"` || exit 1
+     cat "$filename" >$TMP || exit 1
+     rm "$filename" || exit 1
+  fi
+}
+
+run()
+{
+  echo "  running $@"
+  "$@"
+}
+
+error()
+{
+  echo "ERROR${1+: }$@" >&2
+  exit 1
+}
+
+[ -r "$apache_config" ] || error "cannot find $apache_config"
+
+echo "Modifying $apache_config"
+output=`perl -e '
+     use strict;
+     my %macro = map { $_ => 1 } qw(Vhost-simple-dummy Vhost-simple Vhost-simple-SSL Vhost-simple-SSL-wildcard Vhost-simple-SSL-intermediate);
+     sub locked
+     {
+        my $macro = shift;
+        die "unknown macro $macro\n" unless defined $macro{$macro};
+        return "$macro-locked";
+     }
+  while(<>)
+  {
+    if (/^\s*$/ || /^\s*#/) { print; next; }
+    if (s/^(\s*Use\s+)(\S+)/"$1".(locked $2)/e) { print; next }
+    die "unexpected directive in $ARGV line $., please comment it own manually before locking: $_";
+  }
+' "$apache_config"` || error
+
+echo "Saving old $apache_config as $apache_config_locked"
+backup "$apache_config_locked" || error
+cat "$apache_config" >"$apache_config_locked" || error
+echo "$output" >"$apache_config" || error
+
+echo Validating apache config syntax
+if ! run "$apachectl" configtest  
+then
+  echo Syntax validation failed, reverting the changes
+  if cat "$apache_config_locked" >"$apache_config" &&
+     rm "$apache_config_locked" &&
+     run "$apachectl" configtest
+   then
+        error Aborted
+   else
+	error "Apache config is broken, call a system administrator NOW!"
+   fi
+fi
+
+echo Restarting apache
+run "$apachectl" graceful || error echo "Cannot restart apache, call a system administrator NOW!"

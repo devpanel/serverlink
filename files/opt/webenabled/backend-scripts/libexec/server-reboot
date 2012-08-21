@@ -1,0 +1,10 @@
+#!/bin/bash
+usage() {
+  local prog=$(basename "$0")
+  echo "Usage: $prog Yes"
+  exit 1
+}
+
+[ $# -ne 1 -o "$1" != "Yes" ] && usage
+
+/sbin/shutdown -t 5 -r now

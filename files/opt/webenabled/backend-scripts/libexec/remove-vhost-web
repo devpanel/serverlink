@@ -1,0 +1,109 @@
+#!/bin/sh
+dir=`dirname "$0"`
+
+options=""
+
+while getopts "P" OPTOPT
+do
+  case "$OPTOPT" in
+    P) options="${options+ }-P";;
+    *) exit 1;
+  esac
+done
+shift `expr $OPTIND - 1`
+
+error()
+{
+  echo "ERROR${1+: }$@" >&2
+  exit 1
+}
+
+run()
+{
+  echo "  running $@"
+  "$@"
+}
+
+vhost="$1"
+archive_dir="$2"
+user="w_$vhost"
+home="`eval \"echo ~$user\"`"
+date=`date  +'%Y%m%d'`
+archive_file="$archive_dir/$user.tgz"
+config_dir="/opt/webenabled/config/vhosts/$vhost"
+apachectl="$dir/../../config/os/pathnames/sbin/apachectl"
+
+if ! `id -u "$user" 2>/dev/null >/dev/null`
+then
+  echo "No such user: $user" >&2
+  exit 1
+fi
+
+if [ -z "$archive_dir" ]
+then
+  echo "Usage: $0 vhost archive_dir" >&2
+  exit 1
+fi
+
+if ! $dir/archive-vhost-web $options "$vhost" "$archive_dir"
+then
+   echo "Cannot archive $vhost to $archive_file, will not remove anything";
+   exit 1
+fi
+
+if [ o"$interactive" = o"1" ]
+then
+  echo "Disable Nagios checks for $user NOW, then press Enter to proceed"
+  read
+fi
+
+apache_config_dir="$dir/../../config/os/pathnames/etc/apache_vhosts"
+apache_config_dir_removed="$dir/../../config/os/pathnames/etc/apache_vhosts_removed"
+apache_config="$apache_config_dir/$user.conf"
+echo "Moving $apache_config to $apache_config.removed"
+run mv "$apache_config" "$apache_config_dir_removed/$user.conf.removed"
+
+echo "Checking for occurences of $user in $apache_config_dir/:"
+find "$apache_config_dir/" -type f -print0|xargs -0 fgrep -l "$user"|sed 's/^/  /'
+
+apache_log_dir="/var/log/httpd/virtwww/$user"
+echo "Removing apache log files"
+run rm -rf "$apache_log_dir"
+
+echo Validating apache config syntax
+if ! run "$apachectl" configtest
+then
+   echo "Apache config is broken, call a system administrator NOW!" >&2
+   exit 1
+fi
+
+echo Restarting apache
+if ! run "$apachectl" graceful
+then
+   echo "Cannot restart apache, call a system administrator NOW!" >&2
+   exit 1
+fi
+
+echo "Removing webenabled config dir"
+run rm -rf "$config_dir"
+
+echo "Commenting out the entry in wit.conf"
+if [ -w /opt/wit/config/wit.conf ]
+then
+  run sed -i.old "s/^$user/#&/" /opt/wit/config/wit.conf
+else
+  echo "skipped (wit.conf not found)"
+fi
+#fgrep "$user" /opt/wit/config/wit.conf|sed 's/^/  /'
+
+echo "Removing webstats"
+run su -l -s /bin/bash -c "rm -rf ~webstats/history/$user" webstats
+
+echo "Removing cron for $user"
+run crontab -u "$user" -r
+
+echo "Removing the user $user"
+run "$dir/remove-user" "$user" || exit 1
+
+echo "Removing the group $user"
+run groupdel "$user" || true

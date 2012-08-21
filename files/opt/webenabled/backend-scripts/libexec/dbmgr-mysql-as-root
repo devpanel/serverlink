@@ -1,0 +1,17 @@
+#!/bin/sh
+dir=`dirname "$0"`
+user="$1"
+shift
+command="$1"
+shift
+if [ -z "$user" ]
+then
+  echo "Usage: $0 username" >&2
+  exit 1
+fi
+if ! password=`$dir/../../config/os/pathnames/opt/dbmgr/current/bin/root-password --user="$user" 2>/dev/null`
+then
+  echo "ERROR: cannot get root password for $user" >&2
+  exit 1
+fi
+su - -s /bin/bash -c "$command -S mysql/mysql.sock -u root -p\"$password\" $*" "$user"

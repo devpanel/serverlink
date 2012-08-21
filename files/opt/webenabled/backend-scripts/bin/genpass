@@ -1,0 +1,8 @@
+#!/usr/bin/perl -w
+srand;
+sub genpass {
+  my $chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+  my $n = length $chars; my $r = "";
+  for (1..($ARGV[0]||10)) { $r.=substr($chars, int(rand($n)), 1); } $r;
+}
+print genpass, "\n";

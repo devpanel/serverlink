@@ -1,0 +1,128 @@
+#!/bin/sh
+error() { echo "ERROR${@+: }$@" >&2; exit 1; }
+run()
+{
+  echo "  running $@"
+  "$@"
+}
+backup()
+{ 
+  local filename="$1"
+  if [ -f "$filename" ]
+  then
+     TMP=`mktemp "$filename.renamed.XXXXXXXX"` || exit 1
+     cat "$filename" >$TMP || exit 1
+     rm "$filename" || exit 1
+  fi
+}
+dir=`dirname "$0"`
+apachectl="$dir/../../config/os/pathnames/sbin/apachectl"
+vhost="$1"
+user="w_$vhost"
+apache_config_dir="$dir/../../config/os/pathnames/etc/apache_vhosts"
+apache_config_dir_removed="$dir/../../config/os/pathnames/etc/apache_vhosts_removed"
+apache_config="$apache_config_dir/$user.conf"
+apache_config_old="$apache_config_dir_removed/$user.conf.old"
+shift
+$dir/check-vhost-name config "$vhost" || error
+config_dir="/opt/webenabled/config/vhosts/$vhost"
+default_apache_macro=Vhost-simple
+macro_file=/opt/webenabled/config/names/apache-macro
+if [ -s "$macro_file" ]
+then
+  default_apache_macro=`cat "$macro_file"`
+  if ! echo "$default_apache_macro"|grep '^Vhost-[-_A-Za-z0-9]*$'
+  then
+    echo "Invalid macro name in $macro_file"
+    exit 1
+  fi
+fi
+
+echo "Configuring apache for the following names:"
+names_with_ip=`$dir/list-vhost-names -a "$vhost"` || error
+echo "$names_with_ip"
+
+[ -r "$apache_config" ] || error "cannot find $apache_config"
+
+change_ssl_settings=0
+fqdn=$vhost.`$dir/list-vhost-names-default` || true
+
+output=`echo "$names_with_ip"|perl -e '
+  use strict;
+  my $vhost = shift;
+  my $fqdn = shift;
+  my $default_apache_macro = shift;
+  my $verbatim_flag;
+  my $verbatim = "";
+  my %domains_for_ip;
+  my %ssl_for_ip;
+  my %ssl_intermediate_for_ip;
+  my $template;
+  my ($template_directive, $template_username, $template_ip, $template_subdomain, $template_domain, $template_aliases, $template_home, $template_token);
+  while(<STDIN>)
+  {
+    chomp;
+    my $ip = "*";
+    my ($domain, @options) = split(/\s+/, $_);
+    $domain ne "" or die "invalid domain";
+    my %options = map { /^([^=]+)=(.*)/ ? ($1, $2) : ($_, "yes") } @options;
+    $ip = $options{ip} if defined $options{ip};
+    $domain = "$domain www.$domain" unless $domain =~ /^www\./;
+    if (defined $domains_for_ip{$ip}) { $domains_for_ip{$ip} .= " " } else { $domains_for_ip{$ip} = "" }
+    $domains_for_ip{$ip} .= $domain;
+    $ssl_for_ip{$ip} = 1 if $options{ssl};
+    $ssl_intermediate_for_ip{$ip} = 1 if $options{ssl_intermediate};
+  }
+  while(<>)
+  {
+    $verbatim_flag = 1 if (/^\s*#\s*webenabled_custom\b/);
+    $verbatim .= $_ if $verbatim_flag;
+    my @s = /^Use\s+(Vhost-simple|Vhost-simple-SSL|Vhost-simple-dummy|Vhost-simple-SSL-wildcard|Vhost-simple-SSL-wildcard-dummy|Vhost-simple-SSL-intermediate|Vhost-simple-SSL-intermediate-dummy)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+"([^"]*)"\s+"([^"]*)"\s+(\S+).*/si;
+    if (@s)
+    {
+      ($template_directive, $template_username, $template_ip, $template_subdomain, $template_domain, $template_aliases, $template_home, $template_token) = @s if @s;
+      $template = 1;
+    }
+  }
+  die "no template" unless $template;
+  for my $ip (sort keys %domains_for_ip)
+  {
+
+    if ($ip ne "*")
+    {
+      print "NameVirtualHost $ip:80\n";
+      print "NameVirtualHost $ip:443\n" if $default_apache_macro =~ /SSL/ || $ssl_for_ip{$ip};
+    }
+    # Vhost-simple-wildcard cannot be used for any IP if Vhost-simple is used for at least one IP
+    my $apache_macro = (grep { $_ ne "*" } keys %ssl_for_ip) ? "Vhost-simple" : $default_apache_macro;
+    if ($ssl_for_ip{$ip})
+    {
+      $apache_macro = $ssl_intermediate_for_ip{$ip} ? "Vhost-simple-SSL-intermediate" : "Vhost-simple-SSL";
+    }
+    print "Use $apache_macro $template_username $ip $template_subdomain $template_domain \"$domains_for_ip{$ip}\" \"$template_home\" $template_token\n";
+  }
+  print $verbatim;
+' "$vhost" "$fqdn" "$default_apache_macro" "$apache_config"` || error
+
+echo "Saving old $apache_config as $apache_config_old"
+backup "$apache_config_old" || error
+cat "$apache_config" >"$apache_config_old" || error
+echo "$output" >"$apache_config" || error
+
+echo Validating apache config syntax
+
+if ! run "$apachectl" configtest  
+then
+  echo Syntax validation failed, reverting the changes
+  if cat "$apache_config_old" >"$apache_config" &&
+     rm "$apache_config_old" &&
+     run "$apachectl" configtest
+   then
+        error Aborted
+   else
+	error "Apache config is broken, call a system administrator NOW!"
+   fi
+fi
+
+echo Restarting apache
+run "$apachectl" graceful || error echo "Cannot restart apache, call a system administrator NOW!"

@@ -1,0 +1,506 @@
+#!/bin/bash
+# Options:
+#   -n - do not activate apache vhost, use the 'Vhost-simple-dummy' macro
+
+dummy=""
+
+while getopts "n" OPTOPT
+do
+  case "$OPTOPT" in
+    n) dummy="-dummy";;
+    *) exit 1;;
+  esac
+done
+shift `expr $OPTIND - 1`
+
+progname="$(basename $0)"
+dir="$(dirname $0)"
+pathnames="$dir/../../config/os/pathnames"
+macro_file="$dir/../../config/names/apache-macro"
+dir_bin="$dir/../bin"
+chcgi="$pathnames/sbin/chcgi"
+apachectl="$pathnames/sbin/apachectl"
+edquota="$pathnames/sbin/edquota"
+passgen="$dir_bin/genpass"
+WEBSITES_HOME=/home/clients/websites
+VIRTWWW_LOGDIR="`readlink \"$dir/../../config/os/pathnames/var/log/apache_vhosts\"`"
+VIRTWWW_CFGDIR="$pathnames/etc/apache_vhosts"
+ADDON_GROUPS=
+ADDON_GROUPS_FILE="$dir/../../config/os/names/groups"
+apache_group=`cat $dir/../../config/os/names/apache.group`
+if [ -s "$ADDON_GROUPS_FILE" ]
+then
+  ADDON_GROUPS=`paste -sd, <"$ADDON_GROUPS_FILE"`
+fi
+MYSQL_LOCAL=yes
+macro=Vhost-simple
+if [ -s "$macro_file" ]
+then
+  macro=`cat "$macro_file"`
+  if ! echo "$macro"|grep '^Vhost-[-_A-Za-z0-9]*$'
+  then
+    echo "Invalid macro name in $macro_file"
+    exit 1
+  fi
+fi
+
+function usage() {
+    cat << EOF
+Usage: $progname [[account_name_base] [domain.tld[,alias[,...]]]]
+
+the length of account_name_base must not exceed 6 chars, since it'll prepended
+by "w_" prefix.
+
+EOF
+    exit 1
+}
+
+function check_domain_name() {
+    local DOMAIN_NAMES IFS
+    DOMAIN_NAMES="$*"
+    IFS=', '
+    for name in $DOMAIN_NAMES ; do
+        result=$(echo "$name" | tr -d '[:alnum:].-')
+        if [ -n "$result" ]; then
+            echo "check_domain_name: '$name' contains invalid characters '$result'"
+            return 1
+        fi
+    done
+    return 0
+}
+
+function check_account_name() {
+    local ACCOUNT_NAME
+    if [ $# -ne 1 ]; then
+        echo 'check_account_name: wrong number of arguments'
+        return 1
+    fi
+    ACCOUNT_NAME="$1"
+    if [ ${#ACCOUNT_NAME} -gt 6 ]; then
+        echo 'check_account_name: account name too long (more than 6 chars)'
+        return 1
+    fi
+    return 0
+}
+
+[ $# -gt 2 -o "$1" == '--help' ] && usage
+ACCOUNT_NAME="$1"
+DOMAIN_NAMES="$2"
+
+if [ -z "$DOMAIN_NAMES" ]; then
+    echo 'Please enter domain name(s) [use comma to separate, empty = quit]'
+    while :; do
+        read -e -p '>' DOMAIN_NAMES
+        if [ -z "$DOMAIN_NAMES" ]; then
+            echo 'Aborted creation of new virtual host'
+            exit 1
+        fi
+        check_domain_name "$DOMAIN_NAMES"
+        case "$?" in
+            0)
+                break
+                ;;
+            *)
+                echo 'Invalid domain name(s) specified, please try again'
+                ;;
+        esac
+    done
+else
+    if ! check_domain_name "$DOMAIN_NAMES"; then
+        echo 'Invalid domain name(s) specified, aborting'
+        exit 1
+    fi
+fi
+
+if [ -z "$ACCOUNT_NAME" ]; then
+    echo 'Please enter basename for system account [empty = quit]'
+    while :; do
+        read -e -p '>' ACCOUNT_NAME
+        if [ -z "$ACCOUNT_NAME" ]; then
+            echo 'Aborted creation of new virtual host'
+            exit 1
+        fi
+        check_account_name "$ACCOUNT_NAME"
+        case "$?" in
+            0)
+                break
+                ;;
+            *)
+                echo 'Invalid domain name(s) specified, please try again'
+                ;;
+        esac
+    done
+else
+    if ! check_account_name "$ACCOUNT_NAME"; then
+        echo 'Invalid account basename specified, aborting'
+        exit 1
+    fi
+fi
+
+DB_ACCOUNT_NAME="b_$ACCOUNT_NAME"
+ACCOUNT_NAME="w_$ACCOUNT_NAME"
+
+echo
+VHOST_MULTISITE=
+echo -n 'Is the new vhost a multi-site one (y/N)?'
+read ANSWER
+ANSWER=${ANSWER:-n}
+[ "$ANSWER" == 'y' -o "$ANSWER" == 'Y' ] && VHOST_MULTISITE=y
+
+VHOST_PHPMYADMIN=
+echo -n 'Do you want to enable phpMyAdmin for this vhost (Y/n)? '
+read ANSWER
+ANSWER=${ANSWER:-y}
+[ "$ANSWER" == 'y' -o "$ANSWER" == 'Y' ] && VHOST_PHPMYADMIN=y
+
+# ===
+
+echo '---'
+{
+    count=0
+    IFS=', '
+    PRIMARY_NAME=
+    PRIMARY_DOMAIN=
+    for domain in $DOMAIN_NAMES ; do
+        if [ "$count" -eq 0 ]; then
+            echo -n 'Virtual server: '
+            PRIMARY_NAME=$(echo -n $domain | cut -f1 -d'.')
+            PRIMARY_DOMAIN=$(echo -n $domain | cut -f2- -d'.')
+        else
+            echo -n "ServerAlias #$count: "
+        fi
+        echo "$domain"
+        count=$(($count+1))
+    done
+    echo
+    if [ -n "$VHOST_MULTISITE" ]; then
+        echo "Virtual server: $PRIMARY_NAME-dev.$PRIMARY_DOMAIN"
+        echo "Virtual server: $PRIMARY_NAME-qa.$PRIMARY_DOMAIN"
+        echo "Virtual server: $PRIMARY_NAME-gen.$PRIMARY_DOMAIN"
+        echo
+    fi
+}
+echo "System account: $ACCOUNT_NAME"
+if [ -n "$VHOST_PHPMYADMIN" ]; then
+    echo
+    echo + phpMyAdmin common CGI is enabled
+    echo
+fi
+echo '---'
+
+echo -n 'Do you want to create specified virtual host (y/N)? '
+read ANSWER
+if [ "$ANSWER" != 'y' -a "$ANSWER" != 'Y' ]; then
+    echo 'Aborting'
+    exit 1
+fi
+
+echo '---[ creating new virtual host ]---'
+
+echo -n "+ checking for 'virtwww' group ... "
+if grep -E '^virtwww:' /etc/group &>/dev/null; then
+    echo 'found'
+else
+    echo 'not found'
+    echo
+    echo 'Error: virtwww group is not present, this hosting server is unconfigured!'
+    echo 'Aborting'
+    exit 2
+fi
+
+echo -n "+ checking for '$ACCOUNT_NAME' group ... "
+if grep -E "^$ACCOUNT_NAME:" /etc/group &>/dev/null; then
+    echo 'found'
+else
+    echo 'not found'
+    echo -n "+ creating '$ACCOUNT_NAME' group ... "
+    if ! groupadd "$ACCOUNT_NAME" ; then
+        echo
+        echo 'Aborting'
+        exit 2
+    fi
+    echo 'done'
+fi
+
+echo -n "+ checking for '$ACCOUNT_NAME' account ... "
+if [ x$(id -un "$ACCOUNT_NAME" 2>/dev/null) == "x$ACCOUNT_NAME" ]; then
+    echo 'found'
+    echo -n "+ checking primary group of '$ACCOUNT_NAME' account ... "
+    if [ x$(id -gn "$ACCOUNT_NAME" 2>/dev/null) != 'xvirtwww' ]; then
+        echo 'failed'
+        echo
+        echo "Error: although '$ACCOUNT_NAME' account exists, it's primary group isn't 'virtwww'"
+        echo 'Aborting'
+        exit 2
+    fi
+    echo 'ok, virtwww'
+else
+    echo 'not found'
+    echo -n "+ creating '$ACCOUNT_NAME' account ... "
+    if ! useradd -g virtwww -G "$ACCOUNT_NAME${ADDON_GROUPS:+,$ADDON_GROUPS}" -m -d "$WEBSITES_HOME/$ACCOUNT_NAME" "$ACCOUNT_NAME"; then
+        echo
+        echo 'Aborting'
+        exit 2
+    fi
+    echo 'done'
+fi
+
+# 20060426 - (GM): added optional database creation
+DB_CREATE_FAILED=
+DB_HOST=
+DB_PORT=
+DB_ADMIN_PASS=
+DB_USER_PASS=
+if [ x"$MYSQL_LOCAL" == xyes ]; then
+if [ -n "$VHOST_PHPMYADMIN" -a x"$DB_ACCOUNT_NAME" != x$(id -un "$DB_ACCOUNT_NAME" 2>/dev/null) ]; then
+    echo -n "+ initializing '$DB_ACCOUNT_NAME' database ... "
+    CREATEDB_OUTPUT=$(/opt/dbmgr/current/bin/createdb "$DB_ACCOUNT_NAME")
+    DB_HOST_PORT=$(echo -n "$CREATEDB_OUTPUT" | grep -E "^started:[[:space:]]+user=$DB_ACCOUNT_NAME[[:space:]]" | tail -n1 | sed -n "s,^started:.\+[[:space:]]host=\(.\+\)[[:space:]]\+status=0$,\1,; T; p")
+    DB_HOST=$(echo -n "$DB_HOST_PORT" | cut -f1 -d':')
+    DB_PORT=$(echo -n "$DB_HOST_PORT" | cut -f2 -d':')
+    [ x"$DB_HOST" == x"$DB_PORT" ] && DB_PORT=
+    DB_ADMIN_PASS=$(echo -n "$CREATEDB_OUTPUT" | grep -E '^added:' | fgrep "user='admin'" | tail -n1 | sed -n "s,^added:.\+[[:space:]]password='\(.\+\)'[[:space:]]\+status=0$,\1,; T; p")
+    DB_USER_PASS=$(echo -n "$CREATEDB_OUTPUT" | grep -E '^added:' | fgrep "user='$ACCOUNT_NAME'" | tail -n1 | sed -n "s,^added:.\+[[:space:]]password='\(.\+\)'[[:space:]]\+status=0\$,\1,; T; p")
+    if [ -z "$DB_ADMIN_PASS" -o -z "$DB_USER_PASS" -o -z "$DB_HOST" -o -z "$DB_PORT" ]; then
+        echo 'failed, ignoring'
+        DB_CREATE_FAILED=1
+    else
+        echo 'done'
+    fi
+fi
+fi # MYSQL_LOCAL
+
+VHOST_HOME="$WEBSITES_HOME/$ACCOUNT_NAME"
+echo -n '+ configuring home directory for virtual host ... '
+chgrp $apache_group "$VHOST_HOME" || exit 2
+su - -c "
+set -e
+chmod 0710 \"$VHOST_HOME\"
+# start of PHP hack (added by (GM) on 20050923)
+mkdir -p \"$VHOST_HOME/bin\"
+chmod 0700 \"$VHOST_HOME/bin\"
+# end of PHP hack
+mkdir -p \"$VHOST_HOME/public_html/$PRIMARY_NAME\"
+chmod 0755 \"$VHOST_HOME/public_html/$PRIMARY_NAME\"
+mkdir -p \"$VHOST_HOME/public_html/gen\"
+chmod 0755 \"$VHOST_HOME/public_html/gen\"
+if [ -n \"$VHOST_MULTISITE\" ]; then
+    mkdir -p \"$VHOST_HOME/public_html/$PRIMARY_NAME\"-{dev,qa}
+    chmod 0755 \"$VHOST_HOME/public_html/$PRIMARY_NAME\"-{dev,qa}
+fi
+chmod 0711 \"$VHOST_HOME/public_html\"
+test -h \"$VHOST_HOME/logs\" && rm \"$VHOST_HOME/logs\"
+ln -s \"$VIRTWWW_LOGDIR/$ACCOUNT_NAME\" \"$VHOST_HOME/logs\"
+set +e
+" -s /bin/bash "$ACCOUNT_NAME"
+if [ "$?" -eq 0 ]; then
+    echo 'done'
+else
+    echo 'failed'
+fi
+
+# Fri May 20 2005 10:22 AM (fen@civicactions.com): added this section
+echo -n '+ setting up .php directory ... '
+su - -c "
+set -e
+test ! -d \"$VHOST_HOME/.php\" && mkdir \"$VHOST_HOME/.php\"
+chmod 0700 \"$VHOST_HOME/.php\"
+echo '# memory_limit = 24M;' >> \"$VHOST_HOME/.php/php.ini\"
+chmod 0600 \"$VHOST_HOME/.php/php.ini\"
+set +e
+" -s /bin/bash "$ACCOUNT_NAME"
+if [ "$?" -eq 0 ]; then
+    echo 'done'
+else
+    echo 'failed'
+fi
+
+# Thu Oct 14 2005 20:05 PM (galaxy@initsoft.com): added this section
+echo -n '+ setting up Webalizer directory ... '
+su - -c "
+set -e
+test ! -d \"$VHOST_HOME/public_html/gen/$PRIMARY_NAME-usage\" && mkdir \"$VHOST_HOME/public_html/gen/$PRIMARY_NAME-usage\"
+chmod 0711 \"$VHOST_HOME/public_html/gen/$PRIMARY_NAME-usage\"
+cat << EOF > \"$VHOST_HOME/public_html/gen/$PRIMARY_NAME-usage/.htaccess\"
+DirectoryIndex index.html
+
+AuthUserFile \"$VHOST_HOME/.htpasswd.stats\"
+AuthType Basic
+AuthName "Statistics"
+Require valid-user
+Satisfy all
+Deny from all
+Allow from all
+Order Deny,Allow
+EOF
+chmod 0644 \"$VHOST_HOME/public_html/gen/$PRIMARY_NAME-usage/.htaccess\"
+cat << EOF > \"$VHOST_HOME/.htpasswd.stats\"
+stats:\\\$apr1\\\$UtFyb/..\\\$CJolXmFkT3rgUuPVWU6Pf.
+EOF
+chmod 0644 \"$VHOST_HOME/.htpasswd.stats\"
+set +e
+" -s /bin/bash "$ACCOUNT_NAME"
+if [ "$?" -eq 0 ]; then
+    echo 'done'
+else
+    echo 'failed'
+fi
+
+echo -n '+ configuring httpd log directory for virtual host ... '
+set -e
+mkdir -p -m 0750 "$VIRTWWW_LOGDIR/$ACCOUNT_NAME"
+chown "root:$ACCOUNT_NAME" "$VIRTWWW_LOGDIR/$ACCOUNT_NAME"
+touch "$VIRTWWW_LOGDIR/$ACCOUNT_NAME/"{access,error}_log
+chmod 0644 "$VIRTWWW_LOGDIR/$ACCOUNT_NAME/"{access,error}_log
+touch "$VIRTWWW_LOGDIR/$ACCOUNT_NAME/$PRIMARY_NAME-"{access,error}_log
+chmod 0644 "$VIRTWWW_LOGDIR/$ACCOUNT_NAME/$PRIMARY_NAME-"{access,error}_log
+set +e
+echo 'done'
+
+# (GM): XXX: unsafe - race!
+echo -n '+ configuring WIT (Webalize-IT) ... '
+if [ -w /opt/wit/config/wit.conf ]
+then
+  echo "$ACCOUNT_NAME:$(echo -n $DOMAIN_NAMES | cut -f1 -d' ' | cut -f1 -d','):$VIRTWWW_LOGDIR/$ACCOUNT_NAME/$PRIMARY_NAME-access_log.1:$VHOST_HOME/public_html/gen/$PRIMARY_NAME-usage:" >> /opt/wit/config/wit.conf
+  if [ "$?" -eq 0 ]; then
+      echo 'done'
+  else
+      echo 'failed'
+  fi
+else
+  echo "skipped (wit.conf not found)"
+fi
+
+echo '+ enabling personal CGIs:'
+"$chcgi" "$ACCOUNT_NAME" +0
+
+if [ -n "$VHOST_PHPMYADMIN" ]; then
+    echo '+ enabling common CGIs:'
+    echo -n '  * phpMyAdmin ... '
+    "$chcgi" "$ACCOUNT_NAME" +2
+    if [ -n "$DB_USER_PASS" ]; then
+        echo -n '  * setting up Basic Authentication ... '
+        su - -c "phpMyAdmin.fix \"$DB_USER_PASS\"" -s /bin/bash "$ACCOUNT_NAME"
+        if [ "$?" -eq 0 ]; then
+            echo 'done'
+        else
+            echo 'failed'
+        fi
+    fi
+    if [ -n "$VHOST_MULTISITE" -a -n "$DB_HOST" -a -n "$DB_PORT" -a -n "$DB_ADMIN_PASS" ]; then
+        echo -n '+ adding multisite databases ... '
+        su - -c "
+set -e
+create-site-db \"$ACCOUNT_NAME\" \"-h$DB_HOST\" \"-P$DB_PORT\" -uadmin \"-p$DB_ADMIN_PASS\"
+set +e
+" -s /bin/bash "$ACCOUNT_NAME"
+        if [ "$?" -eq 0 ]; then
+            echo 'done'
+        else
+            echo 'failed'
+        fi
+    fi
+fi
+
+echo -n '+ setting default quotas (using w_ as a template) ... '
+if "$edquota" -p w_ "$ACCOUNT_NAME"; then
+    echo 'done'
+fi
+
+echo -n '+ adding new virtual host record into httpd config ... '
+TMPFILE="$(mktemp $VIRTWWW_CFGDIR/$ACCOUNT_NAME.conf.XXXXXXXXXX)" || exit 1
+trap 'rm -f -- "$TMPFILE"' EXIT
+trap 'trap - EXIT; rm -f -- "$TMPFILE"; exit 1' HUP INT QUIT TERM
+echo "# created: $(date '+%x [%X]')" > "$TMPFILE"
+count=0
+ALIAS_LIST=
+IFS=', '
+for domain in $DOMAIN_NAMES ; do
+    if [ "$count" -gt 0 ]; then
+	ALIAS_LIST="${ALIAS_LIST:+$ALIAS_LIST }$domain"
+    fi
+    count=$(($count+1))
+done
+
+echo -n '+ generating phpmyadmin token ... '
+PHPMYADMINTOKEN="$($passgen 2>/dev/null)"
+if [ $? -eq 0 ]; then
+        echo 'done'
+else
+        echo 'failed'
+fi
+
+if [ -n "$VHOST_MULTISITE" ]; then
+    cat << EOF >> "$TMPFILE"
+Use Vhost-multi$dummy $ACCOUNT_NAME * $PRIMARY_NAME $PRIMARY_DOMAIN "${ALIAS_LIST:-$PRIMARY_NAME.$PRIMARY_DOMAIN}" "$WEBSITES_HOME/$ACCOUNT_NAME" $PHPMYADMINTOKEN
+EOF
+else
+    cat << EOF >> "$TMPFILE"
+Use $macro$dummy $ACCOUNT_NAME * $PRIMARY_NAME $PRIMARY_DOMAIN "${ALIAS_LIST:-$PRIMARY_NAME.$PRIMARY_DOMAIN}" "$WEBSITES_HOME/$ACCOUNT_NAME" $PHPMYADMINTOKEN
+EOF
+fi
+
+config_dir="/opt/webenabled/config/vhosts/$PRIMARY_NAME"
+mkdir -p "$config_dir/apache-include"
+if [ -r /opt/webenabled/config/features/enabled/cloud9 ]
+then
+  touch "$config_dir/apache-include/cloud9"
+fi
+
+if ! ln "$TMPFILE" "$VIRTWWW_CFGDIR/$ACCOUNT_NAME.conf" 2>/dev/null ; then
+	echo 'failed'
+	echo "$0: could not add configuration for '$ACCOUNT_NAME'"
+	echo "Please insert the following snippet to '$VIRTWWW_CFGDIR/$ACCOUNT_NAME' file:"
+	echo '===[ begin ]==='
+	cat "$TMPFILE"
+	echo '===[  end  ]==='
+else
+  if getent group nagios >/dev/null
+  then
+    chgrp nagios "$VIRTWWW_CFGDIR/$ACCOUNT_NAME.conf"
+    chmod g+r "$VIRTWWW_CFGDIR/$ACCOUNT_NAME.conf"
+  fi
+fi
+echo 'done'
+
+echo -n '+ checking Apache configuration integrity ... '
+RESULT="$("$apachectl" configtest 2>&1)"
+if [ $? -eq 0 ]; then
+	echo 'done'
+else
+	echo 'failed'
+	echo -n "$0: $RESULT"
+fi
+
+echo -n '+ reloading Apache to get new configuration ... '
+RESULT="$("$apachectl" graceful 2>&1)"
+if [ $? -eq 0 ]; then
+	echo 'done'
+else
+	echo 'failed'
+	echo -n "$0: $RESULT"
+fi
+
+echo '---[ end of creating new virtual host ]---'
+echo
+echo "Don't forget to set password for '$ACCOUNT_NAME' :)"
+echo "Bye"
+if [ -n "$DB_CREATE_FAILED" ]; then
+    echo 'An error occured during the database creation, the following is the'
+    echo 'output from the createdb script:'
+    echo '==='
+    echo "$CREATEDB_OUTPUT"
+    echo '==='
+    exit 1
+else
+    if [ -n "$VHOST_PHPMYADMIN" -a -n "$DB_ADMIN_PASS" ]; then
+        echo '===[ database credentials ]==='
+        echo "db host: $DB_HOST"
+        echo "db port: $DB_PORT"
+        echo
+        echo "db login = 'admin', password = '$DB_ADMIN_PASS'"
+        echo "db login = '$ACCOUNT_NAME', password = '$DB_USER_PASS'"
+    fi
+fi
+exit 0
+

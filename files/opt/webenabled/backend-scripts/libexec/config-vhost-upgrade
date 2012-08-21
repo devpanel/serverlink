@@ -1,0 +1,43 @@
+#!/bin/sh
+# create /opt/webenabled/config/vhosts/VHOST for older vhosts
+# only needed once
+
+error() { echo "ERROR${@+: }$@" >&2; exit 1; }
+run()
+{
+  echo "  running $@"
+  "$@"
+}
+dir=`dirname "$0"`
+vhost="$1"
+user="w_$vhost"
+apache_config_dir="$dir/../../config/os/pathnames/etc/apache_vhosts"
+apache_config="$apache_config_dir/$user.conf"
+apache_config_old="$apache_config.old"
+shift
+$dir/check-vhost-name config "$vhost" || error
+config_dir="/opt/webenabled/config/vhosts/$vhost"
+echo "Configuring apache for the following names:"
+if output=`$dir/list-vhost-names "$vhost" 2>/dev/null` 
+then
+  echo No need to upgrade
+  exit 0
+fi
+
+[ -r "$apache_config" ] || error "cannot find $apache_config"
+
+output=`perl -e '
+  use strict;
+  while(<STDIN>)
+  {
+    if (/^(Use\s+(?:Vhost-simple|Vhost-simple-SSL|Vhost-simple-dummy)\s+[^"]*")([^"]*)(".*)/i)
+    { print join("\n", grep { !/^www\./ } split /\s+/, $2), "\n"; exit }
+  }
+  die "cannot find Vhost macros"
+' <"$apache_config"` || error
+
+echo "Extracted the following names from apache config:"
+[ -n "$output" ] || error "Empty list"
+echo "$output"
+default_name=`echo "$output"|head -1`
+run $dir/config-vhost-names "$vhost" '*' "$default_name" '+' $output || error

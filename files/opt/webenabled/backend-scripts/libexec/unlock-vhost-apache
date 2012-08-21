@@ -1,0 +1,45 @@
+#!/bin/sh
+dir=`dirname "$0"`
+vhost="$1"
+user="w_$vhost"
+apache_config_dir="$dir/../../config/os/pathnames/etc/apache_vhosts"
+apache_config="$apache_config_dir/$user.conf"
+apache_config_locked="$apache_config.locked"
+$dir/check-vhost-name unlock "$vhost" || exit 1
+apachectl="$dir/../../config/os/pathnames/sbin/apachectl"
+
+backup()
+{ 
+  local filename="$1"
+  if [ -f "$filename" ]
+  then
+     TMP=`mktemp "$filename.renamed.XXXXXXXX"` || exit 1
+     cat "$filename" >$TMP || exit 1
+     rm "$filename" || exit 1
+  fi
+}
+
+run()
+{
+  echo "  running $@"
+  "$@"
+}
+
+error()
+{
+  echo "ERROR${1+: }$@" >&2
+  exit 1
+}
+
+[ -r "$apache_config" ] || error "cannot find $apache_config"
+[ -r "$apache_config_locked" ] || error "cannot find $apache_config_locked"
+
+echo "Moving $apache_config_locked to $apache_config"
+cat "$apache_config_locked" >"$apache_config" || error
+rm "$apache_config_locked" || error
+
+echo Validating apache config syntax
+run "$apachectl" configtest  || error "Apache config is broken, call a system administrator NOW!"
+
+echo Restarting apache
+run "$apachectl" graceful || error echo "Cannot restart apache, call a system administrator NOW!"

@@ -1,0 +1,44 @@
+#!/bin/bash
+dir=`dirname "$0"`
+dir_bin="$dir/../bin"
+vhost="$1"
+user="w_$vhost"
+run()
+{
+  echo "  running $@"
+  "$@"
+}
+run_su()
+{
+  echo "  running su -l -c '$@' $user" >&2
+  su -l -c "$*" "$user"
+}
+run_su_ignore_quota()
+{
+  echo "  running su -l -c '$@' $user" >&2
+  "$dir/ignore-quota" "$user" 8 su -l -c "$*" "$user"
+}
+error()
+{
+  echo "ERROR${1+: }$@" >&2
+  exit 1
+}
+
+home()
+{
+  local user="$1"
+  perl -le '@a=getpwnam $ARGV[0] or die "no such user $ARGV[0]\n"; print $a[7]'  "$user"
+}
+
+
+$dir/check-vhost-name unlock "$vhost" || error
+home=`home "$user"` || error "cannot get $user's home dir"
+
+echo "Enabling apache virtual host"
+$dir/unlock-vhost-apache "$vhost" || error
+echo "Unlocking user's password"
+run "$dir/ignore-quota" "$user" 8 usermod -U "$user" || error
+echo "Unlocking .ssh/authorized_keys"
+run_su "$dir_bin/unlock-vhost-ssh" || error
+echo "Unlocking crontab"
+run_su_ignore_quota "$dir_bin/unlock-vhost-crontab" || error

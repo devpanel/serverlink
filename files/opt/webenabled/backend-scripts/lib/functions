@@ -1,0 +1,83 @@
+#!/bin/bash
+
+error() {
+  local msg="$1"
+  local exit_code="$2"
+
+  [ -n "$msg" ] && echo "Error: $msg" 1>&2
+  [ -n "$exit_code" ] && exit $exit_code
+  exit 1
+}
+
+auto_detect_distro() {
+  local distro=""
+
+  if grep -qis centos /etc/redhat-release; then
+    distro=centos
+  elif grep -qis fedora /etc/redhat-release; then
+    distro=fedora
+  elif rpm -ql owl-hier >/dev/null 2>&1; then
+    distro=owl
+  elif [ -r /etc/dpkg/origins/ubuntu ]; then
+    distro=ubuntu
+  elif [ -r /etc/gentoo-release ]; then
+    distro=gentoo
+  fi
+
+  if [ -n "$distro" ]; then
+    echo $distro
+    return 0
+  else
+    return 1
+  fi
+}
+
+print_quoted_variables() {
+  local line=""
+  local var=""
+
+  for var in "$@"; do
+    line=$(declare -p $var)
+    line=${line#declare -x}
+    echo $line
+  done
+}
+
+resolve_local_dir() {
+  local base="$1"
+  local bin=""
+  local bin_path=""
+  local dir_name=""
+
+  [ ${#base} -eq 0 ] && return 1
+
+  if [ ${base:0:1} == "/" ]; then
+    echo $(dirname "$base")
+  elif [ ${#base} -gt 2 -a ${base:0:2} == "./" ]; then
+    base=${base#./}
+    dir_name=$(dirname "$base")
+    if [ "$dir_name" == "." ]; then
+      echo "$PWD"
+    else
+      echo "$PWD/$dir_name"
+    fi 
+    return 0
+  elif [ ${#base} -gt 2 -a ${base:0:3} == "../" ]; then
+    echo $(dirname "$PWD/$base")
+  else
+    bin=$(basename "$base")
+    if hash "$bin"; then
+      bin_path=$(hash -t "$bin")
+      if [ -x "$bin_path" ]; then
+        echo $(dirname "$bin_path")
+        return 0
+      else
+        echo "resolve_local_dir(): unable to determine local directory (1)" 1>&2
+        return 1
+      fi
+    else
+      echo "resolve_local_dir(): unable to determine local directory (2)" 1>&2
+      return 1
+    fi
+  fi 
+}

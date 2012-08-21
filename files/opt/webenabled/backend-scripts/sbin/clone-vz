@@ -1,0 +1,41 @@
+#!/bin/bash
+dir=`dirname "$0"`
+remote_cmdline=""
+basename=`basename "$0"`
+
+error()
+{
+  echo "ERROR${@+: }$@" >&2
+  exit 1
+}
+
+# if we are run as 'client', the remote command name is in $1;
+# otherwise, it is the basename of $0
+if [ o"$basename" = o"client" ]
+then
+  basename="$1"
+  shift
+fi
+fqdn="$1"
+remote_user=r_wevz
+global_identity=/opt/webenabled/config/ssh/global.vz
+local_identity=/opt/webenabled/config/ssh/local.vz
+remote_server=`cat $dir/../../config/names/openvz.default` || exit 1
+#[ -n "$WEBENABLED_SERVER" ] && remote_server="$WEBENABLED_SERVER"
+
+if [ -r "$global_identity" ]
+then
+  identity="$global_identity"
+else
+  identity="$local_identity"
+fi
+output=`ssh -p 940 -T -2 -q -o 'BatchMode yes' -o 'StrictHostKeyChecking no' -i "$identity" -l "$remote_user" "$remote_server" 'wevz-assign-any' $fqdn 2>&1`
+status=$?
+echo "$output"
+[ $status = 0 ] || exit $status
+if [ -n "$fqdn" ]
+then
+  ip=`echo "$output"|sed -n 's/^webenabled_ip \([0-9]\{1,\}\.[0-9]\{1,\}\.[0-9]\{1,\}\.[0-9]\{1,\}\)$/\1/p'` || error
+  [ -n "$ip" ] || error "no ip"
+  "$dir"/config-dns-add_vps_records "$fqdn" "$ip" || error "Cannot add DNS record"
+fi

@@ -1,0 +1,314 @@
+#!/bin/bash
+
+USER_FILE=~/etc/groups
+ALIAS_FILE=~/etc/aliases
+PERMS_FILE=~/etc/perms
+
+#GIT=/opt/git/1.7.0.5-owl0/bin/git
+GIT=`which git`
+UPDATE_HOOK=/usr/local/bin/git-hook-update
+POST_RECEIVE_HOOK=/usr/local/bin/git-hook-post-receive
+GIT_SHELL=/usr/local/bin/git-shell-wrapper
+
+AUTH_KEYS=~/.ssh/authorized_keys
+
+PATH="$PATH:/usr/local/sbin/"
+
+parse_command()
+{
+	local TMP_VAR
+	BUFFER="$1"
+	[ -z "$1" ] && return
+
+	trap 'trap - RETURN; export BUFFER' RETURN
+
+	ACTION="${BUFFER%%:*}"
+	export ACTION
+	TMP_VAR="${ACTION//\*/\*}"
+	BUFFER="${BUFFER#$TMP_VAR}"
+	[ "${BUFFER:0:1}" != ':' ] && return
+	BUFFER="${BUFFER#:}"
+
+	OBJECT="${BUFFER%%:*}"
+	export OBJECT
+	TMP_VAR="${OBJECT//\*/\*}"
+	BUFFER="${BUFFER#$TMP_VAR}"
+	[ "${BUFFER:0:1}" != ':' ] && return
+	BUFFER="${BUFFER#:}"
+
+	ARG1="${BUFFER%%:*}"
+	export ARG1
+	TMP_VAR="${ARG1//\*/\*}"
+	BUFFER="${BUFFER#$TMP_VAR}"
+	[ "${BUFFER:0:1}" != ':' ] && return
+	BUFFER="${BUFFER#:}"
+
+	ARG2="${BUFFER%%:*}"
+	export ARG2
+	TMP_VAR="${ARG2//\*/\*}"
+	BUFFER="${BUFFER#$TMP_VAR}"
+	[ "${BUFFER:0:1}" != ':' ] && return
+	BUFFER="${BUFFER#:}"
+
+	ARG3="${BUFFER%%:*}"
+	export ARG3
+	TMP_VAR="${ARG3//\*/\*}"
+	BUFFER="${BUFFER#$TMP_VAR}"
+	[ "${BUFFER:0:1}" != ':' ] && return
+	BUFFER="${BUFFER#:}"
+
+	ARG4="${BUFFER%%:*}"
+	export ARG4
+	TMP_VAR="${ARG4//\*/\*}"
+	BUFFER="${BUFFER#$TMP_VAR}"
+	[ "${BUFFER:0:1}" != ':' ] && return
+	BUFFER="${BUFFER#:}"
+}
+
+repo_add()
+{
+    GIT_DIR="$HOME/repos/$OBJECT"
+    mkdir "$GIT_DIR"
+    export GIT_DIR
+    if [ -n "$OBJECT" ]; then 
+        if ! $GIT init --shared=all; then
+            echo 'FAIL (repo-add: git-init failed)'
+        else
+            ln -s $UPDATE_HOOK "$GIT_DIR"/hooks/update \
+                || echo 'WARNING (repo-add: failed to add a pre-receive hook)'
+            ln -s $POST_RECEIVE_HOOK "$GIT_DIR"/hooks/post-receive \
+                || echo 'WARNING (repo-add: failed to add a post-receive hook)'
+            echo "$USER" >"$GIT_DIR/readers"
+            echo "$USER:refs/heads/master" >"$GIT_DIR/writers"
+            echo "$USER" >"$GIT_DIR/creators"
+            cat > "$GIT_DIR/cgitrc" <<EOF
+repo.url=$OBJECT
+repo.name=$OBJECT
+repo.path=$GIT_DIR
+cache-size=1000
+EOF
+            #chmod a+r "$GIT_DIR/readers" "$GIT_DIR/writers" "$GIT_DIR/creators"
+
+            # For cgit
+            chmod a+r "$GIT_DIR/cgitrc"
+            #chmod g+r -R .
+
+            echo OK
+        fi
+    else
+        echo 'FAIL (repo-add: no repository name was provided)'
+    fi
+}
+
+repo_del()
+{
+    if [ -n "$OBJECT" ]; then
+        [ -d ~/repos/"$OBJECT" ] && rm -rf -- ~/repos/"$OBJECT" && echo OK || echo 'FAIL (repo-del: cannot delete the corresponding directory)'
+    else
+        echo 'FAIL (repo-add: no repository name was provided)'
+    fi
+}
+
+check_sshkey()
+{
+    # (ssh-dss|ssh-rsa) base64 comment
+    echo "$1" | grep -E -- '^(ssh-rsa|ssh-dss) +[a-zA-Z0-9\+/=]+ *[a-zA-Z0-9_@.-]*$' &>/dev/null
+}
+
+wrap_sshkey()
+{
+    FORBID="no-port-forwarding,no-X11-forwarding,no-agent-forwarding,no-pty"
+    echo "command=\"exec $GIT_SHELL\",environment=\"LANG=C\",environment=\"REAL_USER=$OBJECT\",$FORBID" "$1"
+}
+
+lock()
+{
+    LOCK_TRIES=0
+    CONFFILE=~/.ssh/authorized_keys
+    LOCKFILE=$CONFFILE.lock
+    DEADLOCK_TIME=10
+
+    while [ $LOCK_TRIES -le 10 ]; do
+        if ln -s "$CONFFILE" "$LOCKFILE" &>/dev/null ; then
+            trap 'rm "$LOCKFILE" ; trap - EXIT ; exit 255' HUP INT QUIT ABRT KILL SEGV PIPE
+            trap 'rm "$LOCKFILE" ; trap - EXIT ; exit $RESULT' EXIT
+            return 
+        else
+            if [ -h "$LOCKFILE" ]; then
+                    CURRENT_TIME=$(date +%s)
+                    LOCKFILE_MTIME=$(stat --format=%Y "$LOCKFILE")
+                if [ -n "$LOCKFILE_MTIME" ]; then
+                    if [ $(($CURRENT_TIME - $LOCKFILE_MTIME)) -gt $DEADLOCK_TIME ]; then
+                        echo "$0: lockfile '$LOCKFILE' looks too old (more than $DEADLOCK_TIME seconds)"
+                        rm "$LOCKFILE"
+                    fi
+                fi
+            fi
+            LOCK_TRIES=$(($LOCK_TRIES + 1))
+            sleep 0.1
+        fi
+    done
+
+    echo "$0: cannot get lock on '$LOCKFILE'"
+    RESULT=2
+    exit
+}
+
+unlock()
+{
+    CONFFILE=~/.ssh/authorized_keys
+    LOCKFILE=$CONFFILE.lock
+
+    trap - HUP INT QUIT ABRT KILL SEGV PIPE
+    trap - EXIT
+    rm $LOCKFILE
+}
+
+user_add()
+{
+    KEY="$ARG1"
+    if [ -n "$OBJECT" ]; then
+        if check_sshkey "$KEY"; then
+            lock
+            if ! grep -- "environment=\"REAL_USER=$OBJECT\"" $AUTH_KEYS &>/dev/null; then
+                # This is critical section, so no tmpfile race here
+                cp $AUTH_KEYS{,.tmp}
+                wrap_sshkey "$KEY" >>$AUTH_KEYS.tmp
+                #wrap_sshkey "$KEY"
+                mv $AUTH_KEYS{.tmp,}
+                echo 'OK'
+            else
+                echo 'FAIL (user-add: user name already exists)'
+            fi
+            unlock
+        else
+            echo 'FAIL (user-add: bad ssh key)'
+        fi
+    else
+        echo 'FAIL (user-add: no user name was provided)'
+    fi
+}
+
+user_del()
+{
+    if [ -n "$OBJECT" ]; then
+        lock
+        if grep -- "environment=\"REAL_USER=$OBJECT\"" $AUTH_KEYS &>/dev/null; then
+            sed -i "/environment=\"REAL_USER=$OBJECT\"/d" $AUTH_KEYS &>/dev/null;
+            echo 'OK'
+        else
+            echo 'FAIL (user-del: user name does not exist)'
+        fi
+        unlock
+    else
+        echo 'FAIL (user-del: no user name was provided)'
+    fi
+}
+
+group_set()
+{
+    if [ -n "$OBJECT" ]; then
+        : && echo OK || echo "FAIL (group-set: manage-svn-auth failed: $?)"
+    else
+        echo 'FAIL (group-set: invalid usage)'
+    fi
+}
+
+alias_set()
+{
+    if [ -n "$OBJECT" ]; then
+        : && echo OK || echo "FAIL (group-set: manage-svn-auth failed: $?)"
+    else
+        echo 'FAIL (alias-set: invalid usage)'
+    fi
+}
+
+perms_set()
+{
+    if [ -n "$ARG1" -a -n "$ARG2"  ]; then
+        PERMS_DIR="$HOME/repos/$OBJECT" \
+        PERMS_BRANCH="$ARG1" \
+        PERMS_USER="$ARG2" \
+        PERMS="$ARG3" \
+        manage-git-perms \
+         && echo OK || echo "FAIL (perms-set: manage-git-perms failed: $?)"
+    else
+        echo 'FAIL (perms-set: invalid usage)'
+    fi
+}
+
+hmac_secret_set()
+{
+    local KEY
+    KEY=`head -c 16 /dev/urandom | xxd -p`
+    if [ "`echo -n "$KEY" | wc -c`" != 32 ]; then
+        echo "FAIL (hmac-secret-set: bad /dev/urandom)"
+    else
+        echo "$KEY" > "$HOME/.cgit-hmac-secret" && \
+        chmod a+r "$HOME/.cgit-hmac-secret" && \
+        echo "OK $KEY" || echo "FAIL (hmac-secret-set failed: $?)"
+    fi
+}
+
+echo 'OK Ready for input (type 'help' to get a usage help).'
+while read CMD ; do
+
+	unset BUFFER ACTION OBJECT ARG1 ARG2 ARG3 ARG4 # should we try to clean all possible ARGn?
+	parse_command "$CMD"
+	unset PASSWD_SRC
+	case "$ACTION" in
+		'q'|'quit')
+			break
+			;;
+		'?'|'help')
+			cat << EOF
+All commands are supplied in the form of ACTION:OBJECT:ARG1:ARG2:ARG3:BUFFER
+where ACTION is a command from the list below, OBJECT is usually a name of a
+user account or a repository name, BUFFER is any unparsed data beyond ARG3.
+
+The following command are implemented (things marked with '#' are missing):
+===
+quit      (q) - exit the interactive session gracefully
+help      (?) - print this help page
+repo-add  (>) - create a new repository
+              OBJECT - a repository name
+repo-del  (<) - remove an existing repository
+              OBJECT - a repository name
+user-add  (+) - add a user to the password database
+              OBJECT - a user name
+              ARG1   - a ssh keyfile
+user-del  (-) - delete a user from the password database
+              OBJECT - a user name
+perms-set (=) - set permissions on an object
+              OBJECT - a repository name (empty means all repositories)
+              ARG1   - a branch name (for b+-w only)
+              ARG2   - a user/group/alias for which permissions are set
+              ARG3   - permissions - r+r, r-r, b+w, b-w, b+c, b-c, r+p, r-p
+#             ARG4   - (optional) r or recursive
+hmac-set  (h) - set HMAC secret (per-user)
+              OBJECT - HMAC secret
+EOF
+			echo 'OK (help)'
+			;;
+		'>'|'repo-add')
+            repo_add
+			;;
+		'<'|'repo-del')
+            repo_del
+			;;
+		'+'|'user-add')
+            user_add
+			;;
+		'-'|'user-del')
+            user_del
+			;;
+		'='|'perms-set')
+            perms_set
+			;;
+		'h'|'hmac-set')
+            hmac_secret_set
+			;;
+		*)
+			echo "FAIL (Unknow action: '$ACTION', type 'help' to get help)"
+	esac
+done

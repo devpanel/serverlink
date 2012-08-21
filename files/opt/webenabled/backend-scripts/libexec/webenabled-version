@@ -1,0 +1,4 @@
+#!/bin/sh
+#dir=`dirname $0`
+#readlink "$dir/../../current"
+echo 2011-07-13-or-later

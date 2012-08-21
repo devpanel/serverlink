@@ -1,0 +1,87 @@
+#!/bin/sh
+# Options:
+#   -i pass mysql passwd via stdin
+
+dir=`dirname "$0"`
+
+options=""
+
+while getopts "i" OPTOPT
+do
+  case "$OPTOPT" in
+    i) options="-i";;
+    *) exit 1;
+  esac
+done
+shift `expr $OPTIND - 1`
+
+run()
+{
+  echo "  running $@"
+  "$@"
+}
+run2()
+{
+  echo "  running $@" >&2
+  "$@"
+}
+
+vhost="$1"
+archive_dir="$2"
+archive_my_cnf="$archive_dir/b_.my.cnf"
+user="b_$vhost"
+user_web="w_$vhost"
+date=`date  +'%Y%m%d'`
+
+if `id -u "$user" 2>/dev/null >/dev/null`
+then
+  echo "User must not exist: $user" >&2
+  exit 1
+fi
+
+echo Listing the databases...
+if ! list=`cat "$archive_dir/databases"`
+then
+  echo "Cannot read database list from $archive_dir/databases" >&2
+  exit 1
+fi
+
+# WARNING!!! createdb will not work properly if $HOME/.my.cnf exists!!!
+export HOME=/
+
+if [ -s "$archive_my_cnf" ]
+then
+  $dir/../../config/os/pathnames/opt/dbmgr/current/bin/createdb -c3 $options "$user" 3<"$archive_my_cnf" || exit 1
+else
+  $dir/../../config/os/pathnames/opt/dbmgr/current/bin/createdb $options "$user" || exit 1
+fi
+
+home="`eval \"echo ~$user\"`"
+if ! [ -d "$home" ]
+then
+  echo "Home dir $home does not exist" >&2
+  exit 1
+fi
+
+for database in $list
+do
+  archive_file="$archive_dir/$database.sql.gz"
+  if ! [ -r "$archive_file" ]
+  then
+     echo "Archive file $archive_file not found" >&2
+  fi
+  if [ o"$database" = o"mysql" -o o"$database" = o"information_schema" ]
+  then
+    echo Skipping database $database
+    continue
+  fi
+  echo "Restoring $database from $archive_file"
+  run2 $dir/dbmgr-mysql-as-root "$user" mysql "-B -e \"create database \\\`$database\\\`;\"" || exit 1
+  if ! zcat "$archive_file" | run2 $dir/dbmgr-mysql-as-root "$user" mysql "$database" 2>&1
+  then
+    echo "Aborting" >&2
+    exit 1
+  fi
+  echo "Granting all privileges on $database to $user_web"
+  run2 $dir/dbmgr-mysql-as-root "$user" mysql "-B -e \"grant all privileges on $database.* to '$user_web'@'%';\"" || exit 1
+done

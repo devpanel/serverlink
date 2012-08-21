@@ -1,0 +1,177 @@
+#!/bin/bash
+
+PATH="$PATH:/usr/local/sbin:/usr/local/bin"
+
+PASSWD_FILE=~/etc/passwd
+AUTHZ_FILE=~/etc/authz
+
+parse_command()
+{
+	local TMP_VAR
+	BUFFER="$1"
+	[ -z "$1" ] && return
+
+	trap 'trap - RETURN; export BUFFER' RETURN
+
+	ACTION="${BUFFER%%:*}"
+	export ACTION
+	TMP_VAR="${ACTION//\*/\*}"
+	BUFFER="${BUFFER#$TMP_VAR}"
+	[ "${BUFFER:0:1}" != ':' ] && return
+	BUFFER="${BUFFER#:}"
+
+	OBJECT="${BUFFER%%:*}"
+	export OBJECT
+	TMP_VAR="${OBJECT//\*/\*}"
+	BUFFER="${BUFFER#$TMP_VAR}"
+	[ "${BUFFER:0:1}" != ':' ] && return
+	BUFFER="${BUFFER#:}"
+
+	ARG1="${BUFFER%%:*}"
+	export ARG1
+	TMP_VAR="${ARG1//\*/\*}"
+	BUFFER="${BUFFER#$TMP_VAR}"
+	[ "${BUFFER:0:1}" != ':' ] && return
+	BUFFER="${BUFFER#:}"
+
+	ARG2="${BUFFER%%:*}"
+	export ARG2
+	TMP_VAR="${ARG2//\*/\*}"
+	BUFFER="${BUFFER#$TMP_VAR}"
+	[ "${BUFFER:0:1}" != ':' ] && return
+	BUFFER="${BUFFER#:}"
+
+	ARG3="${BUFFER%%:*}"
+	export ARG3
+	TMP_VAR="${ARG3//\*/\*}"
+	BUFFER="${BUFFER#$TMP_VAR}"
+	[ "${BUFFER:0:1}" != ':' ] && return
+	BUFFER="${BUFFER#:}"
+
+	ARG4="${BUFFER%%:*}"
+	export ARG4
+	TMP_VAR="${ARG4//\*/\*}"
+	BUFFER="${BUFFER#$TMP_VAR}"
+	[ "${BUFFER:0:1}" != ':' ] && return
+	BUFFER="${BUFFER#:}"
+}
+
+echo 'OK Ready for input (type 'help' to get a usage help).'
+while read CMD ; do
+
+	unset BUFFER ACTION OBJECT ARG1 ARG2 ARG3 ARG4 # should we try to clean all possible ARGn?
+	parse_command "$CMD"
+	unset PASSWD_SRC
+	case "$ACTION" in
+		'q'|'quit')
+			break
+			;;
+		'?'|'help')
+			cat << EOF
+All commands are supplied in the form of ACTION:OBJECT:ARG1:ARG2:ARG3:BUFFER
+where ACTION is a command from the list below, OBJECT is usually a name of a
+user account or a repository name, BUFFER is any unparsed data beyond ARG3.
+
+The following command are implemented (things marked with '#' are missing):
+===
+quit      (q) - exit the interactive session gracefully
+help      (?) - print this help page
+repo-add  (>) - create a new repository
+              OBJECT - a repository name
+repo-del  (<) - remove an existing repository
+              OBJECT - a repository name
+user-add  (+) - add a user to the password database
+              OBJECT - a user name
+              ARG1   - a password (will be generated if empty or missing)
+#             ARG2   - space separated group membership (empty means none)
+user-del  (-) - delete a user from the password database
+              OBJECT - a user name
+group-set (@) - group management (add/remove group members)
+              OBJECT - a group name
+              ARG1   - a user name prefixed with + or -
+alias-set (&) - alias management (add/remove user aliases)
+              OBJECT - an alias name
+              ARG1   - an alias body (use '-' to delete an alias)
+perms-set (=) - set permissions on an object
+              OBJECT - a repository name (empty means all repositories)
+              ARG1   - a path inside the repository
+              ARG2   - a user/group/alias for which permissions are set
+              ARG3   - permissions - r,rw,none or '-' to delete rule
+              ARG4   - (optional) r or recursive
+
+EOF
+			echo 'OK (help)'
+			;;
+		'>'|'repo-add')
+			[ ! -d ~/repos ] && mkdir ~/repos
+			if [ -n "$OBJECT" ]; then
+				if ! svnadmin create ~/repos/"$OBJECT"; then
+					echo 'FAIL (repo-add: svnadmin failed)'
+				else
+					ln -s /usr/local/bin/svn-post-commit ~/repos/"$OBJECT"/hooks/post-commit || echo 'WARNING (repo-add: failed to add a post-commit hook)'
+					echo OK
+				fi
+			else
+				echo 'FAIL (repo-add: no repository name was provided)'
+			fi
+			;;
+		'<'|'repo-del')
+			if [ -n "$OBJECT" ]; then
+				[ -d ~/repos/"$OBJECT" ] && rm -rf -- ~/repos/"$OBJECT" && echo OK || echo 'FAIL (repo-del: cannot delete the corresponding directory)'
+				# TODO: remove all authz links to the repo
+			else
+				echo 'FAIL (repo-add: no repository name was provided)'
+			fi
+			;;
+		'+'|'user-add')
+			[ ! -f "$PASSWD_FILE" ] && touch "$PASSWD_FILE"
+			if [ -n "$OBJECT" ]; then
+				if [ -z "$ARG1" ]; then
+					ARG1=$(/opt/webenabled/current/bin/passgen2 2>/dev/null)
+					[ -z "$ARG1" ] && ARG1=$(/opt/webenabled/current/bin/passgen 2>/dev/null)
+					PASSWD_SRC=random
+				fi
+				if [ -n "$ARG1" ]; then
+					htpasswd -mb "$PASSWD_FILE" "$OBJECT" "$ARG1" &>/dev/null && echo "OK${PASSWD_SRC:+ $ARG1}" || echo 'FAIL (user-add: htpasswd failed)'
+					# TODO: add user to groups specified in ARG2
+				else
+					echo "FAIL${PASSWD_SRC:+ (user-add: cannot find a suitable password generator)}${PASSWD_SRC:- (user-add: internal error)}"
+				fi
+			else
+				echo 'FAIL (user-add: no user name was provided)'
+			fi
+			;;
+		'-'|'user-del')
+			[ ! -f "$PASSWD_FILE" ] && touch "$PASSWD_FILE"
+			if [ -n "$OBJECT" ]; then
+				htpasswd -D "$PASSWD_FILE" "$OBJECT" &>/dev/null && echo OK || echo 'FAIL (user-del: htpasswd failed)'
+				# TODO: remove user from the authz file
+			else
+				echo 'FAIL (user-del: no user name was provided)'
+			fi
+			;;
+		'@'|'group-set')
+			if [ -n "$OBJECT" ]; then
+				manage-svn-authz "$AUTHZ_FILE" group "$OBJECT" "$ARG1" && echo OK || echo "FAIL (group-set: manage-svn-auth failed: $?)"
+			else
+				echo 'FAIL (group-set: invalid usage)'
+			fi
+			;;
+		'&'|'alias-set')
+			if [ -n "$OBJECT" ]; then
+				manage-svn-authz "$AUTHZ_FILE" alias "$OBJECT" "$ARG1" && echo OK || echo "FAIL (group-set: manage-svn-auth failed: $?)"
+			else
+				echo 'FAIL (alias-set: invalid usage)'
+			fi
+			;;
+		'='|'perms-set')
+			if [ -n "$ARG1" -a -n "$ARG2"  ]; then
+				manage-svn-authz "$AUTHZ_FILE" perms "${OBJECT:+$OBJECT:}$ARG1" ${ARG2:+"$ARG2"} ${ARG3:+"$ARG3"} ${ARG4:+"$ARG4"} && echo OK || echo "FAIL (perms-set: manage-svn-auth failed: $?"
+			else
+				echo 'FAIL (group-set: invalid usage)'
+			fi
+			;;
+		*)
+			echo "FAIL (Unknow action: '$ACTION', type 'help' to get help)"
+	esac
+done

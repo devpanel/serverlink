@@ -1,0 +1,18 @@
+#!/opt/php/current/bin/php-cgi
+<?php
+error_reporting(E_ALL ^ E_NOTICE);
+
+
+// take out the subdirectory part of the request
+if (!empty($_SERVER['ORIG_PATH_INFO'])) {
+        $pathname = $_SERVER['ORIG_PATH_INFO'];
+} else if (!empty($_SERVER['PATH_INFO'])) {
+        $pathname = $_SERVER['PATH_INFO'];
+} else return;
+
+$subdir = dirname($pathname);
+
+// we will work with absolute path only (security)
+if (is_string(strstr($subdir, '/../'))) return;
+chdir('/home/clients/websites/w_/public_html/phpmyadmin/current/' . $subdir) && require_once(basename($pathname));
+?>

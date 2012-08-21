@@ -1,0 +1,14 @@
+#!/bin/bash
+
+if [ -z "$SSH_ORIGINAL_COMMAND" ]; then
+	if [ -z "$1" ]; then
+		echo "Usage: $0 ACCOUNT"
+		exit 2
+	fi
+	SSH_ORIGINAL_COMMAND="$@"
+fi
+
+/usr/bin/getent passwd "$SSH_ORIGINAL_COMMAND" &>/dev/null || exit 1
+
+exec /bin/su - -s /bin/bash -c "/usr/local/sbin/manage-repo-user-git" "$SSH_ORIGINAL_COMMAND"
+echo "User $SSH_ORIGINAL_COMMAND does not exists"

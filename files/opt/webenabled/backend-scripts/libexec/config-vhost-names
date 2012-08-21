@@ -1,0 +1,61 @@
+#!/bin/sh
+error() { echo "ERROR${@+: }$@" >&2; exit 1; }
+dir=`dirname "$0"`
+ip=""
+ip_subdir=""
+while getopts "i:" OPTOPT
+do
+  case "$OPTOPT" in
+    i) ip=$OPTARG; ip_subdir="$ip/";;
+    *) exit 1;;
+  esac
+done
+shift `expr $OPTIND - 1`
+vhost="$1"
+user="w_$vhost"
+shift
+$dir/check-vhost-name archive "$vhost" || error
+config_dir="/opt/webenabled/config/vhosts/$vhost"
+name_dir="$config_dir/names"
+if ! [ -d "$name_dir" ]
+then
+  echo "Warning: creating $name_dir" >&2
+  mkdir -p "$name_dir" || error
+  chgrp -R "$user" "$config_dir" || error
+  chmod -R g+rX "$config_dir" || error
+fi
+mode=""
+default_name=`readlink $name_dir/default`
+if [ -n "$ip_subdir" -a ! -d "$ip_subdir" ]
+then
+  mkdir -p "$name_dir/$ip_subdir" || error
+  chgrp "$user" "$name_dir/$ip_subdir" || error
+  chmod g+rX "$name_dir/$ip_subdir" || error
+fi
+for i
+do
+  if echo "$i" | egrep -q "^[-+*]$"
+  then
+    mode="$i"
+    continue
+  fi
+  [ -n "$mode" ] || error "Usage: $0 VHOST {*|+|-} name [name ...]"
+  case $mode   in
+    '*') default_name="$i"
+         touch "$name_dir/$ip_subdir$default_name" || error
+         ln -snf "$default_name" "$name_dir/default" || error
+         chfn -f "$default_name" "$user";;
+    '+') touch "$name_dir/$ip_subdir$i" || error ;;
+    '-') [ o"$default_name" = o"$i" ] && error "Cannot remove the default name $i; change the default name first"
+         if [ -r "$name_dir/$ip_subdir$i" ]
+         then
+           rm -f "$name_dir/$ip_subdir$i"         
+         else
+           echo "Warning: $i was not defined, not removing anything" >&2
+         fi;;
+  esac
+done
+
+rmdir "$name_dir"/*/ 2>/dev/null
+
+$dir/config-vhost-apache "$vhost" || exit 1

@@ -1,0 +1,58 @@
+#!/bin/bash
+
+# 2009-06-16 grg: 
+#  * use ~/.webenabled/private/.htpasswd.phpmyadmin
+#  * option -f to get the pasword from ~/.mysql.passwd
+#  * pass the -m option to htpasswd
+
+config_dir=.webenabled/private
+htpasswd=$config_dir/.htpasswd.phpmyadmin
+if [ -r $config_dir/.mysql.passwd ]
+then
+  mysql_passwd=$config_dir/.mysql.passwd
+else
+  mysql_passwd=.mysql.passwd
+fi
+
+web_user=$(id -un 2>/dev/null)
+base_user=${web_user##w_}
+if [ -z "$base_user" ]; then
+	echo "$0: could not determine base user name"
+	exit 1
+fi
+
+base_user="b_$base_user"
+#if [ $(id -un "$base_user" 2>/dev/null) != "$base_user" ]; then
+#	echo "$0: the '$base_user' account does not seem to be exists"
+#	exit 1
+#fi
+
+if ! grep -E "^$base_user:" /opt/dbmgr/config/db-daemons.conf >& /dev/null ; then
+	echo "$0: could not find a MySQL daemon for the '$base_user' account"
+	exit 1
+fi
+
+if [ "`id -gn`" != "virtwww" ]; then
+	echo "$0: you have to switch under web account to fix phpMyAdmin instance"
+	exit 1
+fi
+
+if [ "`id -un`" == "root" ]; then
+	echo "$0: cannot run under supervisor account"
+	exit 1
+fi
+
+cd
+mkdir -m 0711 -p .webenabled
+mkdir -m 0711 -p $config_dir
+password="$1"
+if [ o"$password" = o"-f" ]
+then
+  output=`grep "^$web_user:" $mysql_passwd`
+  password=`echo "$output"|cut -d: -f2`
+  if [ -z "$password" ]; then echo Cannot obtain the password >&2; exit 1; fi
+fi
+set -e
+/opt/apache/current/bin/htpasswd -${password:+b}cm $htpasswd "$web_user" $password
+chmod 0644 $htpasswd
+

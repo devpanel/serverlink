@@ -1,0 +1,223 @@
+#!/bin/sh
+id='$Id: ised,v 1.6 1999/10/14 01:28:38 grg Exp $'
+
+#!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+# ПОСМОТРЕТЬ, почему /bin/sh прерывает скрипт на echo >/foobar !
+#!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!1
+
+case "$LANG" in
+ru_*)
+email='Григорий Строкин <grg@philol.msu.ru>'
+help()
+{
+echo "ised -- in-place sed
+Вызов: ised [ключи] КОМАНДНАЯ_СТРОКА [ \\| КОМ_СТРОКА ...] -- ФАЙЛ ...
+  Пропустить файл(-ы) через утилиту типа sed, tr и т. п. и заменить
+  содержимое файла(-ов) выводом(-ами) утилиты.
+  Чтобы объединить несколько утилит в pipe, перед \`|' нужно ставить \`\\'
+Ключи:
+  -e        Добавить к началу КОМАНДНОЙ_СТРОКИ 'sed -e' 
+  -f        Добавить к началу КОМАНДНОЙ_СТРОКИ 'sed -f'
+  -D DELIM  Использовать DELIM как разделитель между КОМАНДНОЙ_СТРОКОЙ и
+            ФАЙЛАМИ вместо \`--'
+  -P PSIGN  Использовать PSIGN вместо \`\\|' для объединения в pipe
+  -p        Сохранять права файлов (использовать \`cat >' вместо of \`mv')
+            и создавать временные файлы в \${TMPDIR-/tmp} (МЕДЛЕННЕЕ)
+              Если -p не указано, ised удаляет hard links, а временные
+              файлы создает в той же директории, что и обрабатываемый
+              файл, чтобы \`mv' можно было сделать быстро
+  -r        Сохранять резервные копии с помощью RCS (ci -l -f -q)
+  -b        Сохранять резервные копии с именами ФАЙЛ~ (пока нету)
+  -h        Показать подсказку и закончить работу
+  -v        Показать номер версии и закончить работу
+Примеры:
+  ised -e \"s/\.htm\'/.html\'/g\" -- *.html
+    (1) Заменить кривые ссылки <a href=\"xxx.htm\"> на <...xxx.html\">
+        во всех html-файлах
+  ised tr -d '\\r' -- *.txt
+    (2) Перевести концевые символы строк из формата DOS в UNIX
+  ised cyr2cyr win koi8 -- *.txt
+    (3) Запустить cyr2cyr (C) Ласкавый  для перевода русских текстов из
+        CP1251 в КОИ8
+  ised tr -d '\\r' \\| cyr2cyr win koi8 -- *.txt
+    (4) Объединить (2) и (3) через pipe.  NB: перед \`|' нужен \`\\'
+
+Посылайте комментарии и патчи: $email
+"
+exit 0
+}
+;;
+*)
+email='Grigoriy Strokin <grg@philol.msu.ru>'
+help()
+{
+echo "ised -- in-place sed
+Usage: ised [options] COMMAND_LINE [ \\| COMMAND_LINE ..] -- FILE ...
+  Pass file(-s) to an utility such as sed, tr etc. and replace the contents
+  of the file(-s) with the output(-s) of the utility. In order to join
+  several utilities into a pipe, pipe sign must be escaped.
+Options:
+  -e        Prepend 'sed -e' to the COMMAND_LINE
+  -f        Prepend 'sed -f' to the COMMAND_LINE
+  -D DELIM  Use DELIM arg as a delimiter of COMMAND_LINE and FILES
+            instead of \`--'
+  -P PSIGN  Use PSIGN arg as a pipe sign instead of \`\\|'
+  -p        Preserve file permissions (use \`cat >' instead of \`mv'), and 
+            use \${TMPDIR-/tmp} for temporary files (SLOW for large files)
+              If -p is not specified, ised removes hard links, and creates
+              temporary files in the directory the file being processed is
+              in, so that \`mv' be done quickly.
+  -r        Save backup copies using RCS (ci -l -f -q)
+  -b        Save backup copies in files named FILE~ (not implemented yet)
+  -h        Display this help and exit
+  -v        Output version information and exit
+Examples:
+  ised -e \"s/\.htm\'/.html\'/g\" -- *.html
+    (1) Replace lame <a href=\"xxx.htm\"> references with xxx.html ones in
+        all.html files
+  ised tr -d '\\r' -- *.txt
+    (2) Convert newlines in all text files from DOS format to UNIX
+  ised cyr2cyr win koi8 -- *.txt
+    (3) Use cyr2cyr (C) Laskavy  to convert cyrillic texts from 
+        CP1251 codepage to KOI8
+  ised tr -d '\\r' \\| cyr2cyr win koi8 -- *.txt
+    (4) Use pipe to do (2) and (3) jointly. NB: \`|' must be escaped.
+
+Send comments and bug reports to $email
+"
+exit 0
+}
+;;
+esac 
+
+# Interesting things with hardlinks (ln file1 file2; touch file3)
+#    - cp file3 file2 preserves the link
+#    - mv file3 file2 removes the link
+#    - perl -i -lpe '1' file2 removes the link
+# The same with symlinks
+#
+
+version()
+{
+echo -n 'ised version '
+echo -n $id| 
+sed 's|^.*ised,v  *\([0-9.]\{1,\}\) *\([0-9]\{1,\}\)/.*$|\1, \2|'
+echo " $email"
+exit 0
+}
+
+
+optstring="vhcpefP:D:r"
+pipe_sign="|"
+delim="--"
+
+while getopts $optstring OPTOPT
+do
+  eval opt_$OPTOPT=1 2>/dev/null
+  case "$OPTOPT" in
+    P) pipe_sign=$OPTARG;;
+    D) delim=$OPTARG;;
+    e) sed_opt=e;;
+    f) sed_opt=f;;
+    h) help;;
+    v) version;;
+    "?") exit 1;;
+  esac
+done
+
+shift `expr $OPTIND - 1`
+
+[ $# = 0 ] && help
+
+
+[ -n "$sed_opt" ] && args="sed -$sed_opt "
+
+: ${TMPDIR=/tmp}
+
+while [ $# != 0 -a "$1"O != "$delim"O ]
+do
+  [ "$1"O = "$pipe_sign"O ] && \
+    arg="|" || arg="'`echo \"$1\"|sed \"s/'/'\\\\''/g\"`'"
+  args="$args$arg "
+  shift
+done
+
+if [ "$1"O != "$delim"O ]
+then
+  echo "ised: No \`$delim' found at the command line"\
+       "or empty command before \`$delim'" >&2
+  exit 1
+fi
+
+shift
+
+cleanup()
+{
+   rm -f $tmp
+}
+
+trap 'cleanup; exit 1' 2
+
+maketemp()
+{
+  n="$1"
+  while [ -e "$n" ]; do n="$n~"; done
+  tmp="$n"
+}
+
+save_rcs()
+{
+cat <<EOF | ci -l -f -q "$1"
+A backup copy of $1 automatically generated by \`ised' before applying the
+following script:
+#---
+$args
+#---
+EOF
+}
+
+while [ -n "$1" ]
+do
+    if [ -f "$1" -a ! -h "$1" ]
+    then
+      if [ -n "$opt_r" ]
+      then
+        case "$1" in
+        *,v) echo "ised: Skipping $1: attempt to garble an RCS file"\
+                  "despite of the -r option" >&2
+             shift; continue;;
+        *) if ! save_rcs "$1"
+           then
+             echo "ised: Cannot save backup copy of \`$1',"\
+                  "file not modified" >&2
+             shift; continue;
+           fi;;
+        esac
+      fi
+      if [ -z "$opt_p" ]
+      then
+         dir="`dirname "$1"`"
+         [ -w "$dir" ]; mvmode=$?
+      else
+         mvmode=1
+      fi
+      case $mvmode in
+        0) maketemp "$dir/ised$$";;
+        1) maketemp "$TMPDIR/ised$$";;
+      esac
+      if eval "$args" <"$1" >"$tmp" 
+      then
+        case $mvmode in
+          0) mv -f "$tmp" "$1";;
+          *) cat "$tmp" >"$1"
+             rm "$tmp";;
+        esac
+      else
+        echo "ised: Error processing \`$1', file not modified" >&2
+        rm -f $tmp
+      fi
+    else
+      echo "ised: Skipping" `file "$1"`", not a regular file" >&2
+    fi
+  shift
+done

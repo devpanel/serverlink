@@ -1,0 +1,84 @@
+#!/bin/sh
+# set -x
+
+sed_escape() {
+  local str="$1"
+  local escaped="$str"
+
+  escaped=${escaped//\'/\\\'}
+  escaped=${escaped//\//\\\/}
+  escaped=${escaped//\;/\\\;}
+  escaped=${escaped//\[/\\\[}
+  escaped=${escaped//\]/\\\]}
+  escaped=${escaped//\\+/+]}
+  escaped=${escaped//\\\(/\(}
+  escaped=${escaped//\\\)/\)}
+
+  builtin echo "$escaped"
+}
+
+usage() {
+  local prog=$(basename "$0")
+  cat << EOF
+
+Removes the lines from ~/public_html/.htaccess to remove password protection from the given vhost
+
+Usage: $prog [ options ] <vhost>
+
+  Options:
+    -b  <string>          sets the initial string delimiter
+    -B  <string>          sets the ending  string delimiter
+
+EOF
+
+  exit 1
+}
+
+# main()
+lock_start_str='# Start of CE Password Protect'
+lock_end_str='# End of CE Password Protect'
+
+[ $# -lt 1 ] && usage
+
+getopt_flags='b:B:R:'
+while getopts $getopt_flags OPT ; do
+  case "$OPT" in
+    b)
+      lock_start_str="$OPTARG"
+      ;;
+    B)
+      lock_end_str="$OPTARG"
+      ;;
+    ?)
+      usage
+      ;;
+  esac
+done
+[ -n "$OPTIND" -a $OPTIND -gt 1 ] && shift $(( $OPTIND - 1 ))
+
+dir=`dirname $0`
+[ "$dir" == "." ] && dir="$PWD"
+dir_bin="$dir/../bin"
+vhost="$1"
+user="w_$vhost"
+
+# using mode archive: it's OK to operate on a locked vhost
+$dir/check-vhost-name archive "$vhost" || exit 1
+
+status=$("$dir/htaccess-lock-status-vhost" "$vhost")
+if [ "$status" == "0" ]; then
+  echo "Warning: vhost not locked." 1>&2
+  exit 0
+else
+  su -l -c 'sed -i -e '\''/'"$(sed_escape "$lock_start_str")"'/,/'"$(sed_escape "$lock_end_str")"'/d'\'' ~/public_html/.htaccess' "$user"
+  status=$?
+
+  if [ $status -eq 0 ]; then
+    echo "Successfully removed password protection from vhost." 1>&2
+    exit 0
+  else
+    echo "Error: unable to unlock the given vhost. sed returned $status."
+    exit $status
+  fi
+fi
+exit 0

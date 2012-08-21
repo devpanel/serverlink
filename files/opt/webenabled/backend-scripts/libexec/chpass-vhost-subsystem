@@ -1,0 +1,30 @@
+#!/bin/sh
+dir=`dirname $0`
+dir_bin="$dir/../bin"
+case "$0" in
+  *-drupal) addon=-sdrupal;;
+  *-joomla) addon=-sjoomla;;
+  *-wordpress) addon=-swordpress;;
+  *-magento) addon=-smagento;;
+  *-projectpier) addon=-sprojectpier;;
+  *-mantis) addon=-smantis;;
+  *-scratch) addon=-sscratch;;
+  *-silverstripe) addon=-ssilverstripe;;
+  *-limesurvey) addon=-slimesurvey;;
+  *-zencart) addon=-szencart;;
+  *-vanillaforums) addon=-svanillaforums;;
+  *-mediawiki) addon=-smediawiki;;
+  *-opencart) addon=-sopencart;;
+  *-pivotx) addon=-spivotx;;
+  *-moodle) addon=-smoddle;;
+  *-subsystem) :;;
+  *) echo "Invalid subsystem" >&2; exit 1;;
+esac
+for i
+do
+  vhost="$i"
+done
+user="w_$vhost"
+# using mode archive: it's OK to operate on a locked vhost
+$dir/check-vhost-name archive "$vhost" || exit 1
+su -l -c "$dir_bin/restore-vhost-subsystem $addon $*" "$user"

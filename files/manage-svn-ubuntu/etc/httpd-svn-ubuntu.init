@@ -1,0 +1,105 @@
+#!/bin/bash
+### BEGIN INIT INFO
+# Provides:          httpd-svn
+# Required-Start:    $local_fs $remote_fs $network $syslog
+# Required-Stop:     $local_fs $remote_fs $network $syslog
+# Default-Start:     2 3 4 5
+# Default-Stop:      0 1 6
+# X-Interactive:     true
+# Short-Description: Start/stop httpd svn web server
+### END INIT INFO
+# set -x
+
+# Start httpd in the C locale by default.
+HTTPD_LANG=${HTTPD_LANG:-C}
+
+# This will prevent initlog from swallowing up a pass-phrase prompt if
+# mod_ssl needs a pass-phrase from the user.
+INITLOG_ARGS=
+
+#HTTPD_SVN="${HTTPD:-/usr/sbin/httpd}"
+HTTPD_SVN="${HTTPD:-/usr/sbin/apache2}"
+#HTTPD_SVN_CONFIG=/etc/httpd/conf/httpd-svn.conf
+HTTPD_SVN_CONFIG=$("$HTTPD_SVN" -V |grep SERVER_CONFIG_FILE=)
+HTTPD_SVN_CONFIG=${HTTPD_SVN_CONFIG##* SERVER_CONFIG_FILE=}
+HTTPD_SVN_CONFIG=${HTTPD_SVN_CONFIG#\"}
+HTTPD_SVN_CONFIG=${HTTPD_SVN_CONFIG%\"}
+
+CONFDIR="${HTTPD_SVN_CONFIG%/*}/repos"
+
+# pickup environment variables
+[ -f "${HTTPD_SVN_CONFIG%/*}/envvars" ] && . "${HTTPD_SVN_CONFIG%/*}/envvars"
+
+COMMAND="$1"
+[ -n "$COMMAND" ] && shift
+ACCOUNTS="$*"
+if [ -z "$ACCOUNTS" ]; then
+	for f in "$CONFDIR"/*.conf; do
+		NAME=$(basename $f)
+		ACCOUNTS="${ACCOUNTS:+$ACCOUNTS }${NAME%.conf}"
+	done
+fi
+
+# Count number of accounts
+COUNT=0; for a in $ACCOUNTS; do COUNT=$((COUNT + 1)); done
+
+# Fix command
+[ x"$COMMAND" == xreload ] && COMMAND=graceful
+
+[ -n "$COMMAND" -a "$COUNT" -gt 1 ] && echo "Operating with $COUNT account(s):"
+
+RESULT=3 # UNKNOWN
+case "$COMMAND" in
+	start|restart|graceful|graceful-stop|stop)
+		for a in $ACCOUNTS; do
+			if [ ! -s "$CONFDIR/$a.conf" ]; then
+				echo "- $a (no config file or file is empty)"
+				[ $RESULT -gt 2 ] && RESULT=2
+				continue
+			fi
+			$HTTPD_SVN -f "$HTTPD_SVN_CONFIG" -c "Include \"$CONFDIR/$a.conf\"" -k "$COMMAND" >/dev/null
+			ERRNO="$?"
+			if [ $ERRNO -ne 0 ]; then
+				echo "! $a (error code: $ERRNO)"
+				[ $RESULT -gt 2 ] && RESULT=2
+				continue
+			fi
+			echo "+ $a"
+		done
+		;;
+	check|check-verbose)
+		for a in $ACCOUNTS; do
+			if [ ! -s "$CONFDIR/$a.conf" ]; then
+				echo "- $a (no config file or file is empty)"
+				[ $RESULT -gt 2 ] && RESULT=2
+				continue
+			fi
+			if [ x"$COMMAND" == xcheck ]; then
+				$HTTPD_SVN -f "$HTTPD_SVN_CONFIG" -c "Include \"$CONFDIR/$a.conf\"" -t &>/dev/null
+			else
+				$HTTPD_SVN -f "$HTTPD_SVN_CONFIG" -c "Include \"$CONFDIR/$a.conf\"" -t
+			fi
+			ERRNO="$?"
+			if [ $ERRNO -ne 0 ]; then
+				if [ x"$COMMAND" == xcheck ]; then
+					echo "! $a (run 'check-verbose $a' to see diagnostics)"
+				else
+					echo "! $a (check the messages above for explanation)"
+				fi
+				[ $RESULT -gt 2 ] && RESULT=2
+				continue
+			fi
+			echo "+ $a"
+		done
+		;;
+	status)
+		echo "? unimplemented yet :("
+		exit $RESULT
+		;;
+	*)
+		echo "Usage: httpd-svn {start|stop|status|restart|reload|check} [accounts]"
+		exit $RESULT
+esac
+[ "$RESULT" == '2' -a "$COUNT" == '1' ] && RESULT=1 # single vhost call failed
+[ "$RESULT" == '3' ] && RESULT=0 # we know that there was no errors
+exit $RESULT

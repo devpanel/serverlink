@@ -1,0 +1,141 @@
+#!/usr/bin/perl -w
+
+#
+# Usage: daemon-add --user --type --version --datadir --ip --port --limits --contact --comment --interactive --all
+#
+use strict;
+use FindBin;
+use lib "$FindBin::Bin/../lib";
+
+use dbMgr::Log;
+use dbMgr::Config;
+use POSIX 'setsid';
+use Socket;
+use Cwd 'abs_path';
+use Getopt::Long;
+use Dumpvalue;
+
+my $interactive = 0;
+my %options = ();
+
+# Sys::Syslog::setlogsock('unix');
+my $log = new dbMgr::Log($FindBin::Script, 'pid,cons,nowait', 'user');	$log->debug("initializing");
+my $bin_dir = "$FindBin::Bin/";					$log->debug("bin_dir = '%s'", $bin_dir);
+my $etc_dir = abs_path("$bin_dir/../../config") . "/";		$log->debug("etc_dir = '%s'", $etc_dir);
+my $config = new dbMgr::Config($etc_dir);			$log->debug("configuration files were parsed successfully");
+
+sub help {
+    print "\
+Usage: " . $FindBin::Script . " [options]
+
+Options:
+
+--interactive|-i	Interactive mode (unimplemented)
+--user|-u		System account for database daemon
+--type|-t		Database type
+--version|-v		Database version
+--datadir|-d		Database daemon data directory
+--host|-h		Database daemon host
+--port|-p		Database daemon port
+--limits|-l		Database daemon limits (unimplemented)
+--contact|-c		Contact person (unimplemented)
+--comment|-z		Database daemon comment (unimplemented)
+--help|-?		This help
+
+";
+exit 0
+
+}
+
+my $result = GetOptions(
+	"interactive|i!"	=> \$interactive,
+	"user|u=s"		=> \$options{user},
+	"type|t=s"		=> \$options{type},
+	"version|v=s"		=> \$options{version},
+	"datadir|d=s"		=> \$options{datadir},
+	"host|h=s"		=> \$options{host},
+	"port|p=i"		=> \$options{port},
+#	"limits|l=s"		=> \$options{limits},
+#	"contact|c=s"		=> \$options{contact},
+#	"comment|z=s"		=> \$options{comment},
+	"help|?"		=> sub { &help; }
+			);
+
+my $work_config = $config->select("user", "."); # Clone config
+
+foreach my $key (keys %options) {
+    if (defined $options{$key}) {
+	$work_config = $work_config->select($key, "^" . $options{$key} . "\$");
+    }
+}
+
+if (defined($work_config->{daemons})) {
+    print "Error: specified daemon already defined in the configuration file\n";
+    exit 1;
+}
+
+$options{password} = undef;
+
+unless ($config->add_daemon(\%options, 1)) {
+    print "Error: cannot add to config object\n";
+    exit 1;
+}
+
+# check supplied user
+# XXX: implementation needed!
+
+# user must be defined here!
+if (getpwnam($options{user})) { # user already exists
+    die "Sorry, unimplemented ";
+}
+else {
+    my $add_user_cmd="/usr/sbin/useradd -d /home/clients/databases/" . $options{user} . " -s /bin/false -m " . $options{user};
+    print "Creating user '" . $options{user} . "' ... ";
+    my $result = system $add_user_cmd;
+
+    unless ($? == 0) {
+	if ($? == -1) {
+	    print "failed to execute: $!\n";
+	}
+	elsif ($? & 127) {
+	    printf "child died with signal %d, %s coredump\n",
+	    ($? & 127),  ($? & 128) ? 'with' : 'without';
+	}
+	else {
+	    printf "child exited with value %d\n", $? >> 8;
+	}
+	die "Vse ochen' ploho :( "
+    }
+    print "Done\n";
+}
+
+# Check database directory (create it if necessary)
+{
+    my $user_datadir = $options{datadir} ? $options{datadir} : "/home/clients/databases/" . $options{user} . "/" . $options{type};
+    my $create_skel_cmd=$bin_dir . "/daemon-add." . $options{type} . " --user='" . $options{user} . "' --datadir='" . $options{datadir} . "' --version='" . $options{version} . "'";
+    print "Creating SQL skeleton directory '" . $options{datadir} . "' ... ";
+    print "RUNNING: $create_skel_cmd\n";
+    my $result = system $create_skel_cmd;
+
+    unless ($? == 0) {
+	if ($? == -1) {
+	    print "failed to execute: $!\n";
+	}
+	elsif ($? & 127) {
+	    printf "child died with signal %d, %s coredump\n",
+	    ($? & 127),  ($? & 128) ? 'with' : 'without';
+	}
+	else {
+	    printf "child exited with value %d\n", $? >> 8;
+	}
+	die "Vse ochen' ploho :( "
+    }
+    print "Done\n";
+}
+
+unless ($config->write_daemon()) {
+    print "Error: cannot write object to daemons config\n";
+    exit 1;
+}
+
+print "\nAdded. Do not forget to startup this daemon with daemon-start and create controling user with user-add\n";

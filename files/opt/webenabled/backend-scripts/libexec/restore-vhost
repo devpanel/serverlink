@@ -1,0 +1,149 @@
+#!/bin/bash
+# Options:
+#   -P replicate w_* user's password
+#   -p do not reset web application passwords
+#   -i pass mysql passwd via stdin
+#   -n do not activate apache vhost (used for hosting_link)
+
+error()
+{
+  echo "ERROR${1+: }$@" >&2
+  exit 1
+}
+
+options=""
+subsystem_options=""
+opt_i=0 opt_p=0
+
+while getopts "Ppin" OPTOPT
+do
+  case "$OPTOPT" in
+    P) options="$options${options+ }-P";;
+    p) opt_p=1; subsystem_options="$subsystem_options${subsystem_options+ }-n";;
+    i) opt_i=1;;
+    n) options="$options${options+ }-n";;
+    *) exit 1;
+  esac
+done
+shift `expr $OPTIND - 1`
+
+dir=`dirname "$0"`
+dir_bin="$dir/../bin"
+vhost="$1"
+config_dir="/opt/webenabled/config/vhosts/$vhost"
+user_web="w_$vhost"
+home="`eval \"echo ~$user_web\"`" || error
+user_db="b_$vhost"
+archive_dir="$2"
+vhost_config_dir=.webenabled/private
+shift
+shift
+run()
+{
+  echo "  Running $@"
+  "$@"
+}
+run2()
+{
+  echo "  Running $@" >&2
+  "$@"
+}
+run_su()
+{
+  echo "  running su -l -c '$@' $user_web" >&2
+  su -l -c "$*" "$user_web"
+}
+
+usage()
+{
+  echo "Usage: restore-vhost VHOST ARCHIVE_LABEL" >&2
+  exit 1
+}
+
+$dir/check-vhost-name restore "$vhost" || usage
+
+password="";
+if [ $opt_i = 1 ]
+then
+  read -r password || exit 1
+  [ -n "$password" ] || exit 1
+fi
+
+TMPDIR=""
+
+cleanup()
+{
+  if [ -n "$TMPDIR" ] && [ -d "$TMPDIR" ]
+  then
+    echo "Removing temporary archive $TMPDIR"
+    rm -rf "$TMPDIR"
+  fi
+}
+
+if [ o"$archive_dir" = o"-" ]
+then
+        TMPDIR=`$dir/archive-mktemp restore-vhost` || exit 1
+        trap 'cleanup' HUP INT QUIT ILL TRAP ABRT BUS FPE KILL SEGV PIPE STOP ALRM TERM EXIT
+        tar -C "$TMPDIR" -zxpf -  || exit 1
+        archive_dir="$TMPDIR"
+fi
+
+echo Processing web...
+run $0-web $options "$vhost" "$archive_dir/web" "$@" || exit 1
+if ! [ -d "$archive_dir/db" ]
+then
+  echo "Skipping db (not present in the archive)"
+  exit 0
+fi
+echo Processing db...
+if [ $opt_i = 1 ]
+then
+  output=`echo "$password" | run $0-db -i "$vhost" "$archive_dir/db" 2>&1`
+  status=$?
+else
+  output=`run $0-db "$vhost" "$archive_dir/db" 2>&1`
+  status=$?
+fi
+echo "$output"
+[ $status = 0 ] || exit $status
+echo "Updating .mysql.passwd"
+run_su "mkdir -p -m 0711 .webenabled" || exit 1
+run_su "mkdir -p -m 0711 $vhost_config_dir" || exit 1
+output2=`echo "$output"|sed -n 's/^.*user='\''\([^'\'']\{1,\}\)'\'' password='\''\(.\{1,\}\)'\''.*/\1:\2/p'` || exit 1
+echo "$output"|sed -n 's/^.*user='\''\(w_[^'\'']\{1,\}\)'\'' password='\''\(.\{1,\}\)'\''.*/webenabled_private_mysql_password \1:\2/p' || exit 1
+output3=$(echo "$output"|sed -n 's/\\/\\\\/g;s/^.* host='\''\([^:'\'']\{1,\}\):\([0-9]\{1,\}\)'\'' user='\''\(w_[^'\'']\{1,\}\)'\'' password=\('\''.\{1,\}'\''\).*/[client]\
+host=\1\
+port=\2\
+user=\3\
+password=\4/p') || exit 1
+echo "$output2" | run_su "cat >$vhost_config_dir/.mysql.passwd" || exit 1
+run_su "ln -snf $vhost_config_dir/.mysql.passwd .mysql.passwd" || exit 1
+# we have already escaped \ as \\. now let's escape ' as \'
+echo "$output3" | sed '/^password='\''\(.*\)'\''/{
+s//\1/
+s/'\''/\\&/g
+s/.*/password='\''&'\''/
+}'|run_su "cat >$home/.my.cnf" || exit 1
+run_su $dir_bin/phpMyAdmin.fix -f || exit 1
+run_su $dir_bin/vhost-archive.fix -f || exit 1
+for subsystem in drupal joomla wordpress magento projectpier mantis scratch omb elgg silverstripe limesurvey zencart redmine vanillaforums mediawiki pivotx opencart moodle
+do
+  if [ $opt_p = 0 ]
+  then
+    run_su rm -f $subsystem.passwd $vhost_config_dir/$subsystem.passwd || exit 1
+  fi
+  if grep -q "^$subsystem\$" "$archive_dir/db/databases"
+  then
+    run_su $dir_bin/restore-vhost-subsystem $subsystem_options -I -s "$subsystem" || exit 1
+  fi
+done
+
+run_su 'if [ -r $HOME/etc/rc.webenabled.restore ]; then /bin/sh $HOME/etc/rc.webenabled.restore; fi' || exit 1
+run_su 'if [ -r $HOME/etc/rc.webenabled.local ]; then /bin/sh $HOME/etc/rc.webenabled.local; fi' || exit 1
+
+if [ -r /opt/webenabled/config/features/enabled/cloud9 ]
+then
+  su -lc 'port=`sed -n "s/^port=//p" $HOME/.my.cnf`; echo "RewriteCond %{REQUEST_URI} !^/-ctl"; echo "RewriteRule ^/(.*) http://127.0.0.2:$port/\$1 [P]"' $user_web >$config_dir/apache-include/cloud9 || exit 1
+  su -lc /opt/webenabled/compat/cloud9/bin/webenabled-cloud9-start.sh $user_web || exit1
+  "$dir/config-vhost-names" "$vhost" || exit 1
+fi

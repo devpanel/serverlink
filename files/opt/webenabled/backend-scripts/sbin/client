@@ -1,0 +1,67 @@
+#!/bin/bash
+# busybox-type script:
+# all webenabled commands on the client side are symlinked to it
+error()
+{
+  echo "ERROR${@+: }$@" >&2
+  exit 1
+}
+
+remote_cmdline=""
+basename=`basename "$0"`
+
+# if we are run as 'client', the remote command name is in $1;
+# otherwise, it is the basename of $0
+if [ o"$basename" = o"client" ]
+then
+  basename="$1"
+  shift
+fi
+remote_user=r_we
+global_identity=/opt/webenabled/config/ssh/global
+local_identity=/opt/webenabled/config/ssh/local
+remote_server=localhost
+[ -n "$WEBENABLED_SERVER" ] && remote_server="$WEBENABLED_SERVER"
+
+if [ -r "$global_identity" ]
+then
+  identity="$global_identity"
+else
+  identity="$local_identity"
+fi
+
+if [ -n "$WEBENABLED_IDENTITY" ]
+then
+  [ -r "$WEBENABLED_IDENTITY" ] || error "identity not found"
+  identity="$WEBENABLED_IDENTITY"
+fi
+
+unset i
+for i in "$basename" "$@"
+do
+  # FIXME: really evil hack!! But what would be a right way?
+  # The trouble here is ssh, which concatenates all arguments and passes them as sh -c 'COMMAND LINE'
+  declared_i=`declare -p i`; 
+  quoted_i="${declared_i#declare -- i=}"
+  if [ o"$quoted_i" = o"$declared_i" ]; then echo Error parsing arguments >&2; exit 1; fi
+  remote_cmdline="$remote_cmdline${remote_cmdline:+ }$quoted_i"
+done
+
+
+#echo ssh -T -2 -q -o 'BatchMode yes' -o 'StrictHostKeyChecking no' -i "$identity" -l "$remote_user" "$remote_server" "$remote_cmdline" >&2
+ssh -T -2 -q -o 'BatchMode yes' -o 'StrictHostKeyChecking no' -i "$identity" -l "$remote_user" "$remote_server" "$remote_cmdline"
+status=$?
+[ $status = 255 ] || exit $status
+
+# backward compatibility with servers where rsa1 keys are installed
+
+echo "ssh2/rsa failed, resorting to ssh1/rsa" >&2
+
+if [ -r "$global_identity.rsa1" ]
+then
+  identity="$global_identity.rsa1"
+else
+  identity="$local_identity.rsa1"
+fi
+
+ssh -T -1 -q -o 'BatchMode yes' -o 'StrictHostKeyChecking no' -i "$identity" -l "$remote_user" "$remote_server" "$remote_cmdline"

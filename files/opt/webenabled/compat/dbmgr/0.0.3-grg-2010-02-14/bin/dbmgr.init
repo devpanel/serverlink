@@ -1,0 +1,45 @@
+#!/bin/sh
+#
+# chkconfig: 2345 51 49
+# description: \
+#	there is no description of dbmgr yet
+# processname: dbmgr.init
+
+# Source function library.
+. /etc/rc.d/init.d/functions
+
+OWL_STARTUP_ENABLE=1
+
+self="$0"
+n=0
+while [ -h "$self" ]
+do
+ self=`readlink "$self"`
+ n=`expr $n + 1`
+ [ $n -ge 10 ] && break
+done
+
+dir=`dirname "$self"`
+
+case "$1" in
+start)
+	$dir/daemon-start
+	;;
+stop)
+	killall mysqld
+	#/opt/dbmgr/current/bin/daemon-stop
+	sleep 5
+	;;
+restart)
+	$0 stop
+	$0 start
+	;;
+status)
+	$dir/daemon-status --summary
+	;;
+*)
+	echo "Usage: dbmgr {start|stop|restart|status}"
+	exit 1
+esac
+
+exit $?

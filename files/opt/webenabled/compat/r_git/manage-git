@@ -1,0 +1,127 @@
+#!/bin/bash
+
+GIT_SHELL_WRAPPER=/usr/local/bin/git-shell-wrapper
+WEBREADER_GROUP="w_cgit"
+
+if [ -z "$SSH_ORIGINAL_COMMAND" ]; then
+        if [ -z "$1" ]; then
+                echo "Usage: $0 [+|-]ACCOUNT"
+                exit 1
+        fi
+        SSH_ORIGINAL_COMMAND="$@"
+fi
+
+user_add()
+{
+		GIT_HOME=/home/clients/repos
+
+		if ! /usr/sbin/useradd -m -d "$GIT_HOME/$ACCOUNT" "$ACCOUNT" \
+                ; then
+                #-s "$GIT_SHELL_WRAPPER" ; then
+			echo "FAIL (cannot add account '$ACCOUNT' 1)"
+			RESULT=6
+			exit
+		fi
+		if ! su - -s /bin/bash -c "\
+                mkdir ~/repos
+                mkdir ~/.ssh/
+                touch ~/.ssh/authorized_keys
+		chmod -R go= ~/.ssh
+                echo 'scan-path=$GIT_HOME/$ACCOUNT/repos/' >~/repos/cgitrc
+                chmod a+rX -R ~/repos/
+                chmod g+x ~
+                chmod o-rwx ~
+        " "$ACCOUNT" ; then
+			echo "FAIL (error configuring account '$ACCOUNT' 2)"
+			RESULT=6
+			exit
+		fi
+
+        # For cgit
+        if ! chgrp $WEBREADER_GROUP $GIT_HOME/$ACCOUNT/{,repos,repos/cgitrc}; then
+			echo "FAIL (error configuring account '$ACCOUNT' 3)"
+			RESULT=6
+			exit
+        fi
+		echo OK
+		RESULT=0
+}
+
+user_del()
+{
+    if ! getent passwd "$ACCOUNT" &>/dev/null; then
+        echo "FAIL (system account '$ACCOUNT' does not seem to exist)"
+        RESULT=7
+        exit
+    fi
+    if /usr/sbin/userdel -r "$ACCOUNT"; then
+        echo OK
+        RESULT=0
+    else
+        echo "FAIL (userdel failed)"
+        RESULT=8
+    fi
+}
+
+BUFFER="$SSH_ORIGINAL_COMMAND"
+
+ACCOUNT="${BUFFER%%:*}"
+MODE="${ACCOUNT:0:1}"
+[ -n "$MODE" ] || exit 2
+[ "$MODE" == '+' -o "$MODE" == '-' ] || exit 3
+ACCOUNT="${ACCOUNT:1}"
+
+# Is account sane?
+# The length is checked roughly, real limit should be set in /etc/login.defs
+
+[ -n "$ACCOUNT" -a "${#ACCOUNT}" -le 50 ] || exit 4
+echo "$ACCOUNT" | grep -Exq "[a-zA-Z0-9][a-zA-Z0-9_-]*" || exit 4
+BUFFER="${BUFFER#$MODE$ACCOUNT}"
+
+# === Locking part A starts  ===
+CONFFILE=/var/run/git-manage
+LOCKFILE="$CONFFILE.lock"
+DEADLOCK_TIME=600
+RESULT=255
+LOCK_TRIES=0
+
+
+while [ $LOCK_TRIES -le 10 ]; do
+    if ln -s "$CONFFILE" "$LOCKFILE" &>/dev/null ; then
+        trap 'rm "$LOCKFILE" ; trap - EXIT ; exit 255' HUP INT QUIT ABRT KILL SEGV PIPE
+        trap 'rm "$LOCKFILE" ; trap - EXIT ; exit $RESULT' EXIT
+        # === Locking part A ends  ===
+        case "$MODE" in
+            '+')
+                user_add
+                exit
+                ;;
+            '-')
+                user_del
+                exit
+                ;;
+            *)
+                echo FAIL
+                RESULT=8
+                exit
+                ;;
+        esac
+    # === Locking part B starts  ===
+    else
+        if [ -h "$LOCKFILE" ]; then
+            CURRENT_TIME=$(date +%s)
+            LOCKFILE_MTIME=$(stat --format=%Y "$LOCKFILE")
+            if [ -n "$LOCKFILE_MTIME" ]; then
+                if [ $(($CURRENT_TIME - $LOCKFILE_MTIME)) -gt $DEADLOCK_TIME ]; then
+                    echo "$0: lockfile '$LOCKFILE' looks too old (more than $DEADLOCK_TIME seconds)"
+                    rm "$LOCKFILE"
+                fi
+            fi
+        fi
+        sleep 0.1
+        LOCK_TRIES=$(($LOCK_TRIES + 1))
+    fi
+    # === Locking part B ends  ===
+done
+
+echo "FAIL (cannot lock file $LOCKFILE)"

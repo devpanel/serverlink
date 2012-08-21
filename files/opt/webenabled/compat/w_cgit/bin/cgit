@@ -1,0 +1,16 @@
+#!/bin/sh
+emulate_no_http=0
+if echo "$@" | grep -q -- --nohttp
+then
+  if ! grep -q -- --nohttp $0.bin
+  then
+    emulate_no_http=1
+  fi
+fi
+#echo `date` emulate_no_http=$emulate_no_http $0 "$@" >>$0.log
+if [ $emulate_no_http = 1 ]
+then
+  $0.bin "$@" | perl -ne 'print if $f; $f=1 if /^$/'
+else
+  exec $0.bin "$@"
+fi

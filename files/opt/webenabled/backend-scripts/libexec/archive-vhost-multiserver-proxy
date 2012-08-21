@@ -1,0 +1,91 @@
+#!/bin/sh
+# multi-server version
+# Usage:
+#   archive-vhost-multiserver [OPTIONS] source_vhost target_vhost label
+# Options:
+# -P -- save shadow entry
+# -S -- source server. Overrides the WEBENABLED_SOURCE_SERVER or WEBENABLED_SERVER env vars
+# -i -- read public ssh key from stdin and use the corresponding private key 
+#        (precreated via config-auth-tmp-keygen) when connecting to the source server
+
+error()
+{
+  echo "ERROR${1+: }$@" >&2
+  exit 1
+}
+
+dir=`dirname "$0"`
+options=""
+opt_i=0
+opt_S=""
+identity_dir=/opt/webenabled/config/ssh/tmp
+
+unset WEBENABLED_IDENTITY
+
+use_identity()
+{
+  local key
+  read key || error "no key"
+  local id=`echo "$key"|sed -n 's/.* webenabled one-time key id=\([-_.A-Za-z0-9]\{1,\}\)$/\1/p'` || error
+  [ -n "$id" ] || error "invalid key id"
+  local identity_subdir="$identity_dir/$id"
+  local identity="$identity_subdir/id_rsa"
+  [ -d "$identity_subdir" ] || error "key not found (1)"
+  [ -r "$identity" ] || error "key not found (2)"
+  [ -r "$identity.pub" ] || error "key not found (3)"
+  fgrep -q -x "$key" "$identity.pub" || error "key mismatch"
+  export WEBENABLED_IDENTITY="$identity"
+}
+
+while getopts "PS:i" OPTOPT
+do
+  case "$OPTOPT" in
+    P) options="${options+ }-P";;
+    S) opt_S="$OPTARG";;
+    i) use_identity "$OPTARG";;
+    *) exit 1;;
+  esac
+done
+shift `expr $OPTIND - 1`
+
+source_server=localhost
+target_server=localhost
+[ -n "$WEBENABLED_SERVER" ] && source_server=$WEBENABLED_SERVER
+[ -n "$WEBENABLED_SERVER" ] && target_server=$WEBENABLED_SERVER
+[ -n "$WEBENABLED_SOURCE_SERVER" ] && source_server=$WEBENABLED_SOURCE_SERVER
+[ -n "$WEBENABLED_TARGET_SERVER" ] && target_server=$WEBENABLED_TARGET_SERVER
+unset WEBENABLED_SERVER
+[ -n "$opt_S" ] && source_server="$opt_S"
+
+usage()
+{
+  echo "Usage: archive-vhost-multiserver [OPTIONS] SOURCE_VHOST TARGET_VHOST LABEL" >&2
+  exit 1
+}
+
+[ $# = 3 ] || usage
+
+source="$1"
+target="$2"
+label="$3"
+
+if ! TMPFILE="`mktemp -t archive_vhost-multiserver.XXXXXXXXXX`"
+then
+  echo "ERROR: mktemp failed";
+  exit 1
+fi
+
+trap 'echo "Removing temporary archive $TMPFILE"; rm -f -- "$TMPFILE"' \
+  EXIT HUP INT QUIT ILL TRAP ABRT BUS FPE KILL SEGV PIPE STOP ALRM TERM
+
+echo "Archive stage 1: archive $source@$source_server to $TMPFILE"
+if ! WEBENABLED_SERVER="$source_server" $dir/../sbin/archive-vhost $options "$source" - >>"$TMPFILE"
+then
+  echo ERROR >&2
+  exit 1
+fi
+  
+echo "Archive stage 2: store $TMPFILE as $label on $target"
+WEBENABLED_SERVER="$target_server" $dir/archive-vhost-store -u "$target" "$label" <"$TMPFILE" || error
+echo Done
+

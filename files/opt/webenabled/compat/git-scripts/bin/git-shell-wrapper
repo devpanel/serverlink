@@ -1,0 +1,67 @@
+#!/usr/bin/perl
+
+use POSIX qw(strftime);
+#use warnings;
+use strict;
+
+$ENV{"PATH"} = "/bin:/usr/bin:/opt/git/current/bin";
+$ENV{"SHELL"} = "sh";
+our ($repo, $cmd);
+our $user = $ENV{"USER"};
+our $realuser = $ENV{REAL_USER};
+our $realcmd = $ENV{SSH_ORIGINAL_COMMAND};
+our $logfile = "$ENV{HOME}/log";
+
+
+sub my_die {
+    my ($msg, $logmsg) = @_;
+
+    print STDERR "$msg\n";
+    my_log($cmd, $repo, $logmsg);
+    exit 1;
+}
+
+sub my_log {
+    my ($cmd, $repo, $comment) = @_;
+    my $time = strftime "%a %b %e %H:%M:%S %Y", localtime;
+    
+    open(my $f, ">>$logfile");
+    print $f "$time: user '$realuser' wants to run '$cmd' on '$repo' $comment\n";
+}
+
+
+our $arg = $realcmd;
+
+$arg =~ s/^git /git-/;
+
+$arg =~ /^([^']*) '(.*)'$/ || my_die("git access only", "bad command");
+$cmd = $1;
+$repo = $2;
+
+$repo =~ s!^/!!;
+$repo =~ s!/$!!;
+
+# XXX: log only sane strings
+my_log $cmd, $repo, "Checking...";
+
+our @ok_commands = ("git-receive-pack", "git-upload-pack");
+grep { $cmd eq $_;} @ok_commands or my_die("git access only", "not git command");
+
+
+$repo =~ /[^a-zA-Z0-9-_]/ && my_die("bad repo name: $repo", "bad symbols in path");
+$repo ||  my_die("bad repo name: $repo", "no repo name");
+
+our $repopath = "/home/clients/repos/$user/repos/$repo";
+
+if ($cmd ne "git-upload-pack")
+{
+    # Check if user may write to ANY repo
+    system("grep '^$realuser:' '$repopath/writers' >/dev/null 2>&1") and my_die("no access", "may not write");
+}
+
+system("grep '^$realuser\$' '$repopath/readers' >/dev/null 2>&1") and my_die("no access", "may not read");
+
+my_log $cmd, $repo, "OK";
+
+exec $cmd, $repopath;
+my_die("no access", "exec failed: $cmd: $!");

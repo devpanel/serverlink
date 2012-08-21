@@ -1,0 +1,194 @@
+#!/usr/bin/perl -w
+
+#
+# Usage: daemon-start --user --type --version --datadir --ip --port --limits --contact --comment --interactive --all
+#
+use strict;
+use FindBin;
+use lib "$FindBin::Bin/../lib";
+
+use dbMgr::Log;
+use dbMgr::Config;
+use POSIX 'setsid';
+use Socket;
+use Cwd 'abs_path';
+use Getopt::Long;
+use Dumpvalue;
+
+my $interactive = 0;
+my %options = ();
+
+# Sys::Syslog::setlogsock('unix');
+my $log = new dbMgr::Log($FindBin::Script, 'pid,cons,nowait', 'user');	$log->debug("initializing");
+my $bin_dir = "$FindBin::Bin/";					$log->debug("bin_dir = '%s'", $bin_dir);
+my $etc_dir = abs_path("$bin_dir/../../config") . "/";		$log->debug("etc_dir = '%s'", $etc_dir);
+my $config = new dbMgr::Config($etc_dir);			$log->debug("configuration files were parsed successfully");
+
+sub help {
+    print "\
+Usage: " . $FindBin::Script . "[options]
+
+Options:
+
+--interactive|-i	Interactive mode
+--user|-u		System account for database daemon
+--type|-t		Database type
+--version|-v		Database version
+--datadir|-d		Database daemon data dirictory
+--host|-h		Database daemon host
+--port|-p		Database daemon port
+--limits|-l		Database daemon limits (unimplemented)
+--contact|-c		Contact person (unimplemented)
+--comment|-z		Database daemon comment (unimplemented)
+--help|-?		This help
+
+";
+exit 0
+
+}
+
+my $result = GetOptions(
+	"interactive|i!"	=> \$interactive,
+	"user|u=s"		=> \$options{user},
+	"type|t=s"		=> \$options{type},
+	"version|v=s"		=> \$options{version},
+	"datadir|d=s"		=> \$options{datadir},
+	"host|h=s"		=> \$options{host},
+	"port|p=i"		=> \$options{port},
+#	"limits|l=s"		=> \$options{limits},
+#	"contact|c=s"		=> \$options{contact},
+#	"comment|z=s"		=> \$options{comment},
+	"help|?"		=> sub { &help; }
+			);
+
+# Add slash if missing
+unless (!defined($options{datadir}) || ($options{datadir} =~ /\/$/)) {
+    $options{datadir} .= "/";
+}
+
+my $work_config = $config->select("user", "."); # Clone config
+
+foreach my $key (keys %options) {
+    if (defined $options{$key}) {
+	$work_config = $work_config->select($key, "^" . $options{$key} . "\$");
+    }
+}
+
+unless (defined($work_config->{daemons})) {
+    print "Warning: no daemons defined to work with, bailing out\n";
+    exit 0;
+}
+
+# $work_config->dump_config();
+
+$work_config->foreach(\&start_server);
+
+sub start_server {
+    my $record = shift;
+    my @args = ();
+    
+    unless (defined $record->{type}) {
+	print "Warning: i cannot handle operation without db type\n";
+	return;
+    }
+
+    my $helper = $bin_dir . "/daemon-start." . $record->{type};
+
+    if ( -x "$helper-" . $record->{version} ) {
+        $helper .= "-" . $record->{version};
+    }
+
+    unless ( -x $helper ) {
+	print "Warning: cannot find helper '$helper'\n";
+	return;
+    }
+    
+    push @args, $helper ;
+
+    foreach my $key (keys %{$record}) {
+	push @args, "\"--" . $key . "=" . $record->{$key} . "\"" if $record->{$key};
+    }
+
+# XXX: debug: print join(' ', @args) . "\n";
+    if (my $pid = fork()) { # parent
+	wait;
+	print "started: user=" . $record->{user} . " type=" . $record->{type} . " host=" . $record->{host} . ":" . $record->{port} . " status=" . $? . "\n";
+	return;
+    } else { # child
+    
+	unless (defined $pid) {
+	    die "cannot fork(): $!";
+	}
+	
+	# prepare
+	# check that all specified arguments are allowed to be specified ;)
+
+	unless ( -x "/bin/sh" ) {
+	    die "no shell available at /bin/sh";
+	}
+
+	# user
+	unless (defined($record->{user}) && getpwnam($record->{user}) > 0) {
+	    die "user does not seems to be exists"
+	}
+
+	#version
+	
+	#datadir
+	unless (defined($record->{datadir}) && -d $record->{datadir}) {
+	    die "datadir does not seems to be exists"
+	}
+	
+	#host
+	unless (defined($record->{host}) &&
+		$record->{host} =~ /(\d+){1,3}\.(\d+){1,3}\.(\d+){1,3}\.(\d+){1,3}$/ &&
+#		$1 > 0 && $2 >= 0 && $3 >= 0 && $4 > 0 &&
+		$1 < 255 && $2 < 255 && $3 < 255 && $4 < 255) {
+	    die "Bad IP specified"
+	}	
+	
+	#port
+	unless (defined($record->{port}) &&
+		1023 < $record->{port} &&
+		$record->{port} < 65535 ) {
+	    print "Invalid port specified"
+	}
+	
+	# host + port pair
+	{
+	    socket(tmpSocket, PF_INET, SOCK_STREAM, getprotobyname('tcp')) || die "Cannot create socket";
+            my $retry = 0;
+            {
+      	      bind(tmpSocket,sockaddr_in($record->{port},inet_aton($record->{host}))) and last;
+              die "bind fails" if ++$retry > 10;
+              warn "cannot bind, retrying in 5 sec...\n";
+              sleep 5;
+              redo;
+            }
+	    close(tmpSocket);
+	}
+
+	#limits
+	if (defined($record->{limits})) {
+	    # here we should call to dbLimits->set_limits()
+	} else { # default limits policy should goes here
+	
+	}
+	
+        if (my $pid2 = fork()) { # parent
+	    wait;
+	    exit $?;
+	} else {
+
+	    unless (defined $pid2) {
+		die "cannot fork(): $!";
+	    }
+
+	    open STDIN, '/dev/null' or die "cannot redirect stdin: $!";
+	    open STDOUT, '>/dev/null' or die "cannot redirect stdout: $!";
+	    setsid or die "cannot start session: $!";
+    	    exec { "/bin/sh" } "/bin/sh", "-c", join(' ', @args);
+	    die "Cannot exec";
+	}
+    }
+}
