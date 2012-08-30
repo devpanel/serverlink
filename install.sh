@@ -1,119 +1,278 @@
 #!/bin/bash
-install_dir="${WEBENABLED_BASE_DIR:-/opt/webenabled}" # default install dir. can be overwritten with -d
 
-shopt -s expand_aliases
-set -x
+# default install dir.  can be overwritten with -I
+webenabled_install_dir="/opt/webenabled"
 
-. files/opt/webenabled/backend-scripts/lib/variables || \
-  { echo "Error. Unable to load variables"; exit 1; }
+# default websites base dir, can be overwritten with -H
+webenabled_homedir_base="/home/clients/websites"
 
-. files/opt/webenabled/backend-scripts/lib/functions || \
-  { echo "Error. Unable to load functions"; exit 1; }
+# default databases base dir, can be overwritten with -D
+webenabled_databasedir_base="/home/clients/databases"
+
+resolve_local_dir() {
+  local base="$1"
+  local bin=""
+  local bin_path=""
+  local dir_name=""
+
+  [ -z "$base" -o ${#base} -eq 0 ] && return 1
+
+  if [ ${base:0:1} == "/" ]; then
+    echo $(dirname "$base")
+    return 0
+  elif [ ${#base} -gt 2 -a ${base:0:2} == "./" ]; then
+    base=${base#./}
+    dir_name=$(dirname "$base")
+    if [ "$dir_name" == "." ]; then
+      echo "$PWD"
+    else
+      echo "$PWD/$dir_name"
+    fi
+    return 0
+  elif [ ${#base} -gt 2 -a ${base:0:3} == "../" ]; then
+    echo $(dirname "$PWD/$base")
+  else
+    return 1
+  fi
+}
 
 usage() {
   local prog="$1"
   echo "
 
-Usage: $prog <-d install_directory>
+Usage: $prog <-d webenabled_install_directory>
 
   Options:
     -L distro         Assume the specified distro, don't try to auto-detect
-    -d directory      Install the software in the specified directory
+    -I directory      Install the software in the specified directory
     -h                Displays this help message
+    -d                print verbose debug messages
+    -H directory      Create sites directories under this path
+    -D directory      Create database directories under this path
+    -V version        Specify the version of the linux distro (optional)
 
 "
   exit 1
 }
 
+set_global_variables() {
+  local source_dir="$1"
+  local target_dir="$2"
+  local distro="$3"
+
+  local we_config_dir="$source_dir/files/opt/webenabled/config"
+
+  _suexec_bin=$(wedp_resolve_link "$we_config_dir/os.$distro/pathnames/sbin/suexec")
+  if [ $? -ne 0  -o -z "$_suexec_bin" ]; then
+    echo "unable to set global variable _suexec_bin" 1>&2
+    return 1
+  fi
+  _apache_logs_dir=$(wedp_resolve_link "$we_config_dir/os.$distro/pathnames/var/log/apache_vhosts")
+  if [ $? -ne 0  -o -z "$_apache_logs_dir" ]; then
+    echo "unable to set global variable _apache_logs_dir" 1>&2
+    return 1
+  fi
+  
+  _apache_base_dir=$(wedp_resolve_link "$we_config_dir/os.$distro/pathnames/etc/apache_base_dir")
+  if [ $? -ne 0  -o -z "$_apache_base_dir" ]; then
+    echo "unable to set global variable _apache_base_dir" 1>&2
+    return 1
+  fi
+  _apache_includes_dir=$(wedp_resolve_link "$we_config_dir/os.$distro/pathnames/etc/apache_includes_dir")
+
+  _apache_user=`head -1 "$we_config_dir/os.$distro/names/apache.user"`
+  if [ $? -ne 0 -o -z "$_apache_user" ]; then
+    echo "unable to resolve apache user" 1>&2
+    return 1
+  fi
+
+
+  _apache_group=`head -1 "$we_config_dir/os.$distro/names/apache.group"`
+  if [ $? -ne 0 ]; then
+    echo "unable to resolve apache group" 1>&2
+    return 1
+  fi
+
+  _apache_exec_group=`head -1 "$we_config_dir/os.$distro/names/apache-exec.group"`
+  if [ $? -ne 0 ]; then
+    echo "unable to resolve apache exec group" 1>&2
+    return 1
+  fi
+
+
+  return 0
+}
+
 install_ce_software() {
   local linux_distro="$1"
-  local install_dir="$2"
+  local source_dir="$2"
+  local webenabled_install_dir="$3"
+  local machine_type=$(uname -m)
 
-  cp -a "files/opt/webenabled" $(dirname "$install_dir" )
-  chmod go+rx "$install_dir"
+  if ! cp -a "$source_dir/files/opt/webenabled" \
+    $(dirname "$webenabled_install_dir" ); then
+    echo "Error: unable to copy installation files to target dir" >&2
+    return 1
+  fi
 
-  ln -snf os.$linux_distro "$install_dir"/config/os
+  chmod 755 "$webenabled_install_dir"
 
-  mkdir -p /home/clients/websites /home/clients/databases
-  chmod 0755 /home/clients /home/clients/websites /home/clients/databases
-  ln -snf "$install_dir"/compat/w_ /home/clients/websites/w_
-  chown -R w_: "$install_dir"/compat/w_
-  chgrp `cat "$install_dir"/config/os/names/apache.group` "$install_dir"/compat/w_
-  chgrp `cat "$install_dir"/config/os/names/apache.group` "$install_dir"/compat/w_/public_html
-  chgrp `cat "$install_dir"/config/os/names/apache.group` "$install_dir"/compat/w_/public_html/cgi
+  ln -snf os.$linux_distro "$webenabled_install_dir"/config/os
 
-  mv -f "$_suexec_bin" "$_suexec_bin.dist" || true
-  cp "$install_dir"/config/os/pathnames/sbin/suexec "$_suexec_bin"
-  chown 0:`cat "$install_dir"/config/os/names/apache.group` "$_suexec_bin"
-  chgrp `cat "$install_dir"/config/os/names/apache.group` "$install_dir"/compat/suexec
-  chgrp `cat "$install_dir"/config/os/names/apache.group` "$install_dir"/config/os/pathnames/sbin/suexec
-  chmod 4710 "$_suexec_bin"
-  dd bs=65536 count=1 if=/dev/zero of="$install_dir"/compat/suexec/config/suexec.map
-  chmod 600       "$install_dir"/compat/suexec/config/suexec.map
-  chown 0:0 "$install_dir"/compat/suexec/config/suexec.map
+  mkdir -p "$webenabled_homedir_base" "$webenabled_databasedir_base"
+  chmod 0755 "$webenabled_homedir_base" "$webenabled_databasedir_base"
 
+  ln -snf "$webenabled_install_dir"/compat/w_ "$webenabled_homedir_base"/w_
+  chown -R w_:"$_apache_exec_group" "$webenabled_install_dir"/compat/w_
 
-  mkdir -p `readlink -m "$install_dir"/config/os/pathnames/etc/ssl/certs`
-  mkdir -p `readlink -m "$install_dir"/config/os/pathnames/etc/ssl/keys`
+  local we_suexec_path="$webenabled_install_dir/compat/suexec/suexec"
+  
+  if [ -L "$_suexec_bin" ]; then
+    rm "$_suexec_bin"
+  elif [ -e "$_suexec_bin" ] && ! mv -f "$_suexec_bin" "$_suexec_bin.dist"; then
+    echo "error: unable to move distro default suexec binary" >&2
+    return 1
+  fi
+
+  ln -sf "$we_suexec_path.$linux_distro.$machine_type" "$we_suexec_path"
+  ln -sf "$webenabled_install_dir/compat/suexec/chcgi.$machine_type" \
+    "$webenabled_install_dir/compat/suexec/chcgi"
+
+  if ! cp -f "$we_suexec_path" "$_suexec_bin"; then
+    echo "error: unable to copy suexec to distro suexec path '$_suexec_bin'" >&2
+    return 1
+  fi
+
+  chown 0:"$_apache_group" "$_suexec_bin"
+  chmod 4711 "$_suexec_bin"
+  chown 0:"$_apache_group" "$we_suexec_path"
+  chmod 4711 "$we_suexec_path"
+  chown 0:0 "$webenabled_install_dir/compat/suexec/config/suexec.map"
+  chmod 0600 "$webenabled_install_dir/compat/suexec/config/suexec.map"
+
+  mkdir -p `readlink -m "$webenabled_install_dir"/config/os/pathnames/etc/ssl/certs`
+  mkdir -p `readlink -m "$webenabled_install_dir"/config/os/pathnames/etc/ssl/keys`
   #openssl req -subj "/C=--/ST=SomeState/L=SomeCity/O=SomeOrganization/OU=SomeOrganizationalUnit/CN=*.`hostname`" -new -x509 -days 3650 -nodes -out /opt/webenabled/config/os/pathnames/etc/ssl/certs/wildcard -keyout /opt/webenabled/config/os/pathnames/etc/ssl/keys/wildcard
-  cp -a files/cloudenabled/wildcard.cloudenabled.net.key "$install_dir"/config/os/pathnames/etc/ssl/keys/wildcard
-  cp -a files/cloudenabled/wildcard.cloudenabled.net.crt "$install_dir"/config/os/pathnames/etc/ssl/certs/wildcard
+  cp -a "$source_dir"/files/cloudenabled/wildcard.cloudenabled.net.key "$webenabled_install_dir"/config/os/pathnames/etc/ssl/keys/wildcard
+  cp -a "$source_dir"/files/cloudenabled/wildcard.cloudenabled.net.crt "$webenabled_install_dir"/config/os/pathnames/etc/ssl/certs/wildcard
 
-  echo Vhost-simple-SSL-wildcard > "$install_dir"/config/names/apache-macro
+  # echo Vhost-simple-SSL-wildcard > "$webenabled_install_dir"/config/names/apache-macro
+  echo Vhost-simple > "$webenabled_install_dir"/config/names/apache-macro
+
+  if [ -e "$_apache_logs_dir" -a ! -d "$_apache_logs_dir" ]; then
+    mv "$_apache_logs_dir" "$_apache_logs_dir".old
+  elif [ ! -d "$_apache_logs_dir" ]; then
+    mkdir -p "$_apache_logs_dir"
+  fi
+  chmod 755 "$_apache_logs_dir"
+
+  echo "
+Include $webenabled_install_dir/compat/apache_include/*.conf
+Include $webenabled_install_dir/compat/apache_include/virtwww/*.conf" \
+    >> "$webenabled_install_dir/compat/apache_include/webenabled.conf.main"
+
+  ln -sf "$webenabled_install_dir/compat/apache_include/webenabled.conf.main" \
+    "$_apache_includes_dir/webenabled.conf"
+
+  "$webenabled_install_dir/config/os/pathnames/sbin/apachectl" configtest
+  "$webenabled_install_dir/config/os/pathnames/sbin/apachectl" graceful
+
+  return 0
 }
 
 add_custom_users_n_groups() {
-  local install_dir="$1"
+  local source_dir="$1"
+  local webenabled_install_dir="$2"
 
-  groupadd virtwww || true
-  groupadd weadmin || true
+  for u in w_ virtwww weadmin; do
+    if ! getent passwd $u >/dev/null; then
+      groupadd $u || true
+    fi
+  done
 
-  useradd -s "$install_dir"/current/libexec/server  -u0 -g0 -mo r_we || error
-
-  mkdir ~r_we/.ssh || true
-  chmod 700 ~r_we/.ssh
-  cat files/opt/webenabled/config/ssh/global.pub >>~r_we/.ssh/authorized_keys
-  chmod 600 ~r_we/.ssh/authorized_keys
-
-  groupadd w_
-  useradd -M -d /home/clients/websites/w_ -G w_ -g virtwww w_
-    # without the -M option, Fedora will create HOME --> ????
+  useradd -M -d "$webenabled_homedir_base"/w_ -G w_ -g "$_apache_group" w_
+  usermod -a -G virtwww "$_apache_user"
 }
 
 # main
 
-getopt_flags="hL:d:"
+if [ $EUID -ne 0 ]; then
+  echo "Error: This script needs to run with ROOT privileges." 1>&2
+  exit 1
+fi
+
+shopt -s expand_aliases
+
+install_source_dir=$(resolve_local_dir "$0")
+if [ $? -ne 0 ]; then
+  echo "Error: unable to determine the source directory. Please execute"\
+ " this script again calling it with the full path." 1>&2
+  exit 1
+fi
+
+. "$install_source_dir"/files/opt/webenabled/backend-scripts/lib/variables || \
+  { echo "Error. Unable to load variables" 1>&2; exit 1; }
+
+. "$install_source_dir"/files/opt/webenabled/backend-scripts/lib/functions || \
+  { echo "Error. Unable to load functions" 1>&2; exit 1; }
+
+
+getopt_flags="I:L:H:D:V:hd"
 
 while getopts $getopt_flags OPTS; do
   case "$OPTS" in
     d)
-      install_dir="$OPTARG"
+      set -x
       ;;
     L)
       linux_distro="$OPTARG"
       ;;
-    h|?)
+    I)
+      webenabled_install_dir="$OPTARG"
+      ;;
+    H)
+      webenabled_homedir_base="$OPTARG"
+      ;;
+    D)
+      webenabled_databasedir_base="$OPTARG"
+      ;;
+    V)
+      webenabled_distro_version="$OPTARG"
+      ;;
+    h|*)
       usage
       ;;
   esac
 done
 [ -n "$OPTIND" -a $OPTIND -gt 1 ] && shift $(( $OPTIND - 1 )) 
 
-if [ -z "$install_dir" ]; then
+if [ -z "$webenabled_install_dir" ]; then
   error "please specify the target installation directory with the -d option"
 fi
 
-if [ -e "$install_dir/config/os" ]; then
+if [ -e "$webenabled_install_dir/config/os" ]; then
   error "this software seems to be already installed. To reinstall, please clean up the previous installation."
 fi
 
 if [ -z "$linux_distro" ]; then
-  linux_distro=$(auto_detect_distro)
+  linux_distro=$(wedp_auto_detect_distro)
   status=$?
   if [ $status -ne 0 ]; then
     error "unable to detect linux distribution. If you know the distro, try using the -L option"
   fi
 fi
+
+if [ ! -e "$install_source_dir/files/opt/webenabled/config/os.$linux_distro" ]; then
+  error "missing the configuration directory for distro '$linux_distro'.
+There seems to be a problem in this installation package."
+  exit 1
+fi
+
+if [ -z "$webenabled_distro_version" ]; then
+  webenabled_distro_version=$(wedp_auto_detect_distro_version "$linux_distro")
+fi
+
+set_global_variables "$install_source_dir" "$webenabled_install_dir" "$linux_distro" || exit 1
 
 distro_install_script="install.$linux_distro.sh"
 if [ ! -e "$distro_install_script" ]; then
@@ -130,33 +289,40 @@ fi
 
 for func in set_variables pre_run; do
   if [ "$(type -t ${linux_distro}_$func)" == "function" ]; then
-    ${linux_distro}_$func
+    ${linux_distro}_$func "$webenabled_install_dir" \
+      "$webenabled_distro_version"
     status=$?
     [ $status -ne 0 ] && error "${linux_distro}_$func returned $status"
   fi
 done
 
 if type -t "${linux_distro}_install_distro_packages" >/dev/null; then
-  "${linux_distro}_install_distro_packages" "$install_dir"
+  "${linux_distro}_install_distro_packages" "$webenabled_install_dir" \
+    "$webenabled_distro_version"
 fi
 
-add_custom_users_n_groups "$install_dir"
+add_custom_users_n_groups "$install_source_dir" "$webenabled_install_dir"
 
 if type -t "${linux_distro}_post_users_n_groups" >/dev/null; then
-  "${linux_distro}_post_users_n_groups" "$install_dir"
+  "${linux_distro}_post_users_n_groups" "$webenabled_install_dir"
 fi
 
-install_ce_software "$linux_distro" "$install_dir"
+if ! install_ce_software "$linux_distro" "$install_source_dir" \
+  "$webenabled_install_dir"; then
+  error "unable to run the main software install routine"
+fi
 
 if type -t "${linux_distro}_post_software_install" >/dev/null; then
-  "${linux_distro}_post_software_install" "$install_dir"
+  "${linux_distro}_post_software_install" "$webenabled_install_dir"
 fi
 
 if type -t "${linux_distro}_adjust_system_config" >/dev/null; then
-  "${linux_distro}_adjust_system_config" "$install_dir"
+  "${linux_distro}_adjust_system_config" "$webenabled_install_dir"
 fi
 
-target_scripts_dir="$install_dir/backend-scripts-$ce_version"
-mv "$install_dir/backend-scripts" "$target_scripts_dir"
-rm -f "$install_dir/current"
-ln -s "$target_scripts_dir" "$install_dir/current"
+target_scripts_dir="$webenabled_install_dir/backend-scripts-$ce_version"
+mv "$webenabled_install_dir/backend-scripts" "$target_scripts_dir"
+rm -f "$webenabled_install_dir/current"
+ln -s "$target_scripts_dir" "$webenabled_install_dir/current"
+
+echo "Installation completed successfully"

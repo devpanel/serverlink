@@ -49,7 +49,7 @@ su - -c "if [ -z \"\$TMPDIR\" -o ! -d \"\$TMPDIR\" -o ! -w \"\$TMPDIR\" ]; then 
 	'--tmpdir=$tmpdir'				\
 	\"--tmpdir=\$TMPDIR\"				\
 	--myisam-recover=BACKUP,FORCE			\
-	--skip-locking					\
+	--skip-external-locking					\
 	--skip-name-resolve				\
 > /dev/null 2>&1 &" -s /bin/sh "$user"
 

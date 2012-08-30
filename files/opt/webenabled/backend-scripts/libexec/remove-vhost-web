@@ -32,6 +32,7 @@ date=`date  +'%Y%m%d'`
 archive_file="$archive_dir/$user.tgz"
 config_dir="/opt/webenabled/config/vhosts/$vhost"
 apachectl="$dir/../../config/os/pathnames/sbin/apachectl"
+apache_base_log_dir=`readlink -m $dir/../../config/os/pathnames/var/log/apache_logs_dir`
 
 if ! `id -u "$user" 2>/dev/null >/dev/null`
 then
@@ -66,7 +67,7 @@ run mv "$apache_config" "$apache_config_dir_removed/$user.conf.removed"
 echo "Checking for occurences of $user in $apache_config_dir/:"
 find "$apache_config_dir/" -type f -print0|xargs -0 fgrep -l "$user"|sed 's/^/  /'
 
-apache_log_dir="/var/log/httpd/virtwww/$user"
+apache_log_dir="$apache_base_log_dir/virtwww/$user"
 echo "Removing apache log files"
 run rm -rf "$apache_log_dir"
 

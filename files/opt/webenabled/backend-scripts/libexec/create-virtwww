@@ -23,11 +23,11 @@ apachectl="$pathnames/sbin/apachectl"
 edquota="$pathnames/sbin/edquota"
 passgen="$dir_bin/genpass"
 WEBSITES_HOME=/home/clients/websites
-VIRTWWW_LOGDIR="`readlink \"$dir/../../config/os/pathnames/var/log/apache_vhosts\"`"
+VIRTWWW_LOGDIR=`readlink "$dir/../../config/os/pathnames/var/log/apache_vhosts"`
 VIRTWWW_CFGDIR="$pathnames/etc/apache_vhosts"
 ADDON_GROUPS=
 ADDON_GROUPS_FILE="$dir/../../config/os/names/groups"
-apache_group=`cat $dir/../../config/os/names/apache.group`
+apache_group=`head -1 $dir/../../config/os/names/apache-exec.group`
 if [ -s "$ADDON_GROUPS_FILE" ]
 then
   ADDON_GROUPS=`paste -sd, <"$ADDON_GROUPS_FILE"`
@@ -197,13 +197,13 @@ fi
 
 echo '---[ creating new virtual host ]---'
 
-echo -n "+ checking for 'virtwww' group ... "
-if grep -E '^virtwww:' /etc/group &>/dev/null; then
+echo -n "+ checking for '$apache_group' group ... "
+if getent group "$apache_group" >/dev/null; then
     echo 'found'
 else
     echo 'not found'
     echo
-    echo 'Error: virtwww group is not present, this hosting server is unconfigured!'
+    echo "Error: apache group '$apache_group' is not present, this hosting server is unconfigured!"
     echo 'Aborting'
     exit 2
 fi
@@ -226,18 +226,19 @@ echo -n "+ checking for '$ACCOUNT_NAME' account ... "
 if [ x$(id -un "$ACCOUNT_NAME" 2>/dev/null) == "x$ACCOUNT_NAME" ]; then
     echo 'found'
     echo -n "+ checking primary group of '$ACCOUNT_NAME' account ... "
-    if [ x$(id -gn "$ACCOUNT_NAME" 2>/dev/null) != 'xvirtwww' ]; then
+    if [ x$(id -gn "$ACCOUNT_NAME" 2>/dev/null) != x"$apache_group" ]; then
         echo 'failed'
         echo
-        echo "Error: although '$ACCOUNT_NAME' account exists, it's primary group isn't 'virtwww'"
+        echo "Error: although '$ACCOUNT_NAME' account exists, it's primary group isn't '$apache_group'"
         echo 'Aborting'
         exit 2
     fi
-    echo 'ok, virtwww'
+    echo "ok, '$apache_group'"
 else
     echo 'not found'
     echo -n "+ creating '$ACCOUNT_NAME' account ... "
-    if ! useradd -g virtwww -G "$ACCOUNT_NAME${ADDON_GROUPS:+,$ADDON_GROUPS}" -m -d "$WEBSITES_HOME/$ACCOUNT_NAME" "$ACCOUNT_NAME"; then
+    if ! useradd -g "$apache_group" -G "$ACCOUNT_NAME${ADDON_GROUPS:+,$ADDON_GROUPS}" \
+        -m -d "$WEBSITES_HOME/$ACCOUNT_NAME" "$ACCOUNT_NAME"; then
         echo
         echo 'Aborting'
         exit 2

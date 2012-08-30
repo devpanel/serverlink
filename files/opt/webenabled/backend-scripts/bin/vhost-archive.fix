@@ -11,8 +11,9 @@ else
 fi
 
 web_user=$(id -un 2>/dev/null)
+apache_group=`head -1 "$dir/../../config/os/names/apache-exec.group"`
 
-if [ "`id -gn`" != "virtwww" ]; then
+if [ "`id -gn`" != "$apache_group" ]; then
 	echo "$0: you have to switch under web account to fix archive-vhost instance"
 	exit 1
 fi

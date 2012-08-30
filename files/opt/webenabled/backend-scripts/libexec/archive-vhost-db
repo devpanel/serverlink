@@ -36,6 +36,8 @@ user="b_$vhost"
 home="`eval \"echo ~$user\"`"
 date=`date  +'%Y%m%d'`
 
+include_mysql_table=0
+
 run_su()
 {
   echo "  running su -s /bin/sh -l -c '$@' $user" >&2
@@ -100,6 +102,7 @@ fi
 
 for database in $list
 do
+  [ "$database" == "mysql" -a $include_mysql_table -eq 0 ] && continue
   archive_file="$archive_dir/$database.sql"
   echo "Archiving $database to $archive_file"
   if ! run2 $dir/dbmgr-mysql-as-root "$user" mysqldump --extended-insert=false "$database" 2>&1 >"$archive_file" ||

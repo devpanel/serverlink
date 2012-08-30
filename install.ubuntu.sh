@@ -1,7 +1,5 @@
 ubuntu_set_variables() {
-  _suexec_bin="/usr/lib/apache2/suexec"
-  _apache_base_dir="/etc/apache2"
-  _apache_log_dir="/var/log/apache2"
+  return 0
 }
 
 ubuntu_pre_run() {
@@ -10,35 +8,25 @@ ubuntu_pre_run() {
 
 ubuntu_install_distro_packages() {
   local install_dir="$1"
+  local ubuntu_version="${2:-0}"
 
   export DEBIAN_FRONTEND='noninteractive'
 
   apt-get update
 
   echo -n Checking for update-rc.d availability: 
-  if update-rc.d  >/dev/null 2>&1
-  then
+  if hash update-rc.d ; then
     echo Already there
   else
-    if [ $? = 127 ]
-    then
       echo Not found, installing sysvinit
       apt-get -y install sysvinit
-    else
-      echo Already there
-    fi
-  fi
-
-  if [ `uname -m` = x86_64 ]
-  then
-    # for suexec, chcgi, gena10, pwqgen
-    apt-get -y install libc6-dev-i386
   fi
 
   for i in \
-           apache2 mysql-server php5 php5-cli php-pear php5-gd \
-           php5-curl php5-mysql libapache2-mod-macro php5-cgi php5-mcrypt \
-           apache2-suexec zlib1g #git subversion #libapache2-mod-fcgid
+    apache2 libapache2-mod-macro apache2-suexec zlib1g libapache2-mod-fcgid \
+    mysql-server git subversion \
+    php5 php5-cli php-pear php5-gd php5-curl php5-mysql \
+    php5-cgi php5-mcrypt php5-sqlite
   do
     apt-get -y install $i
   done
@@ -49,7 +37,7 @@ ubuntu_adjust_system_config() {
 
   if [ -r /etc/apparmor.d/usr.sbin.mysqld ]
   then
-    sed -i 's/^/#/' /etc/apparmor.d/usr.sbin.mysqld
+    sed -i 's/^[:space:]*[^#]/#/' /etc/apparmor.d/usr.sbin.mysqld
     if [ -r /etc/init.d/apparmor ]
     then
       /etc/init.d/apparmor reload
@@ -57,11 +45,12 @@ ubuntu_adjust_system_config() {
   fi
 
   for module in rewrite macro suexec ssl proxy proxy_http; do
-    [ -f "$_apache_base_dir/mods-available/$module.load" ] && \
+    if [ ! -e "$_apache_base_dir/mods-enabled/$module.load" \
+      -a -f "$_apache_base_dir/mods-available/$module.load" ]; then
       ln -sf ../mods-available/$module.load "$_apache_base_dir"/mods-enabled/
+    fi
   done
 
-  ln -snf "$_apache_log_dir" "$_apache_base_dir"/logs
   # fuser fails on slicehost CentOS  (/proc/net/tcp is empty)
   #if fuser 443/tcp >/dev/null || netstat -ln --tcp|grep -q :443
   #then
@@ -70,21 +59,10 @@ ubuntu_adjust_system_config() {
   #  echo 'Listen 443' >> "$_apache_base_dir"/conf.d/webenabled.conf
   #fi
 
-  echo 'NameVirtualHost *:80' >> "$_apache_base_dir"/conf.d/webenabled.conf
-  echo 'NameVirtualHost *:443' >> "$_apache_base_dir"/conf.d/webenabled.conf
-  echo 'Include '"$install_dir"'/compat/apache_include/*.conf' >> "$_apache_base_dir"/conf.d/webenabled.conf
-  #mkdir "$_apache_base_dir"/webenabled.d || error "Cannot mkdir "$_apache_base_dir"/webenabled.d: already installed?"
-  #echo 'Include webenabled.d/*.conf' >> "$_apache_base_dir"/conf.d/webenabled.conf
+  [ -e "$_apache_base_dir"/mods-enabled/php5.load ] && rm -f "$_apache_base_dir"/mods-enabled/php5.load
+  [ -e "$_apache_base_dir"/mods-enabled/php5.conf ] && rm -f "$_apache_base_dir"/mods-enabled/php5.conf
 
-  mkdir -p "$_apache_log_dir"/virtwww
-  chmod go+rx "$_apache_log_dir"/virtwww
-  chmod o+x "$_apache_log_dir"
-
-  rm -f "$_apache_base_dir"/mods-enabled/php5.load
-
-  apache2ctl configtest
-  apache2ctl graceful
-
+  [ -e /etc/init.d/dbmgr ] && rm -f /etc/init.d/dbmgr
   ln -s "$install_dir"/compat/dbmgr/current/bin/dbmgr.init /etc/init.d/dbmgr
   update-rc.d dbmgr defaults
 }

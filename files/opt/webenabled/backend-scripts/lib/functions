@@ -9,7 +9,7 @@ error() {
   exit 1
 }
 
-auto_detect_distro() {
+wedp_auto_detect_distro() {
   local distro=""
 
   if grep -qis centos /etc/redhat-release; then
@@ -30,6 +30,23 @@ auto_detect_distro() {
   else
     return 1
   fi
+}
+
+wedp_auto_detect_distro_version() {
+  local distro="$1"
+  local version_str="" version=""
+
+  if [ "$distro" == "centos" ]; then
+    version_str=$(head -1 "/etc/redhat-release")
+    if [[ "$version_str" =~ CentOS\ release\ ([0-9]+\.[0-9]+) ]]; then
+      version="${BASH_REMATCH[1]}"
+    fi
+  else
+    version="0"
+  fi
+
+  echo $version
+  return 0
 }
 
 print_quoted_variables() {
@@ -68,4 +85,19 @@ resolve_local_dir() {
   else
     return 1
   fi 
+}
+
+wedp_resolve_link() {
+  local source="$1"
+  local target=""
+
+  [ -z "$source" ] && return 1
+
+  target=$(readlink -m "$source")
+  if [ $? -eq 0 ]; then
+    echo "$target"
+    return 0
+  else
+    return 1
+  fi
 }
