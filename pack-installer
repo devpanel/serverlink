@@ -1,0 +1,72 @@
+#!/bin/bash
+
+usage() {
+  local prog=$(basename "$0")
+  echo "
+Usage: $prog <source_directory> <target_tar_gz_file>
+
+This program packs the installation files in a .tar.gz file for installing
+"
+  exit 1
+}
+
+error() {
+  local msg="$1"
+  local exit_code=${2:-1}
+
+  [ -n "$msg" ] && echo "Error: $msg" 1>&2
+
+  exit $exit_code
+}
+
+# main
+
+[ $# -lt 2 ] && usage
+
+[ $EUID -ne 0 ] && error "this script needs to be run with ROOT privileges"
+
+source_dir="$1"
+target_file="$2"
+
+if [ ! -d "$source_dir" ]; then
+  error "unable to find source directory '$source_dir'"
+fi
+
+if [ -e "$target_file" ]; then
+  error "target file '$target_file' already exists."
+fi
+
+tmp_pack_dir=$(mktemp -d)
+status=$?
+if [ $status -ne 0 ]; then
+  error "unable to create temporary pack directory. mktemp returned $status"
+fi
+
+trap 'rm -rf "$tmp_pack_dir"' EXIT INT TERM
+
+internal_pack_dir="$tmp_pack_dir/webenabled-devpanel"
+mkdir "$internal_pack_dir"
+
+cp -a "$source_dir"/install* "$source_dir"/uninstall* "$source_dir"/files \
+  "$internal_pack_dir"
+status=$?
+if [ $status -ne 0 ]; then
+  error "unable to copy files to temporary pack directory '$tmp_pack_dir'."\
+" cp returned $status"
+fi
+
+chown -R 0:0 "$tmp_pack_dir"
+status=$?
+if [ $status -ne 0 ]; then
+  error "unable to chown -R 0:0 files in pack directory '$tmp_pack_dir'."\
+" chown returned $status"
+fi
+
+tar -C "$tmp_pack_dir" -zcpf "$target_file" .
+status=$?
+if [ $status -ne 0 ]; then
+  error "unable to create target file '$target_file'. tar returned $status"
+fi
+
+echo "Successfully created pack file '$target_file'"
+

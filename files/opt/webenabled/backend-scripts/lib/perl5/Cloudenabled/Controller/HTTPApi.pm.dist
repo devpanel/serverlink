@@ -1,0 +1,2233 @@
+package Cloudenabled::Controller::HTTPApi;
+use strict;
+use base 'CGI::Application';
+use Socket;
+use DBI qw( :sql_types );
+use Digest::SHA qw( hmac_sha256_hex );
+use MIME::Base64;
+use JSON::XS;
+use Cloudenabled::Constants;
+use Cloudenabled::RPCComm;
+use Cloudenabled::Util;
+require "Cloudenabled/controller_validate.pl";
+
+use Data::Dumper;
+
+our $param_separator = ';';
+
+BEGIN {
+  $SIG{'__WARN__'} = sub {
+    # suppress the "used only once message for functions"
+    my $msg = shift;
+    my $pkg = __PACKAGE__;
+    if($msg =~ /^Name "$pkg\:\:\w+" used only once/) {
+      return 0;
+    } else {
+      warn $msg;
+    }
+  };
+}
+
+sub setup {
+  my $app = shift;
+  my @modes = qw( AUTOLOAD empty error_log
+                  retry_activity set_pingback_url
+
+                  archive_vhost remove_vhost clone_vhost
+                  restore_vhost clone_seedapp delete list_commands set_state
+                  config_vhost_names_default install_seed_app get_task_status
+                  sleep_test cat_test list_tasks list_activities chpass_vhost
+                  create_server update_server get_server_info list_hosting_companies
+                  git_import crontab_vhost_get crontab_vhost_edit get_activity_report
+                  htaccess_lock_vhost htaccess_unlock_vhost public_key_vhost
+                  list_vhost_names_default list_vhost_names restore_vhost
+                  config_vhost_names config_vhost_ssl help exists_mode
+                  simulate_pingback dummy get_pingback_url
+                  chpass_superuser server_reboot
+                  create_repo delete_repo list_vhost_logs
+                  tail_vhost_log rm_vhost_log get_vhost_log
+                  run_vhost_shell vhost_create_database vhost_delete_database
+                  set_google_apps_key unset_google_apps_key restore_vhost_from_link
+                  disable_vhost_ssl archive_vhost_list
+                  server_add_service server_remove_service server_service_cmd
+                  site_add_service site_remove_service site_service_cmd
+              );
+  
+  $app->start_mode('empty');
+  $app->mode_param('op');
+  $app->error_mode('error_log');
+  $app->run_modes(\@modes);
+}
+
+sub cgiapp_init {
+  my $app = shift;
+
+  my $ctlconn = Cloudenabled::RPCComm->new( connect_address => 'unix:/tmp/controllerd_socket');
+  if(!$ctlconn) {
+    warn "Error: unable to connect to controller\n";
+    exit(1);
+  }
+
+  $app->param('ctlconn', $ctlconn);
+}
+
+sub cgiapp_prerun {
+  my $app = shift;
+  my $cgi = $app->query;
+  my $ctl = $app->param('ctlconn');
+
+  $cgi->autoEscape(0); # turn off auto escaping
+
+  my $sig  = $cgi->http(CE_HEADER_SIGNATURE_STR) || undef;
+  my $user = $cgi->http(CE_HEADER_SERVER_STR)    || undef;
+
+  if(!defined($sig) || !defined($user)) {
+    $app->param('return_data', ce_ret_signature_error({}, 'incomplete auth headers'));
+    $app->prerun_mode($app->error_mode);
+    return;
+  }
+
+  # test connection to controller
+  # and try to reconnect if not connected
+  if(!$ctl->ping() && ! $ctl->connect_socket()) {
+    $app->param('return_data', ce_ret_internal_error({}, 'internal connectivity problem'));
+    $app->prerun_mode($app->error_mode);
+    return 0;
+  }
+
+  my $data_to_sign = _extract_data_to_sign($cgi);
+
+  if(!ce_was_successful($ctl->op('validate_signature',
+                      { 'uuid' => $user, data => $data_to_sign,
+                        'exp_sig' => $sig 
+                      }))) {
+
+    $app->param('return_data', ce_ret_signature_error());
+    $app->prerun_mode($app->error_mode);
+    return;
+  }
+
+  if($app->param('check_timestamp') && time() - $cgi->param('timestamp') > 30) {
+    $app->prerun_mode($app->error_mode());
+    $app->param('return_data', ce_ret_signature_error({}, 'Timestamp expired (too far from current time)'));
+
+    return;
+  }
+
+  my $validate_function = '_validate_input_' . $app->get_current_runmode;
+  if($app->can($validate_function) && !ce_was_successful(my $ret = $app->$validate_function())) {
+      printf STDERR "failed validation for operation %s. status = %s. errmsg = %s\n",
+        $app->get_current_runmode(), $ret->{status},
+        exists($ret->{errmsg}) ? $ret->{errmsg} : '(none)';
+        
+      $app->param('return_data', $ret);
+      $app->prerun_mode($app->error_mode);
+  }
+
+}
+
+sub set_state {
+  my $app = shift;
+  my $cgi = $app->query;
+  
+  my $sql_task = "UPDATE Tasks SET state = ? WHERE id = ? AND target_server_id = ?";
+  my $dbh = $app->param('dbh');
+  
+  my %status = ();
+  
+  my $srv_ref = _get_row($dbh, 'Servers', { uuid => $cgi->http(CE_HEADER_SERVER_STR) });
+  my $sth = $dbh->prepare($sql_task);
+  
+  warn sprintf("srv_id = %d, srv_uid = %s\n", $srv_ref->{id}, $srv_ref->{uid});
+  $sth->bind_param(1, $cgi->param('state'), SQL_INTEGER);
+  $sth->bind_param(2, $cgi->param('id'), SQL_INTEGER);
+  $sth->bind_param(3, $srv_ref->{id}, SQL_INTEGER);
+    
+  my $r = {};
+  my $n = $sth->execute();
+
+  if($sth->err == 0 && $n == 0) {
+    $r->{status} = CE_OP_ST_NOTHING_UPDATED;
+    $r->{errmsg} = 'No entry was updated. You probably set wrong parameter values.';
+  } else {
+    $r->{status} = !$sth->err ? CE_OP_ST_SUCCESS : CE_OP_ST_INTERNAL_ERROR;
+    $sth->err == 0 and $r->{n} = int($n);
+  }
+
+  $app->param('return_data', $r);
+  return;
+}
+
+sub get_pingback_url {
+  my $app = shift;
+  my $r   = {};
+  $app->param('return_data', $r);
+
+  my $url = exists($app->param('auth_data')->{pingback_url}) ?
+                  $app->param('auth_data')->{pingback_url} : '';
+
+  $r->{url} = $url;
+
+  return _ret_success($r);
+}
+
+sub set_pingback_url {
+  my $app = shift;
+  my $cgi = $app->query;
+  my $dbh = $app->param('dbh');
+  my $r   = {};
+
+  $app->param('return_data', $r);
+
+  my $sql_au   = "UPDATE Authentication SET pingback_url = ? WHERE id = ?";
+  my $auth_ref = $app->param('auth_data_ref');
+  my $url      = $cgi->param('url');
+
+  $dbh->do($sql_au, {}, $url, $auth_ref->{id});
+  if($dbh->err) {
+    return _ret_internal_error($r, $dbh->errstr);
+  }
+
+  return _ret_success($r);
+}
+
+sub config_vhost_ssl {
+  my $app = shift;
+  my $cgi = $app->query;
+  my $dbh = $app->param('dbh');
+  my $r   = {};
+
+  $app->param('return_data', $r);
+
+  my %op_info = ();
+  my $data    = {};
+  $op_info{name} = $app->get_current_runmode();
+  $op_info{exec_server_id} = $app->param('server')->{id};
+
+  $dbh->begin_work;
+  my $act_ret = _create_activity($app, \%op_info);
+  if(!_was_successful($act_ret)) {
+    $app->param('return_data', $act_ret);
+    $dbh->rollback();
+    return;
+  }
+
+  $op_info{name} = 'config_vhost_names';
+  $op_info{cmd_opts} = [ '-i', scalar($cgi->param('ip')) ];
+
+  %$data = ( 'mode' => '+', 'vhost' => $cgi->param('vhost'),
+             'domains' => join(' ', @{ $app->param('ssl_hostnames') })
+           );
+  
+  my $task_ret = _create_task($app, \%op_info, $data);
+  if(!_was_successful($task_ret)) {
+    $app->param('return_data', $task_ret);
+    $dbh->rollback();
+    return;
+  }
+ 
+  if(defined($cgi->param('ca_bundle'))) {
+    $op_info{name}     = 'config_vhost_ssl_ca_cert';
+    $op_info{cmd_opts} = [ '-i' ];
+    $op_info{flags}    = CE_TASK_FL_READ_STDIN;
+    %$data = ( 'vhost' => $cgi->param('vhost'),
+               'ip'    => $cgi->param('ip'),
+               'stdin_data' => $cgi->param('ca_bundle')
+             );
+    $task_ret = _create_task($app, \%op_info, $data);
+    if(!_was_successful($task_ret)) {
+      $app->param('return_data', $task_ret);
+      $dbh->rollback();
+      return;
+    }
+  }
+
+  delete($op_info{cmd_opts});
+  $op_info{name}     = 'config_vhost_ssl_key';
+  $op_info{cmd_opts} = [ '-i' ];
+  $op_info{flags}    = CE_TASK_FL_READ_STDIN;
+  %$data = ( 'vhost'        => $cgi->param('vhost'),
+              'ip'          => $cgi->param('ip'),
+              'stdin_data'  => $cgi->param('key'),
+            );
+
+  $task_ret = _create_task($app, \%op_info, $data);
+  if(!_was_successful($task_ret)) {
+    $app->param('return_data', $task_ret);
+    $dbh->rollback();
+    return;
+  }
+
+  $op_info{name} = 'config_vhost_ssl_cert';
+  $op_info{cmd_opts} = [ '-i' ];
+  $op_info{flags}    = CE_TASK_FL_READ_STDIN;
+
+  %$data = ( 'vhost'        => $cgi->param('vhost'),
+             'ip'           => $cgi->param('ip'),
+             'stdin_data'   => $cgi->param('cert'),
+            );
+
+  $task_ret = _create_task($app, \%op_info, $data);
+  if(!_was_successful($task_ret)) {
+    $app->param('return_data', $task_ret);
+    $dbh->rollback();
+    return;
+  }
+
+  $dbh->commit();
+  return _ret_success($r);
+}
+
+sub list {
+  my $app = shift;
+  my $cgi = $app->query;
+
+  # my $sql_items = "SELECT T.*,O.name AS op_name FROM Servers S, Tasks T, Operations O WHERE 
+  #                  S.id = ? AND T.target_server_id = S.id AND O.id = T.operation_id";
+  my $sql_items = "SELECT T.*,C.name AS op_name FROM Tasks T, Commands C WHERE 
+                     C.id = T.command_id";
+
+  if($cgi->param('last_time')) {
+    $sql_items .= " AND T.last_update >= datetime(?, 'unixepoch')";
+  }
+
+  my $dbh = $app->param('dbh');
+  my $sth = $dbh->prepare($sql_items);
+  if($cgi->param('last_time')) {
+    $sth->bind_param(1, scalar($cgi->param('last_time')), SQL_INTEGER);
+  }
+
+  # my $srv_ref = _get_row($dbh, 'Servers', { uid => $cgi->http(CE_HEADER_SERVER_STR) });
+  my $items;
+  my $ret;
+  if($sth->execute()) {
+    $ret->{status} = CE_OP_ST_SUCCESS;
+    $ret->{tasks}  = $sth->fetchall_arrayref({ });
+  } elsif($sth->err) {
+    $ret->{status} = CE_OP_ST_INTERNAL_ERROR;
+    $ret->{errmsg} = $sth->errstr;
+  }
+
+  $app->param('return_data', $ret);
+  return;
+}
+
+sub retry_activity {
+  my $app = shift;
+  my $cgi = $app->query;
+  my $dbh = $app->param('dbh');
+  my $r = {};
+  $app->param('return_data', $r);
+
+  my $act_ref = $app->param('activity_data');
+  my @accepted_states = ( CE_TASK_ST_FAILED,   CE_TASK_ST_CANCELED,
+                          CE_TASK_ST_STAND_BY, CE_TASK_ST_PARENT_FAILED );
+
+  my $valid = 0;
+  foreach my $st (@accepted_states) {
+    if($act_ref->{state} == $st) {
+      $valid = 1;
+      last;
+    }
+  }
+  if(!$valid) {
+    return _ret_permission_denied($r,
+                  "Activity can't be retried when it's in state " . $act_ref->{state});
+  }
+
+  my $sql_pen_tasks = "SELECT * FROM Activities A, Tasks T, Task_Attempts TA
+                       WHERE A.id = ? AND T.activity_id = A.id AND
+                       T.last_attempt_id = TA.id AND
+                       TA.state = ?";
+  if($dbh->selectrow_hashref($sql_pen_tasks, {}, $act_ref->{id},
+                                                CE_TASK_ST_WAITING)) {
+    return _ret_permission_denied($r,
+                  "Can't retry meanwhile there are tasks in WAITING state");
+  }
+
+  if($dbh->err) {
+    return _ret_internal_error($r, $dbh->err);
+  }
+
+
+  my $sql_tasks = "SELECT T.id, TA.id at_id, T.flags FROM Activities A, Tasks T, Task_Attempts TA
+                    WHERE A.id = ? AND T.activity_id = A.id AND
+                    T.last_attempt_id = TA.id AND TA.state IN (?, ?, ?, ?)";
+
+  my $tasks_ret;
+  my $sth = $dbh->prepare($sql_tasks);
+  if($dbh->err) {
+    return _ret_internal_error($r, $dbh->errstr);
+  }
+
+  $sth->bind_param(1, $act_ref->{id}, SQL_INTEGER);
+  for(my $i=0; $i <= $#accepted_states; $i++) {
+    $sth->bind_param($i+2, $accepted_states[$i], SQL_INTEGER);
+  }
+  $sth->execute();
+
+  if($sth->err) {
+    return _ret_internal_error($r, $sth->errstr);
+  }
+
+  my $tasks = $sth->fetchall_arrayref({});
+  if($#{ $tasks } == -1) {
+    return _ret_nothing_updated($r, 'No tasks to be retried');
+  }
+  $app->param('DEBUG') and warn Dumper($tasks), "\n";
+
+  my $sql_act = "UPDATE Activities SET state = ? WHERE id = ?";
+  my $sql_tsk = "UPDATE Tasks SET last_attempt_id = ? WHERE id = ?";
+  my $sql_ta  = "INSERT INTO Task_Attempts(task_id, flags) VALUES(?, ?)";
+
+  my $sth_tsk  = $dbh->prepare($sql_tsk);
+  if($dbh->err) {
+    return _ret_internal_error($r, $dbh->errstr);
+  }
+
+  my $sth_ta   = $dbh->prepare($sql_ta);
+  if($dbh->err) {
+    return _ret_internal_error($r, $dbh->errstr);
+  }
+
+  $dbh->begin_work;
+  $dbh->do($sql_act, {}, CE_TASK_ST_WAITING, $act_ref->{id});
+  foreach my $t (@$tasks) {
+    # add a new task attempt
+    $dbh->do($sql_ta, {}, $t->{id}, $t->{flags});
+
+    # update the Tasks table with the id of the new attempt
+    my $ta_id = $dbh->sqlite_last_insert_rowid();
+    $app->param('DEBUG') and warn "ta_id = $ta_id, task = " . $t->{id};
+    $dbh->do($sql_tsk, {}, $ta_id, $t->{id});
+  }
+  
+  $dbh->commit();
+  if($dbh->err) {
+    $dbh->rollback();
+    return _ret_internal_error($r, $dbh->errstr);
+  }
+
+  return _ret_success($r);
+}
+
+sub list_activities {
+  my $app = shift;
+  my $cgi = $app->query;
+  my $ctl = $app->param('ctlconn');
+
+  my $req = {};
+  foreach my $p (qw( id dashboard_act_id )) {
+    if(defined($cgi->param($p))) {
+      $req->{$p} = [ $cgi->param($p) ];
+      last;
+    }
+  }
+
+  foreach my $p (qw( offset limit )) {
+    if(defined($cgi->param($p))) {
+      $req->{$p} = $cgi->param($p);
+    }
+  }
+
+  $app->param('return_data', $ctl->op('list_activities', $req));
+
+  return;
+}
+
+sub get_activity_report {
+  my $app = shift;
+  my $cgi = $app->query;
+  my $dbh = $app->param('dbh');
+  my $r   = {};
+
+  $app->param('return_data', $r);
+
+  my $act_ref = $app->param('activity_data');
+
+  my $sql_tasks = "SELECT T.id, C.name command_name, TA.state, TA.return_code,
+                    TA.output, TA.start_time, TA.end_time
+                   FROM Activities A, Tasks T, Task_Attempts TA, Commands C
+                   WHERE A.id = ? AND T.activity_id = A.id AND
+                   T.command_id = C.id AND T.last_attempt_id = TA.id
+                   ORDER BY T.id";
+
+  my $tasks_ref;
+  if($tasks_ref = $dbh->selectall_arrayref($sql_tasks, { Slice => {} },
+                                            $act_ref->{id})) {
+    $r->{tasks} = $tasks_ref;
+  }
+
+  if($dbh->err) {
+    return _ret_internal_error($r, $dbh->errstr);
+  }
+
+  foreach my $key (qw( priority created_on last_update name state )) {
+    if(exists($act_ref->{$key})) {
+      $r->{activity}->{$key} = $act_ref->{$key}
+    }
+  }
+  return _ret_success($r);
+}
+
+sub list_tasks {
+  my $app = shift;
+  my $cgi = $app->query;
+
+  my $sql_act = "SELECT * FROM Activities WHERE id = ?";
+
+  my $sql_items = "SELECT T.id, T.activity_id, T.command_id, T.exec_server_id,
+                    TA.state, TA.return_code, TA.output, TA.start_time, TA.end_time,
+                    TA.exec_time, TA.created_on, TA.last_update,
+                    COUNT(*) AS n_attempts,
+                    C.name AS command_name, S.uuid AS server_uuid
+                    FROM Activities A, Tasks T, Task_Attempts TA, Commands C,
+                         Servers S
+                    WHERE A.id = ?  AND A.id = T.activity_id AND T.id = TA.task_id
+                    AND T.command_id = C.id AND S.id = T.exec_server_id
+                    GROUP BY T.id";
+
+  if(defined($cgi->param('limit')) && $cgi->param('limit') =~ /^\d+$/) {
+    $sql_items .= " LIMIT " . $cgi->param('limit');
+  }
+
+  my $id = defined($cgi->param('act_id')) ? $cgi->param('act_id') : undef;
+  if(!defined($id)) {
+    $app->param('return_data', { status => CE_OP_ST_MISSING_PARAMETERS,
+                                 errmsg => 'Missing activity act_id parameter'
+                               });
+    return;
+  }
+
+  if($id !~ /^\d+$/) {
+    $app->param('return_data', { status => CE_OP_ST_PARAMETER_FORMAT_ERROR,
+                                 errmsg => 'Invalid format of the parameter act_id',
+                               });
+    return;
+  }
+
+  my $dbh = $app->param('dbh');
+  if(!$dbh->selectrow_hashref($sql_act, {}, $id)) {
+    $app->param('return_data', { status => CE_OP_ST_PARAMETER_INVALID_VALUE,
+                                 errmsg => 'No such activity with this id'
+                               });
+    return;
+  }
+
+  my $sth = $dbh->prepare($sql_items);
+  $sth->execute($id);
+
+  my $items;
+  my $ret;
+  if(!$sth->err) {
+    $ret->{status} = CE_OP_ST_SUCCESS;
+    $ret->{tasks}  = $sth->fetchall_arrayref({ });
+  } elsif($sth->err) {
+    $ret->{status} = CE_OP_ST_INTERNAL_ERROR;
+    $ret->{errmsg} = $sth->errstr;
+  }
+
+  $app->param('return_data', $ret);
+  return;
+}
+
+sub create_server {
+  my $app = shift;
+  my $cgi = $app->query;
+  my $dbh = $app->param('dbh');
+  my $r   = {};
+  my %op_info;
+  $app->param('return_data', $r);
+
+  my $sql = "INSERT INTO Servers(uuid, key, hostname, hosting_company_id) VALUES (?, ?, ?, ?)";
+  my $vps_uuid = $cgi->param('uuid');
+  my $vps_key  = _gen_random();
+  my $hn   = $cgi->param('hostname');
+  my $hid  = $cgi->param('hosting_company_id');
+  my $ip_address = $cgi->param('ip_address');
+  
+  $dbh->do($sql, {}, $vps_uuid, $vps_key, $hn, $hid);
+  if($dbh->err) {
+    return _ret_internal_error($r, $dbh->errstr);
+  }
+  my $server_id = $dbh->last_insert_id(undef, undef, undef, undef);
+
+  $op_info{name} = 'create_server';
+
+  my $ret = _create_activity($app, \%op_info);
+  if($ret->{status} != CE_OP_ST_SUCCESS) {
+    $app->param('return_data', $ret);
+    return;
+  }
+
+  $op_info{name} = 'config_dns_update_vps_records';
+  $op_info{exec_server_id} = $app->param('controller_exec_server');
+
+  $ret = _create_task($app, \%op_info, { hostname => $hn, 
+                                         ip => $ip_address,
+                                       });
+
+  if($ret->{status} != CE_OP_ST_SUCCESS) {
+    $app->param('return_data', $ret);
+    return;
+  }
+
+  delete($op_info{flags});
+  $op_info{name} = 'send_bootstrap_ssh';
+  $op_info{exec_server_id} = $app->param('controller_exec_server');
+  $op_info{state} = CE_TASK_ST_WAITING_PARENT;
+  $op_info{flags} = CE_TASK_FL_READ_STDIN;
+
+  if($cgi->param('install_software')) {
+    my $root_user = $cgi->param('root_user');
+    my $root_pw   = $cgi->param('root_pw'  );
+
+    $ret = _create_task($app, \%op_info,
+      { ssh_username => $root_user,
+        ssh_host     => $ip_address,
+        stdin_data   => $root_pw . "\n",
+        vps_uuid     => $vps_uuid,
+        vps_key      => $vps_key,
+        api_url      => $app->param('tasks_api_url'),
+        bootstrap_file => $app->param('bootstrap_file'),
+      });
+      
+    if($ret->{status} != CE_OP_ST_SUCCESS) {
+      $app->param('return_data', $ret);
+      return;
+    }
+
+    delete($op_info{flags});
+    $op_info{name} = 'download_extract_exec';
+    $op_info{exec_server_id} = $server_id;
+    $op_info{state} = CE_TASK_ST_WAITING_PARENT;
+    $ret = _create_task($app, \%op_info, 
+            { 
+              file_url => $app->param('serverlink_url'),
+              file_to_exec => 'install.sh' 
+            });
+
+    if($ret->{status} != CE_OP_ST_SUCCESS) {
+      $app->param('return_data', $ret);
+      return;
+    }
+  # end of install_software
+  }
+
+  $op_info{name} = 'config_vhost_names_default';
+  $op_info{exec_server_id} = $server_id;
+  $op_info{state} = CE_TASK_ST_WAITING_PARENT;
+
+  $ret = _create_task($app, \%op_info, { hostname => $hn });
+  if($ret->{status} != CE_OP_ST_SUCCESS) {
+    $app->param('return_data', $ret);
+    return;
+  }
+
+  $r->{key}    = $vps_key;
+
+  return _ret_success($r);
+}
+
+sub update_server {
+  my $app = shift;
+  my $cgi = $app->query;
+  my $dbh = $app->param('dbh');
+  my $r   = {};
+  my %op_info;
+  $app->param('return_data', $r);
+
+  my $srv_ref = $app->param('server');
+  my $uuid    = $cgi->param('uuid'  );
+
+  my %update_columns = (
+    'hostname' => SQL_VARCHAR,
+    'hosting_company_id' => SQL_INTEGER,
+  );
+
+  if(defined($cgi->param('regenerate_key'))) {
+    $cgi->param('key', _gen_random());
+    $update_columns{key} = SQL_VARCHAR;
+  }
+
+  my @update_values;
+
+  foreach my $p (keys %update_columns) {
+    if(defined($cgi->param($p))) {
+      push(@update_values, $p);
+    }
+  }
+
+  my $sql = "UPDATE Servers SET \%s WHERE uuid = ?";
+  my $sub = '';
+  foreach my $p (@update_values) {
+    $sub .= ", $p = ?";
+  }
+  if(length($sub) > 0) {
+    $sub = substr($sub, 2); # remove the leading ', '
+  }
+
+  if(defined(my $disable = $cgi->param('disable'))) {
+    if(length($sub) > 0) {
+      $sub .= ",";
+    }
+
+    my $flag = $srv_ref->{flags};
+    if($disable && $flag & CE_FL_SERVER_DISABLED) {
+      return _ret_invalid_value($r, '', 'Server already disabled');
+    } elsif($disable) { # disable == 1
+      $flag |= CE_FL_SERVER_DISABLED; # set disabled bit
+    } elsif($disable == 0 && ! ($flag & CE_FL_SERVER_DISABLED)) { # == 0
+      return _ret_invalid_value($r, '', 'Server already enabled');
+    } elsif($disable == 0) {
+      $flag &= ~CE_FL_SERVER_DISABLED; # clear disabled bit
+    }
+
+    $sub .= "flags = $flag";
+  }
+
+  $sql = sprintf($sql, $sub);
+  $app->param("DEBUG") and warn " update_server(): sql = $sql\n";
+  my $sth = $dbh->prepare($sql);
+  my $i;
+  for($i=0; $i <= $#update_values; $i++) {
+    my $p = $update_values[$i];
+    my $v = $cgi->param($p);
+    $sth->bind_param($i+1, $v, $update_columns{$p});
+    $app->param('DEBUG') and warn " update_server(): setting $p = $v\n";
+  }
+
+  $sth->bind_param($i+1, $uuid, SQL_VARCHAR);
+  my $n = $sth->execute();
+
+  $app->param('DEBUG') and warn " update_server(): n = $n\n";
+  if($sth->err) {
+    return _ret_internal_error($r, $sth->errstr);;
+  }
+
+  my $ret;
+  if(defined($cgi->param('hostname'))) {
+    $op_info{name} = 'update_server';
+
+    $ret = _create_activity($app, \%op_info);
+    if($ret->{status} != CE_OP_ST_SUCCESS) {
+      $app->param('return_data', $ret);
+      return;
+    }
+
+    $op_info{name} = 'config_vhost_names_default';
+    $op_info{exec_server_id} = $srv_ref->{id};
+
+    $ret = _create_task($app, \%op_info,
+                          { hostname => scalar($cgi->param('hostname')) });
+    if($ret->{status} != CE_OP_ST_SUCCESS) {
+      $app->param('return_data', $ret);
+      return;
+    }
+  }
+
+  if(defined($cgi->param('key'))) {
+    $r->{key} = $cgi->param('key');
+  }
+
+  return _ret_success($r);
+}
+
+sub git_import {
+  my $app = shift;
+  my $cgi = $app->query;
+  my $dbh = $app->param('dbh');
+  my $r   = {};
+  my %op_info;
+  $app->param('return_data', $r);
+
+  my $git_server = $cgi->param('git_server');
+  my $git_repo   = $cgi->param('git_repo');
+  my $git_username   = $cgi->param('git_username');
+
+  my $web_server   = $cgi->param('web_server');
+  my $vhost        = $cgi->param('vhost');
+  my $commit_msg   = $cgi->param('commit_msg');
+
+  $op_info{name} = 'git_import';
+
+  my $srv_ref;
+  if(defined($web_server)) {
+    $srv_ref = _get_row($dbh, 'Servers', { hostname => $web_server });
+    if(!$srv_ref) {
+      return _ret_invalid_value($r, 'web_server');
+    }
+  } else {
+    return _ret_missing_required($r, 'web_server');
+  }
+    
+  my $ret = _create_activity($app, \%op_info);
+  if($ret->{status} != CE_OP_ST_SUCCESS) {
+    $app->param('return_data', $ret);
+    return;
+  }
+
+  $op_info{name} = 'git_import';
+  $op_info{exec_server_id} = $srv_ref->{id};
+
+  my $data = {
+    git_server => $git_server,
+    git_repo   => $git_repo,
+    git_username => $git_username,
+    web_server => $web_server,
+    vhost => $vhost
+  };
+
+  if(defined($cgi->param('commit_msg'))) {
+    $data->{commit_msg} = $cgi->param('commit_msg');
+  }
+
+  $op_info{flags} = CE_TASK_FL_DROP_PRIVS;
+  $data->{exec_user} = "w_$vhost";
+  $data->{exec_group} = 'virtwww';
+
+  $ret = _create_task($app, \%op_info, $data);
+
+  if($ret->{status} != CE_OP_ST_SUCCESS) {
+    $app->param('return_data', $ret);
+    return;
+  }
+
+  $r->{status} = CE_OP_ST_SUCCESS;
+
+  return;
+}
+
+sub chpass_vhost {
+  my $app = shift;
+  my $cgi = $app->query;
+  my $dbh = $app->param('dbh');
+  my %op_info;
+
+  my $srv_ref = _get_row($dbh, 'Servers', { uuid => $cgi->param('server') });
+  if(!$srv_ref) {
+    $app->param('return_data', { status => CE_OP_ST_PARAMETER_INVALID_VALUE,
+                                 errmsg => 'There\'s no server with this uuid'
+                                 });
+    return;
+  }
+
+  $op_info{'name'} = 'chpass_vhost';
+
+  $op_info{'exec_server_id'} = $srv_ref->{id};
+
+ 
+  if(defined($cgi->param('activity_id'))) {
+    $op_info{dashboard_act_id} = $cgi->param('activity_id');
+  }
+
+  my $act_ref = _create_activity($app, \%op_info);
+  if($act_ref->{status} != CE_OP_ST_SUCCESS) {
+    return $act_ref;
+  }
+
+  $op_info{activity_id} = $act_ref->{activity_id};
+
+  my $data;
+  $data->{vhost} = $cgi->param('vhost');
+  if($cgi->param('password')) {
+    my @cmd_opts = ('-i');
+    $op_info{flags} = CE_TASK_FL_READ_STDIN;
+    $data->{stdin_data} = $cgi->param('password') . "\n";
+    $data->{cmd_opts} = \@cmd_opts;
+  }
+ 
+  my $rsp = _create_task($app, \%op_info, $data);
+  if(defined($rsp)) {
+    $app->param('return_data', $rsp);
+    return;
+  }
+
+  $app->param('return_data', { 'status' => CE_OP_ST_SUCCESS });
+  return;
+}
+
+sub server_vhost_params {
+  my $app = shift;
+  my $cgi = $app->query;
+  my $dbh = $app->param('dbh');
+  my %op_info;
+  my $r = {};
+  $app->param('return_data', $r);
+
+  $op_info{'name'} = $app->get_current_runmode;
+
+  my @return_output = (qw( crontab_vhost_get list_vhost_names list_vhost_logs archive_vhost_list ));
+
+  $op_info{'exec_server_id'} = $app->param('server')->{id};
+ 
+  my $act_ref = _create_activity($app, \%op_info);
+  if($act_ref->{status} != CE_OP_ST_SUCCESS) {
+    $app->param('return_data', $act_ref);
+    return;
+  }
+
+  my $data = {};
+  $data->{vhost} = $cgi->param('vhost');
+  my $mode = $app->get_current_runmode;
+  if(grep(/^$mode$/, @return_output)) {
+    $op_info{flags} = CE_TASK_FL_SEND_OUTPUT;
+  } 
+
+  my $rsp = _create_task($app, \%op_info, $data);
+  if($rsp->{status} != CE_OP_ST_SUCCESS) {
+    $app->param('return_data', $rsp);
+    return;
+  }
+
+  return _ret_success($r);
+}
+
+sub crontab_vhost_edit {
+  my $app = shift;
+  my $cgi = $app->query;
+  my $dbh = $app->param('dbh');
+  my %op_info;
+  my $r = {};
+  $app->param('return_data', $r);
+
+  $op_info{'name'} = $app->get_current_runmode;
+
+  $op_info{'exec_server_id'} = $app->param('server')->{id};
+ 
+  my $act_ref = _create_activity($app, \%op_info);
+  if($act_ref->{status} != CE_OP_ST_SUCCESS) {
+    $app->param('return_data', $act_ref);
+    return;
+  }
+
+  my $data = {};
+  $op_info{flags} = CE_TASK_FL_READ_STDIN;
+
+  $data->{vhost} = $cgi->param('vhost');
+  $data->{stdin_data} = $app->param('contents');
+
+  my $rsp = _create_task($app, \%op_info, $data);
+  if($rsp->{status} != CE_OP_ST_SUCCESS) {
+    $app->param('return_data', $rsp);
+    return;
+  }
+
+  return _ret_success($r);
+}
+
+*crontab_vhost_get     = \&server_vhost_params;
+*htaccess_lock_vhost   = \&server_vhost_params;
+*htaccess_unlock_vhost = \&server_vhost_params;
+
+*list_vhost_names = \&server_vhost_params;
+*list_vhost_logs  = \&server_vhost_params;
+*archive_vhost_list = \&server_vhost_params;
+
+sub public_key_vhost {
+  my $app = shift;
+  my $cgi = $app->query;
+  my $r   = {};
+
+  $app->param('return_data', $r);
+
+  my %op_info;
+  $op_info{name} = $app->get_current_runmode;
+  $op_info{exec_server_id} = $app->param('server')->{id};
+
+  my $contents = '';
+  foreach my $a ($cgi->param('add_key')) {
+    $contents .= "+:$a\n";
+  }
+
+  foreach my $d ($cgi->param('del_key')) {
+    # my $k = CGI::unescape($d);
+    $contents .= "-:$d\n";
+  }
+    
+  my $ret;
+  $ret = _create_activity($app, \%op_info);
+  if(!_was_successful($ret)) {
+    $app->param('return_data', $ret);
+    return;
+  }
+
+  my $vhost = $cgi->param('vhost');
+
+  $op_info{flags} = CE_TASK_FL_READ_STDIN;
+  $ret = _create_task($app, \%op_info, { vhost => $vhost, stdin_data => $contents });
+  if(!_was_successful($ret)) {
+    $app->param('return_data', $ret);
+    return;
+  }
+
+  return _ret_success($r);
+}
+
+sub single_server_param {
+  my $app = shift;
+  my $cgi = $app->query;
+  my $dbh = $app->param('dbh');
+  my $r   = {};
+  $app->param('return_data', $r);
+
+  my %data = ();
+  my %op_info = ();
+
+  if(!_is_required_set($cgi, 'server')) {
+    return _ret_missing_required($r, 'server');
+  }
+
+  $op_info{name}             = $app->get_current_runmode();
+
+  my $act_ref = _create_activity($app, \%op_info);
+  if($act_ref->{status} != CE_OP_ST_SUCCESS) {
+    $app->param('return_data', $act_ref);
+    return;
+  }
+
+  $op_info{exec_server_id} = $app->param('server')->{id};
+
+  my $ret = _create_task($app, \%op_info, \%data);
+  if($ret->{status} != CE_OP_ST_SUCCESS) {
+    $app->param('return_data', $ret);
+    return;
+  }
+
+  return _ret_success($r);
+}
+
+*list_vhost_names_default = \&single_server_param;
+
+sub sleep_test {
+  my $app = shift;
+  my $cgi = $app->query;
+  my $dbh = $app->param('dbh');
+  my $r   = {};
+  $app->param('return_data', $r);
+
+  my %op_info;
+
+  $op_info{'name'} = $app->get_current_runmode;
+
+  my $srv_ref = _get_row($dbh, 'Servers', { uuid => $cgi->param('server') });
+  if($srv_ref) {
+    $op_info{'exec_server_id'} = $srv_ref->{id};
+  } else {
+    $r->{status} = CE_OP_ST_PARAMETER_INVALID_VALUE;
+    $r->{errmsg} = "No such server with this uuid";
+    return;
+  }
+
+  my $act_ref = _create_activity($app, \%op_info);
+  if($act_ref->{status} != CE_OP_ST_SUCCESS) {
+    $app->param('return_data', $act_ref);
+    return;
+  }
+
+  _create_task($app, \%op_info, { 'sleep_time' => 1 });
+
+  $op_info{state} = CE_TASK_ST_WAITING_PARENT;
+  foreach my $i (qw( 2 3 )) {
+    my $rsp = _create_task($app, \%op_info, { 'sleep_time' => $i });
+  }
+
+  $r->{status} = CE_OP_ST_SUCCESS;
+  return;
+}
+
+sub cat_test {
+  my $app = shift;
+  my $cgi = $app->query;
+  my %op_info;
+  my $r = {};
+  my $dbh = $app->param('dbh');
+  $app->param('return_data', $r);
+
+  $op_info{'name'} = 'cat_test';
+
+  my $act_ref = _create_activity($app, \%op_info);
+  if($act_ref->{status} != CE_OP_ST_SUCCESS) {
+    $app->param('return_data', $act_ref);
+    return;
+  }
+
+  $op_info{flags} = CE_TASK_FL_READ_STDIN | CE_TASK_FL_DROP_PRIVS;
+  my $data = {
+    'stdin_data' => _gen_random(),
+  };
+
+  my $srv_ref;
+  if(defined($cgi->param('server'))) {
+    $srv_ref = _get_row($dbh, 'Servers', { uuid => $cgi->param('server') });
+    if(!$srv_ref) {
+      $r->{status} = CE_OP_ST_PARAMETER_INVALID_VALUE;
+      $r->{errmsg} = 'Unknown server uid';
+      return;
+    }
+  }
+  $op_info{exec_server_id} = $srv_ref->{id};
+
+  if(defined($cgi->param('user'))) {
+    $data->{exec_user} = $cgi->param('user');
+  }
+  $data->{exec_group} = 'www-data';
+
+  my $rsp =_create_task($app, \%op_info, $data);
+  if($rsp->{state} != CE_OP_ST_SUCCESS) {
+    $app->param('return_data', $rsp);
+    return;
+  }
+
+  $app->param('return_data', { 'status' => CE_OP_ST_SUCCESS });
+  return;
+}
+
+sub get_task_status {
+  my $app = shift;
+  my $cgi = $app->query;
+
+  my $sql_items = "SELECT T.id, T.activity_id, TA.state, TA.return_code, TA.output,
+                    TA.start_time, TA.end_time, TA.exec_time, S.hostname
+                    FROM Tasks T, Task_Attempts TA, Servers S WHERE T.id = ? 
+                    AND T.last_attempt_id = TA.id AND T.exec_server_id = S.id";
+
+  my $dbh = $app->param('dbh');
+  my $sth = $dbh->prepare($sql_items);
+
+  $sth->bind_param(1, scalar($cgi->param('id')), SQL_INTEGER);
+
+  my $items;
+  my $ret;
+  $sth->execute();
+
+  if($sth->err) {
+    $ret->{status} = CE_OP_ST_INTERNAL_ERROR;
+    $ret->{errmsg} = $sth->errstr;
+    $app->param('return_data', $ret);
+    return;
+  }
+
+  my $task = $sth->fetchrow_hashref();
+  if(!$task) {
+    $ret->{status} = CE_OP_ST_PARAMETER_INVALID_VALUE;
+    $ret->{errmsg} = "No such task";
+    $app->param('return_data', $ret);
+    return;
+  }
+
+  $ret->{status} = CE_OP_ST_SUCCESS;
+  $ret->{task_data}  = [ $task ];
+  $app->param('return_data', $ret);
+  return;
+}
+
+sub get_server_info {
+  my $app = shift;
+  my $cgi = $app->query;
+  my $dbh = $app->param('dbh');
+  my $r   = {};
+  $app->param('return_data', $r);
+
+  my $sql_items = "SELECT id, uuid, hostname, last_ip, last_checkin, software_version, flags,
+                    created_on, last_update FROM Servers WHERE uuid IN ";
+
+  my @uuids = $cgi->param('uuid');
+  $sql_items .= '(' . join(',', ('?') x ($#uuids + 1)) . ')';
+  warn "$sql_items\n";
+
+  my $sth = $dbh->prepare($sql_items);
+
+  for(my $i=0; $i <= $#uuids; $i++) {
+    $sth->bind_param($i+1, $uuids[$i], SQL_VARCHAR);
+  }
+
+  my $items;
+  my $ret;
+  $sth->execute();
+
+  if($sth->err) {
+    $r->{status} = CE_OP_ST_INTERNAL_ERROR;
+    $r->{errmsg} = $sth->errstr;
+    $app->param('return_data', $r);
+    return;
+  }
+
+  my $srv_ref = $sth->fetchall_arrayref({});
+  if(!$srv_ref) {
+    return _ret_invalid_value($r, 'uuid');
+  }
+
+  _ret_success($r);
+  $r->{server} = $srv_ref;
+  return;
+}
+
+sub list_hosting_companies {
+  my $app = shift;
+  my $cgi = $app->query;
+  my $dbh = $app->param('dbh');
+  my $r   = {};
+  $app->param('return_data', $r);
+
+  my $sql_items = "SELECT * FROM Hosting_Companies";
+  my $h_ref = $dbh->selectall_arrayref($sql_items, { Slice => {} });
+
+  if($dbh->err) {
+    return _ret_internal_error($r, $dbh->errstr);
+  }
+
+  $r->{hosting_companies} = $h_ref;
+  return _ret_success($r);
+}
+
+
+sub _get_row {
+  my($dbh, $table, $params) = @_;
+  my @bind_values;
+  my $sql = "SELECT * FROM $table WHERE ";
+  my $row;
+
+  foreach my $p (keys %$params) {
+    $sql .= "$p = ?";
+    push(@bind_values, $params->{$p});
+  }
+
+  $row = $dbh->selectrow_hashref($sql, {}, @bind_values);
+
+  return $row;
+}
+
+sub _create_activity {
+  my($app, $op_info) = @_;
+  my $cgi = $app->query;
+  my $r   = {};
+  my @opts_avail = ();
+
+  my $dbh      = $app->param('dbh');
+
+  my %columns = (
+    'name_id'          => SQL_INTEGER,
+    'state'            => SQL_INTEGER,
+    'priority'         => SQL_INTEGER,
+    'flags'            => SQL_INTEGER,
+    'dashboard_act_id' => SQL_VARCHAR
+  );
+
+  if(!exists($op_info->{name})) {
+    return { status => CE_OP_ST_INTERNAL_ERROR, 
+              errmsg => '_create_activity(): Didn\'t receive activity name' };
+  }
+
+  my $name_ref = _get_row($dbh, 'Activity_Names', { name => $op_info->{name} });
+  if($dbh->err) {
+    return { status => CE_OP_ST_INTERNAL_ERROR,
+            errmsg => 'Unable to resolve activity name' };
+  } elsif(!$name_ref) {
+    return { status => CE_OP_ST_INTERNAL_ERROR,
+             errmsg => 'Activity name doesn\'t exist' };
+  }
+  $op_info->{name_id} = $name_ref->{id};
+
+  foreach my $k (keys %columns) {
+    if(exists($op_info->{$k})) {
+      push(@opts_avail, $k);
+    }
+  }
+
+  # all other values get the default from the database
+  # if(!exists($op_info->{'dashboard_act_id'})) {
+  if(!exists($op_info->{dashboard_act_id}) && defined($cgi->param('dashboard_act_id'))) {
+    $op_info->{'dashboard_act_id'} = $cgi->param('dashboard_act_id');
+  } elsif(!exists($op_info->{dashboard_act_id})) {
+    $op_info->{'dashboard_act_id'} = 0;
+  }
+  push(@opts_avail, 'dashboard_act_id');
+
+  my $sql_insrt = sprintf('INSERT INTO Activities(%s) VALUES(%s)', join(',', @opts_avail), join(',', ('?') x ($#opts_avail + 1) ));
+  $app->param('DEBUG') and warn sprintf('%s', $sql_insrt);
+
+  my $sth = $dbh->prepare($sql_insrt);
+  for(my $i=0; $i <= $#opts_avail; $i++) {
+    my $col = $opts_avail[$i];
+    $sth->bind_param($i+1, $op_info->{$col}, $columns{$col});
+    $app->param('DEBUG') and warn sprintf('binding col = %s, val = %s', $col, $op_info->{$col});
+  }
+
+  my $status = $sth->execute();
+
+  $r = {
+    status => $sth->err == 0 ? CE_OP_ST_SUCCESS : CE_OP_ST_INTERNAL_ERROR,
+  };
+
+  if($sth->err) {
+    $r->{errmsg} = $sth->errstr;
+  } else {
+    $r->{activity_id} = $dbh->last_insert_id(undef, undef, undef, undef);
+    $op_info->{activity_id} = $r->{activity_id};
+  }
+
+  return $r;
+}
+
+sub _create_task {
+  my $app = shift;
+  my $cgi = $app->query;
+  my $r   = {};
+
+  my($op_info, $data) = @_;
+
+  my $dbh      = $app->param('dbh');
+  my $op_ref   = _get_row($dbh, 'Commands', { name => $op_info->{name} });
+  
+  if(!$op_ref && !$dbh->err) {
+    $r->{status} = $dbh->err ? CE_OP_ST_INTERNAL_ERROR : CE_OP_ST_PARAMETER_INVALID_VALUE;
+    $r->{errmsg} = 'Invalid command name';
+    return $r;
+  } elsif(!$op_ref && $dbh->err) {
+    $r->{status} = CE_OP_ST_INTERNAL_ERROR;
+    $r->{errmsg} = $dbh->errstr;
+    return $r;
+  }
+
+  my %columns = (
+    'command_id'     => SQL_INTEGER,
+    'exec_server_id' => SQL_INTEGER,
+    'flags'          => SQL_INTEGER,
+    'activity_id'    => SQL_VARCHAR,
+    'input_data'     => SQL_VARCHAR
+  );
+
+  $op_info->{command_id}  = $op_ref->{id};
+  $op_info->{input_data}  = encode_json($data);
+
+  foreach my $p (qw( activity_id state )) {
+    if(!exists($op_info->{$p})) {
+      $op_info->{$p} = 0;
+    }
+  }
+
+  my @opts_avail = ();
+
+  foreach my $k (keys %columns) {
+    if(exists($op_info->{$k})) {
+      push(@opts_avail, $k);
+    }
+  }
+
+  my $sql_insrt = sprintf('INSERT INTO Tasks(%s) VALUES(%s)', join(',', @opts_avail), join(',', ('?') x ($#opts_avail + 1) ));
+  $app->param('DEBUG') and warn sprintf('%s', $sql_insrt);
+
+  my $sth = $dbh->prepare($sql_insrt);
+  for(my $i=0; $i <= $#opts_avail; $i++) {
+    my $col = $opts_avail[$i];
+    $sth->bind_param($i+1, $op_info->{$col}, $columns{$col});
+    # warn sprintf('binding col = %s, val = %s', $col, $op_info->{$col});
+  }
+
+  my $status = $sth->execute();
+  if($sth->err) {
+    $r = {
+      status => CE_OP_ST_INTERNAL_ERROR,
+      errmsg => $sth->errstr,
+    };
+    return $r;
+  }
+
+  my $task_id = $dbh->last_insert_id(undef, undef, undef, undef);
+
+  my $attempt_insrt = "INSERT INTO Task_Attempts(task_id, state) VALUES (?, ?)";
+  if(!$dbh->do($attempt_insrt, {}, $task_id, $op_info->{state})) {
+    $r->{status} = CE_OP_ST_INTERNAL_ERROR;
+    $r->{errmsg} = $dbh->errstr;
+    return $r;
+  } 
+
+  my $attempt_id = $dbh->last_insert_id(undef, undef, undef, undef);
+  my $upd_task   = "UPDATE Tasks SET last_attempt_id = ? WHERE id = ?";
+  if($dbh->do($upd_task, {}, $attempt_id, $task_id)) {
+    $r->{status} = CE_OP_ST_SUCCESS;
+  } else {
+    $r->{status} = CE_OP_ST_INTERNAL_ERROR;
+    $r->{errmsg} = $dbh->errstr;
+    return $r;
+  }
+
+  return $r;
+}
+
+sub archive_vhost {
+  my $app = shift;
+  my $cgi = $app->query;
+  my $dbh = $app->param('dbh');
+
+  # /controller?op=new_task&name=archive-vhost&vhost=
+  my %data     = ();
+  my %op_info  = ();
+  $op_info{name} = $app->get_current_runmode();
+
+  my $tgt_srv = _get_row($dbh, 'Servers', { uuid => $cgi->param('server') });
+  if($tgt_srv) {
+    $op_info{exec_server_id} = $tgt_srv->{id};
+  } else {
+    $app->param('return_data', { status => CE_OP_ST_PARAMETER_INVALID_VALUE,
+                                        errmsg => 'Invalid server uuid' });
+    return;
+  }
+
+  # $data{command_values}{vhost}    = $cgi->param('vhost');
+  # $data{command_values}{filename} = $cgi->param('filename');
+  # $data{command_values}{target_server} = $cgi->param('target_server');
+
+  $data{vhost}      = $cgi->param('vhost');
+  $data{filename}   = $cgi->param('filename');
+  $data{server}     = $cgi->param('server');
+
+  if(defined($cgi->param('activity_id'))) {
+    $op_info{'dashboard_act_id'} = $cgi->param('activity_id');
+  }
+
+  my $act_ref = _create_activity($app, \%op_info);
+  if($act_ref->{status} != CE_OP_ST_SUCCESS) {
+    return $act_ref;
+  }
+  $op_info{'activity_id'} = $act_ref->{'activity_id'};
+
+  my $r = _create_task($app, \%op_info, \%data);
+
+  $app->param('return_data', $r);
+}
+
+sub list_commands {
+  my $app = shift;
+  my $cgi = $app->query;
+  my $dbh = $app->param('dbh');
+
+  my $sql_list = "SELECT * FROM Commands";
+  if($cgi->param('last_time')) {
+    $sql_list .= " WHERE last_update >= datetime(?, 'unixepoch')";
+  }
+
+  my $sth = $dbh->prepare($sql_list);
+  if($cgi->param('last_time')) {
+    $sth->bind_param(1, scalar($cgi->param('last_time')), SQL_INTEGER);
+  }
+
+  my $ret;
+  if($sth->execute) {
+    $ret->{commands} = $sth->fetchall_arrayref({ });
+    $ret->{status}     = CE_OP_ST_SUCCESS;
+  } elsif($sth->err) {
+    $ret->{status} = CE_OP_ST_INTERNAL_ERROR;
+    $ret->{errmsg} = $sth->errmsg;
+  }
+
+  $app->param('return_data', $ret);
+  return;
+}
+
+sub register_vm {
+  my $app = shift;
+  my $cgi = $app->query;
+  my $dbh = $app->param('dbh');
+
+  my $sql_reg = "INSERT INTO Servers(sid,uid,key,hosting_company_id,hostname) VALUES (?, ?, ?, 1, ?)";
+
+  my $sid = $cgi->param('sid');
+  my $uid = $cgi->param('uuid');
+  my $key = _gen_random();
+  my $hostname = $cgi->param('hostname');
+
+  $dbh->do($sql_reg, {}, $sid, $uid, $key, $hostname);
+  my $r = {};
+
+  if($dbh->err) {
+    $r->{status} = CE_OP_ST_INTERNAL_ERROR;
+    $r->{errmsg} = 'Unable to register server';
+    warn sprintf("Error: unable to register server: %s\n", $dbh->errstr);
+  } else {
+    $r->{status} = CE_OP_ST_SUCCESS;
+    $r->{key}    = $key;
+  }
+
+  return $app->param('return_data', $r);
+  
+}
+
+sub remove_vhost {
+  my $app = shift;
+  my $cgi = $app->query;
+  my $dbh = $app->param('dbh');
+
+  my %data = ();
+  my %op_info = ();
+
+  $op_info{name} = $app->get_current_runmode();
+  $data{vhost}   = $cgi->param('vhost');
+  $data{filename} = $cgi->param('filename');
+
+  # $data{target_server} = $cgi->param('target_server');
+
+  my $sql_srv = "SELECT * FROM Servers WHERE uuid = ?";
+
+  if(my $srv_ref = $dbh->selectrow_hashref($sql_srv, {}, scalar($cgi->param('server')))) {
+    $op_info{exec_server_id} = $srv_ref->{id};
+  } else {
+    $app->param('return_data', { 'status' => CE_OP_ST_PARAMETER_INVALID_VALUE,
+                                  'error_msg' => 'Invalid server uuid' });
+    return;
+  }
+
+  my $act_ref = _create_activity($app, \%op_info);
+  if($act_ref->{status} != CE_OP_ST_SUCCESS) {
+    return $act_ref;
+  } 
+
+  $op_info{'activity_id'} = $act_ref->{'activity_id'};
+
+  my $r = _create_task($app, \%op_info, \%data);
+  $app->param('return_data', { status => CE_OP_ST_SUCCESS });
+}
+
+sub config_vhost_names_default {
+  my $app = shift;
+  my $cgi = $app->query;
+  my $dbh = $app->param('dbh');
+  my $r   = {};
+  $app->param('return_data', $r);
+
+  my %data = ();
+  my %op_info = ();
+
+  if(!_is_required_set($cgi, 'server')) {
+    return _ret_missing_required($r, 'server');
+  }
+
+  if(!_is_required_set($cgi, 'hostname')) {
+    return _ret_missing_required($r, 'hostname');
+  }
+
+  $op_info{name}             = $app->get_current_runmode();
+  $data{hostname}            = $cgi->param('hostname');
+
+  my $sql_srv = "SELECT * FROM Servers WHERE uuid = ?";
+  my $srv_ref;
+  if(!($srv_ref = $dbh->selectrow_hashref($sql_srv, {}, scalar($cgi->param('server'))))) {
+    return _ret_invalid_value($r, 'server');
+  }
+
+  my $act_ref = _create_activity($app, \%op_info);
+  if($act_ref->{status} != CE_OP_ST_SUCCESS) {
+    $app->param('return_data', $act_ref);
+    return;
+  }
+
+  $op_info{exec_server_id} = $srv_ref->{id};
+  $op_info{activity_id}    = $act_ref->{activity_id};
+
+  my $ret = _create_task($app, \%op_info, \%data);
+  if($ret->{status} != CE_OP_ST_SUCCESS) {
+    $app->param('return_data', $ret);
+    return;
+  }
+
+  $r->{status} = CE_OP_ST_SUCCESS;
+  return;
+}
+
+sub install_seed_app {
+  my $app = shift;
+  my $cgi = $app->query;
+  my $dbh = $app->param('dbh');
+
+  my %data = ();
+  my %op_info = ();
+
+  my $r = {};
+  $app->param('return_data', $r);
+
+  $op_info{name} = $app->get_current_runmode();
+
+  for my $p (qw( server filename vhost )) {
+    if(!defined( $cgi->param($p) )) {
+      return _ret_missing_parameter($r, $p);
+    }
+  }
+
+  my $act = _create_activity($app, \%op_info);
+  if($act->{status} != CE_OP_ST_SUCCESS) {
+    $app->param('return_data', $act);
+    return;
+  }
+
+  my $tgt_srv = _get_row($dbh, 'Servers', { uuid => scalar($cgi->param('server')) });
+  if($tgt_srv) {
+    $op_info{exec_server_id} = $tgt_srv->{id};
+  } else {
+    return _ret_invalid_value($r, 'server');
+  }
+
+  $data{filename} = $cgi->param('filename');
+  $data{vhost} = $cgi->param('vhost');
+
+  my $task_ret = _create_task($app, \%op_info, \%data);
+  if($task_ret->{status} != CE_OP_ST_SUCCESS) {
+    $app->param('return_data', $task_ret);
+    return;
+  }
+  $app->param('DEBUG') and warn Dumper($task_ret), "\n";
+
+  if(defined($cgi->param('subsystem')) && defined($cgi->param('password')) ) {
+    undef(%data);
+    my $act_id = $op_info{activity_id};
+    undef(%op_info);
+    $op_info{name}        = 'restore_vhost_subsystem';
+    $op_info{activity_id} = $act_id;
+    $op_info{flags}       = CE_TASK_FL_READ_STDIN | CE_TASK_FL_DROP_PRIVS;
+    $op_info{exec_server_id} = $tgt_srv->{id};
+    $op_info{state} = CE_TASK_ST_WAITING_PARENT;
+
+    %data = ();
+    $data{exec_user}  = 'w_' . $cgi->param('vhost');
+    $data{exec_group} = $data{exec_user};
+    $data{cmd_opts}   = [ '-i', '-p' ];
+    $data{stdin_data} = $cgi->param('password') . "\n";
+    $data{subsystem}  = $cgi->param('subsystem');
+
+    $task_ret = _create_task($app, \%op_info, \%data);
+    if($task_ret->{status} != CE_OP_ST_SUCCESS) {
+      $app->param('return_data', $task_ret);
+      return;
+    } 
+  }
+
+  return _ret_success($r);
+}
+
+sub clone_vhost {
+  my $app = shift;
+  my $cgi = $app->query;
+
+  my $dbh = $app->param('dbh');
+  my %data = ();
+  my %op_info = ();
+
+  $op_info{name} = $app->get_current_runmode();
+  $data{source_vhost} = $cgi->param('source_vhost');
+  $data{target_vhost} = $cgi->param('target_vhost');
+  
+  if($cgi->param('source_server')) {
+    my $src_srv = _get_row($dbh, 'Servers', { hostname => $cgi->param('source_server') } );
+    $data{source_server_id} = $src_srv->{id};
+  } else {
+    $data{source_server_id} = 0;
+  }
+
+  if($cgi->param('target_server')) {
+    my $tgt_srv = _get_row($dbh, 'Servers', { hostname => $cgi->param('target_server') } );
+    $data{target_server_id} = $tgt_srv->{id};
+  }
+
+  my $r = _create_task($app, \%op_info, \%data);
+  $app->param('return_data', $r);
+}
+
+sub restore_vhost {
+  my $app = shift;
+  my $cgi = $app->query;
+  my $r   = {};
+  $app->param('return_data', $r);
+
+  my $dbh = $app->param('dbh');
+  my %data = ();
+  my %op_info = ();
+
+  my $srv_ref = $app->param('server');
+
+  $op_info{name} = $app->get_current_runmode();
+  my $act_ret = _create_activity($app, \%op_info);
+  if($act_ret->{status} != CE_OP_ST_SUCCESS) {
+    $app->param('return_data', $act_ret);
+    return;
+  }
+
+  $op_info{exec_server_id} = $srv_ref->{id};
+
+  $data{filename} = $cgi->param('filename');
+  $data{vhost}    = $cgi->param('vhost'   );
+  
+  my $task_ref = _create_task($app, \%op_info, \%data);
+  if($task_ref->{status} != CE_OP_ST_SUCCESS) {
+    $app->param('return_data', $task_ref);
+    return;
+  }
+  
+  if(defined($cgi->param('subsystem')) && defined($cgi->param('password')) ) {
+    undef(%data);
+    my $act_id = $op_info{activity_id};
+    undef(%op_info);
+    $op_info{name}        = 'restore_vhost_subsystem';
+    $op_info{activity_id} = $act_id;
+    $op_info{flags}       = CE_TASK_FL_READ_STDIN | CE_TASK_FL_DROP_PRIVS;
+    $op_info{exec_server_id} = $srv_ref->{id};
+    $op_info{state} = CE_TASK_ST_WAITING_PARENT;
+
+    %data = ();
+    $data{exec_user}  = 'w_' . $cgi->param('vhost');
+    $data{exec_group} = $data{exec_user};
+    $data{cmd_opts}   = [ '-i', '-p' ];
+    $data{stdin_data} = $cgi->param('password') . "\n";
+    $data{subsystem}  = $cgi->param('subsystem');
+
+    $task_ref = _create_task($app, \%op_info, \%data);
+    if($task_ref->{status} != CE_OP_ST_SUCCESS) {
+      $app->param('return_data', $task_ref);
+      return;
+    } 
+  }
+
+  return _ret_success($r);
+}
+
+sub config_vhost_names {
+  my $app = shift;
+  my $cgi = $app->query;
+  my $dbh = $app->param('dbh');
+  my $r   = {};
+
+  $app->param('return_data', $r);
+  my %op_info;
+  $op_info{name} = $app->get_current_runmode;
+  $op_info{exec_server_id} = $app->param('server')->{id};
+
+  $dbh->begin_work();
+  my $act_ret = _create_activity($app, \%op_info);
+  if($act_ret->{status} != CE_OP_ST_SUCCESS) {
+    $app->param('return_data', $act_ret);
+    $dbh->rollback();
+    return;
+  }
+
+  my $vhost   = $cgi->param('vhost');
+  if(defined($cgi->param('add_domain'))) {
+    my $domains = join(' ', $cgi->param('add_domain'));
+    my $task_ret = _create_task($app, \%op_info,
+                                  { 'vhost' => $vhost,
+                                    'mode'  => '+',
+                                    'domains' => $domains
+                                  });
+
+    if($task_ret->{status} != CE_OP_ST_SUCCESS) {
+      $app->param('return_data', $task_ret);
+      $dbh->rollback();
+      return;
+    }
+  }
+
+  if(defined($cgi->param('remove_domain'))) {
+    my $domains = join(' ', $cgi->param('remove_domain'));
+    my $task_ret = _create_task($app, \%op_info,
+                                  { 'vhost' => $vhost,
+                                    'mode' => '-',
+                                    'domains' => $domains
+                                  });
+
+    if($task_ret->{status} != CE_OP_ST_SUCCESS) {
+      $app->param('return_data', $task_ret);
+      $dbh->rollback();
+      return;
+    }
+  }
+
+  $dbh->commit();
+  if($dbh->err) {
+    _ret_internal_error($r, $dbh->errstr);
+    $dbh->rollback();
+    return;
+  }
+
+  return _ret_success($r);
+}
+
+sub clone_seedapp {
+  my $app = shift;
+  my $cgi = $app->query;
+
+  my $dbh = $app->param('dbh');
+  my %data = ();
+  my %op_info = ();
+
+  $op_info{name}      = 'restore_vhost';
+  # $data{source_vhost} = $cgi->param('source_vhost');
+  $data{target_vhost} = $cgi->param('target_vhost');
+  $data{filename}     = $cgi->param('filename');
+  
+  if($cgi->param('source_server')) {
+    my $src_srv = _get_row($dbh, 'Servers', { hostname => $cgi->param('source_server') } );
+    $data{source_server_id} = $src_srv->{id};
+  } else {
+    $data{source_server_id} = 0;
+  }
+
+  if($cgi->param('target_server')) {
+    my $tgt_srv = _get_row($dbh, 'Servers', { hostname => $cgi->param('target_server') } );
+    $data{target_server_id} = $tgt_srv->{id};
+  }
+
+  my $r = _create_task($app, \%op_info, \%data);
+  $app->param('return_data', $r);
+}
+
+sub cgiapp_postrun {
+  my $app    = shift;
+  my $output = shift;
+  my $cgi    = $app->query;
+  my $ctlcon = $app->param('ctlconn');
+
+  my $ret = $app->param('return_data');
+  warn Dumper($ret);
+
+  # if(!defined($ret) || ref($ret) ne 'HASH') {
+  #  $ret = {};
+  # }
+
+  $app->header_props('-type' => 'application/json');
+
+  $ret->{auth_random} = _gen_random();
+  $ret->{timestamp}   = time();
+
+  if($app->param('DEBUG')) {
+    $$output = JSON::XS->new->pretty(1)->encode($ret);
+  } else {
+    $$output            = encode_json($ret);
+  }
+
+  if(defined(my $uuid = $cgi->http(CE_HEADER_SERVER_STR))) {
+    if(ce_was_successful(my $ref = $ctlcon->op('sign_data', {
+                              uuid => $uuid,
+                              data => $$output
+                            }))) {
+
+      $app->header_add('-'. CE_HEADER_SIGNATURE_STR, $ref->{sig});
+    }
+  }
+
+}
+
+sub teardown {
+  my $app = shift;
+  my $dbh = $app->param('dbh');
+
+  foreach my $p (qw( server auth_data auth_data_ref activity_data task_data
+                      contents ssl_hostnames )) {
+    if(defined($app->param($p))) {
+      $app->delete($p);
+    }
+  }
+
+}
+
+sub empty {
+  my $app = shift;
+  $app->param('return_data', { status => CE_OP_ST_MISSING_PARAMETERS, 
+                               errmsg => "Missing parameter 'op'" });
+
+  return;
+}
+
+sub error_log {
+  my $app = shift;
+  my $msg = shift;
+
+  if($msg) {
+    $app->param('return_data', { status => CE_OP_ST_INTERNAL_ERROR, errmsg => $msg });
+  } elsif($app->param('return_data')) {
+    return 1; # don't change the error provided. just return.
+  } else {
+    $app->param('return_data', { status => CE_OP_ST_INTERNAL_ERROR,
+                                 errmsg => "Unknown internal error" });
+  }
+  return;
+}
+
+sub exists_mode {
+  my $app = shift;
+  my $cgi = $app->query;
+  my $r   = {};
+  $app->param('return_data', $r);
+
+  my %modes = $app->run_modes();
+  my %modes_doc = do("$ENV{HOME}/queue/modes_doc.pl");
+
+  my $mode = defined($cgi->param('mode')) ? $cgi->param('mode') : undef;
+
+  if(defined($mode) && exists($modes{$mode})) {
+    if(exists($modes_doc{$mode}->{method})) {
+      $r->{method} = $modes_doc{$mode}->{method};
+    }
+    return _ret_success($r);
+  } elsif(defined($mode)) {
+    return _ret_invalid_value($r, 'mode');
+  } else {
+    return _ret_missing_required($r, 'mode');
+  }
+}
+
+sub help {
+  my $app = shift;
+  my $cgi = $app->query;
+  my %modes = $app->run_modes();
+  my $r = {};
+  $app->param('return_data', $r);
+
+  my %modes_doc = do("$ENV{HOME}/queue/modes_doc.pl");
+  if($@) {
+    return _ret_internal_error($r, 'unable to get modules documentation');
+  }
+
+  my $mode = defined($cgi->param('mode')) ? $cgi->param('mode') : undef;
+  if(defined($mode) && exists($modes{$mode})) {
+    $r->{$mode} = $modes_doc{$mode};
+  } elsif(defined($mode)) {
+    return _ret_invalid_value($r, 'mode');
+  } else {
+    my $ref = {};
+    # remove internal operations
+    foreach my $m (qw( AUTOLOAD start exists_mode empty error_log sig_err input_validation_error)) {
+      if(exists($modes{$m})) {
+        delete($modes{$m});
+      }
+    }
+
+    foreach my $k (keys %modes) {
+      # warn $k, " ", Dumper($modes_doc{$k}), "\n";
+      $ref->{$k} = exists($modes_doc{$k}->{info}) ? $modes_doc{$k}->{info} : 'N/D';
+    }
+    $r->{modes} = $ref;
+  }
+
+  return _ret_success($r);
+}
+
+sub dummy {
+  my $app = shift;
+  my $cgi = $app->query;
+  my $r   = {};
+
+  $app->param('return_data', $r);
+
+  my $url = exists($app->param('auth_data')->{pingback_url}) ?
+              $app->param('auth_data')->{pingback_url} : '';
+
+  my($dash_act, $state);
+  if(defined($cgi->param('dashboard_act_id')) &&
+     defined($cgi->param('state')) && length($url) > 0) {
+    $dash_act = $cgi->param('dashboard_act_id');
+    $state    = $cgi->param('state');
+
+    _report_dashboard($app, $url, $dash_act, $state);
+  }
+  
+  return _ret_success($r);
+}
+
+*tail_vhost_log        = \&dummy;
+*rm_vhost_log          = \&dummy;
+*get_vhost_log         = \&dummy;
+*vhost_create_database = \&dummy;
+*vhost_delete_database = \&dummy;
+*set_google_apps_key   = \&dummy;
+*unset_google_apps_key = \&dummy;
+*restore_vhost_from_link = \&dummy;
+*disable_vhost_ssl     = \&dummy;
+*server_add_service = \&dummy;
+*server_remove_service = \&dummy;
+*server_service_cmd = \&dummy;
+*site_add_service = \&dummy;
+*site_remove_service = \&dummy;
+*site_service_cmd = \&dummy;
+
+sub not_so_dummy {
+  my $app = shift;
+  my $cgi = $app->query;
+  my $r   = {};
+
+  $app->param('return_data', $r);
+  my %op_info = ();
+  $op_info{name} = $app->get_current_runmode();
+
+  my $ret;
+  $ret = _create_activity($app, \%op_info);
+  if(!_was_successful($ret)) {
+    $app->param('return_data', $ret);
+    return;
+  }
+
+  $ret = _create_task($app, \%op_info, {});
+  if(!_was_successful($ret)) {
+    $app->param('return_data', $ret);
+    return;
+  }
+
+  return _ret_success($r);
+}
+
+*create_repo     = \&not_so_dummy;
+*delete_repo     = \&not_so_dummy;
+
+sub run_vhost_shell {
+  my $app = shift;
+  my $cgi = $app->query;
+  my $r   = {};
+
+  $app->param('return_data', $r);
+
+  my %op_info;
+  $op_info{name} = $app->get_current_runmode();
+  $op_info{exec_server_id} = $app->param('server')->{id};
+
+  my $ret;
+  $ret = _create_activity($app, \%op_info);
+  if(!_was_successful($ret)) {
+    $app->param('return_data', $ret);
+    return;
+  }
+
+  $op_info{flags} = CE_TASK_FL_DROP_PRIVS | CE_TASK_FL_SEND_OUTPUT;
+  my $data = {
+    cmd_args  => $cgi->param('command'),
+    exec_user => 'w_' . $cgi->param('vhost'), 
+  };
+
+  $ret = _create_task($app, \%op_info, $data);
+  if(!_was_successful($ret)) {
+    $app->param('return_data', $ret);
+    return;
+  }
+
+  return _ret_success($r);
+}
+
+sub server_reboot {
+  my $app = shift;
+  my $cgi = $app->query;
+  my $r   = {};
+
+  $app->param('return_data', $r);
+
+  my %op_info;
+  $op_info{name} = $app->get_current_runmode();
+  $op_info{exec_server_id} = $app->param('server')->{id};
+
+  my $ret;
+  $ret = _create_activity($app, \%op_info);
+  if(!_was_successful($ret)) {
+    $app->param('return_data', $ret);
+    return;
+  }
+
+  $ret = _create_task($app, \%op_info, {});
+  if(!_was_successful($ret)) {
+    $app->param('return_data', $ret);
+    return;
+  }
+
+  return _ret_success($r);
+}
+
+sub simulate_pingback {
+  my $app = shift;
+  my $cgi = $app->query;
+  my $r   = {};
+
+  $app->param('return_data', $r);
+
+  my $dash_act = $cgi->param('dashboard_act_id');
+  my $state    = $cgi->param('state');
+  my $uuid     = $app->param('auth_data')->{uuid};
+  my $key      = $app->param('auth_data')->{key};
+  my $url      = $app->param('auth_data')->{pingback_url};
+
+  my $ref = { 
+              id => rand(), dashboard_act_id => $dash_act,
+              state => $state, api_url => $url, uuid => $uuid
+  };
+
+  if(defined($cgi->param('output'))) {
+    $ref->{output} = $cgi->param('output');
+  }
+
+  _report_dashboard($app, $ref);
+
+  return _ret_success($r);
+}
+
+sub chpass_superuser {
+  my $app = shift;
+  my $cgi = $app->query;
+  my $dbh = $app->param('dbh');
+  my(%op_info, %data);;
+  my $r   = {};
+
+  $app->param('return_data', $r);
+
+  $op_info{name} = $app->get_current_runmode;
+  $op_info{exec_server_id} = $app->param('server')->{id};
+
+  my $ret = _create_activity($app, \%op_info);
+  if(!_was_successful($ret)) {
+    $app->param('return_data', $ret);
+    return _ret_internal_error($ret, $dbh->errstr);
+  }
+
+  if(defined($cgi->param('username'))) {
+    $data{username} = $cgi->param('username');
+  } else {
+    $data{username} = 'root';
+  }
+
+  if(defined($cgi->param('password'))) {
+    $data{stdin_data} = $cgi->param('password') . "\n";
+    $data{cmd_opts} = [ '-i' ];
+    $op_info{flags} = CE_TASK_FL_READ_STDIN;
+  }
+
+  $ret = _create_task($app, \%op_info, \%data);
+  if(!_was_successful($ret)) {
+    $app->param('return_data', $ret);
+    return _ret_internal_error($ret, $dbh->errstr);
+  }
+
+  return _ret_success($r);
+}
+
+sub _report_dashboard {
+  my($app, $req) = @_;
+    
+  socket(SOCK, PF_UNIX, SOCK_STREAM, 0);
+  connect(SOCK, sockaddr_un($app->param('secretd_socket')));
+
+  $req->{op} = 'report_pingback';
+  print SOCK encode_json($req) . " EOF;;;";
+
+  close(SOCK);
+}
+
+sub _get_server_entry {
+  my($app, $uuid) = @_;
+  my $dbh = $app->param('dbh');
+
+  my $sql_host = "SELECT * FROM Servers WHERE uuid = ?";
+  my $host = $dbh->selectrow_hashref($sql_host, {}, $uuid);
+  if($host) {
+    return $host;
+  } else {
+    return undef;
+  }
+}
+
+sub _extract_data_to_sign {
+  my($cgi) = @_;
+
+  my $data;
+
+  if(lc($cgi->request_method) eq 'get') {
+    $data = $cgi->url(-absolute => 1, -query => 1);
+  } elsif(lc($cgi->request_method) eq 'post') {
+    foreach my $p ($cgi->param) {
+      if(length($data) != 0) {
+        $data .= $param_separator;
+      }
+    #  $data .= sprintf('%s=%s', $p, scalar(CGI::escape($cgi->param($p))));
+      my @values = ($cgi->param($p));
+      for(my $i=0 ; $i <= $#values; $i++) {
+        $data .= sprintf('%s=%s', $p, CGI::escape($values[$i]));
+        if($i < $#values) {
+          $data .= $param_separator;
+        }
+      }
+    }
+  } else {
+    warn __PACKAGE__, " - _extract_data_to_sign(): Unsupported method: ", $cgi->request_method, "\n";
+    return 0;
+  }
+
+  return $data;
+}
+
+sub _is_valid_signature {
+  my $app = shift;
+  my $cgi = $app->query;
+  my $dbh = $app->param('dbh');
+  my $user;
+
+  if(!($user = _get_row($dbh, 'Authentication',
+                            { uuid => scalar($cgi->http(CE_HEADER_SERVER_STR)) }))) {
+    warn "[secwarn] Authentication: unknown user\n";
+    return 0;
+  }
+
+  my $data;
+  if(lc($cgi->request_method) eq 'get') {
+    # $data = $cgi->query_string();
+    $data = $cgi->url(-absolute => 1, -query => 1);
+  } elsif(lc($cgi->request_method) eq 'post') {
+    foreach my $p ($cgi->param) {
+      if(length($data) != 0) {
+        $data .= ';';
+      }
+    #  $data .= sprintf('%s=%s', $p, scalar(CGI::escape($cgi->param($p))));
+      my @values = ($cgi->param($p));
+      for(my $i=0 ; $i <= $#values; $i++) {
+        $data .= sprintf('%s=%s', $p, CGI::escape($values[$i]));
+        if($i < $#values) {
+          $data .= ';';
+        }
+      }
+    }
+  } else {
+    warn "Unsupported method ", $cgi->request_method, "\n";
+    return 0;
+  }
+
+  my $sig  = hmac_sha256_hex($data, $user->{key});
+
+  my $fmt = "%s signature. method = %s, data = %s, sig = %s";
+
+  if($sig eq $cgi->http(CE_HEADER_SIGNATURE_STR)) {
+    $app->param('DEBUG') and printf STDERR $fmt, 'Valid', $cgi->request_method(), $data, $sig;
+    $app->param('auth_data', $user);
+    return 1;
+  } else {
+    $app->param('DEBUG') and printf STDERR $fmt, '[secwarn] Invalid',
+    $cgi->request_method(), $data, $cgi->http(CE_HEADER_SIGNATURE_STR);
+    return 0;
+  }
+}
+
+sub _gen_random {
+  my $n = shift || 40;
+  open(URANDOM, '/dev/urandom') or return rand();
+  
+  my $char;
+  my $rand = ''; 
+  
+  
+  # 0-9: 48-57
+  # A-Z: 65-90
+  # a-z: 97-122
+  
+  while(length($rand) < $n) {
+    read(URANDOM, $char, 1);
+    if((ord($char) >= 48 && ord($char) <= 57) ||
+      (ord($char) >= 65 && ord($char) <= 90)  ||
+      (ord($char) >= 97 && ord($char) <= 122)) {
+      $rand .= $char;
+    }
+  }
+
+  close(URANDOM);
+  return $rand;
+}
+
+1;

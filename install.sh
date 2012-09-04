@@ -190,7 +190,13 @@ add_custom_users_n_groups() {
     fi
   done
 
-  useradd -M -d "$webenabled_homedir_base"/w_ -G w_ -g "$_apache_group" w_
+  local comment="Used in Webenabled software. Please don't remove."
+  useradd -M -c "$comment" -d "$webenabled_homedir_base"/w_ -G w_ -g "$_apache_group" w_
+  useradd -m -c "$comment" -d "/home/we-taskd" we-taskd
+  if [ $? -eq 0 ]; then
+    mkdir "/home/we-taskd/taskd"
+  fi
+
   usermod -a -G virtwww "$_apache_user"
 }
 
@@ -325,4 +331,17 @@ mv "$webenabled_install_dir/backend-scripts" "$target_scripts_dir"
 rm -f "$webenabled_install_dir/current"
 ln -s "$target_scripts_dir" "$webenabled_install_dir/current"
 
+taskd_config_file="$webenabled_install_dir/compat/taskd/config/taskd.conf"
+if [ -n "$WEBENABLED_SERVER_UUID" \
+  -a -n "$WEBENABLED_SERVER_SECRET_KEY" ]; then
+  "$install_source_dir/install-update-taskd-config" -c "$taskd_config_file" 
+  status=$?
+  if [ $status -ne 0 ]; then
+    echo "warning: unable to set uuid and key in taskd.conf. Please " \
+"correct it manually in '$taskd_config_file'. " \
+"Or your install will not work." >&2
+  fi
+fi
+
+echo
 echo "Installation completed successfully"
