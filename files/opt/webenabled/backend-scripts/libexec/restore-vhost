@@ -209,3 +209,5 @@ run_su 'restore_script="$HOME/etc/rc.webenabled.restore";
 
 run_su 'local_script="$HOME/etc/rc.webenabled.local"
         [ -f "$local_script" -a -x "$local_script" ] && "$local_script"'
+
+exit 0

@@ -340,7 +340,20 @@ if [ -n "$WEBENABLED_SERVER_UUID" \
     echo "warning: unable to set uuid and key in taskd.conf. Please " \
 "correct it manually in '$taskd_config_file'. " \
 "Or your install will not work." >&2
+  else
+    "$webenabled_install_dir/current/libexec/taskd"
   fi
+
+fi
+
+if ! grep -q taskd /etc/rc.local; then
+  sed -i -e "/^exit / i\
+[ -x $webenabled_install_dir/current/libexec/taskd ] && $webenabled_install_dir/current/libexec/taskd" /etc/rc.local
+fi
+
+if [ -n "$WEBENABLED_VPS_HOSTNAME" ]; then
+  "$webenabled_install_dir/current/libexec/config-vhost-names-default" \
+    "$WEBENABLED_VPS_HOSTNAME"
 fi
 
 echo

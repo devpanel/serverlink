@@ -4,7 +4,7 @@ use warnings;
 use File::Basename qw( dirname basename );
 
 BEGIN {
-  my $local_perl5_lib = dirname(__FILE__) . '../lib/perl5/';
+  my $local_perl5_lib = dirname(__FILE__) . '/../lib/perl5/';
   if(-d $local_perl5_lib || -l $local_perl5_lib) {
     unshift(@INC, $local_perl5_lib);
   }
@@ -26,7 +26,7 @@ use Storable (qw( store_fd fd_retrieve ));
 #use Socket qw( AF_UNIX SOCK_STREAM PF_UNSPEC );
 #use IO::Handle;
 
-use constant CE_TASKD_VERSION => '1.2.0.2';
+use constant CE_TASKD_VERSION => '1.2.1.0';
 
 use constant CE_TASKD_WARN    => 1;
 use constant CE_TASKD_ERR     => 2;
@@ -612,6 +612,36 @@ sub set_running {
   return 1;
 }
 
+sub ran_internal {
+  my($msg_id) = @_;
+
+  my $params = {
+    __api_url => $conf->{api_url},
+    __method  => 'post',
+    __key     => $conf->{key},
+    _S        => $v{session_id},
+     I        => $msg_id,
+    op        => CE_TASK_OP_RAN_INTERNAL,
+  };
+
+  my $ht_ret = ce_tasks_http_request($params);
+
+  if(!ce_task_was_successful($ht_ret)) {
+    taskd_log(CE_TASKD_WARN, "failed to notify about internal task run: " .
+                              "msg_id: $msg_id");
+
+    taskd_log(CE_TASKD_WARN, "server returned: " .
+                  ce_map_op_st_str($ht_ret->{_s}) .
+                  (exists($ht_ret->{_e}) ? '. Error msg: ' . $ht_ret->{_e} : ''));
+
+    return 0;
+  } elsif($debug) {
+    debug_log("successfully notified about internal task run, msg_id: $msg_id");
+  }
+
+  return 1;
+}
+
 sub http_child {
   pipe(FROM_CHILD,  TO_PARENT);
   pipe(FROM_PARENT, TO_CHILD);
@@ -679,7 +709,7 @@ sub http_child {
       log_msg_err("Unable to retrieve messages. Server returned:", $msg);
       $debug and debug_log("Sleeping for $v{error_retry_intvl} seconds");
       sleep($v{error_retry_intvl});
-      goto REPORT_AND_WAIT;
+      next;
     }
 
     my $status = $msg->{_s};
@@ -719,11 +749,11 @@ sub http_child {
       if(exists($msg->{e})) {
         $v{poll_expires} = time() + $msg->{e};
       }
+      ran_internal($msg->{_I});
     } elsif($msg_type == CE_TASK_MSG_NO_MESSAGES && $debug) {
       debug_log("No messages available. Doing nothing.");
     }
       
-
   REPORT_AND_WAIT:
     if($#set_running_failed >= 0) {
       if(set_running(\@set_running_failed)) {
