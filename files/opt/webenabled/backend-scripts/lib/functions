@@ -2,11 +2,16 @@
 
 error() {
   local msg="$1"
-  local exit_code="$2"
+  local exit_code="${2:-1}"
 
   [ -n "$msg" ] && echo "Error: $msg" 1>&2
-  [ -n "$exit_code" ] && exit $exit_code
-  exit 1
+  exit $exit_code
+}
+
+wedp_warn() {
+  local msg="$1"
+
+  echo "Warning: $msg" 1>&2
 }
 
 wedp_auto_detect_distro() {
@@ -99,5 +104,18 @@ wedp_resolve_link() {
     return 0
   else
     return 1
+  fi
+}
+
+wedp_gen_random_str() {
+  local length=${1:-40}
+
+  local str=$(head -c $(( $length * 30 )) /dev/urandom | tr -dc 'A-Za-z0-9')
+
+  if [ ${#str} -lt $length ]; then
+    return 1
+  else
+    echo "${str:0:$length}"
+    return 0
   fi
 }
