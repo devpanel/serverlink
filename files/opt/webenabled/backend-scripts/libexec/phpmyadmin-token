@@ -7,4 +7,4 @@ user="w_$vhost"
 # using mode archive: it's OK to operate on a locked vhost
 $dir/check-vhost-name archive "$vhost" || exit 1
 
-grep -E '^[[:space:]]*Use' /opt/httpd/config/virtwww/${user}.conf | sed 's,^.\+ \([^[:space:]]\+\)$,\1,g'
+grep -E '^[[:space:]]*Use' "$dir"/../../compat/apache_include/virtwww/${user}.conf | sed 's,^.\+ \([^[:space:]]\+\)$,\1,g'

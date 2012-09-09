@@ -67,9 +67,15 @@ set_global_variables() {
     echo "unable to set global variable _suexec_bin" 1>&2
     return 1
   fi
-  _apache_logs_dir=$(wedp_resolve_link "$we_config_dir/os.$distro/pathnames/var/log/apache_vhosts")
+  _apache_logs_dir=$(wedp_resolve_link "$we_config_dir/os.$distro/pathnames/var/log/apache_logs_dir")
   if [ $? -ne 0  -o -z "$_apache_logs_dir" ]; then
     echo "unable to set global variable _apache_logs_dir" 1>&2
+    return 1
+  fi
+
+   _apache_vhost_logs_dir=$(wedp_resolve_link "$we_config_dir/os.$distro/pathnames/var/log/apache_vhosts")
+  if [ $? -ne 0  -o -z "$_apache_vhost_logs_dir" ]; then
+    echo "unable to set global variable _apache_vhost_logs_dir" 1>&2
     return 1
   fi
   
@@ -138,8 +144,8 @@ install_ce_software() {
   ln -sf "$webenabled_install_dir/compat/suexec/chcgi.$machine_type" \
     "$webenabled_install_dir/compat/suexec/chcgi"
 
-  if ! cp -f "$we_suexec_path" "$_suexec_bin"; then
-    echo "error: unable to copy suexec to distro suexec path '$_suexec_bin'" >&2
+  if ! ln -sf "$we_suexec_path" "$_suexec_bin"; then
+    echo "error: unable to link suexec to distro suexec path '$_suexec_bin'" >&2
     return 1
   fi
 
@@ -159,12 +165,14 @@ install_ce_software() {
   # echo Vhost-simple-SSL-wildcard > "$webenabled_install_dir"/config/names/apache-macro
   echo Vhost-simple > "$webenabled_install_dir"/config/names/apache-macro
 
-  if [ -e "$_apache_logs_dir" -a ! -d "$_apache_logs_dir" ]; then
-    mv "$_apache_logs_dir" "$_apache_logs_dir".old
-  elif [ ! -d "$_apache_logs_dir" ]; then
-    mkdir -p "$_apache_logs_dir"
+  if [ -e "$_apache_vhost_logs_dir" -a ! -d "$_apache_vhost_logs_dir" ]; then
+    mv "$_apache_vhost_logs_dir" "$_apache_vhost_logs_dir".old
+  elif [ ! -d "$_apache_vhost_logs_dir" ]; then
+    mkdir -p "$_apache_vhost_logs_dir"
   fi
-  chmod 755 "$_apache_logs_dir"
+  chmod 755 "$_apache_vhost_logs_dir"
+
+  ln -s "$_apache_logs_dir" "$_apache_base_dir/webenabled-logs"
 
   echo "
 Include $webenabled_install_dir/compat/apache_include/*.conf
@@ -174,8 +182,11 @@ Include $webenabled_install_dir/compat/apache_include/virtwww/*.conf" \
   ln -sf "$webenabled_install_dir/compat/apache_include/webenabled.conf.main" \
     "$_apache_includes_dir/webenabled.conf"
 
-  "$webenabled_install_dir/config/os/pathnames/sbin/apachectl" configtest
-  "$webenabled_install_dir/config/os/pathnames/sbin/apachectl" graceful
+  [ -e "$webenabled_install_dir/current" ] && rm -f "$webenabled_install_dir/current"
+  ln -s "$webenabled_install_dir/backend-scripts" "$webenabled_install_dir/current"
+
+  ln -s "utils.$machine_type" \
+    "$webenabled_install_dir/current/bin/utils"
 
   return 0
 }
@@ -326,20 +337,17 @@ if type -t "${linux_distro}_adjust_system_config" >/dev/null; then
   "${linux_distro}_adjust_system_config" "$webenabled_install_dir"
 fi
 
-target_scripts_dir="$webenabled_install_dir/backend-scripts-$ce_version"
-mv "$webenabled_install_dir/backend-scripts" "$target_scripts_dir"
-rm -f "$webenabled_install_dir/current"
-ln -s "$target_scripts_dir" "$webenabled_install_dir/current"
-
 taskd_config_file="$webenabled_install_dir/compat/taskd/config/taskd.conf"
 if [ -n "$WEBENABLED_SERVER_UUID" \
   -a -n "$WEBENABLED_SERVER_SECRET_KEY" ]; then
   "$install_source_dir/install-update-taskd-config" -c "$taskd_config_file" 
   status=$?
   if [ $status -ne 0 ]; then
-    echo "warning: unable to set uuid and key in taskd.conf. Please " \
+    echo
+    echo "Warning: unable to set uuid and key in taskd.conf. Please " \
 "correct it manually in '$taskd_config_file'. " \
 "Or your install will not work." >&2
+    sleep 3
   else
     "$webenabled_install_dir/current/libexec/taskd"
   fi
@@ -354,6 +362,15 @@ fi
 if [ -n "$WEBENABLED_VPS_HOSTNAME" ]; then
   "$webenabled_install_dir/current/libexec/config-vhost-names-default" \
     "$WEBENABLED_VPS_HOSTNAME"
+fi
+
+"$webenabled_install_dir/config/os/pathnames/sbin/apachectl" configtest
+if [ $? -ne 0 ]; then
+  echo
+  echo "Warning: apache configuration test failed. Please verify!" >&2
+  sleep 3
+else
+  "$webenabled_install_dir/config/os/pathnames/sbin/apachectl" graceful
 fi
 
 echo

@@ -121,7 +121,7 @@ else
   done
 
   if [ -n "$status" -a $status -eq 0 ]; then
-    echo "Password sucessfully changed for user '$user'." 1>&2
+    # echo "Password sucessfully changed for user '$user'." 1>&2
     [ ! -n "$dont_print_pw" ] && echo "$PWGEN"
     exit 0
   else
