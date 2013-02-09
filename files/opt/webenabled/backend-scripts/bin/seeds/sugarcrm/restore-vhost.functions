@@ -70,6 +70,6 @@ sugarcrm_custom()
 {
   if [ -n "$opt_n" ]; then
     echo "Updating config.php"
-    sugarcrm_update_php_config || error "Cannot update config.php"
   fi
+    sugarcrm_update_php_config || error "Cannot update config.php"
 }
