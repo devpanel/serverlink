@@ -13,7 +13,7 @@ gallery_genpass()
 gallery_encrypt()
 {
   local password="$1"
-  echo "$password" | "$dir/gallery-crypt.php"
+  echo "$password" | "$home/public_html/$vhost/modules/user/lib/gallery-crypt.php"
 }
 
 gallery_set_password()
@@ -40,6 +40,7 @@ gallery_get_email()
 gallery_get_admin_user()
 {
   sql_query_result "select name from users where name = 'admin'"
+  cp -f $dir/mantis-crypt.php $home/public_html/$vhost/modules/user/lib/gallery-crypt.php
 }
 
 gallery_update_php_config()
@@ -53,15 +54,13 @@ gallery_update_php_config()
 
 " | run_ised "$home/public_html/$vhost/var/database.php"
   status=$?
-
   return $status
 }
 
 gallery_custom()
 {
-  if [ -n "$opt_n" ]; then
     mysql -B -D "$hosting_database" -e 'DELETE FROM failed_auths;'
     echo "Updating database.php"
     gallery_update_php_config || error "Cannot update database.php"
-  fi
 }
+
