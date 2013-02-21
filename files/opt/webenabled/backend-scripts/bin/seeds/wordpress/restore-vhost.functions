@@ -78,10 +78,6 @@ wordpress_set_upload_path()
 
 wordpress_disable_canonical_redirects()
 {
-  #echo "Getting disable redirects plugin"
-  #curl http://txfx.net/files/wordpress/disable-canonical-redirects.phps > $home/public_html/$vhost/wp-content/plugins/disable-canonical-redirects.php || error "cannot download the disable canonical redirects plugin"
-  #make sure to include the plugin in the wordpress plugins directory
-
   echo "Activating diable-redirects plugin"
   sql_query "update wp_options set option_value='a:1:{i:0;s:31:\"disable-canonical-redirects.php\";}' where option_name='active_plugins'" || return 1
   echo "Updating siteurl and home option values"
