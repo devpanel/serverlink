@@ -42,8 +42,11 @@ opencart_update_php_config()
 
   local opencart_dir="$home/public_html/$vhost"
   opencart_dir=$(echo -n "$opencart_dir" | sed 's|/|\\/|g;')
+  local base_url=${WEBENABLED_HOSTING_LINK_BASE_URL:-"http:\/\/$fqdn"}
 
   printf "
+    s/^\(define('HTTP_SERVER',\) \+'.\+\')\;/\\\1 '%s')\;/; 
+    s/^\(define('HTTPS_SERVER',\) \+'.\+\')\;/\\\1 '%s')\;/;
     s/^\(define('DIR_APPLICATION',\) \+'.\+\')\;/\\\1 '%s')\;/;
     s/^\(define('DIR_SYSTEM',\) \+'.\+\')\;/\\\1 '%s')\;/;
     s/^\(define('DIR_DATABASE',\) \+'.\+\')\;/\\\1 '%s')\;/;
@@ -60,7 +63,8 @@ opencart_update_php_config()
     s/^\(define('DB_PASSWORD',\) \+'.\+')\;/\\\1 '%s')\;/;
     s/^\(define('DB_DATABASE',\) \+'.\+')\;/\\\1 '%s')\;/;
     s/^\(define('DB_PREFIX',\) \+'.\+')\;/\\\1 '%s')\;/;
-" "$opencart_dir\/catalog\/" "$opencart_dir\/system\/" \
+" \
+"$base_url\/" "$base_url\/" "$opencart_dir\/catalog\/" "$opencart_dir\/system\/" \
 "$opencart_dir\/system\/database\/" "$opencart_dir\/catalog\/language\/" \
 "$opencart_dir\/catalog\/view\/theme\/" "$opencart_dir\/system\/config\/" \
 "$opencart_dir\/image\/" "$opencart_dir\/system\/cache\/" \
@@ -69,15 +73,12 @@ mysql "$mysql_host:$mysql_port" "$mysql_user" "$mysql_password" "$hosting_databa
 "" | run_ised "$home/public_html/$vhost/config.php"
 
 
-  local base_url=${WEBENABLED_HOSTING_LINK_BASE_URL:-"http:\/\/$fqdn"}
-
   printf "
     s/^\(define('HTTP_SERVER',\) \+'.\+\')\;/\\\1 '%s')\;/;
     s/^\(define('HTTP_CATALOG',\) \+'.\+\')\;/\\\1 '%s')\;/;
-    s/^\(define('HTTP_IMAGE',\) \+'.\+\')\;/\\\1 '%s')\;/;
 
     s/^\(define('HTTPS_SERVER',\) \+'.\+\')\;/\\\1 '%s')\;/;
-    s/^\(define('HTTPS_IMAGE',\) \+'.\+\')\;/\\\1 '%s')\;/;
+    s/^\(define('HTTPS_CATALOG',\) \+'.\+\')\;/\\\1 '%s')\;/;
 
     s/^\(define('DIR_APPLICATION',\) \+'.\+\')\;/\\\1 '%s')\;/;
     s/^\(define('DIR_SYSTEM',\) \+'.\+\')\;/\\\1 '%s')\;/;
@@ -97,8 +98,8 @@ mysql "$mysql_host:$mysql_port" "$mysql_user" "$mysql_password" "$hosting_databa
     s/^\(define('DB_DATABASE',\) \+'.\+')\;/\\\1 '%s')\;/;
     s/^\(define('DB_PREFIX',\) \+'.\+')\;/\\\1 '%s')\;/;
   " \
-"$base_url\/admin\/" "$base_url\/" "$base_url\/image\/" \
-"$base_url\/admin\/" "$base_url\/image\/" \
+"$base_url\/admin\/" "$base_url\/" \
+"$base_url\/admin\/" "$base_url\/" \
 "$opencart_dir\/admin\/" "$opencart_dir\/system\/" \
 "$opencart_dir\/system\/database\/" "$opencart_dir\/admin\/language\/" \
 "$opencart_dir\/admin\/view\/template\/" \
