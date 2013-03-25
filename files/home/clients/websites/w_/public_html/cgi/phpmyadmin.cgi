@@ -1,5 +1,4 @@
 #!/bin/bash
-#<?php $args = array(getenv('SCRIPT_FILENAME')); pcntl_exec('/bin/bash', $args); ?>
 
 PMA_BASE="$SCRIPT_NAME"
 PMA_ROOT=/home/clients/websites/w_/public_html/phpmyadmin/current
