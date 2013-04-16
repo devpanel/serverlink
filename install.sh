@@ -222,6 +222,8 @@ install_gitolite() {
     $webenabled_install_dir/current/bin/gitolite setup -pk git.pub ;
     rm git.pub
   " -l $git_user
+
+  cat /etc/ssh/ssh_host*.pub | awk '{ print "localhost " $1 " " $2 }'
 }
 
 # main
