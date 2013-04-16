@@ -223,7 +223,7 @@ install_gitolite() {
     rm git.pub
   " -l $git_user
 
-  cat /etc/ssh/ssh_host*.pub | awk '{ print "localhost " $1 " " $2 }'
+  cat /etc/ssh/ssh_host*.pub | awk '{ print "localhost " $1 " " $2 }' >> /etc/ssh/ssh_known_hosts
 }
 
 # main
