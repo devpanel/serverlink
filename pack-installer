@@ -160,11 +160,6 @@ if ! ln -s "$version_str" "$version_file"; then
   error "unable to create the version file '$version_file'"
 fi
 
-gl_dir="$internal_pack_dir/files/opt/gitolite"
-gl_error="unable to set gitolite's permissions"
-chmod -R +r $gl_dir || error $gl_error
-find $gl_dir -executable -exec chmod +x \{\} \; || error $gl_error
-
 echo "Started packing .tar.gz file '$target_file'"
 tar -C "$tmp_pack_dir" -zcpf "$target_file" .
 status=$?
