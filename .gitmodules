@@ -1,3 +1,6 @@
 [submodule "files/opt/gitolite"]
 	path = files/opt/gitolite
 	url = https://github.com/sitaramc/gitolite
+[submodule "files/opt/webenabled/backend-scripts/bin/gitolite.d"]
+	path = files/opt/webenabled/backend-scripts/bin/gitolite.d
+	url = git://github.com/sitaramc/gitolite.git
