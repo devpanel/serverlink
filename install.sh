@@ -211,6 +211,19 @@ add_custom_users_n_groups() {
   usermod -a -G virtwww "$_apache_user"
 }
 
+install_gitolite() {
+  local git_user=git
+
+  useradd -m -c 'Gitolite User' $git_user
+  su -c "
+    [ -d .ssh ] || mkdir -m 0700 .ssh ;
+    ssh-keygen -f .ssh/id_rsa -t rsa -b 2048 -N '' ;
+    cp .ssh/id_rsa.pub git.pub
+    $webenabled_install_dir/current/bin/gitolite setup -pk git.pub ;
+    rm git.pub
+  " -l $git_user
+}
+
 # main
 
 if [ $EUID -ne 0 ]; then
@@ -372,6 +385,8 @@ if [ $? -ne 0 ]; then
 else
   "$webenabled_install_dir/config/os/pathnames/sbin/apachectl" graceful
 fi
+
+install_gitolite
 
 echo
 echo "Installation completed successfully"
