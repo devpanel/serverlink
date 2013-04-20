@@ -15,11 +15,11 @@ drupal_encrypt()
   local password="$1"
   if version=`sql_query_result "select schema_version from system where name = 'system' and type = 'module'"` &&
   [ -n "$version" ] &&
-  [ $version -ge 7000 ]
+  [ $version -lt 7000 ]
   then
-    echo -n "$password"|"$dir/drupal7-crypt.php"
-  else
     echo -n "$password"|md5sum|sed 's/  -$//'
+  else
+    echo -n "$password"|"$dir/drupal7-crypt.php"
   fi
 }
 
