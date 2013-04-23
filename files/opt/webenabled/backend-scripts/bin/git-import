@@ -1,101 +1,101 @@
 #!/bin/bash
-# set -x
 
-usage() {
-  local prog=$(basename "$0")
-echo "
-Usage: $prog < options >
+GIT_USER='git'
+GIT_HOST='localhost'
+GIT_COMMIT_MSG="automatic import of \\'\${vhost}\\' vhost"
+VHOST_PATH_PREFIX='/home/clients/websites/w_'
 
-  Options: 
-    -u user           username to use while logging to git repo
-    -r name           name of the remote git repository
-    -d dir            name of the local directory to import (default: ~/public_html/vhost)
-    -s hostname       hostname of the git server (default: git.webenabled.net)
-    -m commit_msg     message to include in the commit (default: 'Initial project commit')
-    -P protocol       protocol to use while connecting to git (default: ssh)
-"
-  exit 1
+say()
+{
+  tty -s || return
+
+  echo $@
 }
 
-if [ $EUID -eq 0 ]; then
-  echo "Error: this program is meant to be run as an unprivileged user, not root."
+get_commit_msg()
+{
+  eval echo "\\\"$GIT_COMMIT_MSG\\\""
+}
+
+usage()
+{
+  cat >&2 <<eou
+usage: $(basename $0) <repo> <vhost> [ <user name> [ <user email> ] ]
+
+  <repo>     repo to import the contents to
+  <vhost>    vhost to take the contents from
+
+  optional arguments:
+    <user name>     user's name to log in Git
+    <user email>    user's email to log in Git
+                    unless the email is well formatted, it will
+                    be taken as part of the name
+
+eou
+}
+
+(( $# < 2 )) && usage && exit 1
+
+repo=$1
+shift
+vhost=$1
+shift
+
+if [ ! -d "${VHOST_PATH_PREFIX}${vhost}" ]; then
+  echo "vhost '$vhost' doesn't exist" >&2
   exit 1
 fi
 
-[ $# -eq 0 ] && usage
+user_name=$1
+shift
 
-getopt_flags='u:r:d:m:s:P:' 
+while [ -n "$1" ]; do
+  [ -n "$user_email" ] && usage && exit 1
 
-unset OPTIND remote_name repo_user repo_name source_dir dont_rename_dot_git
-while getopts $getopt_flags OPT; do
-  case $OPT in
-    u)
-      repo_user="$OPTARG"
-      ;;
-    r)
-      repo_name="$OPTARG"
-      ;;
-    d)
-      source_dir="$OPTARG"
-      ;;
-    m)
-      commit_msg="$OPTARG"
-      ;;
-    s)
-      git_server="$OPT_ARG"
-      ;;
-    P)
-      git_proto="$OPT_ARG"
-      ;;
-    ?)
-      exit 1
-      ;;
-  esac
+  if echo -n $1 | grep -Eiq '^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,4}$'; then
+    user_email=$1
+  else
+    user_name="$user_name $1"
+  fi
+
+  shift
 done
 
-[ -n "$OPTIND" -a $OPTIND -gt 1 ] && shift $(( $OPTIND - 1 ))
+say "Clonning vhost '$vhost' into repo '$repo'."
+say "User Name: $user_name"
+say "Email: $user_email"
 
-if [ -z "$repo_user" ]; then
-  echo "Error: please specify the username to login using the -u option."
-  exit 1
+
+# from now on exit if any
+# of the commands fail
+set -o errexit
+
+# create temp dir and chown to git user
+tmpdir=$(mktemp -d)
+chown $GIT_USER $tmpdir
+
+# clone the repo as git user
+su -c "git clone ${GIT_USER}@${GIT_HOST}:${repo} $tmpdir" - $GIT_USER
+
+# set the author name if available
+if [ -n "$user_name" ]; then
+  export GIT_DIR="$tmpdir/.git"
+  git config --local user.name "$user_name"
+  git config --local user.email $user_email
+  unset GIT_DIR
 fi
 
-if [ -z "$repo_name" ]; then
-  echo "Error: please specify the repository name using the -r option."
-  exit 1
-fi
+# copy the contents from vhost
+cp -a ${VHOST_PATH_PREFIX}${vhost}/* $tmpdir
 
-if [ -z "$source_dir" ] && [[ "$USER" =~ '^w_' ]] && [ -d "$HOME/public_html/${USER#w_}" ]; then
-  source_dir="$HOME/public_html/${USER#w_}"
-elif [ -z "$source_dir" ]; then
-  echo "Error: unable to auto-detect source diretory."
-  echo "Error: please specify the source directory using the -d option."
-  exit 1
-fi
+# chown to git user
+chown -R $GIT_USER $tmpdir
 
-if [ ! -e "$source_dir" ]; then
-  echo "Error: source directory '$source_dir' does not exist. Try passing another value to -d"
-  exit 1
-elif [ ! -d "$source_dir" -a ! -L "$source_dir" ]; then
-  echo "Warning: source directory '$source_dir' is of type $(stat -c '%F' "$source_dir"), probably an incompatible type." 1>&2
-fi
+# commit changes and push as git user
+su -c "cd $tmpdir &&
+       git add . &&
+       git commit -m '$(get_commit_msg)' &&
+       git push origin master" - $GIT_USER
 
-cd "$source_dir" || {
-  echo "Error: unable to cd to directory '$source_dir'. Please verify if it's a valid and accessible directory."
-  exit 1
-}
-
-commit_msg=${commit_msg:-'Initial project commit'}
-git_server=${git_server:-'git.webenabled.net'}
-git_proto=${git_proto:-'ssh'}
-
-if [ ! -d ".git" ]; then
-  git init  || { echo "Error while executing: git init"; exit 1; }
-  git add . || { echo "Error while executing: git add" ; exit 1; }
-  git commit -am "$commit_msg" || { echo "Error while executing: git commit"; exit 1; }
-fi
-
-git push "$git_proto"://"$repo_user"@"$git_server"/"$repo_name" master || \
-  { echo "Error while executing: git push"; exit 1; }
-
-exit 0
+# clean up temp files
+rm -fr $tmpdir
