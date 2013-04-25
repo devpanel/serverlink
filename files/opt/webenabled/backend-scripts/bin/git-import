@@ -34,12 +34,25 @@ usage: $(basename $0) <repo> <vhost> [ <user name> [ <user email> ] ]
 eou
 }
 
+validate_name()
+{
+  local var=$(eval echo \$$1)
+
+  if ! echo -n $var | grep -qi '^[A-Z0-9_]\+$'; then
+    echo "invalid $1: $var" >&2
+    exit 1
+  fi
+}
+
 (( $# < 2 )) && usage && exit 1
 
 repo=$1
 shift
 vhost=$1
 shift
+
+validate_name repo
+validate_name vhost
 
 if [ ! -d "${VHOST_PATH_PREFIX}${vhost}" ]; then
   echo "vhost '$vhost' doesn't exist" >&2
