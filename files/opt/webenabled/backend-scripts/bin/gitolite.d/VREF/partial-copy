@@ -1,0 +1,41 @@
+#!/bin/sh
+
+# push updated branches back to the "main" repo.
+
+# This must be run as the *last* VREF, though it doesn't matter what
+# permission you give to it
+
+die() { echo "$@" >&2; exit 1; }
+
+repo=$GL_REPO
+user=$GL_USER
+ref=$1          # we're running like an update hook
+old=$2
+new=$3
+
+# never send any STDOUT back, to avoid looking like a ref.  If we fail, git
+# will catch it by our exit code
+exec >&2
+
+main=`git config --file $GL_REPO_BASE/$repo.git/config --get gitolite.partialCopyOf`;
+[ -z "$main" ] && exit 0
+
+rand=$$
+export GL_BYPASS_ACCESS_CHECKS=1
+
+if [ "$new" = "0000000000000000000000000000000000000000" ]
+then
+    # special case for deleting a ref (this is why it is important to put this
+    # VREF as the last one; if we got this far he is allowed to delete it)
+    git push -f $GL_REPO_BASE/$main.git :$ref || die "FATAL: failed to delete $ref"
+
+    exit 0
+fi
+
+git push -f $GL_REPO_BASE/$main.git $new:refs/partial/br-$rand || die "FATAL: failed to send $new"
+
+cd $GL_REPO_BASE/$main.git
+git update-ref -d refs/partial/br-$rand
+git update-ref $ref $new $old || die "FATAL: update-ref for $ref failed"
+
+exit 0

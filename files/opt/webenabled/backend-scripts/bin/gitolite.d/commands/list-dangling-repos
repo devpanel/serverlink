@@ -1,0 +1,55 @@
+#!/usr/bin/perl
+use strict;
+use warnings;
+
+use lib $ENV{GL_LIBDIR};
+use Gitolite::Common;
+use Gitolite::Conf::Load;
+
+=for usage
+Usage:  gitolite list-dangling-repos
+
+List all existing repos that no one can access remotely any more.  They could
+be normal repos that were taken out of "repo" statements in the conf file, or
+wildcard repos whose matching "wild" pattern was taken out or changed so it no
+longer matches.
+
+I would advise caution if you use this as a basis for deleting repos from the
+file system.  A bug in this program could cause you to lose important data!
+=cut
+
+usage() if @ARGV and $ARGV[0] eq '-h';
+
+# get the two lists we need.  %repos is the list of repos in "repo" statements
+# in the conf file.  %phy_repos is the list of actual repos on disk.  Our job
+# is to cull %phy_repos of all keys that have a matching key in %repos, where
+# "matching" means "string equal" or "regex match".
+my %repos = map { chomp; $_ => 1 } `gitolite list-repos`;
+for my $r ( grep /^@/, keys %repos ) {
+    map { chomp; $repos{$_} = 1; } `gitolite list-members $r`;
+}
+my %phy_repos = map { chomp; $_ => 1 } `gitolite list-phy-repos`;
+
+# Remove exact matches.  But for repo names like "gtk+", you could have
+# collapsed this into the next step (the regex match).
+for my $pr (keys %phy_repos) {
+    next unless exists $repos{$pr};
+    delete $repos{$pr};
+    delete $phy_repos{$pr};
+}
+
+# Remove regex matches.
+for my $pr (keys %phy_repos) {
+    my $matched = 0;
+    my $pr2 = Gitolite::Conf::Load::generic_name($pr);
+    for my $r (keys %repos) {
+        if ($pr =~ /^$r$/ or $pr2 =~ /^$r$/) {
+            $matched = 1;
+            next;
+        }
+    }
+    delete $phy_repos{$pr} if $matched;
+}
+
+# what's left in %phy_repos are dangling repos.
+print join("\n", sort keys %phy_repos), "\n";
