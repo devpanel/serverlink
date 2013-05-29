@@ -37,9 +37,8 @@ resolve_local_dir() {
 }
 
 usage() {
-  local prog="$1"
+  local prog=`basename "$0"`
   echo "
-
 Usage: $prog <-d webenabled_install_directory>
 
   Options:
@@ -52,6 +51,12 @@ Usage: $prog <-d webenabled_install_directory>
     -V version        Specify the version of the linux distro (optional)
 
 "
+
+  if [ $EUID -ne 0 ]; then
+    echo "This script requires ROOT privileges to be run."
+    echo
+  fi
+
   exit 1
 }
 
@@ -243,6 +248,8 @@ add_custom_users_n_groups() {
 }
 
 # main
+
+[ $# -eq 0 ] && usage
 
 if [ $EUID -ne 0 ]; then
   echo "Error: This script needs to run with ROOT privileges." 1>&2
