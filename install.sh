@@ -105,6 +105,7 @@ set_global_variables() {
     return 1
   fi
 
+  _git_user="git"
 
   return 0
 }
@@ -201,11 +202,30 @@ add_custom_users_n_groups() {
     fi
   done
 
-  local comment="Used in Webenabled software. Please don't remove."
+  local comment="required by DevPanel service. Please don't remove."
   useradd -M -c "$comment" -d "$webenabled_homedir_base"/w_ -G w_ -g "$_apache_group" w_
   useradd -m -c "$comment" -d "/home/we-taskd" we-taskd
+  # preparing the next change to replace the line above
+  # useradd -m -c "$comment" -d "/home/devpanel" devpanel
+
+  useradd -m \
+    -c "account for managing DevPanel git repos. Please don't remove" "$_git_user"
+
   if [ $? -eq 0 ]; then
-    mkdir "/home/we-taskd/taskd"
+    su -l -s /bin/bash -c "[ ! -d ~/.ssh ] && mkdir -m 700 ~/.ssh ; \
+     [ -d ~/.ssh ] && ssh-keygen -f ~/.ssh/id_rsa -b 4096 -P ''" "$_git_user"
+
+    if [ $? -eq 0 ]; then
+      su -l "$webenabled_install_dir/backend-scripts/bin/gitolite \
+              setup -pk ~/.ssh/id_rsa.pub" "$_git_user"
+    fi
+  else
+    echo
+    echo
+    echo "Warning: failed to setup account for git management" 1>&2
+    echo
+    echo
+    sleep 3
   fi
 
   usermod -a -G virtwww "$_apache_user"
