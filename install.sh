@@ -202,6 +202,17 @@ add_custom_users_n_groups() {
     fi
   done
 
+  if [ -z "$WEBENABLED_DONT_CHANGE_SHELL" ]; then
+    useradd -D -s /bin/bash
+  fi
+
+  local skel_ssh="/etc/skel/.ssh"
+  local skel_auth_keys="$skel_ssh/authorized_keys"
+  if [ ! -d "$skel_ssh" ] && mkdir -m 700 "$skel_ssh" ; then
+    cp /dev/null "$skel_auth_keys"
+    chmod 600 "$skel_auth_keys"
+  fi
+
   local comment="required by DevPanel service. Please don't remove."
   useradd -M -c "$comment" -d "$webenabled_homedir_base"/w_ -G w_ -g "$_apache_group" w_
   useradd -m -c "$comment" -d "/home/we-taskd" we-taskd
