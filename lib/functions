@@ -119,3 +119,42 @@ wedp_gen_random_str() {
     return 0
   fi
 }
+
+ini_section_get_key_value() {
+  local file="$1"
+  local section=`escape_sed "$2"`
+  local key=`escape_sed "$3"`
+
+  sed -n -e "/^\[$section\]/,/^\[/ {
+    /^\($key\)[[:space:]]*=.*$/ { s/^$key[[:space:]]*=[[:space:]]*//; p; q 0; }
+  } ; $ q 1;" "$file"
+}
+
+ini_section_replace_key_value() {
+  local file="$1"
+  local section=`escape_sed "$2"`
+  local key=`escape_sed "$3"`
+  local value=`escape_sed "$4"`
+
+  local orig_md5=`md5sum "$file"`
+  orig_md5=${orig_md5%% *}
+
+  sed -i -e "/^\[$section\]/,/^\[/ {
+    /^\($key\)[[:space:]]*=.*$/ {
+      s/^\($key\)[[:space:]]*=.*$/\1 = $value/g;
+    }
+  }" "$file"
+
+  local status=$?
+  [ $status -ne 0 ] && return $status
+
+  local final_md5=`md5sum "$file"`
+  final_md5=${final_md5%% *}
+
+  if [ "$orig_md5" != "$final_md5" ]; then
+    return 0 # file changed, success!
+  else
+    return 1 # file is the same, replace failed
+  fi
+}
+
