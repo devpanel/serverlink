@@ -240,6 +240,13 @@ fi
   { echo "Error. Unable to load functions" 1>&2; exit 1; }
 
 
+lock_file="/var/run/devpanel_install.lock"
+if ! ln -s /dev/null "$lock_file"; then
+  error "there seems to have another installation running. Cannot create lock file '$lock_file'."
+fi
+trap 'rm -f "$lock_file" ; trap - EXIT INT HUP TERM; exit 1' EXIT INT HUP TERM
+
+
 getopt_flags="I:L:H:D:V:hd"
 
 while getopts $getopt_flags OPTS; do
