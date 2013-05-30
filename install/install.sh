@@ -9,33 +9,6 @@ webenabled_homedir_base="/home/clients/websites"
 # default databases base dir, can be overwritten with -D
 webenabled_databasedir_base="/home/clients/databases"
 
-resolve_local_dir() {
-  local base="$1"
-  local bin=""
-  local bin_path=""
-  local dir_name=""
-
-  [ -z "$base" -o ${#base} -eq 0 ] && return 1
-
-  if [ ${base:0:1} == "/" ]; then
-    echo $(dirname "$base")
-    return 0
-  elif [ ${#base} -gt 2 -a ${base:0:2} == "./" ]; then
-    base=${base#./}
-    dir_name=$(dirname "$base")
-    if [ "$dir_name" == "." ]; then
-      echo "$PWD"
-    else
-      echo "$PWD/$dir_name"
-    fi
-    return 0
-  elif [ ${#base} -gt 2 -a ${base:0:3} == "../" ]; then
-    echo $(dirname "$PWD/$base")
-  else
-    return 1
-  fi
-}
-
 usage() {
   local prog=`basename "$0"`
   echo "
@@ -65,7 +38,7 @@ set_global_variables() {
   local target_dir="$2"
   local distro="$3"
 
-  local we_config_dir="$source_dir/files/opt/webenabled/config"
+  local we_config_dir="$source_dir/config"
 
   _suexec_bin=$(wedp_resolve_link "$we_config_dir/os.$distro/pathnames/sbin/suexec")
   if [ $? -ne 0  -o -z "$_suexec_bin" ]; then
@@ -121,7 +94,7 @@ install_ce_software() {
   local webenabled_install_dir="$3"
   local machine_type=$(uname -m)
 
-  if ! cp -a "$source_dir/files/opt/webenabled" \
+  if ! cp -a "$source_dir" \
     $(dirname "$webenabled_install_dir" ); then
     echo "Error: unable to copy installation files to target dir" >&2
     return 1
@@ -165,8 +138,8 @@ install_ce_software() {
   mkdir -p `readlink -m "$webenabled_install_dir"/config/os/pathnames/etc/ssl/certs`
   mkdir -p `readlink -m "$webenabled_install_dir"/config/os/pathnames/etc/ssl/keys`
   #openssl req -subj "/C=--/ST=SomeState/L=SomeCity/O=SomeOrganization/OU=SomeOrganizationalUnit/CN=*.`hostname`" -new -x509 -days 3650 -nodes -out /opt/webenabled/config/os/pathnames/etc/ssl/certs/wildcard -keyout /opt/webenabled/config/os/pathnames/etc/ssl/keys/wildcard
-  cp -a "$source_dir"/files/cloudenabled/wildcard.cloudenabled.net.key "$webenabled_install_dir"/config/os/pathnames/etc/ssl/keys/wildcard
-  cp -a "$source_dir"/files/cloudenabled/wildcard.cloudenabled.net.crt "$webenabled_install_dir"/config/os/pathnames/etc/ssl/certs/wildcard
+  cp -a "$source_dir"/install/old/cloudenabled/wildcard.cloudenabled.net.key "$webenabled_install_dir"/config/os/pathnames/etc/ssl/keys/wildcard
+  cp -a "$source_dir"/install/old/cloudenabled/wildcard.cloudenabled.net.crt "$webenabled_install_dir"/config/os/pathnames/etc/ssl/certs/wildcard
 
   # echo Vhost-simple-SSL-wildcard > "$webenabled_install_dir"/config/names/apache-macro
   echo Vhost-simple > "$webenabled_install_dir"/config/names/apache-macro
@@ -188,11 +161,8 @@ Include $webenabled_install_dir/compat/apache_include/virtwww/*.conf" \
   ln -sf "$webenabled_install_dir/compat/apache_include/webenabled.conf.main" \
     "$_apache_includes_dir/webenabled.conf"
 
-  [ -e "$webenabled_install_dir/current" ] && rm -f "$webenabled_install_dir/current"
-  ln -s "$webenabled_install_dir/backend-scripts" "$webenabled_install_dir/current"
-
   ln -s "utils.$machine_type" \
-    "$webenabled_install_dir/current/bin/utils"
+    "$webenabled_install_dir/bin/utils"
 
   return 0
 }
@@ -202,7 +172,7 @@ add_custom_users_n_groups() {
   local webenabled_install_dir="$2"
 
   for u in w_ virtwww weadmin; do
-    if ! getent passwd $u >/dev/null; then
+    if ! getent group $u >/dev/null; then
       groupadd $u || true
     fi
   done
@@ -220,9 +190,7 @@ add_custom_users_n_groups() {
 
   local comment="required by DevPanel service. Please don't remove."
   useradd -M -c "$comment" -d "$webenabled_homedir_base"/w_ -G w_ -g "$_apache_group" w_
-  useradd -m -c "$comment" -d "/home/we-taskd" we-taskd
-  # preparing the next change to replace the line above
-  # useradd -m -c "$comment" -d "/home/devpanel" devpanel
+  useradd -m -c "$comment" -d "/home/devpanel" devpanel
 
   useradd -m \
     -c "account for managing DevPanel git repos. Please don't remove" "$_git_user"
@@ -258,17 +226,17 @@ fi
 
 shopt -s expand_aliases
 
-install_source_dir=$(resolve_local_dir "$0")
+install_source_dir="${BASH_SOURCE[0]}/.."
 if [ $? -ne 0 ]; then
   echo "Error: unable to determine the source directory. Please execute"\
  " this script again calling it with the full path." 1>&2
   exit 1
 fi
 
-. "$install_source_dir"/files/opt/webenabled/backend-scripts/lib/variables || \
+. "$install_source_dir"/lib/variables || \
   { echo "Error. Unable to load variables" 1>&2; exit 1; }
 
-. "$install_source_dir"/files/opt/webenabled/backend-scripts/lib/functions || \
+. "$install_source_dir"/lib/functions || \
   { echo "Error. Unable to load functions" 1>&2; exit 1; }
 
 
@@ -317,7 +285,7 @@ if [ -z "$linux_distro" ]; then
   fi
 fi
 
-if [ ! -e "$install_source_dir/files/opt/webenabled/config/os.$linux_distro" ]; then
+if [ ! -e "$install_source_dir/config/os.$linux_distro" ]; then
   error "missing the configuration directory for distro '$linux_distro'.
 There seems to be a problem in this installation package."
   exit 1
@@ -375,30 +343,31 @@ if type -t "${linux_distro}_adjust_system_config" >/dev/null; then
   "${linux_distro}_adjust_system_config" "$webenabled_install_dir"
 fi
 
-taskd_config_file="$webenabled_install_dir/compat/taskd/config/taskd.conf"
+taskd_config_file="$webenabled_install_dir/config/devpanel.conf"
 if [ -n "$WEBENABLED_SERVER_UUID" \
   -a -n "$WEBENABLED_SERVER_SECRET_KEY" ]; then
-  "$install_source_dir/install-update-taskd-config" -c "$taskd_config_file" 
+
+  ini_section_replace_value "$taskd_config_file" taskd uuid "$WEBENABLED_SERVER_UUID"
   status=$?
+
   if [ $status -ne 0 ]; then
     echo
-    echo "Warning: unable to set uuid and key in taskd.conf. Please " \
+    echo "Warning: unable to set uuid in taskd.conf. Please " \
 "correct it manually in '$taskd_config_file'. " \
 "Or your install will not work." >&2
     sleep 3
   else
-    "$webenabled_install_dir/current/libexec/taskd"
+    "$webenabled_install_dir/sbin/taskd"
   fi
-
 fi
 
 if ! grep -q taskd /etc/rc.local; then
   sed -i -e "/^exit / i\
-[ -x $webenabled_install_dir/current/libexec/taskd ] && $webenabled_install_dir/current/libexec/taskd" /etc/rc.local
+[ -x $webenabled_install_dir/sbin/taskd ] && $webenabled_install_dir/sbin/taskd" /etc/rc.local
 fi
 
 if [ -n "$WEBENABLED_VPS_HOSTNAME" ]; then
-  "$webenabled_install_dir/current/libexec/config-vhost-names-default" \
+  "$webenabled_install_dir/libexec/config-vhost-names-default" \
     "$WEBENABLED_VPS_HOSTNAME"
 fi
 
