@@ -22,16 +22,20 @@ taskd_start() {
   local args="$@"
 
   if [ ${#args[*]} -gt 0 ] ; then
-    "$devpanel_dir/sbin/taskd" "$args"
+    start_daemon "$devpanel_dir/sbin/taskd" "$args"
   else
-    "$devpanel_dir/sbin/taskd"
+    start_daemon "$devpanel_dir/sbin/taskd"
   fi
 
   return $?
 }
 
+taskd_status() {
+  status_of_proc -p "$pid_file" "taskd" "DevPanel taskd"
+}
+
 dp_daemon_name="taskd"
-pid_file="/var/run/$dp_daemon_name"
+pid_file="/var/run/$dp_daemon_name.pid"
 
 # main
 [ $# -eq 0 ] && usage
@@ -54,7 +58,6 @@ case "$action" in
   start)
     taskd_start "$taskd_cmd_args"
     status=$?
-    [ $status -eq 0 ] && log_daemon_msg "Starting DevPanel taskd"
     log_end_msg $status
     ;;
 
@@ -63,11 +66,16 @@ case "$action" in
     ;;
 
   reload|restart)
+    if ! pidofproc -p "$pid_file"; then
+      log_failure_msg "DevPanel taskd is not running"
+      exit $?
+    fi
+
     killproc -p "$pid_file" && sleep 1 && taskd_start "$taskd_cmd_args"
     log_end_msg $status
     ;;
 
   status)
-    status_of_proc -p "$pid_file" "taskd" "DevPanel taskd"
+    taskd_status
     ;;
 esac
