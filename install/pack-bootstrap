@@ -78,7 +78,7 @@ fi
 
 trap 'rm -rf "$tmp_pack_dir"' EXIT INT TERM
 
-internal_pack_dir="$tmp_pack_dir/webenabled-devpanel"
+internal_pack_dir="$tmp_pack_dir/bootstrap"
 mkdir "$internal_pack_dir"
 if [ $? -ne 0 ]; then
   error "unable to create dir '$internal_pack_dir'"

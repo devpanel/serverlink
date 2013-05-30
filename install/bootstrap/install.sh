@@ -43,7 +43,7 @@ fi
 
 umask 022
 
-install_dir="${BASH_SOURCE[0]}"
+source_dir="${BASH_SOURCE[0]}"
 if ! source "$current_dir/lib/functions"; then
   error "unable to import library '$current_dir/lib/functions'"
 fi
@@ -102,7 +102,7 @@ if ! getent passwd "$dp_user" &>/dev/null; then
   fi
 fi
 
-( cd "$install_dir/webenabled-devpanel" && cp -a . "$DP_TARGET_DIR" )
+( cd "$source_dir/bootstrap" && cp -a . "$DP_TARGET_DIR" )
 if [ $? -ne 0 ]; then
   error "unable to copy files to '$DP_TARGET_DIR'"
 fi
