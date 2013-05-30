@@ -23,7 +23,11 @@ wedp_auto_detect_distro() {
     distro=fedora
   elif rpm -ql owl-hier >/dev/null 2>&1; then
     distro=owl
-  elif [ -r /etc/dpkg/origins/ubuntu ]; then
+  elif [ -r /etc/debian_version ] && \
+    apt-cache show lsb-base \ | egrep -q '^Maintainer: .+debian\.org>'; then
+    distro=debian 
+  elif [ -r /etc/dpkg/origins/ubuntu ] && \
+    apt-cache show lsb-base | egrep -q '^Maintainer: .+ubuntu\.com>'; then
     distro=ubuntu
   elif [ -r /etc/gentoo-release ]; then
     distro=gentoo
@@ -50,8 +54,12 @@ wedp_auto_detect_distro_version() {
     version="0"
   fi
 
-  echo $version
-  return 0
+  if [ -n "$version" ]; then
+    echo $version
+    return 0
+  else
+    return 1
+  fi
 }
 
 print_quoted_variables() {
@@ -65,6 +73,9 @@ print_quoted_variables() {
   done
 }
 
+# the function below is a candidate to be removed as it's much better to use
+# variable ${BASH_SOURCE[0]}, though not removing it now because not sure if
+# it's being used by other scripts
 resolve_local_dir() {
   local base="$1"
   local bin=""
