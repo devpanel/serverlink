@@ -23,11 +23,11 @@ wedp_auto_detect_distro() {
     distro=fedora
   elif rpm -ql owl-hier >/dev/null 2>&1; then
     distro=owl
-  elif [ -r /etc/debian_version ] && \
-    apt-cache show lsb-base \ | egrep -q '^Maintainer: .+debian\.org>'; then
-    distro=debian 
-  elif [ -r /etc/dpkg/origins/ubuntu ] && \
-    apt-cache show lsb-base | egrep -q '^Maintainer: .+ubuntu\.com>'; then
+  elif lsb_release -a 2>/dev/null | egrep -q "^Distributor ID:[[:space:]]+Debian" || \
+    [ -r /etc/debian_version ] && apt-cache show lsb-base | egrep -q '^Maintainer: .+debian\.org>'; then
+    distro=debian
+  elif lsb_release -a 2>/dev/null | egrep -q "^Distributor ID:[[:space:]]+Ubuntu" || \
+    [ -r /etc/debian_version ] && apt-cache show lsb-base | egrep -q '^Maintainer: .+ubuntu\.com>'; then
     distro=ubuntu
   elif [ -r /etc/gentoo-release ]; then
     distro=gentoo
