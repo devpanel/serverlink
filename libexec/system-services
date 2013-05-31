@@ -1,0 +1,69 @@
+#!/bin/bash
+
+usage() {
+  local prog=`basename "$0"`
+
+  echo "Usage: $prog <service_name> <action>"
+  
+  if [ $EUID -ne 0 ]; then
+    echo
+    echo "This program requires ROOT privileges to run"
+  fi
+
+  exit 1
+}
+
+ubuntu_service_action() {
+  local service="$1"
+  local action="$2"
+
+  initctl "$action" "$service"
+}
+
+centos_service_action() {
+  local service="$1"
+  local action="$2"
+
+  service "$service" "$action"
+}
+
+debian_service_action() {
+  local service="$1"
+  local action="$2"
+  
+  "/etc/init.d/$service" "$action"
+}
+
+# main
+
+[ $# -lt 2 ] && usage
+
+current_dir=`dirname "${BASH_SOURCE[0]}"`
+if ! source "$current_dir/../lib/functions"; then
+  echo "Error: unable to import auxiliary functions from '$current_dir/../lib/functions'" 1>&2
+  exit 1
+fi
+
+if [ $EUID -ne 0 ]; then
+  error "this program requires ROOT privileges to run"
+fi
+
+service="$1"
+action="$2"
+
+if [ -z "$service" ]; then
+  error "missing service name"
+elif [ -z "$action" ]; then
+  error "missing action name"
+fi
+
+distro=$(wedp_auto_detect_distro)
+if [ $? -ne 0 ]; then
+  error "unable to detect the linux distribution of this server"
+fi
+
+if ! type -t "${distro}_service_action" >/dev/null; then
+  error "couldn't find function ${distro}_service_action"
+fi
+
+${distro}_service_action "$service" "$action"
