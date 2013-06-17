@@ -1,0 +1,58 @@
+#!/bin/bash
+
+usage() {
+  echo "Usage: `basename "$0"` [ options ] <file>
+
+  Generates a new SSH private key and sends the public key to stdout
+    <file>      generate the key on the specified file
+
+  Options:
+    -m            move the file to a new name in case it already exists
+    -h            displays the usage msg
+"
+  exit 1
+}
+
+# main
+getopt_flags='hm'
+unset target_file move_existing
+while getopts $getopt_flags OPTF; do
+  case $OPTF in
+    h)
+      usage
+      ;;
+    m)
+      move_existing=1
+      ;;
+    *)
+      usage
+      ;;
+  esac
+done
+[ $OPTIND -gt 1 ] && shift $(( $OPTIND - 1 ))
+
+[ -z "$1" ] && usage
+target_file="$1"
+
+if [ -e "$target_file" -a -z "$move_existing" ]; then
+  echo "Error: file '$target_file' already exists" 1>&2
+  exit 1
+elif [ -e "$target_file" -a -n "$move_existing" ]; then
+  mv -f "$target_file" "$target_file--`date +%b-%d-%Y_%H:%M:%S`.$$.$RANDOM"
+  if [ $? -ne 0 ]; then
+    echo "Error: unable to move the existing file" 1>&2
+    exit 1
+  fi
+fi
+
+ssh-keygen -b 4096 -f "$target_file" -P '' &>/dev/null
+if [ $? -eq 0 ]; then
+  cat "$target_file.pub"
+  if [ $? -ne 0 ]; then
+    echo "Error: unable to display key contents" 1>&2
+    exit 1
+  fi
+else
+  echo "Error: unable to generate key file" 1>&2
+  exit 1
+fi
