@@ -1,0 +1,10 @@
+[defaults]
+
+
+[user_api]
+
+
+[taskd]
+api_url     = @@API_URL@@
+uuid        = @@UUID@@
+key         = @@KEY@@
