@@ -1,7 +1,7 @@
-#!/bin/sh
+#!/bin/bash
 
 dir=`dirname $0`
-skel_sql="$dir/../../config/skel.sql"
+skel_sql="$dir/../config/skel.sql"
 
 umask 077
 
@@ -25,27 +25,47 @@ parse_arguments() {
 }
 
 parse_arguments "$@"
+if [ ! -d "$datadir/mysql/" ] && ! mkdir -m 700 -p "$datadir/mysql/"; then
+  echo "Error: unable to create dir '$datadir/mysql/'" 1>&2
+  exit 1
+fi
 
-test -z "$user" -o "x`id -un`" = "x$user" && exit 1
-test -z "$datadir" -o ! -d "$datadir" && exit 1
-test -z "$version" -o ! -d "$skel_sql/mysql/$version" && exit 1
+mysql_install_db --datadir="$datadir/mysql/"
+if [ $? -ne 0 ]; then
+  echo "Error: unable to create data directory for mysql" 1>&2
+  exit 1
+fi
+
+# remove the test database installed by mysql, no to clash with vhosts that have it
+rm -rf "$datadir/mysql/test"
+
+chown -R "$user":"$user" "$datadir"
+if [ $? -ne 0 ]; then
+  echo "Error: unable to change the of '$datadir' to '$user':'$user'" 1>&2
+  exit 1
+fi
+
+#
+#test -z "$user" -o "x`id -un`" = "x$user" && exit 1
+#test -z "$datadir" -o ! -d "$datadir" && exit 1
+#test -z "$version" -o ! -d "$skel_sql/mysql/$version" && exit 1
 
 # Make a check here
-for srcdir in $skel_sql/mysql/$version/*; do
-    if test -d "$datadir/${srcdir##$skel_sql/mysql/$version/}"; then
-	# Incosistent state :( Some dirs already copied, others - not
-	# Fix this in future
-	exit 2
-    fi
-    cp -a "$srcdir" "$datadir" || exit 2
-    chmod -R u+rwX "$datadir/${srcdir##$skel_sql/mysql/$version/}" || exit 2
-    chmod -R go-rwx "$datadir/${srcdir##$skel_sql/mysql/$version/}" || exit 2
-    chown -R "$user:" "$datadir/${srcdir##$skel_sql/mysql/$version/}" || exit 2
-done
-
+#for srcdir in $skel_sql/mysql/$version/*; do
+#    if test -d "$datadir/${srcdir##$skel_sql/mysql/$version/}"; then
+#	# Incosistent state :( Some dirs already copied, others - not
+#	# Fix this in future
+#	exit 2
+#    fi
+#    cp -a "$srcdir" "$datadir" || exit 2
+#    chmod -R u+rwX "$datadir/${srcdir##$skel_sql/mysql/$version/}" || exit 2
+#    chmod -R go-rwx "$datadir/${srcdir##$skel_sql/mysql/$version/}" || exit 2
+#    chown -R "$user:" "$datadir/${srcdir##$skel_sql/mysql/$version/}" || exit 2
+#done
+#
 if test ! -d "$datadir/tmp"; then
-    mkdir -p "$datadir/tmp" || exit 2
-    chown "$user:" "$datadir/tmp" || exit 2
+   mkdir -p "$datadir/tmp" || exit 2
+   chown "$user:" "$datadir/tmp" || exit 2
 fi
 
 if test ! -d "$datadir/log"; then
@@ -54,4 +74,3 @@ if test ! -d "$datadir/log"; then
 fi
 
 # Success
-exit 0
