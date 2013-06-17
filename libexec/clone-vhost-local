@@ -1,10 +1,6 @@
-#!/bin/sh
-dir=`dirname "$0"`
-source="$1"
-target="$2"
-shift
-shift
-prefix=/opt/webenabled/data
+#!/bin/bash
+prefix=${WEBENABLED_DATA_DIR:-/opt/webenabled/data}
+
 run()
 {
   echo "  Running $@"
@@ -23,20 +19,31 @@ usage()
   exit 1
 }
 
+# main
+[ $# -lt 2 ] && usage
+dir=`dirname "${BASH_SOURCE[0]}"`
+
+[ -z "$1" -o -z "$2" ] && usage
+
+source="$1"
+target="$2"
+shift
+shift
+
 $dir/check-vhost-name archive "$source" || usage
 $dir/check-vhost-name restore "$target" || usage
 
-TMPDIR=`$dir/archive-mktemp` || exit 1
+TMP_FILE=`mktemp "$prefix/tmp_archive_$source.XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"`.tgz
 
-echo "Cloning stage 1: archive $source to $TMPDIR"
-if ! $dir/archive-vhost "$source" "$TMPDIR"
+echo "Cloning stage 1: archive $source to $TMP_FILE"
+if ! $dir/archive-vhost "$source" "$TMP_FILE"
 then
   echo ERROR >&2
   exit 1
 fi
   
-echo "Cloning stage 2: restore $target from $TMPDIR"
-$dir/restore-vhost "$target" "$TMPDIR" "$@" || error
-echo "Cloning stage 3: removing archive from $TMPDIR"
-rm -rf "$TMPDIR" || error
+echo "Cloning stage 2: restore $target from $TMP_FILE"
+$dir/restore-vhost "$target" "$TMP_FILE" || error
+echo "Cloning stage 3: removing archive from $TMP_FILE"
+rm -f "$TMP_FILE"
 echo Done
