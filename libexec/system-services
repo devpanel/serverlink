@@ -17,14 +17,22 @@ ubuntu_service_action() {
   local service="$1"
   local action="$2"
 
-  initctl "$action" "$service"
+  if [ -e "/etc/init.d/$service" ]; then
+    "/etc/init.d/$service" "$action"
+  else
+    initctl "$action" "$service"
+  fi
 }
 
 centos_service_action() {
   local service="$1"
   local action="$2"
 
-  service "$service" "$action"
+  if [ -e "/etc/init.d/$service" ]; then
+    "/etc/init.d/$service" "$action"
+  else
+    initctl "$action" "$service"
+  fi
 }
 
 debian_service_action() {
