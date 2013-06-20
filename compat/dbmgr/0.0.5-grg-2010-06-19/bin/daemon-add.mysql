@@ -25,25 +25,19 @@ parse_arguments() {
 }
 
 parse_arguments "$@"
-if [ ! -d "$datadir/mysql/" ] && ! mkdir -m 700 -p "$datadir/mysql/"; then
+if [ ! -d "$datadir/mysql/" ] && ! su -l -s /bin/bash -c 'mkdir -m 700 -p '"$datadir/mysql/" "$user"; then
   echo "Error: unable to create dir '$datadir/mysql/'" 1>&2
   exit 1
 fi
 
-mysql_install_db --datadir="$datadir/mysql/"
+su -l -s /bin/bash -c 'mysql_install_db '--datadir="$datadir/mysql/"' --user='"$user" "$user"
 if [ $? -ne 0 ]; then
   echo "Error: unable to create data directory for mysql" 1>&2
   exit 1
 fi
 
 # remove the test database installed by mysql, no to clash with vhosts that have it
-rm -rf "$datadir/mysql/test"
-
-chown -R "$user":"$user" "$datadir"
-if [ $? -ne 0 ]; then
-  echo "Error: unable to change the of '$datadir' to '$user':'$user'" 1>&2
-  exit 1
-fi
+su -l -s /bin/bash -c 'rm -rf '"$datadir/mysql/test" "$user"
 
 #
 #test -z "$user" -o "x`id -un`" = "x$user" && exit 1
@@ -64,13 +58,11 @@ fi
 #done
 #
 if test ! -d "$datadir/tmp"; then
-   mkdir -p "$datadir/tmp" || exit 2
-   chown "$user:" "$datadir/tmp" || exit 2
+  su -l -s /bin/bash -c 'mkdir -p '"$datadir/tmp" "$user"
 fi
 
 if test ! -d "$datadir/log"; then
-    mkdir -p "$datadir/log" || exit 2
-    chown "$user:" "$datadir/log" || exit 2
+  su -l -s /bin/bash -c 'mkdir -p '"$datadir/tmp" "$user"
 fi
 
 # Success
