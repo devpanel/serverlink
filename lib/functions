@@ -73,6 +73,24 @@ print_quoted_variables() {
   done
 }
 
+escape_sed() {
+  local str="$1"
+  local escaped="$str"
+
+  escaped=${escaped//\'/\\\'}
+  escaped=${escaped//\*/\\*}
+  escaped=${escaped//\;/\\;}
+  escaped=${escaped//\[/\\[}
+  escaped=${escaped//\]/\\]}
+  escaped=${escaped//\\+/+\]}
+  escaped=${escaped//\\\?/\?}
+  escaped=${escaped//\\\(/\(}
+  escaped=${escaped//\\\)/\)}
+  escaped=${escaped//\//\\/}
+
+  echo -n "$escaped"
+}
+
 # the function below is a candidate to be removed as it's much better to use
 # variable ${BASH_SOURCE[0]}, though not removing it now because not sure if
 # it's being used by other scripts
@@ -129,6 +147,23 @@ wedp_gen_random_str() {
     echo "${str:0:$length}"
     return 0
   fi
+}
+
+download_file() {
+  local url="$1"
+  local temp_file="$2"
+  local retries=${3:-3}
+  local wait_before_retry=${4:-20}
+
+  if hash curl &>/dev/null; then
+    curl -f --retry $retries --retry-delay $wait_before_retry -s -o "$temp_file" "$url"
+    status=$?
+  elif hash wget &>/dev/null; then
+    wget -t $retries -w $wait_before_retry -nv -O "$temp_file" "$url"
+    status=$?
+  fi
+
+  return $status
 }
 
 ini_section_get_key_value() {
