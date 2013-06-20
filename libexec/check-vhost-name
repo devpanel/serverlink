@@ -4,7 +4,7 @@ mode="$1"
 vhost="$2"
 w_user="w_$vhost"
 b_user="b_$vhost"
-apache_config="$dir/../../config/os/pathnames/etc/apache_vhosts/$w_user.conf"
+apache_config="$dir/../config/os/pathnames/etc/apache_vhosts/$w_user.conf"
 
 error()
 {

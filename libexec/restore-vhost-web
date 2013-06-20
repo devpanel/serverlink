@@ -42,12 +42,12 @@ fi
 old_user="w_$old_vhost"
 date=`date  +'%Y%m%d'`
 archive_file="$archive_dir/$old_user.tgz"
-apache_config_dir="$dir/../../config/os/pathnames/etc/apache_vhosts"
-apache_group=`cat "$dir/../../config/os/names/apache.group"`
-chcgi="$dir/../../config/os/pathnames/sbin/chcgi"
+apache_config_dir="$dir/../config/os/pathnames/etc/apache_vhosts"
+apache_group=`cat "$dir/../config/os/names/apache.group"`
+chcgi="$dir/../config/os/pathnames/sbin/chcgi"
 conf="$apache_config_dir/$user.conf"
 archive_conf="$archive_dir/apache_$old_vhost.conf"
-logs_dir="$dir/../../config/os/pathnames/var/log/apache_vhosts/$user"
+logs_dir="$dir/../config/os/pathnames/var/log/apache_vhosts/$user"
 archive_logs="$archive_dir/logs_$old_vhost.tgz"
 archive_shadow="$archive_dir/$old_user.shadow"
 archive_crontab="$archive_dir/crontab"

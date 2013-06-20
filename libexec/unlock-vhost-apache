@@ -2,11 +2,11 @@
 dir=`dirname "$0"`
 vhost="$1"
 user="w_$vhost"
-apache_config_dir="$dir/../../config/os/pathnames/etc/apache_vhosts"
+apache_config_dir="$dir/../config/os/pathnames/etc/apache_vhosts"
 apache_config="$apache_config_dir/$user.conf"
 apache_config_locked="$apache_config.locked"
 $dir/check-vhost-name unlock "$vhost" || exit 1
-apachectl="$dir/../../config/os/pathnames/sbin/apachectl"
+apachectl="$dir/../config/os/pathnames/sbin/apachectl"
 
 backup()
 { 

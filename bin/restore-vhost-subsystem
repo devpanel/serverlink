@@ -120,8 +120,8 @@ set_database_variables() {
   else
     mysql_user=$user_web
     mysql_password=`run2 awk "BEGIN{FS=\":\";}\\$1==\"$user_web\"{s=\\$0; gsub(\"^[^:]+:\",\"\",s);print s;f=1}END{exit f==0}" "$mysql_passwd_file"` || error
-    mysql_host=`run2 awk "BEGIN{FS=\":\"}\\$1==\"$user_db\"{print \\$5;f=1}END{exit f==0}" $dir/../../config/os/pathnames/opt/dbmgr/config/db-daemons.conf` || error
-    mysql_port=`run2 awk "BEGIN{FS=\":\"}\\$1==\"$user_db\"{print \\$6;f=1}END{exit f==0}" $dir/../../config/os/pathnames/opt/dbmgr/config/db-daemons.conf` || error
+    mysql_host=`run2 awk "BEGIN{FS=\":\"}\\$1==\"$user_db\"{print \\$5;f=1}END{exit f==0}" $dir/../config/os/pathnames/opt/dbmgr/config/db-daemons.conf` || error
+    mysql_port=`run2 awk "BEGIN{FS=\":\"}\\$1==\"$user_db\"{print \\$6;f=1}END{exit f==0}" $dir/../config/os/pathnames/opt/dbmgr/config/db-daemons.conf` || error
 
   fi
 

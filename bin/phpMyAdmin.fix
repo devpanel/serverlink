@@ -28,7 +28,7 @@ base_user="b_$base_user"
 #	exit 1
 #fi
 
-if ! grep -E "^$base_user:" $dir/../../config/os/pathnames/opt/dbmgr/config/db-daemons.conf >& /dev/null ; then
+if ! grep -E "^$base_user:" $dir/../config/os/pathnames/opt/dbmgr/config/db-daemons.conf >& /dev/null ; then
 	echo "$0: could not find a MySQL daemon for the '$base_user' account"
 	exit 1
 fi
@@ -54,6 +54,6 @@ then
   if [ -z "$password" ]; then echo Cannot obtain the password >&2; exit 1; fi
 fi
 set -e
-$dir/../../config/os/pathnames/bin/htpasswd -${password:+b}cm $htpasswd "$web_user" "$password"
+$dir/../config/os/pathnames/bin/htpasswd -${password:+b}cm $htpasswd "$web_user" "$password"
 chmod 0644 $htpasswd
 

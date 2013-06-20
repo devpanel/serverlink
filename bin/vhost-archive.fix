@@ -11,7 +11,7 @@ else
 fi
 
 web_user=$(id -un 2>/dev/null)
-apache_group=`head -1 "$dir/../../config/os/names/apache-exec.group"`
+apache_group=`head -1 "$dir/../config/os/names/apache-exec.group"`
 
 if [ "`id -gn`" != "$apache_group" ]; then
 	echo "$0: you have to switch under web account to fix archive-vhost instance"
@@ -34,5 +34,5 @@ then
   if [ -z "$password" ]; then echo Cannot obtain the password >&2; exit 1; fi
 fi
 set -e
-$dir/../../config/os/pathnames/bin/htpasswd -${password:+b}cm $htpasswd "$web_user" "$password"
+$dir/../config/os/pathnames/bin/htpasswd -${password:+b}cm $htpasswd "$web_user" "$password"
 chmod 0644 $htpasswd

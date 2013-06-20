@@ -51,9 +51,9 @@ export HOME=/
 
 if [ -s "$archive_my_cnf" ]
 then
-  $dir/../../config/os/pathnames/opt/dbmgr/current/bin/createdb -c3 $options "$user" 3<"$archive_my_cnf" || exit 1
+  $dir/../config/os/pathnames/opt/dbmgr/current/bin/createdb -c3 $options "$user" 3<"$archive_my_cnf" || exit 1
 else
-  $dir/../../config/os/pathnames/opt/dbmgr/current/bin/createdb $options "$user" || exit 1
+  $dir/../config/os/pathnames/opt/dbmgr/current/bin/createdb $options "$user" || exit 1
 fi
 
 home="`eval \"echo ~$user\"`"

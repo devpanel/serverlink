@@ -31,8 +31,8 @@ home="`eval \"echo ~$user\"`"
 date=`date  +'%Y%m%d'`
 archive_file="$archive_dir/$user.tgz"
 config_dir="/opt/webenabled/config/vhosts/$vhost"
-apachectl="$dir/../../config/os/pathnames/sbin/apachectl"
-apache_base_log_dir=`readlink -m $dir/../../config/os/pathnames/var/log/apache_logs_dir`
+apachectl="$dir/../config/os/pathnames/sbin/apachectl"
+apache_base_log_dir=`readlink -m $dir/../config/os/pathnames/var/log/apache_logs_dir`
 
 if ! `id -u "$user" 2>/dev/null >/dev/null`
 then
@@ -58,8 +58,8 @@ then
   read
 fi
 
-apache_config_dir="$dir/../../config/os/pathnames/etc/apache_vhosts"
-apache_config_dir_removed="$dir/../../config/os/pathnames/etc/apache_vhosts_removed"
+apache_config_dir="$dir/../config/os/pathnames/etc/apache_vhosts"
+apache_config_dir_removed="$dir/../config/os/pathnames/etc/apache_vhosts_removed"
 apache_config="$apache_config_dir/$user.conf"
 echo "Moving $apache_config to $apache_config.removed"
 run mv "$apache_config" "$apache_config_dir_removed/$user.conf.removed"

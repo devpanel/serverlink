@@ -31,8 +31,8 @@ then
   exit 1
 fi
 
-file1=$dir/../../config/os/pathnames/opt/dbmgr/config/db-daemons.conf
-file2=$dir/../../config/os/pathnames/opt/dbmgr/config/db-shadow.conf
+file1=$dir/../config/os/pathnames/opt/dbmgr/config/db-daemons.conf
+file2=$dir/../config/os/pathnames/opt/dbmgr/config/db-shadow.conf
 echo "Commenting out the entries in db-daemons.conf and db-shadow.conf:"
 run sed -i.old "s/^$user:/#&/" $file1
 #grep "$user" $file1 | sed 's/^/  /'

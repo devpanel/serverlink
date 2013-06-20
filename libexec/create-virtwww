@@ -15,19 +15,19 @@ shift `expr $OPTIND - 1`
 
 progname="$(basename $0)"
 dir="$(dirname $0)"
-pathnames="$dir/../../config/os/pathnames"
-macro_file="$dir/../../config/names/apache-macro"
+pathnames="$dir/../config/os/pathnames"
+macro_file="$dir/../config/names/apache-macro"
 dir_bin="$dir/../bin"
 chcgi="$pathnames/sbin/chcgi"
 apachectl="$pathnames/sbin/apachectl"
 edquota="$pathnames/sbin/edquota"
 passgen="$dir_bin/genpass"
 WEBSITES_HOME=/home/clients/websites
-VIRTWWW_LOGDIR=`readlink "$dir/../../config/os/pathnames/var/log/apache_vhosts"`
+VIRTWWW_LOGDIR=`readlink "$dir/../config/os/pathnames/var/log/apache_vhosts"`
 VIRTWWW_CFGDIR="$pathnames/etc/apache_vhosts"
 ADDON_GROUPS=
-ADDON_GROUPS_FILE="$dir/../../config/os/names/groups"
-apache_group=`head -1 $dir/../../config/os/names/apache-exec.group`
+ADDON_GROUPS_FILE="$dir/../config/os/names/groups"
+apache_group=`head -1 $dir/../config/os/names/apache-exec.group`
 if [ -s "$ADDON_GROUPS_FILE" ]
 then
   ADDON_GROUPS=`paste -sd, <"$ADDON_GROUPS_FILE"`

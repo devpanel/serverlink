@@ -11,7 +11,7 @@ run()
 dir=`dirname "$0"`
 vhost="$1"
 user="w_$vhost"
-apache_config_dir="$dir/../../config/os/pathnames/etc/apache_vhosts"
+apache_config_dir="$dir/../config/os/pathnames/etc/apache_vhosts"
 apache_config="$apache_config_dir/$user.conf"
 apache_config_old="$apache_config.old"
 shift

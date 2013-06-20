@@ -16,11 +16,11 @@ backup()
   fi
 }
 dir=`dirname "$0"`
-apachectl="$dir/../../config/os/pathnames/sbin/apachectl"
+apachectl="$dir/../config/os/pathnames/sbin/apachectl"
 vhost="$1"
 user="w_$vhost"
-apache_config_dir="$dir/../../config/os/pathnames/etc/apache_vhosts"
-apache_config_dir_removed="$dir/../../config/os/pathnames/etc/apache_vhosts_removed"
+apache_config_dir="$dir/../config/os/pathnames/etc/apache_vhosts"
+apache_config_dir_removed="$dir/../config/os/pathnames/etc/apache_vhosts_removed"
 apache_config="$apache_config_dir/$user.conf"
 apache_config_old="$apache_config_dir_removed/$user.conf.old"
 shift
