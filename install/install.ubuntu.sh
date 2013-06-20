@@ -63,8 +63,8 @@ ubuntu_adjust_system_config() {
   [ -e "$_apache_base_dir"/mods-enabled/php5.conf ] && rm -f "$_apache_base_dir"/mods-enabled/php5.conf
 
   [ -e /etc/init.d/dbmgr ] && rm -f /etc/init.d/dbmgr
-  ln -s "$install_dir"/compat/dbmgr/current/bin/dbmgr.init /etc/init.d/dbmgr
-  update-rc.d dbmgr defaults
+  ln -s "$install_dir"/compat/dbmgr/current/bin/dbmgr.init /etc/init.d/devpanel-dbmgr
+  update-rc.d devpanel-dbmgr defaults
 }
 
 ubuntu_post_users_n_groups() {
