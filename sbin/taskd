@@ -52,9 +52,11 @@ our $report_status = {};
 our $exec_status   = {};
 
 our %config_defaults = (
-  scripts_dir   => '/opt/webenabled/backend_scripts',
+  scripts_dir   => '/opt/webenabled',
   max_exec_child => 5,
   work_dir       => ($> == 0 ? "/var/log/webenabled" : "$ENV{HOME}/.devpanel/var"),
+  unpriv_user    => "devpanel",
+  unpriv_group   => "devpanel",
 );
 
 sub usage {
