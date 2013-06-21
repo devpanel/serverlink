@@ -1207,7 +1207,7 @@ if(exists($opts{'h'})) {
 if(exists($opts{'c'})) {
   $config_file = $opts{'c'};
 } else {
-  $config_file = ($> == 0 ? '/opt/webenabled/config/devpanel.conf' :
+  $config_file = ($> == 0 ? '/opt/webenabled/etc/devpanel.conf' :
                                "$ENV{HOME}/.devpanel/etc/devpanel.conf");
 }
 $v{config_file} = $config_file;
