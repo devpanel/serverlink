@@ -2,6 +2,7 @@
 use strict;
 use warnings;
 use File::Basename (qw( dirname basename ));
+use IO::Select;
 
 BEGIN {
   my $local_perl5_lib = dirname(__FILE__) . '/../lib/perl5/';
@@ -16,7 +17,7 @@ use Fcntl (qw( :DEFAULT :flock ));
 use Cloudenabled::Constants (qw( :DEFAULT %CE_TASKS_MSG_TYPES %CE_OP_ST_MAP ));
 use Cloudenabled::Util (qw( :DEFAULT ce_tasks_http_request ce_task_cgi_2_ref ));;
 use Cloudenabled::Tasks::Util;
-use Storable (qw( store_fd fd_retrieve ));
+use Storable (qw( freeze thaw ));
 use Config::Tiny;
 
 use constant CE_TASKD_VERSION => '1.2.4.1';
@@ -113,7 +114,7 @@ sub initializeVariables {
   }
 
   my(@usr_ar, @grp_ar);
-  if($> == 0 && !ce_is_hash_key_empty($conf->{unpriv_user})) {
+  if($> == 0 && !ce_is_hash_key_empty($conf, "unpriv_user")) {
     if(@usr_ar = getpwnam($conf->{unpriv_user})) {
       $v->{unpriv_user} = $conf->{unpriv_user};
       $v->{unpriv_uid}  = $usr_ar[2];
@@ -122,7 +123,7 @@ sub initializeVariables {
     }
   }
 
-  if($> == 0 && !ce_is_hash_key_empty($conf->{unpriv_group})) {
+  if($> == 0 && !ce_is_hash_key_empty($conf, "unpriv_group")) {
     if(@grp_ar = getgrnam($conf->{unpriv_group})) {
       $v->{unpriv_group} = $conf->{unpriv_group};
       $v->{unpriv_gid}   = $grp_ar[2];
@@ -197,16 +198,16 @@ sub validate_config {
   }
 
 
-  if($> == 0 && !ce_hash_is_empty($conf, 'unpriv_user') &&
-      ce_has_is_empty($v, 'unpriv_user')) {
+  if($> == 0 && !ce_is_hash_key_empty($conf, 'unpriv_user') &&
+      ce_is_hash_key_empty($v, 'unpriv_user')) {
 
     taskd_log(CE_TASKD_RAW,
               "Error: couldn't resolve unpriv_user: $conf->{unpriv_user}");
     return 0;
   }
 
-  if($> == 0 && !ce_hash_is_empty($conf, 'unpriv_group') &&
-      ce_has_is_empty($v, 'unpriv_group')) {
+  if($> == 0 && !ce_is_hash_key_empty($conf, 'unpriv_group') &&
+      ce_is_hash_key_empty($v, 'unpriv_group')) {
 
     taskd_log(CE_TASKD_RAW,
               "Error: couldn't resolve unpriv_group: $conf->{unpriv_group}");
@@ -361,7 +362,7 @@ sub master_sig_chld {
            r => $ret,
     };
 
-    eval { store_fd($report_r, \*TO_CHILD); };
+    freeze_and_send(\*TO_CHILD, $report_r);
 
     delete($v{"pid:$pid:task"});
     delete($v{"activity:" . $task_ref->{activity_id} . ":pid"});
@@ -421,11 +422,9 @@ sub report_task {
   undef($output_str);
 
   if(ce_task_was_successful($ht_ret)) {
-    $debug and debug_log("successfully reported execution of task $task_id");
-    eval {
-      store_fd({ __op => 'rm_task_log', 'task_id' => $task_id }, \*TO_PARENT);
-    };
-
+    taskd_log(undef, "successfully reported execution of task $task_id");
+    freeze_and_send(\*TO_PARENT, { __op => 'rm_task_log',
+                                  'task_id' => $task_id });
     return 1;
   } else {
     taskd_log(CE_TASKD_ERR, "failed to report the execution of task ". 
@@ -504,7 +503,7 @@ sub exec_child {
 
   # now the exec child
 
-  sleep(0.5); # wait a bit for the parent to set itself (above)
+  sleep(1); # wait a bit for the parent to set itself (above)
 
   $0 = sprintf("%s-task-%d-exec-child", $v{p_profile}, $task_id);
 
@@ -714,6 +713,161 @@ sub ran_internal {
   return 1;
 }
 
+sub controlled_write {
+  my($fd, $content_ref, $write_len) = @_;
+
+  my $func = "controlled_write()";
+
+  if(!defined($write_len)) {
+    $write_len = 4096;
+  }
+
+  my $fd_no = fileno($fd);
+
+  my($w_in, $e_in) = '' x 3;
+  vec($w_in, fileno($fd), 1) = 1;
+  $e_in = $w_in;
+
+  my($w_out, $e_out);
+
+  my $content_length = length($$content_ref);
+
+  $debug and debug_log("$func: received $content_length bytes of content");
+
+  my $n_written = 0;
+  my $n_sel     = 1;
+
+  while($n_written < $content_length) {
+    $n_sel = select(undef, $w_out = $w_in, $e_out = $e_in, undef);
+    if($n_sel == -1) {
+      taskd_log(CE_TASKD_ERR, "$func: $!");
+      return 0;
+    }
+
+    if(vec($e_out, $fd_no, 1)) {
+      # how to precisely describe this error?
+      taskd_log(CE_TASKD_ERR, "$func: error on file handle");
+      return 0;
+    }
+
+    if(!vec($w_out, $fd_no, 1)) {
+      # not ready for writing!?!
+      next;
+    }
+
+    if($n_written == 0) {
+      my $hdr_ret = syswrite($fd, pack("I", $content_length), 4);
+      if(!defined($hdr_ret)) {
+        taskd_log(CE_TASKD_ERR, "$func: unable to send the header: $!");
+        return 0;
+      }
+    }
+
+    # now ready for writing
+    my $missing = $content_length - $n_written;
+    my $this_write_len = ($missing > $write_len) ? $write_len : $missing;
+    my $current_content = substr($$content_ref, $n_written, $this_write_len);
+
+    my $n_res = syswrite($fd, $current_content, $this_write_len);
+
+    if(defined($n_res)) {
+      $n_written += $n_res;
+    } else {
+      taskd_log(CE_TASKD_ERR, "$func: $!");
+      return 0;
+    }
+  }
+
+  $debug and debug_log("$func: wrote $n_written bytes");
+
+  return 1;
+}
+
+sub freeze_and_send {
+  my($fd, $msg, $len) = @_;
+
+  if(!defined($len)) {
+    $len = 4096;
+  }
+
+  my $freezed_msg = eval { freeze($msg); };
+  if($@) {
+    taskd_log(CE_TASKD_ERR, "unable to freeze msg to send");
+  } else {
+    controlled_write($fd, \$freezed_msg, $len);
+  }
+}
+
+sub read_freezed_msg {
+  my($io_obj, $peer_name, $exec_func, $timeout, $read_len) = @_;
+
+  if(!defined($read_len)) {
+    $read_len = 4096;
+  }
+
+  my $buf;
+  my $buf_acum     = "";
+  my $msg_len      =  0;
+  my $total_bytes  =  0;
+  my $msg;
+  my $accepted_errs = &EINTR | &EWOULDBLOCK | &EAGAIN;
+
+  while(my @fhs = $io_obj->can_read($timeout)) {
+    my $n_cicle = 0;
+    while(my $n_read = sysread($fhs[0], $buf, $read_len)) {
+      $n_cicle++;
+      if(!defined($n_read) && ($! & $accepted_errs)) {
+        next;
+      } elsif(!defined($n_read)) {
+        taskd_log(CE_TASKD_ERR, "reading from $peer_name: $!");
+        goto RESET_BUFFERS;
+      } elsif($n_read > 0) {
+        $buf_acum .= $buf;
+        $total_bytes += $n_read;
+      } elsif($n_read == 0) {
+        taskd_log(CE_TASKD_ERR, "file descriptor from $peer_name closed");
+        goto RESET_BUFFERS;
+      }
+
+      $debug and debug_log("read cicle($n_cicle) buf of size: $n_read bytes from $peer_name");
+      if($total_bytes < 4) {
+        next; # didn't read enough yet
+      } elsif($total_bytes >= 4 && $msg_len == 0) {
+        $msg_len = unpack("I", $buf_acum);
+        $debug and debug_log("read msg_len $msg_len bytes from $peer_name");
+      }
+
+      if($total_bytes > CE_TASKD_MAX_OUTPUT_SIZE) {
+        taskd_log(CE_TASKD_ERR, "buffer reached maximum size. Ignoring request from $peer_name");
+        goto RESET_BUFFERS;
+      }
+
+      if($total_bytes >= $msg_len + 4) {
+        $msg = eval { thaw(substr($buf_acum, 4, $msg_len)); };
+        if($@) {
+          taskd_log(CE_TASKD_ERR, "unable to parse msg from $peer_name: $@");
+        } else {
+          $debug and debug_log("received from $peer_name: ", $msg);
+          $debug and debug_log("read $total_bytes bytes in previous request from $peer_name");
+          &$exec_func($msg);
+        }
+        goto RESET_BUFFERS;
+      } else {
+        $debug and debug_log("read $total_bytes of $msg_len bytes from $peer_name, waiting for more data");
+        next;
+      }
+
+      RESET_BUFFERS:
+        $buf_acum    = "";
+        $total_bytes =  0;
+        $msg_len     =  0;
+        return $msg;
+    }
+  }
+
+    return;
+}
+
 sub http_child {
   pipe(FROM_CHILD,  TO_PARENT);
   pipe(FROM_PARENT, TO_CHILD);
@@ -732,7 +886,7 @@ sub http_child {
     close(TO_PARENT);
     taskd_log(undef, "forked http child, pid = $pid");
     $v{http_pid} = $pid;
-    return 1;
+    return $pid;
   }
 
   # child process
@@ -740,6 +894,9 @@ sub http_child {
 
   close(FROM_CHILD);
   close(TO_CHILD);
+
+  my $child_io = IO::Select->new();
+  $child_io->add(\*FROM_PARENT);
 
   $program .= "-http";
   $0 = sprintf("%s-http", $v{p_profile});
@@ -818,7 +975,7 @@ sub http_child {
     if($msg_type == CE_TASK_MSG_RUN_TASKS) {
       $msg->{n} == 0 and goto REPORT_AND_WAIT;
       $msg->{__op} = 'run_tasks';
-      eval { store_fd($msg, \*TO_PARENT); };
+      freeze_and_send(\*TO_PARENT, $msg);
     } elsif($msg_type == CE_TASK_MSG_CHANGE_POLL) {
       $v{poll_interval}        = $msg->{P};
       $v{error_retry_intvl} = $msg->{E};
@@ -867,22 +1024,15 @@ sub http_child {
     }
 
     if(!$fetch_immediately) {
-      $v{fdv} = '';
-      vec($v{fdv}, fileno(FROM_PARENT), 1) = 1;
       my $fetch_time = time() + $v{poll_interval}; 
       while(time() < $fetch_time) {
         my $timeout = $fetch_time - time();
         $debug and debug_log("sleeping for $timeout seconds");
         $0 = sprintf("%s - sleeping for %d seconds", $v{p_profile}, $timeout);
 
-        my $n = select($v{fdv}, undef, undef, $timeout);
-        if($n > 0) {
-          while(my $msg = eval { fd_retrieve(\*FROM_PARENT) }) {
-            child_parse_n_execute($msg);
-          }
-          # processed all, go see if the server has more msgs
-          last;
-        }
+        # block for $timeout (might receive msgs from master)
+        # before trying the next fetch cycle
+        read_freezed_msg($child_io, "master", \&child_parse_n_execute, $timeout);
       }
     }
   }
@@ -950,7 +1100,7 @@ sub master_parse_n_execute {
       $debug and debug_log("notifying http client about running tasks " .
                   join(', ', @{ $v{set_running} }) . ' ' . Dumper($notify_r));
 
-      eval { store_fd($notify_r, \*TO_CHILD) };
+      freeze_and_send(\*TO_CHILD, $notify_r);
       delete($v{set_running});
       undef($notify_r);
     }
@@ -1035,7 +1185,6 @@ sub get_local_interface_ip {
     return 0;
   }
 }
-
 
 # main()
 
@@ -1164,22 +1313,18 @@ $0 = sprintf("%s-master", $v{p_profile});
 
 taskd_log(CE_TASKD_STD, "started");
 
-while(1) {
-  if(http_child()) {
-    $v{fdv} = '';
-    vec($v{fdv}, fileno(FROM_CHILD), 1) = 1; }
+my $master_io = IO::Select->new();
 
-  while(exists($v{http_pid})) {
-    my $n = select($v{fdv}, undef, undef, undef);
-    if($n > 0) {
-      while(my $msg = eval { fd_retrieve(\*FROM_CHILD) }) {
-        $debug and debug_log("received: " . Dumper($msg));
-        master_parse_n_execute($msg);
-      }
-    }
+while(1) {
+  if(!exists($v{http_pid}) && (my $pid = http_child())) {
+    $master_io->add(*FROM_CHILD);
+  } elsif(!exists($v{http_pid})) {
+    taskd_log(CE_TASKD_ERR, "no http child available. Exiting.");
+    exit(1);
   }
 
-  sleep(60);
+  # block to receive msgs from http client
+  read_freezed_msg($master_io, "http client", \&master_parse_n_execute);
 }
 
 close(TASKD_LOG);
