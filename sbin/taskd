@@ -467,6 +467,20 @@ sub exec_child {
     pipe(EXEC_READ_FD, EXEC_WRITE_FD);
     ce_set_autoflush_noblock(\*EXEC_READ_FD);
     ce_set_autoflush_noblock(\*EXEC_WRITE_FD);
+
+    if($flags & CE_TASK_FL_STDIN_BASE64) {
+      # loading only the required function, to save memory
+      use MIME::Base64 (qw( decode_base64 ));
+      $debug and debug_log("stdin for task $task_id is based64, decoding...");
+      my $stdin_data = eval { decode_base64($def->{stdin_data}); };
+      if($@) {
+        taskd_log(CE_TASKD_ERR, "unable to decode base64 stdin of task $task_id");
+        return 0;
+      } else {
+        $def->{stdin_data} = $stdin_data;
+        undef($stdin_data);
+      }
+    }
   }
 
   my $pid = fork();
@@ -500,6 +514,7 @@ sub exec_child {
 
     push(@{ $v{set_running} }, $task_id);
 
+    undef($def); # release the $def struct that can be big
     return 1;
   }
 
@@ -927,6 +942,7 @@ sub http_child {
   $v{can_run} = $v{max_exec_child} - $v{n_exec_child};
   taskd_log(undef, "starting");
 
+  # loading only the basic required to save memory
   use MIME::Base64 (qw( encode_base64 ));
 
   while(1) {
