@@ -54,8 +54,7 @@ centos_install_distro_packages() {
     fi
   fi 
 
-  yum -y install mysql mysql-server
-  # tested with 5.1.44-1.fc12 (Fedora), 5.0.77-4.el5_4.2 (CentOS)
+  yum -y install make mysql mysql-server
 
   if [ "${distro_version:0:1}" == "5" ]; then
     phpver=53
@@ -68,20 +67,43 @@ centos_install_distro_packages() {
     #   5.2.10-1.el5.centos (CentOS) from CentOS-Testing.repo; required for phpmyadmin
 
 
-  for module in dba gd ldap mysql mcrypt pdo xml xmlrpc process soap; do
+  for module in dba gd ldap mysql pdo xml xmlrpc process soap; do
     yum -y install php$phpver-$module
   done
 
-  yum -y install php-pear git cgit perl-Digest-HMAC perl-Digest-SHA1 \
-    perl-CGI subversion mod_dav_svn mod_ssl
+  yum -y install perl perl-devel perl-Time-HiRes make php-pear git \
+    perl-Digest-HMAC perl-Digest-SHA perl-CGI mod_ssl
+
+  return 0
+}
+
+centos_post_software_install() {
+  local source_dir="$1"
+  local dest_dir="$1"
 
   # will issue a warning about a signature and a recommendation to look at config samples
   if [ `uname -m` = x86_64 ]
   then
-    rpm -U files/opt/webenabled/compat/RPMS/mod_macro-1.1.10-1.x86_64.rpm
+    rpm -U "$source_dir/compat/RPMS/mod_macro-1.1.10-1.x86_64.rpm"
   else
-    rpm -U files/opt/webenabled/compat/RPMS/mod_macro-1.1.8-2.i386.rpm
+    rpm -U "$source_dir/compat/RPMS/mod_macro-1.1.8-2.i386.rpm"
   fi
+
+  if [ $? -ne 0 ]; then
+    echo -e "\n\nWarning: failed to install mod_macro, Apache will not work\n\n"
+    sleep 3
+  fi
+
+  # included JSON::PP on the default install (no need anymore for the lines
+  # below)
+  # 
+  # install JSON::PP (we'd prefer JSON::XS, but not to install gcc, etc
+  # we can go with JSON::PP that is fully compatible with JSON::XS
+  # "$install_dir/bin/cpanm" JSON::PP
+  # if [ $? -ne 0 ]; then
+  #  echo -e "\n\nWarning: failed to install JSON::PP\n\n"
+  #  sleep 3
+  # fi
 
   return 0
 }
@@ -98,53 +120,8 @@ centos_adjust_system_config() {
   [ -e "$_apache_includes_dir"/conf.d/php.conf ] && mv -f "$_apache_includes_dir"/conf.d/php.conf{,.disabled}
 
   sed -i 's/^\(session.save_path.\+\)/;\1/' /etc/php.ini
-    # By default, PHP tries to create sessions in a directory owned by the user apache,
-    # which doesn't work with suexec
-
-  # mv -f "$_apache_base_dir"/conf.d/welcome.conf{,.disabled}
-
   # openssl req -subj "/C=--/ST=SomeState/L=SomeCity/O=SomeOrganization/OU=SomeOrganizationalUnit/CN=*.`hostname`" -new -x509 -days 3650 -nodes -out /opt/webenabled/config/os/pathnames/etc/ssl/certs/wildcard -keyout /opt/webenabled/config/os/pathnames/etc/ssl/keys/wildcard
 
-  # if [ -f /etc/pki/tls/certs/localhost.crt ]
-  # then
-  #   mv /etc/pki/tls/certs/localhost.crt /etc/pki/tls/certs/localhost.crt.orig
-  #   ln -s /opt/webenabled/config/os/pathnames/etc/ssl/certs/wildcard /etc/pki/tls/certs/localhost.crt
-  # fi 
-  # if [ -f /etc/pki/tls/private/localhost.key ]
-  # then
-  #   mv /etc/pki/tls/private/localhost.key /etc/pki/tls/private/localhost.key.orig
-  #   ln -s /opt/webenabled/config/os/pathnames/etc/ssl/keys/wildcard /etc/pki/tls/private/localhost.key
-  # fi 
-
-  # apachectl configtest
-    # Issues a warning: [warn] NameVirtualHost *:80 has no VirtualHosts
-    # The warning will disappear when at least one vhost is created
-  # apachectl graceful
-
-  # ln -snf `cat "$install_dir"/config/os.centos/names/skel.sql.version` "$install_dir"/compat/skel.sql/mysql/any
-    # check mysql version and probably update /opt/webenabled/config/os.centos/names/skel.sql.version
-    # before running this command
-
-  echo "$install_dir"/compat/dbmgr/current/bin/dbmgr.init start >>/etc/rc.d/rc.local
-  # echo "$install_dir"/compat/shellinabox/shellinabox.init start >>/etc/rc.d/rc.local
-#   /opt/webenabled/compat/shellinabox/shellinabox.init start
-
-
-#  su -lc 'sed -i "s/^REDIRECT_STATUS=200/export &/" public_html/cgi/phpmyadmin.php' w_
-  #su -lc 'sed -i "s^/opt/dbmgr/config/^/opt/webenabled/compat/dbmgr/config/^" public_html/phpmyadmin/config/asp.config.inc' w_
-
-#  ./install-svn.centos.sh
-#  ./install-git.centos.sh
-
-  # SliceHost hack
-  # if [ -r /etc/sysconfig/system-config-securitylevel ]
-  # then
-  #   /sbin/iptables -P INPUT ACCEPT
-  #   /sbin/iptables -P FORWARD ACCEPT
-  #   /sbin/iptables -P OUTPUT ACCEPT
-  #   /sbin/iptables -F
-  # fi
-  # cloud9 hack
-  # /sbin/iptables -A OUTPUT -d 127.0.0.2 -p tcp -m tcp --dport 4000:6000 -m owner '!' --uid-owner apache -j REJECT --reject-with icmp-port-unreachable
-  # /etc/init.d/iptables save
+  ln -s "$install_dir/compat/dbmgr/current/bin/dbmgr.init" /etc/init.d/devpanel-dbmgr
+  chkconfig --add /etc/init.d/devpanel-dbmgr
 }
