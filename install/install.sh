@@ -323,7 +323,9 @@ current_dir=`dirname "${BASH_SOURCE[0]}"`
 if [ -n "$DP_INSTALL_SOURCE_DIR" -a -d "$DP_INSTALL_SOURCE_DIR" ]; then
   install_source_dir="$DP_INSTALL_SOURCE_DIR"
 else
-  if [ "${current_dir:0:1}" != "/" ]; then
+  if [ "$current_dir" == "." ]; then
+    current_dir="$PWD"
+  elif [ "${current_dir:0:1}" != "/" ]; then
     current_dir="$PWD/$current_dir"
   fi
 
