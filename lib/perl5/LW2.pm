@@ -76,7 +76,7 @@ $PACKAGE='LW2';
 
     eval "use Socket";
     if ( !$@ ) {
-        eval "use Net::SSLeay";    # do we have SSL support?
+        eval "use Net::SSLeay (qw( ERROR_NONE ))";    # do we have SSL support?
         if ( !$@ ) {
             $LW_SSL_LIB   = 1;
             $_SSL_LIBRARY = 'Net::SSLeay';
