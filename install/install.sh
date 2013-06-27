@@ -4,11 +4,11 @@ umask 022
 # default install dir.  can be overwritten with -I
 webenabled_install_dir="/opt/webenabled"
 
-# default websites base dir, can be overwritten with -H
-webenabled_homedir_base="/home/clients/websites"
+# default websites base dir
+homedir_base="${DP_HOMES_DIR:-/home/clients/websites}"
 
 # default databases base dir, can be overwritten with -D
-webenabled_databasedir_base="/home/clients/databases"
+databasedir_base="${DP_DBS_DIR:-/home/clients/databases}"
 
 usage() {
   local prog=`basename "$0"`
@@ -20,8 +20,6 @@ Usage: $prog <-d webenabled_install_directory>
     -I directory      Install the software in the specified directory
     -h                Displays this help message
     -d                print verbose debug messages
-    -H directory      Create sites directories under this path
-    -D directory      Create database directories under this path
     -V version        Specify the version of the linux distro (optional)
 
 "
@@ -122,7 +120,7 @@ install_ce_software() {
   local distro_skel_dir="$webenabled_install_dir/install/skel/$linux_distro"
 
   mkdir -m 755 -p "$webenabled_install_dir" \
-    "$webenabled_homedir_base" "$webenabled_databasedir_base"
+    "$homedir_base" "$databasedir_base"
 
   if ! ( cd "$source_dir" && cp -a . "$webenabled_install_dir" ); then
     echo "Error: unable to copy installation files to target dir" >&2
@@ -140,7 +138,7 @@ install_ce_software() {
   # links shortcut to linux distribution specific files
   ln -snf os.$linux_distro "$webenabled_install_dir"/config/os
 
-  ln -snf "$webenabled_install_dir"/compat/w_ "$webenabled_homedir_base"/w_
+  ln -snf "$webenabled_install_dir"/compat/w_ "$homedir_base"/w_
   chown -R w_:"$_apache_exec_group" "$webenabled_install_dir"/compat/w_
 
   cp -f "$source_dir/install/config/devpanel.conf.template" "$webenabled_install_dir/etc/devpanel.conf"
@@ -235,7 +233,7 @@ add_custom_users_n_groups() {
   fi
 
   local comment="required by DevPanel service. Please don't remove."
-  useradd -M -c "$comment" -d "$webenabled_homedir_base"/w_ -G w_ -g "$_apache_group" w_
+  useradd -M -c "$comment" -d "$homedir_base"/w_ -G w_ -g "$_apache_group" w_
   useradd -m -c "$comment" -d "/home/devpanel" devpanel
 
   usermod -a -G virtwww "$_apache_user"
@@ -351,7 +349,7 @@ fi
 trap 'ex=$?; rm -f "$lock_file" ; trap - EXIT INT HUP TERM; exit $ex' EXIT INT HUP TERM
 
 
-getopt_flags="I:L:H:D:V:hd"
+getopt_flags="I:L:V:hd"
 
 while getopts $getopt_flags OPTS; do
   case "$OPTS" in
@@ -363,12 +361,9 @@ while getopts $getopt_flags OPTS; do
       ;;
     I)
       webenabled_install_dir="$OPTARG"
-      ;;
-    H)
-      webenabled_homedir_base="$OPTARG"
-      ;;
-    D)
-      webenabled_databasedir_base="$OPTARG"
+      if [ -d "$webenabled_install_dir" ]; then
+        error "directory '$webenabled_install_dir' already exists"
+      fi
       ;;
     V)
       webenabled_distro_version="$OPTARG"
@@ -406,7 +401,9 @@ if [ -z "$webenabled_distro_version" ]; then
   webenabled_distro_version=$(wedp_auto_detect_distro_version "$linux_distro")
 fi
 
-set_global_variables "$install_source_dir" "$webenabled_install_dir" "$linux_distro" || exit 1
+if ! set_global_variables "$install_source_dir" "$webenabled_install_dir" "$linux_distro"; then
+  error "unable to properly set global variables"
+fi
 
 distro_install_script="$install_source_dir/install/install.$linux_distro.sh"
 if [ ! -e "$distro_install_script" ]; then
