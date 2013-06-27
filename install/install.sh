@@ -103,6 +103,12 @@ set_global_variables() {
     return 1
   fi
 
+  _apache_main_config_file=`readlink "$we_config_dir/os.$distro/pathnames/etc/apache_main_config_file"`
+  if [ $? -ne 0 -o -z "$_apache_main_config_file" ]; then
+    echo "unable to resolve apache_main_config_file" 1>&2
+    return 1
+  fi
+
   _git_user="git"
 
   return 0
@@ -275,6 +281,19 @@ post_software_install() {
   if [ -n "$WEBENABLED_VPS_HOSTNAME" ]; then
     "$webenabled_install_dir/libexec/config-vhost-names-default" \
       "$WEBENABLED_VPS_HOSTNAME"
+
+    # add the hostname to the apache main file, in case it's not configured
+    # to avoid the warning when restarting Apache
+    if ! egrep -qs '^[[:space:]]*ServerName' "$_apache_main_config_file"; then
+      sed -i -e "0,/^#[[:space:]]*ServerName[[:space:]]\+[A-Za-z0-9:.-]\+$/ {
+      /^#[[:space:]]*ServerName[[:space:]]\+[A-Za-z0-9:.-]\+$/ {
+      a\
+ServerName $WEBENABLED_VPS_HOSTNAME
+;
+      }  }" "$_apache_main_config_file"
+    fi
+
+
   fi
 
   "$webenabled_install_dir/config/os/pathnames/sbin/apachectl" configtest
