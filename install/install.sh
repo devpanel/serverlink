@@ -18,6 +18,9 @@ Usage: $prog <-d webenabled_install_directory>
   Options:
     -L distro         Assume the specified distro, don't try to auto-detect
     -I directory      Install the software in the specified directory
+    -H hostname       hostname to use on the network services
+    -U server_uuid    UUID of the server to configure on devpanel.conf
+    -K secret_key     Secret key of the server to configure on devpanel.conf
     -h                Displays this help message
     -d                print verbose debug messages
     -V version        Specify the version of the linux distro (optional)
@@ -141,7 +144,9 @@ install_ce_software() {
   ln -snf "$webenabled_install_dir"/compat/w_ "$homedir_base"/w_
   chown -R w_:"$_apache_exec_group" "$webenabled_install_dir"/compat/w_
 
-  cp -f "$source_dir/install/config/devpanel.conf.template" "$webenabled_install_dir/etc/devpanel.conf"
+  if [ ! -e "$webenabled_install_dir/etc/devpanel.conf" ]; then
+    cp -f "$source_dir/install/config/devpanel.conf.template" "$webenabled_install_dir/etc/devpanel.conf"
+  fi
 
   # start of setup of suexec (DevPanel uses a custom suexec)
   local we_suexec_path="$webenabled_install_dir/compat/suexec/suexec"
@@ -240,6 +245,8 @@ add_custom_users_n_groups() {
 }
 
 post_software_install() {
+  local status
+
   # start setting up user for git management
   useradd -m \
     -c "account for managing DevPanel git repos. Please don't remove" "$_git_user"
@@ -259,10 +266,9 @@ post_software_install() {
   # end of git setup section
 
   taskd_config_file="$webenabled_install_dir/etc/devpanel.conf"
-  if [ -n "$WEBENABLED_SERVER_UUID" \
-    -a -n "$WEBENABLED_SERVER_SECRET_KEY" ]; then
+  if [ -n "$dp_server_uuid" -a -n "$dp_server_secret_key" ]; then
 
-    ini_section_replace_value "$taskd_config_file" taskd uuid "$WEBENABLED_SERVER_UUID"
+    ini_section_replace_value "$taskd_config_file" taskd uuid "$dp_server_uuid"
     status=$?
 
     if [ $status -ne 0 ]; then
@@ -271,14 +277,32 @@ post_software_install() {
   "correct it manually in '$taskd_config_file'. " \
   "Or your install will not work." >&2
       sleep 3
-    else
-      "$webenabled_install_dir/sbin/taskd"
+    fi
+
+    ini_section_replace_value "$taskd_config_file" taskd key "$dp_server_secret_key"
+    status=$?
+
+    if [ $status -ne 0 ]; then
+      echo
+      echo "Warning: unable to set key in taskd.conf. Please " \
+  "correct it manually in '$taskd_config_file'. " \
+  "Or your install will not work." >&2
+      sleep 3
+    fi
+
+    "$webenabled_install_dir/libexec/system-services" devpanel-taskd stop
+
+    "$webenabled_install_dir/libexec/system-services" devpanel-taskd start
+    if [ $? -ne 0 ]; then
+      echo -e "\n\nError: unable to start taskd.\n\n"
+      sleep 3
     fi
   fi
 
-  if [ -n "$WEBENABLED_VPS_HOSTNAME" ]; then
+
+  if [ -n "$dp_server_hostname" ]; then
     "$webenabled_install_dir/libexec/config-vhost-names-default" \
-      "$WEBENABLED_VPS_HOSTNAME"
+      "$dp_server_hostname"
 
     # add the hostname to the apache main file, in case it's not configured
     # to avoid the warning when restarting Apache
@@ -286,12 +310,10 @@ post_software_install() {
       sed -i -e "0,/^#[[:space:]]*ServerName[[:space:]]\+[A-Za-z0-9:.-]\+$/ {
       /^#[[:space:]]*ServerName[[:space:]]\+[A-Za-z0-9:.-]\+$/ {
       a\
-ServerName $WEBENABLED_VPS_HOSTNAME
+ServerName $dp_server_hostname
 ;
       }  }" "$_apache_main_config_file"
     fi
-
-
   fi
 
   "$webenabled_install_dir/config/os/pathnames/sbin/apachectl" configtest
@@ -349,7 +371,7 @@ fi
 trap 'ex=$?; rm -f "$lock_file" ; trap - EXIT INT HUP TERM; exit $ex' EXIT INT HUP TERM
 
 
-getopt_flags="I:L:V:hd"
+getopt_flags="I:L:V:H:U:K:hd"
 
 while getopts $getopt_flags OPTS; do
   case "$OPTS" in
@@ -367,6 +389,15 @@ while getopts $getopt_flags OPTS; do
       ;;
     V)
       webenabled_distro_version="$OPTARG"
+      ;;
+    H)
+      dp_server_hostname="$OPTARG"
+      ;;
+    U)
+      dp_server_uuid="$OPTARG"
+      ;;
+    K)
+      dp_server_secret_key="$OPTARG"
       ;;
     h|*)
       usage
