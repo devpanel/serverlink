@@ -13,7 +13,7 @@ databasedir_base="${DP_DBS_DIR:-/home/clients/databases}"
 usage() {
   local prog=`basename "$0"`
   echo "
-Usage: $prog <-d webenabled_install_directory>
+Usage: $prog [ options ]
 
   Options:
     -L distro         Assume the specified distro, don't try to auto-detect
@@ -21,8 +21,11 @@ Usage: $prog <-d webenabled_install_directory>
     -H hostname       hostname to use on the network services
     -U server_uuid    UUID of the server to configure on devpanel.conf
     -K secret_key     Secret key of the server to configure on devpanel.conf
+    -u api_url        URL of the user api
+    -A tasks_url      URL of the tasks api
     -h                Displays this help message
     -d                print verbose debug messages
+    -R                enable auto-register
     -V version        Specify the version of the linux distro (optional)
 
 "
@@ -43,6 +46,9 @@ set_global_variables() {
   # initialize global variables used throughout this script
 
   local we_config_dir="$source_dir/config"
+
+  # main config file to be used by DevPanel
+  dp_config_file="$target_dir/etc/devpanel.conf"
 
   _suexec_bin=$(wedp_resolve_link "$we_config_dir/os.$distro/pathnames/sbin/suexec")
   if [ $? -ne 0  -o -z "$_suexec_bin" ]; then
@@ -299,6 +305,14 @@ post_software_install() {
     fi
   fi
 
+  # if set, fill the api_url on the user_api section
+  if [ -n "$dp_user_api_url" ]; then
+    ini_section_replace_key_value "$dp_config_file" user_api api_url "$dp_user_api_url"
+    if [ $? -ne 0 ]; then
+      echo -e "\n\nWarning: unable to set user api url\n\n"
+      sleep 3
+    fi
+  fi
 
   if [ -n "$dp_server_hostname" ]; then
     "$webenabled_install_dir/libexec/config-vhost-names-default" \
@@ -316,16 +330,13 @@ ServerName $dp_server_hostname
     fi
   fi
 
-  "$webenabled_install_dir/config/os/pathnames/sbin/apachectl" configtest
-  if [ $? -ne 0 ]; then
-    echo
-    echo "Warning: apache configuration test failed. Please verify!" >&2
-    sleep 3
-  else
-    "$webenabled_install_dir/config/os/pathnames/sbin/apachectl" graceful
+  if [ -n "$dp_auto_register" ]; then
+    ini_section_add_key_value "$dp_config_file" global auto_register 1
+    if [ $? -ne 0 ]; then
+      echo -e "\n\nWarning: unable to set auto_register on '$dp_config_file'\n\n"
+      sleep 3
+    fi
   fi
-
-
 }
 
 # main
@@ -371,7 +382,7 @@ fi
 trap 'ex=$?; rm -f "$lock_file" ; trap - EXIT INT HUP TERM; exit $ex' EXIT INT HUP TERM
 
 
-getopt_flags="I:L:V:H:U:K:hd"
+getopt_flags="I:L:V:H:U:K:u:A:hdR"
 
 while getopts $getopt_flags OPTS; do
   case "$OPTS" in
@@ -398,6 +409,15 @@ while getopts $getopt_flags OPTS; do
       ;;
     K)
       dp_server_secret_key="$OPTARG"
+      ;;
+    u)
+      dp_user_api_url="$OPTARG"
+      ;;
+    A)
+      dp_tasks_api_url="$OPTARG"
+      ;;
+    R)
+      dp_auto_register=1
       ;;
     h|*)
       usage
