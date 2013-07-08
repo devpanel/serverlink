@@ -204,3 +204,26 @@ ini_section_replace_key_value() {
   fi
 }
 
+ini_section_add_key_value() {
+  local file="$1"
+  local section=`escape_sed "$2"`
+  local key=`escape_sed "$3"`
+  local value=`escape_sed "$4"`
+
+  local orig_md5=`md5sum "$file"`
+  orig_md5=${orig_md5%% *}
+
+  sed -i -e "/^\[$section\]/ {
+    a \
+$key = $value
+}" "$file"
+
+  local final_md5=`md5sum "$file"`
+  final_md5=${final_md5%% *}
+
+  if [ "$orig_md5" != "$final_md5" ]; then
+    return 0 # file changed, success!
+  else
+    return 1 # file is the same, add failed
+  fi
+}
