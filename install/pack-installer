@@ -28,15 +28,13 @@ error() {
 # main
 
 declare -a files_from_queue_dir=( \
-  'LW2.pm | files/opt/webenabled/backend-scripts/lib/perl5' \
-  'taskd | files/opt/webenabled/backend-scripts/libexec' \
-  'Cloudenabled/Util.pm | files/opt/webenabled/backend-scripts/lib/perl5/Cloudenabled'
-  'Cloudenabled/Constants.pm | files/opt/webenabled/backend-scripts/lib/perl5/Cloudenabled' \
-  'devpanel | files/opt/webenabled/backend-scripts/libexec/devpanel'
+  'Cloudenabled/Util.pm | lib/perl5/Cloudenabled'
+  'Cloudenabled/Constants.pm | lib/perl5/Cloudenabled' \
+  'devpanel | bin'
 )
 
 declare -a dirs_from_queue_dir=( \
-  'devpanel-include/ | files/opt/webenabled/backend-scripts/lib/devpanel-cli'
+  'devpanel-include/ | lib/devpanel-cli'
 )
 
 [ $# -lt 2 ] && usage
@@ -113,8 +111,7 @@ if [ $? -ne 0 ]; then
 fi
 
 echo "Starting copy of files to temp dir '$tmp_pack_dir'"
-cp -a "$source_dir"/install* "$source_dir"/uninstall* "$source_dir"/files \
-  "$internal_pack_dir"
+cp -a "$source_dir"/*  "$internal_pack_dir"
 status=$?
 if [ $status -ne 0 ]; then
   error "unable to copy files to temporary pack directory '$tmp_pack_dir'."\
@@ -148,7 +145,7 @@ if [ $status -ne 0 ]; then
 " chown returned $status"
 fi
 
-version_file="$internal_pack_dir/files/opt/webenabled/version"
+version_file="$internal_pack_dir/config/version"
 if [ -e "$version_file" ]; then
   rm -- "$version_file"
   status=$?
