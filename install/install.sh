@@ -226,9 +226,10 @@ add_custom_users_n_groups() {
   local source_dir="$1"
   local webenabled_install_dir="$2"
 
-  for u in w_ virtwww weadmin; do
-    if ! getent group $u >/dev/null; then
-      groupadd $u || true
+  for group in w_ virtwww weadmin; do
+    if ! getent group "$group" &>/dev/null; then
+      echo "Adding group $group..."; sleep 0.5;
+      groupadd "$group" || true
     fi
   done
 
@@ -244,8 +245,15 @@ add_custom_users_n_groups() {
   fi
 
   local comment="required by DevPanel service. Please don't remove."
-  useradd -M -c "$comment" -d "$homedir_base"/w_ -G w_ -g "$_apache_group" w_
-  useradd -m -c "$comment" -d "/home/devpanel" devpanel
+  if ! getent passwd w_ &>/dev/null; then
+    echo "Adding user w_ ..."
+    useradd -M -c "$comment" -d "$homedir_base"/w_ -G w_ -g "$_apache_group" w_
+  fi
+
+  if ! getent passwd devpanel &>/dev/null; then
+    echo "Adding user devpanel ..."; sleep 0.5
+    useradd -m -c "$comment" -d "/home/devpanel" devpanel
+  fi
 
   usermod -a -G virtwww "$_apache_user"
 }
@@ -254,44 +262,46 @@ post_software_install() {
   local status
 
   # start setting up user for git management
-  useradd -m \
+  if ! getent passwd "$_git_user" &>/dev/null; then
+    useradd -m \
     -c "account for managing DevPanel git repos. Please don't remove" "$_git_user"
 
-  if [ $? -eq 0 ]; then
-    su -l -s /bin/bash -c "[ ! -d ~/.ssh ] && mkdir -m 700 ~/.ssh ; \
-     [ -d ~/.ssh ] && ssh-keygen -f ~/.ssh/id_rsa -b 4096 -P ''" "$_git_user"
-
     if [ $? -eq 0 ]; then
-      su -l -c "$webenabled_install_dir/bin/gitolite \
-              setup -pk ~/.ssh/id_rsa.pub" "$_git_user"
+      su -l -s /bin/bash -c "[ ! -d ~/.ssh ] && mkdir -m 700 ~/.ssh ; \
+       [ -d ~/.ssh ] && ssh-keygen -f ~/.ssh/id_rsa -b 4096 -P ''" "$_git_user"
+
+      if [ $? -eq 0 ]; then
+        su -l -c "$webenabled_install_dir/bin/gitolite \
+                setup -pk ~/.ssh/id_rsa.pub" "$_git_user"
+      fi
+    else
+      echo -e "\n\nWarning: failed to setup account for git management\n\n" 1>&2
+      sleep 3
     fi
-  else
-    echo -e "\n\nWarning: failed to setup account for git management\n\n" 1>&2
-    sleep 3
   fi
   # end of git setup section
 
-  taskd_config_file="$webenabled_install_dir/etc/devpanel.conf"
+  dp_config_file="$webenabled_install_dir/etc/devpanel.conf"
   if [ -n "$dp_server_uuid" -a -n "$dp_server_secret_key" ]; then
 
-    ini_section_replace_value "$taskd_config_file" taskd uuid "$dp_server_uuid"
+    ini_section_replace_key_value "$dp_config_file" taskd uuid "$dp_server_uuid"
     status=$?
 
     if [ $status -ne 0 ]; then
       echo
       echo "Warning: unable to set uuid in taskd.conf. Please " \
-  "correct it manually in '$taskd_config_file'. " \
+  "correct it manually in '$dp_config_file'. " \
   "Or your install will not work." >&2
       sleep 3
     fi
 
-    ini_section_replace_value "$taskd_config_file" taskd key "$dp_server_secret_key"
+    ini_section_replace_key_value "$dp_config_file" taskd key "$dp_server_secret_key"
     status=$?
 
     if [ $status -ne 0 ]; then
       echo
       echo "Warning: unable to set key in taskd.conf. Please " \
-  "correct it manually in '$taskd_config_file'. " \
+  "correct it manually in '$dp_config_file'. " \
   "Or your install will not work." >&2
       sleep 3
     fi
@@ -505,6 +515,16 @@ fi
 
 if type -t "${linux_distro}_adjust_system_config" >/dev/null; then
   "${linux_distro}_adjust_system_config" "$webenabled_install_dir"
+fi
+
+# reload Apache just before the end of the installation
+"$webenabled_install_dir/config/os/pathnames/sbin/apachectl" configtest
+if [ $? -ne 0 ]; then
+  echo
+  echo "Warning: apache configuration test failed. Please verify!" >&2
+  sleep 3
+else
+  "$webenabled_install_dir/config/os/pathnames/sbin/apachectl" graceful
 fi
 
 echo
