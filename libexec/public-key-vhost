@@ -19,6 +19,7 @@ Usage: $prog [ options ] <vhost>
     -d <directory>  install the key in a custom directory (not \$HOME)
     -n              don't append or remove the CE string in operations
     -S <string>     set a custom string to append to the key
+    -R              set the key for a root user
 
   Options -a and -r can be used multiple times each.
 
@@ -97,9 +98,9 @@ key_str() {
 [ $# -lt 1 ] && usage
 
 CE_STR="managed by CloudEnabled"
-getopt_flags="nir:a:d:S:"
+getopt_flags="Rnir:a:d:S:"
 
-unset read_stdin OPTS
+unset read_stdin OPTS for_root
 while getopts $getopt_flags OPTS; do
   case "$OPTS" in
     a)
@@ -120,6 +121,9 @@ while getopts $getopt_flags OPTS; do
     S)
       CE_STR="$OPTARG"
       ;;
+    R)
+      for_root=1
+      ;;
     ?)
       usage
       ;;
@@ -128,17 +132,21 @@ done
 shift $(( $OPTIND - 1 ))
 
 [ $# -lt 1 ] && usage
-vhost="$1"
-user="w_$vhost"
+
+if [ -z "$for_root" ]; then
+  vhost="$1"
+  user="w_$vhost"
+  # using mode archive: it's OK to operate on a locked vhost
+  if ! $dir/check-vhost-name archive "$vhost"; then
+    echo "Invalid vhost name." 1>&2
+    exit 1
+  fi
+else
+  user="$1"
+fi
 
 [ -z "$key_dir" ] && key_dir=$(eval echo \~$user/.ssh)
 key_file="$key_dir/authorized_keys"
-
-# using mode archive: it's OK to operate on a locked vhost
-if ! $dir/check-vhost-name archive "$vhost"; then
-  echo "Invalid vhost name." 1>&2
-  exit 1
-fi
 
 # Create .ssh directory and authorized_keys file if not existent
 if [ ! -d "$key_dir" ]; then
