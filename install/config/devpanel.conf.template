@@ -1,8 +1,8 @@
-[defaults]
+[globals]
 
 
 [user_api]
-
+api_url     = @@USER_API_URL@@
 
 [taskd]
 api_url     = @@API_URL@@
