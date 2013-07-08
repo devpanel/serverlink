@@ -268,11 +268,11 @@ post_software_install() {
 
     if [ $? -eq 0 ]; then
       su -l -s /bin/bash -c "[ ! -d ~/.ssh ] && mkdir -m 700 ~/.ssh ; \
-       [ -d ~/.ssh ] && ssh-keygen -f ~/.ssh/id_rsa -b 4096 -P ''" "$_git_user"
+       [ -d ~/.ssh ] && ssh-keygen -f ~/.ssh/devpanel-admin -b 4096 -P ''" "$_git_user"
 
       if [ $? -eq 0 ]; then
         su -l -c "$webenabled_install_dir/bin/gitolite \
-                setup -pk ~/.ssh/id_rsa.pub" "$_git_user"
+                setup -pk ~/.ssh/devpanel-admin.pub" "$_git_user"
       fi
     else
       echo -e "\n\nWarning: failed to setup account for git management\n\n" 1>&2
