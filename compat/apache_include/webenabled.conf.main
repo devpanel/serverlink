@@ -26,5 +26,5 @@ NameVirtualHost *:80
 NameVirtualHost *:443
 <VirtualHost _default_:80>
   ServerName localhost
-  Directory /opt/webenabled/compat/w_/public_html/server_default
+  DocumentRoot /opt/webenabled/compat/w_/public_html/server_default
 </VirtualHost>
