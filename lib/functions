@@ -19,6 +19,8 @@ wedp_auto_detect_distro() {
 
   if grep -qis centos /etc/redhat-release; then
     distro=centos
+  elif grep -qis "Red Hat Enterprise Linux" /etc/redhat-release; then
+    distro=redhat
   elif grep -qis fedora /etc/redhat-release; then
     distro=fedora
   elif rpm -ql owl-hier >/dev/null 2>&1; then
