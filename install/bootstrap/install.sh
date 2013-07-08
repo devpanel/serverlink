@@ -12,6 +12,7 @@ Usage: $prog [ options ] <-u server_uuid> <-k server_key>
     -u server_uuid    the server uuid to use on taskd
     -k server_key     the server secret key to use on taskd
     -A taskd_api      the api url to use on taskd
+    -U api_url        the address of the user api url
     -d                enable debug mode
 "
 
@@ -43,15 +44,15 @@ fi
 
 umask 022
 
-source_dir="${BASH_SOURCE[0]}"
-if ! source "$current_dir/lib/functions"; then
-  error "unable to import library '$current_dir/lib/functions'"
+source_dir=`dirname "${BASH_SOURCE[0]}"`
+if ! source "$source_dir/root/lib/functions"; then
+  error "unable to import library '$source_dir/root/lib/functions'"
 fi
 
-getopt_flags='du:k:A:'
+getopt_flags='du:k:A:U:'
 taskd_api="https://tasks.devpanel.com/"
 
-unset dp_server_uuid dp_server_key
+unset dp_server_uuid dp_server_key dp_server_hostname
 while getopts $getopt_flags OPT; do
   case "$OPT" in
     u)
@@ -66,6 +67,9 @@ while getopts $getopt_flags OPT; do
     d)
       set -x
       ;;
+    U)
+      dp_user_api_url="$OPTARG"
+      ;;
     *)
       exit 1
   esac
@@ -79,7 +83,32 @@ elif [ -z "$dp_server_key" ]; then
 elif [ -z "$taskd_api" ]; then
   error "the taskd_api was not provided. Please pass it with the option -A"
 fi
-taskd_api=$(escape_sed "$taskd_api")
+
+linux_distro=$(wedp_auto_detect_distro)
+if [ $? -ne 0 -o -z "$linux_distro" ]; then
+  error "unable to detect linux distro"
+fi
+
+distro_bootstrap_file="$source_dir/bootstrap.$linux_distro.sh"
+if ! source "$distro_bootstrap_file"; then
+  error "unable to load bootstrap file '$distro_bootstrap_file' for distro '$linux_distro'"
+fi
+
+if ! type -t "bootstrap_${linux_distro}" >/dev/null; then
+  error "missing function 'bootstrap_${linux_distro}'"
+elif ! "bootstrap_$linux_distro" "$source_dir" "$DP_TARGET_DIR"; then
+  error "failed running function 'bootstrap_$linux'"
+fi
+
+skel_dir="$source_dir/skel/$linux_distro"
+if [ ! -d "$skel_dir" ]; then
+  error "missing skel dir '$skel_dir'"
+fi
+
+(cd "$skel_dir" && cp -a . /)
+if [ $? -ne 0 ]; then
+  error "unable to copy files from skel dir '$skel_dir'"
+fi
 
 # config/os is a link set after a successful installation
 # if it's there it means that a previous installation was successful
@@ -92,7 +121,7 @@ lock_file="/var/run/devpanel_install.lock"
 if ! ln -s /dev/null "$lock_file"; then
   error "there seems to have another installation running. Cannot create lock file '$lock_file'."
 fi
-trap 'rm -f "$lock_file" ; trap - EXIT INT HUP TERM; exit 1' EXIT INT HUP TERM
+trap 'ex=$?; rm -f "$lock_file" ; trap - EXIT INT HUP TERM; exit $ex' EXIT INT HUP TERM
 
 dp_user="devpanel"
 if ! getent passwd "$dp_user" &>/dev/null; then
@@ -102,20 +131,15 @@ if ! getent passwd "$dp_user" &>/dev/null; then
   fi
 fi
 
-( cd "$source_dir/bootstrap" && cp -a . "$DP_TARGET_DIR" )
+( cd "$source_dir/root" && cp -a . "$DP_TARGET_DIR" )
 if [ $? -ne 0 ]; then
   error "unable to copy files to '$DP_TARGET_DIR'"
 fi
 
-config_file="$DP_TARGET_DIR/config/devpanel.conf"
+config_file="$DP_TARGET_DIR/etc/devpanel.conf"
 if [ -e "$config_file" ]; then
   old_suffix=`date +%b-%d-%Y-%H:%M`
-  mv -f "$config_file" "$config_file.$old_suffix"
-fi
-
-mv -f "$config_file.template" "$config_file"
-if [ $? -ne 0 ]; then
-  error "unable to create the config file '$config_file'"
+  cp -f "$config_file" "$config_file.$old_suffix"
 fi
 
 chown root:"$dp_user" "$config_file"
@@ -124,19 +148,19 @@ if [ $? -ne 0 ]; then
   echo "Warning: unable to set the permissions of config file '$config_file'" 1>&2
 fi
 
-if ! ini_section_replace_values "$config_file" taskd uuid "$dp_server_uuid"; then
+if ! ini_section_replace_key_value "$config_file" taskd uuid "$dp_server_uuid"; then
   error "unable to set taskd uuid on file '$config_file'"
-elif ! ini_section_replace_values "$config_file" taskd key "$dp_server_key"; then
+elif ! ini_section_replace_key_value "$config_file" taskd key "$dp_server_key"; then
   error "unable to set taskd key on file '$config_file'"
-elif ! ini_section_replace_values "$config_file" taskd api_url "$taskd_api"; then
+elif ! ini_section_replace_key_value "$config_file" taskd api_url "$taskd_api"; then
   error "unable to set taskd key on file '$config_file'"
 fi
 
-export DEBIAN_FRONTEND='noninteractive'
-apt-get -y install libnet-ssleay-perl libjson-xs-perl
+if [ -n "$dp_user_api_url" ]; then
+  ini_section_replace_key_value "$config_file" user_api api_url "$dp_user_api_url"
+fi
 
-"$DP_TARGET_DIR/sbin/taskd"
-
+"$DP_TARGET_DIR/libexec/system-services" devpanel-taskd start
 status=$?
 if [ $status -ne 0 ]; then
   error "unable to start taskd. Returned $status"
