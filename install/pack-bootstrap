@@ -31,6 +31,7 @@ declare -a bootstrap_files=( \
   'lib/perl5/' \
   'sbin/taskd' \
   'libexec/system-services' \
+  'libexec/download-installer'
 )
 
 [ $# -lt 2 ] && usage
