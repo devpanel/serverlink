@@ -158,7 +158,7 @@ download_file() {
   local wait_before_retry=${4:-20}
 
   if hash curl &>/dev/null; then
-    curl -f --retry $retries --retry-delay $wait_before_retry -s -o "$temp_file" "$url"
+    curl -L -f --retry $retries --retry-delay $wait_before_retry -s -o "$temp_file" "$url"
     status=$?
   elif hash wget &>/dev/null; then
     wget -t $retries -w $wait_before_retry -nv -O "$temp_file" "$url"
