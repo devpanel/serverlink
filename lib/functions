@@ -229,3 +229,62 @@ $key = $value
     return 1 # file is the same, add failed
   fi
 }
+
+get_sshkey_fingerprint() {
+  local key_text="$1"
+  local tmp_file
+  local key_line
+
+  tmp_file=`mktemp`
+  if [ $? -ne 0 ]; then
+    echo "${FUNCNAME[0]}(): could not create temporary file to store the key" 1>&2
+    return 1
+  fi
+
+  echo "$key_text" >"$tmp_file"
+  if [ $? -ne 0 ]; then
+    echo "${FUNCNAME[0]}(): could not store the key contents into tmpfile '$tmp_file'" 1>&2
+    rm -f "$tmp_file"
+    return 1
+  fi
+
+  key_line=`ssh-keygen -f "$tmp_file" -l`
+  if [ $? -ne 0 ]; then
+    echo "${FUNCNAME[0]}(): uname to calculate key fingerprint" 1>&2
+    rm -f "$tmp_file"
+    return 1
+  fi
+
+  rm -f "$tmp_file"
+
+  local key_size key_fingerprint key_input_text
+  IFS=" " read key_size fingerprint key_input_text <<< "$key_line"
+  if [ -z "$fingerprint" ]; then
+    echo "${FUNCNAME[0]}(): got an empty fingerprint" 1>&2
+    return 1
+  fi
+
+  echo "$fingerprint"
+  return 0
+}
+
+is_sshkey_in_keyfile() {
+  local desired_fp="$1"
+  local key_file="$2"
+  local fp_list
+  local key_line key_mod_size key_fp key_txt
+
+  if ! fp_list=`ssh-keygen -f "$key_file" -l`; then
+    echo "${FUNCNAME[0]}(): could not get the list of fingerprints" 1>&2
+    return 1
+  fi
+
+  while read key_line; do
+    IFS=" " read key_size key_fp key_txt <<< "$key_line"
+    if [ "$key_fp" == "$desired_fp" ]; then
+      return 0
+    fi
+  done <<< "$fp_list"
+
+  return 1
+}
