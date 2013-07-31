@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 # Options:
 #   -a list all settings (ip, ssl)
 error() { echo "ERROR${@+: }$@" >&2; exit 1; }

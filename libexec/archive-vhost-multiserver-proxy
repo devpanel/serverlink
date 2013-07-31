@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 # multi-server version
 # Usage:
 #   archive-vhost-multiserver [OPTIONS] source_vhost target_vhost label

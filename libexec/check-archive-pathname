@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 # Options:
 # -u VHOST -- place the archive in ~w_VHOST/gen/archive
 

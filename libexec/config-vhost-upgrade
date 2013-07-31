@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 # create /opt/webenabled/config/vhosts/VHOST for older vhosts
 # only needed once
 

@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 identity_dir=/opt/webenabled/config/ssh
 authorized_keys=~r_we/.ssh/authorized_keys
 weadmin_group=weadmin
