@@ -54,7 +54,7 @@ redhat_install_distro_packages() {
     fi
   fi 
 
-  yum -y install make mysql mysql-server
+  yum -y install curl make mysql mysql-server
 
   if [ "${distro_version:0:1}" == "5" ]; then
     phpver=53
