@@ -45,6 +45,12 @@ elif [ -e "$target_file" -a -n "$move_existing" ]; then
   fi
 fi
 
+target_dir=`dirname "$target_file"`
+if [ ! -e "$target_dir" ] && ! mkdir -m 700 "$target_dir"; then
+  echo "Error: could not create target dir '$target_dir'" 1>&2
+  exit 1
+fi
+
 ssh-keygen -b 4096 -f "$target_file" -P '' &>/dev/null
 if [ $? -eq 0 ]; then
   cat "$target_file.pub"
