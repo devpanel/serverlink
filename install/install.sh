@@ -26,6 +26,8 @@ Usage: $prog [ options ]
     -h                Displays this help message
     -d                print verbose debug messages
     -R                enable auto-register
+    -b                from bootstrap (don't update devpanel.conf and don't
+                      restart taskd)
     -V version        Specify the version of the linux distro (optional)
 
 "
@@ -281,8 +283,10 @@ post_software_install() {
   fi
   # end of git setup section
 
+  # if the installation is not run from bootstrap then update devpanel.conf
+  # when running from bootstrap, the values have already been filled
   dp_config_file="$webenabled_install_dir/etc/devpanel.conf"
-  if [ -n "$dp_server_uuid" -a -n "$dp_server_secret_key" ]; then
+  if [ -z "$from_bootstrap" -a -n "$dp_server_uuid" -a -n "$dp_server_secret_key" ]; then
 
     ini_section_replace_key_value "$dp_config_file" taskd uuid "$dp_server_uuid"
     status=$?
@@ -305,18 +309,10 @@ post_software_install() {
   "Or your install will not work." >&2
       sleep 3
     fi
-
-    "$webenabled_install_dir/libexec/system-services" devpanel-taskd stop
-
-    "$webenabled_install_dir/libexec/system-services" devpanel-taskd start
-    if [ $? -ne 0 ]; then
-      echo -e "\n\nError: unable to start taskd.\n\n"
-      sleep 3
-    fi
   fi
 
   # if set, fill the api_url on the user_api section
-  if [ -n "$dp_user_api_url" ]; then
+  if [ -z "$from_bootstrap" -a -n "$dp_user_api_url" ]; then
     ini_section_replace_key_value "$dp_config_file" user_api api_url "$dp_user_api_url"
     if [ $? -ne 0 ]; then
       echo -e "\n\nWarning: unable to set user api url\n\n"
@@ -324,6 +320,8 @@ post_software_install() {
     fi
   fi
 
+  # this one is not run on bootstrap, so we run it in normal install (don't
+  # check for bootstrap
   if [ -n "$dp_server_hostname" ]; then
     "$webenabled_install_dir/libexec/config-vhost-names-default" \
       "$dp_server_hostname"
@@ -340,13 +338,33 @@ ServerName $dp_server_hostname
     fi
   fi
 
-  if [ -n "$dp_auto_register" ]; then
+  if [ -z "$from_bootstrap" -a -n "$dp_auto_register" ]; then
     ini_section_add_key_value "$dp_config_file" global auto_register 1
     if [ $? -ne 0 ]; then
       echo -e "\n\nWarning: unable to set auto_register on '$dp_config_file'\n\n"
       sleep 3
     fi
   fi
+
+  if [ -z "$from_bootstrap" -a -n "$dp_tasks_api_url" ]; then
+    ini_section_replace_key_value "$dp_config_file" taskd api_url "$dp_tasks_api_url"
+    if [ $? -ne 0 ]; then
+      echo -e "\n\nWarning: unable to set taskd api url\n\n"
+      sleep 3
+    fi
+  fi
+
+
+  if [ -z "$from_bootstrap" ]; then
+    "$webenabled_install_dir/libexec/system-services" devpanel-taskd stop
+
+    "$webenabled_install_dir/libexec/system-services" devpanel-taskd start
+    if [ $? -ne 0 ]; then
+      echo -e "\n\nError: unable to start taskd.\n\n"
+      sleep 3
+    fi
+  fi
+
 }
 
 # main
@@ -392,8 +410,9 @@ fi
 trap 'ex=$?; rm -f "$lock_file" ; trap - EXIT INT HUP TERM; exit $ex' EXIT INT HUP TERM
 
 
-getopt_flags="I:L:V:H:U:K:u:A:hdR"
+getopt_flags="I:L:V:H:U:K:u:A:hdRb"
 
+unset from_bootstrap
 while getopts $getopt_flags OPTS; do
   case "$OPTS" in
     d)
@@ -428,6 +447,9 @@ while getopts $getopt_flags OPTS; do
       ;;
     R)
       dp_auto_register=1
+      ;;
+    b)
+      from_bootstrap=1
       ;;
     h|*)
       usage
