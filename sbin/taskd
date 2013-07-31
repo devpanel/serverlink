@@ -570,6 +570,8 @@ sub exec_child {
 
   open(STDOUT, '>&EXEC_LOG');
   open(STDERR, '>&STDOUT');
+
+  umask(022);
   if(!exec(@cmd)) {
     $errmsg = "Failed to execute task $task_id, attempt $attempt_id, " .
               "activity $activity_id: $!\n";
@@ -1043,7 +1045,7 @@ sub http_child {
 
     if(!$fetch_immediately) {
       my $fetch_time = time() + $v{poll_interval}; 
-      while(time() < $fetch_time) {
+      while(time() < $fetch_time && !$fetch_immediately) {
         my $timeout = $fetch_time - time();
         $debug and debug_log("sleeping for $timeout seconds");
         $0 = sprintf("%s - sleeping for %d seconds", $v{p_profile}, $timeout);
@@ -1051,6 +1053,7 @@ sub http_child {
         # block for $timeout (might receive msgs from master)
         # before trying the next fetch cycle
         read_freezed_msg($child_io, "master", \&child_parse_n_execute, $timeout);
+        $fetch_immediately = 1;
       }
     }
   }
