@@ -1,0 +1,15 @@
+#!/bin/bash
+error()
+{
+  echo "ERROR${@+: }$@" >&2
+  exit 1
+}
+identity_dir=/opt/webenabled/config/ssh/tmp
+mkdir -p "$identity_dir" || error
+weadmin_group=weadmin
+identity_subdir=`mktemp -d "$identity_dir/tmp.XXXXXXXX"` || error
+base=`basename "$identity_subdir"` || error
+identity="$identity_subdir/id_rsa"
+[ -r "$identity" ] && error "The key is already there"
+ssh-keygen -P '' -t rsa -b 2048 -f "$identity" -C "webenabled one-time key id=$base" </dev/null >/dev/null 2>&1|| error
+cat "$identity.pub" || error

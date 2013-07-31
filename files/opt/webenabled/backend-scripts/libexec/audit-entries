@@ -1,8 +1,0 @@
-#!/bin/sh
-dir=`dirname $0`
-dir_bin="$dir/../bin"
-ip="$1"
-port="$2"
-
-grep -i "$ip $port" /var/log/uaudit
-

@@ -1,0 +1,217 @@
+#!/bin/bash
+#set -x
+dir=`dirname $0`
+[ "$dir" == "." ] && dir="$PWD"
+dir_bin="$dir/../bin"
+www_group='virtwww'
+
+declare -a add_keys
+declare -a remove_keys
+
+usage() {
+  local prog=$(basename "$0")
+  cat << EOF
+Usage: $prog [ options ] <vhost>
+  Options:
+    -a <key>        adds key to vhost
+    -r <key>        removes key from vhost
+    -i              read keys from stdin
+    -d <directory>  install the key in a custom directory (not \$HOME)
+    -n              don't append or remove the CE string in operations
+    -S <string>     set a custom string to append to the key
+    -R              set the key for a root user
+
+  Options -a and -r can be used multiple times each.
+
+  When passing keys via stdin (-i), print to stdin with the following syntax:
+  -:key
+  +:key
+
+  The first line above, removes the key. The second line adds the key.
+
+EOF
+  exit 1
+}
+
+escape_sed() {
+  local key="$1"
+  local escaped
+
+  escaped=${key//\//\\\/} # escape all / (slashes)
+
+  echo "$escaped"
+}
+
+key_is_installed() {
+  local user="$1"
+  local key_file="$2"
+  local key="$3"
+  local ce_str="$4"
+
+  [ ! -e "$key_file" ] && return 1
+
+  if su -l -c "grep -q '${key}${ce_str:+ $ce_str}\$' '$key_file'" "$user" ; then
+    return 0
+  else
+    return 1
+  fi
+}
+
+install_key() {
+  local user="$1"
+  local key_file="$2"
+  local key="$3"
+  local ce_str="$4"
+
+  cat << EOF >> "$key_file"
+${key}${ce_str:+ $ce_str}
+EOF
+  return $? # status of cat
+}
+
+remove_key() {
+  local user="$1"
+  local key_file="$2"
+  local key="$3"
+  local ce_str="$4"
+
+  key=$(escape_sed "$key")
+  su -l -c "sed -e '/${key}${ce_str:+ $ce_str}\$/d' -i '$key_file'" "$user"
+  return $? # return the status of sed
+}
+
+key_str() {
+  local key="$1"
+  local key_str
+
+  key=${key#* *}
+  if [ ${#key} -lt 7 ]; then
+    key_str="$key"
+  else
+    key_str="${key:0:7}..."
+  fi
+
+  echo "$key_str"
+}
+
+# main()
+[ $# -lt 1 ] && usage
+
+CE_STR="managed by CloudEnabled"
+getopt_flags="Rnir:a:d:S:"
+
+unset read_stdin OPTS for_root
+while getopts $getopt_flags OPTS; do
+  case "$OPTS" in
+    a)
+      add_keys+=( "$OPTARG" )
+      ;;
+    r)
+      remove_keys+=( "$OPTARG" )
+      ;;
+    i)
+      read_stdin=1
+      ;;
+    d)
+      key_dir="$OPTARG"
+      ;;
+    n)
+      unset CE_STR
+      ;;
+    S)
+      CE_STR="$OPTARG"
+      ;;
+    R)
+      for_root=1
+      ;;
+    ?)
+      usage
+      ;;
+  esac
+done
+shift $(( $OPTIND - 1 ))
+
+[ $# -lt 1 ] && usage
+
+if [ -z "$for_root" ]; then
+  vhost="$1"
+  user="w_$vhost"
+  # using mode archive: it's OK to operate on a locked vhost
+  if ! $dir/check-vhost-name archive "$vhost"; then
+    echo "Invalid vhost name." 1>&2
+    exit 1
+  fi
+else
+  user="$1"
+fi
+
+[ -z "$key_dir" ] && key_dir=$(eval echo \~$user/.ssh)
+key_file="$key_dir/authorized_keys"
+
+# Create .ssh directory and authorized_keys file if not existent
+if [ ! -d "$key_dir" ]; then
+    mkdir -m 700 "$key_dir"
+    if [ $? -ne 0 ]; then
+      echo "Error: unable to create key directory '$key_dir' for user '$user'" 1>&2
+      exit 1
+    fi
+    chown "${user}":"${www_group}" "$key_dir"
+fi
+
+if [ ! -f "$key_file" ]; then
+    touch "$key_file"
+    chmod 600 "$key_file"
+    chown "${user}":"${www_group}" "$key_file"
+fi
+
+# reads from stdin if requested
+line_n=0
+if [ -n "$read_stdin" ]; then
+  while read LINE; do
+    line_n=$(( $line_n + 1 ))
+    [ ${#LINE} -eq 0 ] && continue # next if line empty
+    cmd="${LINE:0:1}"
+    if [ "$cmd" != "+" -a "$cmd" != "-" -o ${#LINE} -lt 3 -o "${LINE:1:1}" != ':' ]; then
+      echo "Warning: invalid line $line_n"
+      continue
+    fi
+
+    key=${LINE:2}
+    if [ "$cmd" == "+" ]; then
+      add_keys+=( "$key" )
+    else
+      remove_keys+=( "$key" )
+    fi
+  done
+fi
+
+# Process the request
+n_max=${#add_keys[@]}
+n_add=0
+while [ $n_add -ne $n_max ]; do
+  new_key="${add_keys[$n_add]}"
+  if key_is_installed "$user" "$key_file" "$new_key" "$CE_STR"; then
+    key_str=$(key_str "$new_key")
+    echo "Warning: key '$key_str' already installed for user '$user'" 1>&2
+  else
+    install_key "$user" "$key_file" "$new_key" "$CE_STR"
+  fi
+
+  n_add=$(( $n_add + 1 ))
+done
+
+n_max=${#remove_keys[@]}
+n_rem=0
+while [ $n_rem -ne $n_max ]; do
+  new_key="${remove_keys[$n_rem]}"
+  if key_is_installed "$user" "$key_file" "$new_key" "$CE_STR"; then
+    remove_key "$user" "$key_file" "$new_key" "$CE_STR"
+  else
+    key_str=$(key_str "$new_key")
+    echo "Warning: key '$key_str' is not installed for user '$user', ignoring..." 1>&2
+  fi
+
+  n_rem=$(( $n_rem + 1 ))
+done
+
+exit 0

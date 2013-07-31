@@ -1,0 +1,17 @@
+#!/bin/bash
+error() { echo "ERROR${@+: }$@" >&2; exit 1; }
+dir=`dirname "$0"`
+shift `expr $OPTIND - 1`
+vhost="$1"
+ip="$2"
+[ -z "$ip" ] && error "No IP"
+user="w_$vhost"
+shift
+$dir/check-vhost-name archive "$vhost" || error
+config_dir="/opt/webenabled/config/vhosts/$vhost"
+fqdn=$vhost.`$dir/list-vhost-names-default` || error
+rm -f "$config_dir/ssl/ip/$ip"
+$dir/config-vhost-apache "$vhost" || exit 1
+rm -f "/opt/webenabled/config/os/pathnames/etc/ssl/keys/$ip.$fqdn"
+rm -f "/opt/webenabled/config/os/pathnames/etc/ssl/certs/$ip.$fqdn"
+rm -f "/opt/webenabled/config/os/pathnames/etc/ssl/certs/$ip.$fqdn.intermediate"

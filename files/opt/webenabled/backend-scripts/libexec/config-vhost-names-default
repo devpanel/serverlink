@@ -1,6 +1,0 @@
-#!/bin/sh
-config=/opt/webenabled/config/names/default
-tmp=`mktemp "$config.XXXXXX"` || exit 1
-chmod --reference="$config" "$tmp" || exit 1
-echo "$1" >"$tmp" || exit 1
-mv "$tmp" "$config" || exit 1

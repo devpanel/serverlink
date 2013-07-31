@@ -1,0 +1,250 @@
+#!/bin/bash
+
+error()
+{
+  echo "ERROR${1+: }$@" >&2
+  exit 1
+}
+
+run()
+{
+  echo "  Running $@"
+  "$@"
+}
+run2()
+{
+  echo "  Running $@" >&2
+  "$@"
+}
+run_su()
+{
+  echo "  running su -l -c '$@' $user_web" >&2
+  su -s /bin/bash -l -c "$*" "$user_web"
+}
+
+usage()
+{
+  echo "
+Usage: restore-vhost [ OPTIONS ] VHOST ARCHIVE_LABEL
+
+  Options:
+
+    -P                replicate w_* user's password
+    -p                do not reset web application passwords
+    -i                pass mysql passwd via stdin
+    -n                do not activate apache vhost (used for hosting_link)
+    -S files|db|all   sync
+    -N                don't create a new vhost user
+    -H                when syncing get the archive from the users vhost
+
+  VHOST is the 6 characters of after w_ of the linux username to be used
+  ARCHIVE_LABEL can be any of: .tgz file, a directory, or a http/https/ftp url of a .tgz file
+" >&2
+
+  exit 1
+}
+
+cleanup()
+{
+  local tmpdir="$1"
+  if [ -n "$tmpdir" ] && [ -d "$tmpdir" ]
+  then
+    echo "Removing temporary archive $tmpdir"
+    rm -rf "$tmpdir"
+  fi
+}
+
+# main
+
+options=""
+subsystem_options=""
+opt_i=0 opt_p=0
+try_archive_in_user_home=0
+create_vhost=1
+
+while getopts "NHPpinS:" OPTOPT
+do
+  case "$OPTOPT" in
+    P) options="$options${options+ }-P";;
+    p) opt_p=1; subsystem_options="$subsystem_options${subsystem_options+ }-n";;
+    i) opt_i=1;;
+    n) options="$options${options+ }-n";;
+    S)
+       sync_type="$OPTARG"
+       if [ "$sync_type" != "files" -a "$sync_type" != "db" \
+            -a "$sync_type" != all ]; then
+         error "invalid sync_type argument (argument of option -S)"
+       fi
+       ;;
+    H)
+      try_archive_in_user_home=1
+       ;;
+    N)
+      create_vhost=0
+      ;;
+    *) exit 1;
+  esac
+done
+[ $OPTIND -gt 0 ] && shift `expr $OPTIND - 1`
+
+[ $# -lt 2 ] && usage
+
+dir=`dirname "$0"`
+dir_bin="$dir/../bin"
+vhost="$1"
+config_dir="/opt/webenabled/config/vhosts/$vhost"
+user_web="w_$vhost"
+home="`eval \"echo ~$user_web\"`" || error
+user_db="b_$vhost"
+archive_label="$2"
+vhost_config_dir=.webenabled/private
+shift
+shift
+
+if [ $create_vhost -eq 1 ]; then
+  $dir/check-vhost-name restore "$vhost" || usage
+elif [ $create_vhost -eq 0 ] && ! user_info=$(getent passwd "$user_web" 2>/dev/null); then
+  error "user '$user_web' must exist"
+fi
+
+password="";
+if [ $opt_i = 1 ]
+then
+  read -r password || exit 1
+  [ -n "$password" ] || error "couldn't read a password."
+fi
+
+TMPDIR=""
+
+unset archive_file download_archive archive_dir
+if [ "$archive_label" == "-" ]; then
+  archive_file="-"
+elif [ ${#archive_label}  -gt 10 -a "${archive_label:0:7}" == "http://" \
+     -o ${#archive_label} -gt 10 -a "${archive_label:0:8}" == "https://" \
+     -o ${#archive_label} -gt 10 -a "${archive_label:0:6}" == "ftp://" ]; then
+
+  . "$dir/../lib/functions" || error "unable to load download utility functions"
+  download_archive=1
+elif [ ! -e "$archive_label" -a $create_vhost -eq 0 \
+  -a $try_archive_in_user_home -eq 1 \
+  -a "${archive_label:0:1}" != "/" -a "${archive_label:0:2}" != "./" \
+  -a "${archive_label:0:3}" != "../" ]; then
+
+  user_home_dir=$(echo "$user_info" | cut -d: -f 6)
+  test_archive="$user_home_dir/public_html/gen/archive/$archive_label"
+  if [ -f "$test_archive" ]; then
+    archive_file="$test_archive"
+  fi
+elif [ -f "$archive_label" ]; then
+  archive_file="$archive_label"
+elif [ -d "$archive_label" ]; then
+  # no need to extract
+  archive_dir="$archive_label"
+elif [ ! -e "$archive_label" ]; then
+  error "unable to find '$archive_label' (assuming it was a file or directory)"
+else
+  error "unable to identify the type of archive label '$archive_label'. It's type is probably incompatible with this script."
+fi
+
+if [ -z "$archive_dir" ]; then
+  TMPDIR=`$dir/archive-mktemp restore-vhost` || \
+    error "unable to create temporary directory to extract the files"
+  archive_dir="$TMPDIR"
+
+  trap 'cleanup "$TMPDIR"' HUP INT QUIT ILL TRAP ABRT BUS FPE KILL SEGV PIPE STOP ALRM TERM EXIT
+fi
+
+if [ -n "$download_archive" ]; then
+  tmp_down=$(mktemp "$TMPDIR/archive.tar.gz.XXXXXXXXXXXXX")
+  if [ $? -ne 0 ]; then
+    error "unable to create temporary file to store the download"
+  fi
+  download_file "$archive_label" "$tmp_down" 3 3
+  if [ $? -eq 0 ]; then
+    archive_file="$tmp_down" 
+  else
+    error "unable to download archive file"
+  fi
+fi
+
+# there's an archive file to extract (i.e. the archive_label was not a dir)
+if [ -n "$archive_file" ]; then
+  tar -C "$TMPDIR" -zxpf "$archive_file"  || error "unable to extract archive file '$archive_file'"
+  archive_dir="$TMPDIR"
+fi
+
+web_options="$options"
+if [ "$sync_type" == "all" -o "$sync_type" == "files" ]; then
+  web_options="$web_options${web_options+ }-S"
+fi
+
+[ $create_vhost -eq 0 ] && 
+    web_options="$web_options${web_options+ }-N"
+
+
+echo Processing web...
+run $0-web $web_options "$vhost" "$archive_dir/web" "$@" || exit 1
+
+if ! [ -d "$archive_dir/db" ]
+then
+  echo "Skipping db (not present in the archive)"
+  exit 0
+fi
+
+if [ "$sync_type" == "files" ]; then
+  echo "Only syncing files. Skipping db." 1>&2
+  exit 0
+fi
+
+db_options="$options"
+echo Processing db...
+if [ $opt_i = 1 ]
+then
+  output=`echo "$password" | run $0-db $db_options -i "$vhost" "$archive_dir/db" 2>&1`
+  status=$?
+else
+  output=`run $0-db $db_options "$vhost" "$archive_dir/db" 2>&1`
+  status=$?
+fi
+
+echo "$output"
+[ $status = 0 ] || exit $status
+echo "Updating .mysql.passwd"
+run_su "mkdir -p -m 0711 .webenabled" || exit 1
+run_su "mkdir -p -m 0711 $vhost_config_dir" || exit 1
+output2=`echo "$output"|sed -n 's/^.*user='\''\([^'\'']\{1,\}\)'\'' password='\''\(.\{1,\}\)'\''.*/\1:\2/p'` || exit 1
+echo "$output"|sed -n 's/^.*user='\''\(w_[^'\'']\{1,\}\)'\'' password='\''\(.\{1,\}\)'\''.*/webenabled_private_mysql_password \1:\2/p' || exit 1
+output3=$(echo "$output"|sed -n 's/\\/\\\\/g;s/^.* host='\''\([^:'\'']\{1,\}\):\([0-9]\{1,\}\)'\'' user='\''\(w_[^'\'']\{1,\}\)'\'' password=\('\''.\{1,\}'\''\).*/[client]\
+host=\1\
+port=\2\
+user=\3\
+password=\4/p') || exit 1
+echo "$output2" | run_su "cat >$vhost_config_dir/.mysql.passwd" || exit 1
+run_su "ln -snf $vhost_config_dir/.mysql.passwd .mysql.passwd" || exit 1
+# we have already escaped \ as \\. now let's escape ' as \'
+echo "$output3" | sed '/^password='\''\(.*\)'\''/{
+s//\1/
+s/'\''/\\&/g
+s/.*/password='\''&'\''/
+}'|run_su "cat >$home/.my.cnf" || exit 1
+run_su $dir_bin/phpMyAdmin.fix -f || exit 1
+run_su $dir_bin/vhost-archive.fix -f || exit 1
+for subsystem in drupal joomla wordpress magento projectpier mantis scratch omb elgg silverstripe limesurvey zencart redmine vanillaforums mediawiki pivotx opencart moodle
+do
+  if [ $opt_p = 0 ]
+  then
+    run_su rm -f $subsystem.passwd $vhost_config_dir/$subsystem.passwd || exit 1
+  fi
+  if grep -q "^$subsystem\$" "$archive_dir/db/databases"
+  then
+    run_su $dir_bin/restore-vhost-subsystem $subsystem_options -I -s "$subsystem" || exit 1
+  fi
+done
+
+run_su 'restore_script="$HOME/etc/rc.webenabled.restore";
+        [ -f "$restore_script" -a -x "$restore_script"  ] && "$restore_script"'
+
+run_su 'local_script="$HOME/etc/rc.webenabled.local"
+        [ -f "$local_script" -a -x "$local_script" ] && "$local_script"'
+
+exit 0

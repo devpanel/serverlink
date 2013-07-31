@@ -1,0 +1,13 @@
+#!/bin/bash
+dir=`dirname $0`
+dir_bin="$dir/../bin"
+vhost="$1"
+wget_command="$2"
+dest="$3"
+user="w_$vhost"
+
+# using mode archive: it's OK to operate on a locked vhost
+$dir/check-vhost-name archive "$vhost" || exit 1
+
+su -c "wget -q -O '/home/clients/websites/$user/$dest' $wget_command" $user
+exit 0

@@ -1,0 +1,114 @@
+#!/bin/bash
+
+dir=`dirname "$0"`
+
+dir_empty()
+{
+  local dir="$1"
+  [ -d "$dir" ] || return 0
+  set -- $dir/.??* $dir/.[!.] $dir/*
+  case $#$* in
+    "3$dir/.??* $dir/.[!.] $dir/*")
+      return 0;;
+    *)
+      return 1;;
+  esac
+}
+
+
+
+run()
+{
+  echo "  running $@"
+  "$@"
+}
+run2()
+{
+  echo "  running $@" >&2
+  "$@"
+}
+
+vhost="$1"
+archive_dir="$2"
+archive_list="$archive_dir/databases"
+archive_my_cnf="$archive_dir/b_.my.cnf"
+user="b_$vhost"
+home="`eval \"echo ~$user\"`"
+date=`date  +'%Y%m%d'`
+
+include_mysql_table=0
+
+run_su()
+{
+  echo "  running su -s /bin/sh -l -c '$@' $user" >&2
+  su -s /bin/bash -l -c "$*" "$user"
+}
+
+if ! `id -u "$user" 2>/dev/null >/dev/null`
+then
+  echo "No such user: $user" >&2
+  exit 1
+fi
+
+if ! [ -d "$home" ]
+then
+  echo "Home dir $home does not exist" >&2
+  exit 1
+fi
+
+if ! dir_empty "$archive_dir"
+then
+  echo "Target directory is not empty: $archive_dir" >&2
+  exit 1
+fi
+
+create_file()
+{
+  local file="$1"
+  set -C
+  echo -n >"$file"
+  local status=$?
+  set +C
+  return $status
+}
+
+echo "Locking $archive_dir..."
+run mkdir -p "$archive_dir" || exit 1
+if ! create_file "$archive_list" 2>/dev/null
+then
+  echo "$archive_list must not exist" >&2
+  exit 1
+fi
+chmod +w "$archive_list" || exit 1
+
+echo Listing the databases...
+list=`$dir/dbmgr-show-databases "$user"` || exit 1
+list=`echo "$list" | egrep -v '^(mysql|performance_schema|information_schema)$'`
+echo "$list" >"$archive_list"
+
+echo Checking for .my.cnf...
+if run_su "[ -s .my.cnf ]"
+then
+  echo Found, saving .my.cnf...
+  if ! run_su "cat .my.cnf" >"$archive_my_cnf"
+  then
+     echo "Aborting" >&2
+     exit 1
+  fi
+else 
+  echo Not found
+fi
+
+
+for database in $list
+do
+  [ "$database" == "mysql" -o "performance_schema" ] && -a $include_mysql_table -eq 0 ] && continue
+  archive_file="$archive_dir/$database.sql"
+  echo "Archiving $database to $archive_file"
+  if ! run2 $dir/dbmgr-mysql-as-root "$user" mysqldump --extended-insert=false "$database" 2>&1 >"$archive_file" ||
+     ! run gzip "$archive_file"
+  then
+    echo "Aborting" >&2
+    exit 1
+  fi
+done

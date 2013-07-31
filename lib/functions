@@ -1,0 +1,290 @@
+#!/bin/bash
+
+error() {
+  local msg="$1"
+  local exit_code="${2:-1}"
+
+  [ -n "$msg" ] && echo "Error: $msg" 1>&2
+  exit $exit_code
+}
+
+wedp_warn() {
+  local msg="$1"
+
+  echo "Warning: $msg" 1>&2
+}
+
+wedp_auto_detect_distro() {
+  local distro=""
+
+  if grep -qis centos /etc/redhat-release; then
+    distro=centos
+  elif grep -qis "Red Hat Enterprise Linux" /etc/redhat-release; then
+    distro=redhat
+  elif grep -qis fedora /etc/redhat-release; then
+    distro=fedora
+  elif rpm -ql owl-hier >/dev/null 2>&1; then
+    distro=owl
+  elif lsb_release -a 2>/dev/null | egrep -q "^Distributor ID:[[:space:]]+Debian" || \
+    [ -r /etc/debian_version ] && apt-cache show lsb-base | egrep -q '^Maintainer: .+debian\.org>'; then
+    distro=debian
+  elif lsb_release -a 2>/dev/null | egrep -q "^Distributor ID:[[:space:]]+Ubuntu" || \
+    [ -r /etc/debian_version ] && apt-cache show lsb-base | egrep -q '^Maintainer: .+ubuntu\.com>'; then
+    distro=ubuntu
+  elif [ -r /etc/gentoo-release ]; then
+    distro=gentoo
+  fi
+
+  if [ -n "$distro" ]; then
+    echo $distro
+    return 0
+  else
+    return 1
+  fi
+}
+
+wedp_auto_detect_distro_version() {
+  local distro="$1"
+  local version_str="" version=""
+
+  if [ "$distro" == "centos" ]; then
+    version_str=$(head -1 "/etc/redhat-release")
+    if [[ "$version_str" =~ CentOS\ release\ ([0-9]+\.[0-9]+) ]]; then
+      version="${BASH_REMATCH[1]}"
+    fi
+  else
+    version="0"
+  fi
+
+  if [ -n "$version" ]; then
+    echo $version
+    return 0
+  else
+    return 1
+  fi
+}
+
+print_quoted_variables() {
+  local line=""
+  local var=""
+
+  for var in "$@"; do
+    line=$(declare -p $var)
+    line=${line#declare -x}
+    echo $line
+  done
+}
+
+escape_sed() {
+  local str="$1"
+  local escaped="$str"
+
+  escaped=${escaped//\'/\\\'}
+  escaped=${escaped//\*/\\*}
+  escaped=${escaped//\;/\\;}
+  escaped=${escaped//\[/\\[}
+  escaped=${escaped//\]/\\]}
+  escaped=${escaped//\\+/+\]}
+  escaped=${escaped//\\\?/\?}
+  escaped=${escaped//\\\(/\(}
+  escaped=${escaped//\\\)/\)}
+  escaped=${escaped//\//\\/}
+
+  echo -n "$escaped"
+}
+
+# the function below is a candidate to be removed as it's much better to use
+# variable ${BASH_SOURCE[0]}, though not removing it now because not sure if
+# it's being used by other scripts
+resolve_local_dir() {
+  local base="$1"
+  local bin=""
+  local bin_path=""
+  local dir_name=""
+
+  [ ${#base} -eq 0 ] && return 1
+
+  if [ ${base:0:1} == "/" ]; then
+    echo $(dirname "$base")
+    return 0
+  elif [ ${#base} -gt 2 -a ${base:0:2} == "./" ]; then
+    base=${base#./}
+    dir_name=$(dirname "$base")
+    if [ "$dir_name" == "." ]; then
+      echo "$PWD"
+    else
+      echo "$PWD/$dir_name"
+    fi 
+    return 0
+  elif [ ${#base} -gt 2 -a ${base:0:3} == "../" ]; then
+    echo $(dirname "$PWD/$base")
+  else
+    return 1
+  fi 
+}
+
+wedp_resolve_link() {
+  local source="$1"
+  local target=""
+
+  [ -z "$source" ] && return 1
+
+  target=$(readlink -m "$source")
+  if [ $? -eq 0 ]; then
+    echo "$target"
+    return 0
+  else
+    return 1
+  fi
+}
+
+wedp_gen_random_str() {
+  local length=${1:-40}
+
+  local str=$(head -c $(( $length * 30 )) /dev/urandom | tr -dc 'A-Za-z0-9')
+
+  if [ ${#str} -lt $length ]; then
+    return 1
+  else
+    echo "${str:0:$length}"
+    return 0
+  fi
+}
+
+download_file() {
+  local url="$1"
+  local temp_file="$2"
+  local retries=${3:-3}
+  local wait_before_retry=${4:-20}
+
+  if hash curl &>/dev/null; then
+    curl -L -f --retry $retries --retry-delay $wait_before_retry -s -o "$temp_file" "$url"
+    status=$?
+  elif hash wget &>/dev/null; then
+    wget -t $retries -w $wait_before_retry -nv -O "$temp_file" "$url"
+    status=$?
+  fi
+
+  return $status
+}
+
+ini_section_get_key_value() {
+  local file="$1"
+  local section=`escape_sed "$2"`
+  local key=`escape_sed "$3"`
+
+  sed -n -e "/^\[$section\]/,/^\[/ {
+    /^\($key\)[[:space:]]*=.*$/ { s/^$key[[:space:]]*=[[:space:]]*//; p; q 0; }
+  } ; $ q 1;" "$file"
+}
+
+ini_section_replace_key_value() {
+  local file="$1"
+  local section=`escape_sed "$2"`
+  local key=`escape_sed "$3"`
+  local value=`escape_sed "$4"`
+
+  local orig_md5=`md5sum "$file"`
+  orig_md5=${orig_md5%% *}
+
+  sed -i -e "/^\[$section\]/,/^\[/ {
+    /^\($key\)[[:space:]]*=.*$/ {
+      s/^\($key\)[[:space:]]*=.*$/\1 = $value/g;
+    }
+  }" "$file"
+
+  local status=$?
+  [ $status -ne 0 ] && return $status
+
+  local final_md5=`md5sum "$file"`
+  final_md5=${final_md5%% *}
+
+  if [ "$orig_md5" != "$final_md5" ]; then
+    return 0 # file changed, success!
+  else
+    return 1 # file is the same, replace failed
+  fi
+}
+
+ini_section_add_key_value() {
+  local file="$1"
+  local section=`escape_sed "$2"`
+  local key=`escape_sed "$3"`
+  local value=`escape_sed "$4"`
+
+  local orig_md5=`md5sum "$file"`
+  orig_md5=${orig_md5%% *}
+
+  sed -i -e "/^\[$section\]/ {
+    a \
+$key = $value
+}" "$file"
+
+  local final_md5=`md5sum "$file"`
+  final_md5=${final_md5%% *}
+
+  if [ "$orig_md5" != "$final_md5" ]; then
+    return 0 # file changed, success!
+  else
+    return 1 # file is the same, add failed
+  fi
+}
+
+get_sshkey_fingerprint() {
+  local key_text="$1"
+  local tmp_file
+  local key_line
+
+  tmp_file=`mktemp`
+  if [ $? -ne 0 ]; then
+    echo "${FUNCNAME[0]}(): could not create temporary file to store the key" 1>&2
+    return 1
+  fi
+
+  echo "$key_text" >"$tmp_file"
+  if [ $? -ne 0 ]; then
+    echo "${FUNCNAME[0]}(): could not store the key contents into tmpfile '$tmp_file'" 1>&2
+    rm -f "$tmp_file"
+    return 1
+  fi
+
+  key_line=`ssh-keygen -f "$tmp_file" -l`
+  if [ $? -ne 0 ]; then
+    echo "${FUNCNAME[0]}(): uname to calculate key fingerprint" 1>&2
+    rm -f "$tmp_file"
+    return 1
+  fi
+
+  rm -f "$tmp_file"
+
+  local key_size key_fingerprint key_input_text
+  IFS=" " read key_size fingerprint key_input_text <<< "$key_line"
+  if [ -z "$fingerprint" ]; then
+    echo "${FUNCNAME[0]}(): got an empty fingerprint" 1>&2
+    return 1
+  fi
+
+  echo "$fingerprint"
+  return 0
+}
+
+is_sshkey_in_keyfile() {
+  local desired_fp="$1"
+  local key_file="$2"
+  local fp_list
+  local key_line key_mod_size key_fp key_txt
+
+  if ! fp_list=`ssh-keygen -f "$key_file" -l`; then
+    echo "${FUNCNAME[0]}(): could not get the list of fingerprints" 1>&2
+    return 1
+  fi
+
+  while read key_line; do
+    IFS=" " read key_size key_fp key_txt <<< "$key_line"
+    if [ "$key_fp" == "$desired_fp" ]; then
+      return 0
+    fi
+  done <<< "$fp_list"
+
+  return 1
+}

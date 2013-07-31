@@ -1,0 +1,53 @@
+#!/bin/bash
+dir=`dirname "$0"`
+mode="$1"
+vhost="$2"
+w_user="w_$vhost"
+b_user="b_$vhost"
+apache_config="$dir/../config/os/pathnames/etc/apache_vhosts/$w_user.conf"
+
+error()
+{
+  echo "ERROR${1+: }$@" >&2
+  exit 1
+}
+
+exists()
+{
+  id "$1" >/dev/null 2>&1
+  return $?
+}
+
+home()
+{
+  local user="$1"
+  perl -le '@a=getpwnam $ARGV[0] or die "no such user $ARGV[0]\n"; print $a[7]'  "$user"
+}
+
+locked()
+{
+  egrep -q '^Use[[:space:]]+Vhost-[^[:space:]]+-locked\>' "$apache_config"
+}
+
+[ $# = 2 ] && case "$mode" in archive|restore|lock|unlock|config) true;; *) false;; esac || 
+  error "Usage: $0 [archive|restore|lock|unlock|config] basename"
+
+
+(echo "$vhost"|egrep -q '^[-_a-z0-9]{1,6}$')||error "invalid vhost name '$vhost'"
+
+if [ $mode = restore ]
+then
+  exists "$w_user" && error "$w_user must not exist"
+  exists "$b_user" && error "$b_user must not exist"
+else
+  exists "$w_user" || error "$w_user must exist"
+  home=`home "$w_user"` || error "cannot get $w_user's home dir"
+  [ -d "$home" ] || error "home dir $home must exist"
+  owner=`stat --format %U "$home"` || error
+  [ o"$owner" = o"$w_user" ] || error "$home must be owned by $w_user"
+  [ -r "$apache_config" ] || error "$apache_config must exist"
+  [ $mode = lock -o $mode = config ] && locked && error "$vhost must not be locked"
+  [ $mode = unlock ] && ! locked && error "$home must be locked"
+  # it's ok to archive both locked and unlocked vhosts
+fi
+exit 0

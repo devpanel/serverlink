@@ -1,0 +1,15 @@
+#!/bin/bash
+dir=`dirname $0`
+dir_bin="$dir/../bin"
+vhost="$1"
+user="w_$vhost"
+cmd="$2"
+option="$3"
+serialize="$4"
+
+# using mode archive: it's OK to operate on a locked vhost
+$dir/check-vhost-name archive "$vhost" || exit 1
+
+su -ls /bin/bash $user -c 'cd ~/public_html/'$vhost'; '$dir_bin'/drush/drush -y en update' &> /dev/null
+su -ls /bin/bash $user -c 'cd ~/public_html/'$vhost'; '$dir_bin'/drush/drush '$serialize' -y -b '$cmd' '"$option"
+exit 0

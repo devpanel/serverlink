@@ -1,0 +1,116 @@
+#!/bin/bash
+
+usage() {
+  echo "Usage: `basename "$0"` <file> <action> <host_spec> [ param=value ]
+
+  Accepted actions: add_section, remove_section
+
+  param=value are the usual ssh options
+"
+  exit 1
+}
+
+# main
+[ $# -lt 3 ] && usage
+
+curr_dir=`dirname "${BASH_SOURCE[0]}"`
+if ! source "$curr_dir/../lib/functions"; then
+  echo "Error: unable to load auxiliary functions" 1>&2
+  exit 1
+fi
+
+file="$1"
+if [ -z "$file" ]; then
+  error "missing filename"
+elif [ -e "$file" -a ! -f "$file" ]; then
+  error "path '$file' is not a regular file"
+elif [ -e "$file" -a -f "$file" -a ! -w "$file" ]; then
+  error "file '$file' is not writable by the current user"
+fi
+
+action="$2"
+if [ -z "$action" ]; then
+  error "missing action"
+fi
+
+host_spec="$3"
+if [ -z "$host_spec" ]; then
+  error "missing host_spec"
+fi
+
+shift 3
+
+if [ "$action" != "add_section" -a "$action" != "remove_section" ]; then
+  error "unknown action. Known actions: add_section, remove_action"
+fi
+
+if [ -f "$file" ]; then
+  # getting the sha1sum of the file, to compare in the end if the removal
+  # was successful, as sed delete always returns success
+  # this is a convenience, and best effort, just to give a warning in the
+  # end if the section doesn't exist
+  orig_file_sha1sum=`sha1sum "$file"`
+  if [ $? -eq 0 ]; then
+    orig_file_sha1sum=${orig_file_sha1sum%% *}
+  fi
+fi
+
+if [ "$action" == "add_section" ]; then
+  if [ $# -eq 0 ]; then
+    error "missing additional section parameters"
+  fi
+
+  section_txt="
+Host $host_spec"
+
+  declare -i param_n=0
+  declare -i n_new_sections=0
+  while [ $# -gt 0 ]; do
+    param_n+=1
+    pair="$1"
+    if ! [[ "$pair" =~ ^.+=.+$ ]]; then
+      error "invalid format of pair $param_n"
+    fi
+
+    key=${pair%%=*}
+    value=${pair#*=}
+
+    shift
+    if [ -z "$key" -o -z "$value" ]; then
+      error "invalid name=value entry on parameter $param_n"
+    fi
+
+    if fgrep -q -s "Host $host_spec" "$file"; then
+      echo "Warning: host spec '$host_spec' already in file, skipping..."
+      continue
+    fi
+
+    section_txt+="
+  $key $value"
+    n_new_sections+=1
+  done
+
+  if [ $n_new_sections -gt 0 ]; then
+    echo "$section_txt" >>"$file"
+    if [ $? -ne 0 ]; then
+      error "unable to add section to file '$file'"
+    fi
+  else
+    echo "Warning: no new section added. File not modified"
+  fi
+elif [ "$action" == "remove_section" ]; then
+  sed -i -e "/^Host[[:space:]]*`escape_sed "$host_spec"`$/,/^$/d" "$file"
+  if [ $? -ne 0 ]; then
+    error "unable to remove host spec '$host_spec'"
+  fi
+
+  if [ -n "$orig_file_sha1sum" ]; then
+    new_file_sha1sum=`sha1sum "$file"`
+    if [ $? -eq 0 ]; then
+      new_file_sha1sum=${new_file_sha1sum%% *}
+      if [ "$new_file_sha1sum" == "$orig_file_sha1sum" ]; then
+        echo "Warning: file hasn't changed, section was not in file" 1>&2
+      fi
+    fi
+  fi
+fi

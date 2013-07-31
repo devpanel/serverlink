@@ -1,6 +1,0 @@
-#!/bin/sh
-
-if /sbin/service httpd status && /sbin/service httpd configtest 2>&1; then
-        /sbin/service httpd reload
-        sleep 1
-fi | egrep -vx 'httpd is running|Syntax OK|Sending HUP to httpd'

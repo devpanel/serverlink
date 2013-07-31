@@ -1,0 +1,69 @@
+#!/bin/bash
+# Options:
+# -u VHOST -- place the archive in ~w_VHOST/gen/archive
+
+mydir=`dirname $0`
+
+error()
+{
+  echo "ERROR${1+: }$@" >&2
+  exit 1
+}
+
+opt_u=""
+
+while getopts "u:" OPTOPT
+do
+  case "$OPTOPT" in
+    u) opt_u="$OPTARG";;
+    *) exit 1;
+  esac
+done
+shift `expr $OPTIND - 1`
+
+mode="$1"
+path="$2"
+
+[ $# = 2 ] && [ o"$mode" = o"archive" -o o"$mode" = o"restore" ] || 
+  error "Usage: $0 [archive|restore] dir"
+
+case "$path" in
+*.tgz);;
+*) error "Only .tgz pathnames are now supported";;
+esac
+
+path2="`echo \"$path\"|tr -d '\n'`" || error
+
+[ o"$path" = o"$path2" ] || error "path must not contain new lines"
+
+if [ -z "$opt_u" ]
+then
+  prefix=/opt/webenabled/data
+else
+  $mydir/check-vhost-name archive "$opt_u" || error
+  user="w_$opt_u"
+  home="`eval \"echo ~$user\"`" || error
+  [ -d "$home" ] || error "Home dir $home does not exist"
+  prefix="$home/public_html/gen/archive"
+fi
+
+reldir=`echo "$path"|sed -n "s|^$prefix/||p"` || error
+[ -z "$reldir" ] && error "path must be in $prefix"
+echo "$reldir"|grep -q '\.\.' && error ".. found in path"
+
+
+is_readable()
+{
+  local path="$1"
+  if [ -z "$opt_u" ]
+  then
+    [ -r "$path" ]
+  else
+    echo "$path" | su -l -c 'read -r path && [ -r "$path" ]' "$user"
+  fi
+}
+
+[ $mode = archive ] && is_readable "$path" && error "$path must not exist"
+
+[ $mode = restore ] && ! is_readable "$path" && error "$path must exist"
+exit 0
