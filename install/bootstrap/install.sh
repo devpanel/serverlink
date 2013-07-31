@@ -97,7 +97,7 @@ fi
 if ! type -t "bootstrap_${linux_distro}" >/dev/null; then
   error "missing function 'bootstrap_${linux_distro}'"
 elif ! "bootstrap_$linux_distro" "$source_dir" "$DP_TARGET_DIR"; then
-  error "failed running function 'bootstrap_$linux'"
+  error "failed running function 'bootstrap_$linux_distro'"
 fi
 
 skel_dir="$source_dir/skel/$linux_distro"
