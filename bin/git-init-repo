@@ -1,0 +1,37 @@
+#!/bin/bash
+
+usage() {
+  echo "Usage: `basename "$0"` [ options ] <name>"
+  exit 1
+}
+
+
+# main
+
+[ $# -eq 0 ] && usage
+
+if [ $EUID -eq 0 ]; then
+  echo "Error: this script should not be run with ROOT privileges" 1>&2
+  exit 1
+fi
+
+getopt_flags='d:'
+while getopts $getopt_flags OPTNAME; do
+  case "$OPTNAME" in
+    d)
+      target_dir="$OPTARG"
+      ;;
+    *)
+      exit 1
+      ;;
+  esac
+done
+
+name="$1"
+[ -z "$name" ] && usage
+
+if [ -z "$target_dir" ]; then
+  target_dir="$HOME/repositories/$name.git"
+fi
+
+git init --bare "$target_dir"
