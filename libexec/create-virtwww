@@ -138,6 +138,7 @@ else
 fi
 
 DB_ACCOUNT_NAME="b_$ACCOUNT_NAME"
+vhost="$ACCOUNT_NAME"
 ACCOUNT_NAME="w_$ACCOUNT_NAME"
 
 echo
@@ -281,9 +282,9 @@ chmod 0710 \"$VHOST_HOME\"
 mkdir -p \"$VHOST_HOME/bin\"
 chmod 0700 \"$VHOST_HOME/bin\"
 # end of PHP hack
-mkdir -p \"$VHOST_HOME/public_html/$PRIMARY_NAME\"
-chmod 0755 \"$VHOST_HOME/public_html/$PRIMARY_NAME\"
+mkdir -m 0755 -p \"$VHOST_HOME/public_html/$PRIMARY_NAME\"
 mkdir -p \"$VHOST_HOME/public_html/gen\"
+mkdir -m 711 -p \"$VHOST_HOME/public_html/gen/archive\"
 chmod 0755 \"$VHOST_HOME/public_html/gen\"
 if [ -n \"$VHOST_MULTISITE\" ]; then
     mkdir -p \"$VHOST_HOME/public_html/$PRIMARY_NAME\"-{dev,qa}
@@ -293,6 +294,10 @@ chmod 0711 \"$VHOST_HOME/public_html\"
 test -h \"$VHOST_HOME/logs\" && rm \"$VHOST_HOME/logs\"
 ln -s \"$VIRTWWW_LOGDIR/$ACCOUNT_NAME\" \"$VHOST_HOME/logs\"
 set +e
+[ ! -d ~/.ssh ] && mkdir -m 700 ~/.ssh
+echo 'Host *
+  UserKnownHostsFile /dev/null
+  StrictHostKeyChecking no' >~/.ssh/config
 " -s /bin/bash "$ACCOUNT_NAME"
 if [ "$?" -eq 0 ]; then
     echo 'done'
@@ -503,5 +508,15 @@ else
         echo "db login = '$ACCOUNT_NAME', password = '$DB_USER_PASS'"
     fi
 fi
-exit 0
 
+count=0
+for domain in $DOMAIN_NAMES; do
+  if [ $count -eq 0 ]; then
+    "$dir/config-vhost-names" "$vhost" '*' "$domain"
+  else
+    "$dir/config-vhost-names" "$vhost" '+' "$domain"
+  fi 
+  count=$(( $count + 1 ))
+done 
+
+exit 0
