@@ -1,15 +1,23 @@
-#!/bin/sh
+#!/bin/bash
 # Options:
 #   -i pass mysql passwd via stdin
+#   -S sync (don't create a database instance, just restore the dbs)
+#   -H
 
 dir=`dirname "$0"`
 
+sync=0
+search_in_users_home=0
 options=""
+create_db_instance=1
 
-while getopts "i" OPTOPT
+while getopts "NiSH" OPTOPT
 do
   case "$OPTOPT" in
     i) options="-i";;
+    S) sync=1 ;;
+    H) search_in_users_home=1 ;;
+    N) create_db_instance=0 ;;
     *) exit 1;
   esac
 done
@@ -26,18 +34,48 @@ run2()
   "$@"
 }
 
-vhost="$1"
-archive_dir="$2"
-archive_my_cnf="$archive_dir/b_.my.cnf"
-user="b_$vhost"
-user_web="w_$vhost"
-date=`date  +'%Y%m%d'`
-
-if `id -u "$user" 2>/dev/null >/dev/null`
-then
-  echo "User must not exist: $user" >&2
+if ! source "$dir/../lib/functions"; then
+  echo "Error: unable to load auxiliary functions" 1>&2
   exit 1
 fi
+
+vhost="$1"
+user="b_$vhost"
+user_web="w_$vhost"
+archive_label="$2"
+
+if [ $create_db_instance -eq 1 ] && getent passwd "$user" &>/dev/null; then
+  error "user '$user' already exists"
+elif [ $create_db_instance -eq 0 ] && ! getent passwd "$user" &>/dev/null; then
+  error "user '$user' must exist"
+fi
+
+if [ $create_db_instance -eq 0 -a $search_in_users_home -eq 1 -a "${archive_label:0:1}" != "/" \
+ -a "${archive_label:0:2}" != "./" -a "${archive_label:0:3}" != "../" ]; then
+  user_info=$(getent passwd "$user_web")
+  if [ $? -eq 0 ]; then
+    user_home_dir=$(echo "$user_info" | cut -d: -f 6)
+    test_archive="$user_home_dir/public_html/gen/archive/$archive_label"
+    [ -f "$test_archive" ] && archive_label="$test_archive"
+  fi
+fi
+
+if [ ! -e "$archive_label" ]; then
+  error "path '$archive_label' doesn't exist"
+elif [ -d "$archive_label" ]; then
+  archive_dir="$archive_label"
+elif [ -f "$archive_label" ]; then
+  tmp_extract=`mktemp -d`
+  tar -zxf "$archive_label" -C "$tmp_extract"
+  if [ $? -ne 0 ]; then
+    error "unable to extract archive '$archive_label'"
+  fi
+
+  archive_dir="$tmp_extract/db"
+fi
+
+archive_my_cnf="$archive_dir/b_.my.cnf"
+date=`date  +'%Y%m%d'`
 
 echo Listing the databases...
 if ! list=`cat "$archive_dir/databases"`
@@ -49,11 +87,12 @@ fi
 # WARNING!!! createdb will not work properly if $HOME/.my.cnf exists!!!
 export HOME=/
 
-if [ -s "$archive_my_cnf" ]
+if [ $create_db_instance -eq 1 -a -s "$archive_my_cnf" ]
 then
   $dir/../config/os/pathnames/opt/dbmgr/current/bin/createdb -c3 $options "$user" 3<"$archive_my_cnf" || exit 1
-else
-  $dir/../config/os/pathnames/opt/dbmgr/current/bin/createdb $options "$user" || exit 1
+elif [ $create_db_instance -eq 1 ] && \
+  ! $dir/../config/os/pathnames/opt/dbmgr/current/bin/createdb $options "$user"; then
+  error "unable to create database instance"
 fi
 
 home="`eval \"echo ~$user\"`"
@@ -76,12 +115,25 @@ do
     continue
   fi
   echo "Restoring $database from $archive_file"
-  run2 $dir/dbmgr-mysql-as-root "$user" mysql "-B -e \"create database \\\`$database\\\`;\"" || exit 1
-  if ! zcat "$archive_file" | run2 $dir/dbmgr-mysql-as-root "$user" mysql "$database" 2>&1
-  then
-    echo "Aborting" >&2
-    exit 1
+
+  if [ $sync -eq 0 ]; then
+    if ! run2 $dir/dbmgr-mysql-as-root "$user" mysql "-B -e \"create database \\\`$database\\\`;\""; then
+      error "unable to create datatabase \`$database\`"
+    fi
+
+    if ! zcat "$archive_file" | run2 $dir/dbmgr-mysql-as-root "$user" mysql "$database" 2>&1; then
+      error "unable to restore the mysql dump of database \`$database\`"
+    fi
+
+    echo "Granting all privileges on $database to $user_web"
+    if ! run2 $dir/dbmgr-mysql-as-root "$user" mysql "-B -e \"grant all privileges on $database.* to '$user_web'@'%';\""; then
+      error "unable to grant all privileges on database \`$database\` to user '$user_web'"
+    fi
+  else
+    if run2 $dir/dbmgr-mysql-as-root "$user" mysql "-B -N -e \"use \\\`$database\\\`;\"" ; then
+      run2 $dir/dbmgr-mysql-as-root "$user" mysql "-B -e \"DROP DATABASE \\\`$database\\\`;\""
+    fi
+      run2 $dir/dbmgr-mysql-as-root "$user" mysql "-B -e \"create database \\\`$database\\\`;\""
+      zcat "$archive_file" | run2 $dir/dbmgr-mysql-as-root "$user" mysql "$database"
   fi
-  echo "Granting all privileges on $database to $user_web"
-  run2 $dir/dbmgr-mysql-as-root "$user" mysql "-B -e \"grant all privileges on $database.* to '$user_web'@'%';\"" || exit 1
 done
