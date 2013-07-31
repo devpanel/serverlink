@@ -51,7 +51,7 @@ write_to_file()
     set +C
     chmod +w "$file" || exit 1
     cat >"$file" || exit 1
-    /usr/local/bin/fixwebperms.sh `dirname "$file"` >/dev/null 2>&1 || exit 1
+    # /usr/local/bin/fixwebperms.sh `dirname "$file"` >/dev/null 2>&1 || exit 1
      ' "$user_web" || return 1
   fi
 }
