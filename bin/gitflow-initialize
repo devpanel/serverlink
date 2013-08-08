@@ -27,6 +27,10 @@ while getopts $getopt_flags OPTF; do
         echo "Error: path '$git_dir' is not a directory" 1>&2
         exit 1
       fi
+
+      if [ "${git_dir:0:1}" != "/" ]; then
+        git_dir="$HOME/$git_dir"
+      fi
       ;;
     *)
       usage
@@ -37,6 +41,47 @@ done
 
 if [ ! -e "$git_dir/refs/heads" ]; then
   echo "Error: path '$git_dir' doesn't look like a git dir" 1>&2
+  exit 1
+fi
+
+n_heads=`ls "$git_dir/refs/heads" | wc -l`
+if [ -n "$n_heads" -a "$n_heads" -eq 0 ]; then
+  work_dir=`mktemp -d`
+  if [ $? -ne 0 ]; then
+    echo "Error: unable to create temporary directory" 1>&2
+    exit 1
+  fi
+  trap 'ex=$? ; rm -rf "$work_dir"; trap - EXIT INT HUP TERM; exit $ex' EXIT INT HUP TERM
+
+  git clone -l "file://$git_dir" "$work_dir"
+  if [ $? -ne 0 ]; then
+    echo "Error: unable to clone from '$git_dir'" 1>&2
+    exit 1
+  fi
+
+  if ! author_name=`git config --global user.name 2>/dev/null`; then
+    author_name='DevPanel Service'
+  fi
+  if ! author_email=`git config --global user.email 2>/dev/null`; then
+    author_email="support@devpanel.com"
+  fi
+
+  GIT_DIR="$work_dir/.git" git -c "user.name=$author_name" \
+    -c "user.email=$author_email" commit --allow-empty \
+    -m "Repository initiliazed using DevPanel"
+
+  if [ $? -ne 0 ]; then
+    echo "Error: failed to add the initial commit to the repo" 1>&2
+    exit 1
+  fi
+
+  GIT_DIR="$work_dir/.git" git push origin master
+  if [ $? -ne 0 ]; then
+    echo "Error: unable to push the initial commit back to the repository" 1>&2
+    exit 1
+  fi
+elif [ -z "$n_heads" ]; then
+  echo "Error: failed to get the number of files in refs/heads" 1>&2
   exit 1
 fi
 
@@ -55,3 +100,5 @@ if [ ! -e "$git_dir/refs/heads/develop" ]; then
     exit 1
   fi
 fi
+
+exit 0
