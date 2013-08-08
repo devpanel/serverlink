@@ -1,7 +1,12 @@
 #!/bin/bash
 
 usage() {
-  echo "Usage: `basename "$0"` [ options ] <name>"
+  echo "Usage: `basename "$0"` [ options ] <name>
+  
+  Options
+    -d <target_dir>           the target directory where to clone
+    -I                        initialize repository with a commit
+"
   exit 1
 }
 
@@ -15,11 +20,15 @@ if [ $EUID -eq 0 ]; then
   exit 1
 fi
 
-getopt_flags='d:'
+getopt_flags='d:I'
+unset initialize target_dir
 while getopts $getopt_flags OPTNAME; do
   case "$OPTNAME" in
     d)
       target_dir="$OPTARG"
+      ;;
+    I)
+      initialize=1
       ;;
     *)
       exit 1
@@ -32,6 +41,51 @@ name="$1"
 
 if [ -z "$target_dir" ]; then
   target_dir="$HOME/repositories/$name.git"
+elif [ "${target_dir:0:1}" != "/" ]; then
+  target_dir="$HOME/$target_dir"
 fi
 
 git init --bare "$target_dir"
+if [ $? -ne 0 ]; then
+  echo "Error: unable to initiliaze a git repo on dir '$target_dir'" 1>&2
+  exit 1
+fi
+
+if [ -n "$initialize" ]; then
+  work_dir=`mktemp -d`
+  if [ $? -ne 0 ]; then
+    echo "Error: unable to create temporary directory" 1>&2
+    exit 1
+  fi
+  trap 'ex=$? ; rm -rf "$work_dir"; trap - EXIT INT HUP TERM; exit $ex' EXIT INT HUP TERM
+
+  git clone -l "file://$target_dir" "$work_dir"
+  if [ $? -ne 0 ]; then
+    echo "Error: unable to clone from '$target_dir'" 1>&2
+    exit 1
+  fi
+
+  if ! author_name=`git config --global user.name 2>/dev/null`; then
+    author_name='DevPanel Service'
+  fi
+  if ! author_email=`git config --global user.email 2>/dev/null`; then
+    author_email="support@devpanel.com"
+  fi
+
+  GIT_DIR="$work_dir/.git" git -c "user.name=$author_name" \
+    -c "user.email=$author_email" commit --allow-empty \
+    -m "Repository initiliazed using DevPanel"
+
+  if [ $? -ne 0 ]; then
+    echo "Error: failed to add the initial commit to the repo" 1>&2
+    exit 1
+  fi
+
+  GIT_DIR="$work_dir/.git" git push origin master
+  if [ $? -ne 0 ]; then
+    echo "Error: unable to push the initial commit back to the repository" 1>&2
+    exit 1
+  fi
+fi
+
+exit 0
