@@ -51,6 +51,9 @@ if [ $? -ne 0 ]; then
   exit 1
 fi
 
+# track the branch, required for the simple checkout below
+GIT_DIR="$git_dir" git branch -t "$main_branch"
+
 GIT_DIR="$git_dir" git merge --no-ff "$forked_branch"
 if [ $? -ne 0 ]; then
   echo "Error: unable to merge '$forked_branch' into '$main_branch'" 1>&2
