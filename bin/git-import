@@ -68,16 +68,21 @@ fi
 if [ -z "$source_dir" ] && [[ "$USER" =~ ^w_ ]] && [ -d "$HOME/public_html/${USER#w_}" ]; then
   source_dir="$HOME/public_html/${USER#w_}"
 elif [ -z "$source_dir" ]; then
-  echo "Error: unable to auto-detect source diretory."
-  echo "Error: please specify the source directory using the -d option."
+  echo "Error: please specify the source directory using the -d option (was unable to auto-detect)."
   exit 1
 fi
 
 if [ ! -e "$source_dir" ]; then
   echo "Error: source directory '$source_dir' does not exist. Try passing another value to -d"
   exit 1
-elif [ ! -d "$source_dir" -a ! -L "$source_dir" ]; then
-  echo "Warning: source directory '$source_dir' is of type $(stat -c '%F' "$source_dir"), probably an incompatible type." 1>&2
+elif [ ! -d "$source_dir" ]; then
+  echo "Error: path '$source_dir' is not a directory" 1>&2
+  exit 1
+fi
+
+if [ -d "$source_dir/.git" ]; then
+  echo "Error: directory '$source_dir/.git' already exists. This repository was already initialized previously" 1>&2
+  exit 1
 fi
 
 cd "$source_dir" || {
@@ -89,22 +94,21 @@ commit_msg=${commit_msg:-'Initial project commit'}
 git_server=${git_server:-'git.webenabled.net'}
 git_proto=${git_proto:-'ssh'}
 
-if ! git config --global user.email >/dev/null; then
-  git config --global user.email "support@devpanel.com"
+if ! author_name=`git config --global user.name 2>/dev/null`; then 
+  author_name="DevPanel Service"
 fi
 
-if ! git config --global user.name >/dev/null; then 
-  git config --global user.name "DevPanel"
+if ! author_email=`git config --global user.email 2>/dev/null`; then
+  author_email="support@devpanel.com"
 fi
 
-if [ ! -d ".git" ]; then
-  git init  || { echo "Error while executing: git init"; exit 1; }
-  git add . || { echo "Error while executing: git add" ; exit 1; }
-  git commit -am "$commit_msg" || { echo "Error while executing: git commit"; exit 1; }
-  git remote add origin "$git_proto"://"$repo_user"@"$git_server"/"$repo_name"
-fi
+git init  || { echo "Error while executing: git init" 1>&2 ; exit 1; }
+git add . || { echo "Error while executing: git add"  1>&2 ; exit 1; }
+git -c "user.name=$author_name" -c "user.email=$author_email" \
+ commit -am "$commit_msg" || { echo "Error while executing: git commit" 1>&2 ; exit 1; }
+git remote add origin "$git_proto"://"$repo_user"@"$git_server"/"$repo_name"
 
 git push origin master || \
-  { echo "Error while executing: git push"; exit 1; }
+  { echo "Error while executing: git push" 1>&2; exit 1; }
 
 exit 0
