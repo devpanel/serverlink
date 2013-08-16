@@ -1,40 +1,36 @@
-#!/bin/bash
-#<?php $args = array(getenv('SCRIPT_FILENAME')); pcntl_exec('/bin/bash', $args); ?>
+<?php
 
-PMA_BASE="$SCRIPT_NAME"
-PMA_ROOT=/opt/webenabled/compat/w_/public_html/phpmyadmin/current
+$curr_path = dirname(__FILE__);
+require_once($curr_path . "/../../../../lib/php/webapp_token_access.inc.php");
 
-protocol=http
-[ o"$HTTPS" = o"on" ] && protocol=https
+$app_name = "phpmyadmin";
 
-SCRIPT_NAME="$PMA_BASE$PATH_INFO"
-SCRIPT_URL="$SCRIPT_NAME"
-SCRIPT_URI="$protocol://$SERVER_NAME$SCRIPT_URL"
-SCRIPT_FILENAME="$PMA_ROOT/${SCRIPT_NAME##*/}"
-REQUEST_URI="$SCRIPT_URL"
-# dirty hack against --force-cgi-redirect
-export REDIRECT_STATUS=200
+session_name("devpanel_$app_name");
+$vhost = dp_derive_gen_vhost();
 
-# if PATH_INFO is empty, redirect
-if [ -z "$PATH_INFO" ]; then
-	echo "Refresh: 0; url=$SCRIPT_URI/index.php"
-	echo 'Content-type: text/html'
-	echo
-	cat << EOF 
-<html>
-<head>
-<title>phpMyAdmin re-direction</title>
-<meta http-equiv="Refresh" content="0; url=$SCRIPT_URI/index.php" />
-</head>
-<body>
-<h1>Redirecting ...</h1>
-<p>The proper page to access phpMyAdmin is located at <a href="$SCRIPT_URI/index.php">$SCRIPT_URI/index.php</a>.</p>
-</body>
-EOF
-exit 0
-fi
+$is_logged_in = dp_is_already_logged_to_app($app_name);
 
-unset PATH_INFO PATH_TRANSLATED
-export SCRIPT_NAME SCRIPT_URL SCRIPT_URI SCRIPT_FILENAME
-cd "$PMA_ROOT"
-exec /opt/webenabled/config/os/pathnames/bin/php-cgi "$SCRIPT_FILENAME"
+if(!$is_logged_in) {
+  if(($token = dp_get_app_token_from_url()) && dp_has_valid_token($vhost, $app_name, $token)) {
+    dp_start_app_session($vhost, $app_name);
+    header('Location: ' . str_replace("/$token", "/", $_SERVER['SCRIPT_URI']) . '/index.php');
+    exit(0);
+  } else {
+    echo "Access denied. Unable to verify app token.\n";
+    exit(1);
+  }
+}
+
+if(isset($_SERVER["PATH_INFO"])) {
+  $file = $_SERVER["PATH_INFO"];
+} else {
+  header('Location: ' . str_replace("/$token", "/", $_SERVER['SCRIPT_URI']) . '/index.php');
+  exit;
+}
+
+$file_path = sprintf("%s/../%s/current/%s", dirname(__FILE__), $app_name, $file);
+$_SERVER["PATH_INFO"] = $_SERVER["SCRIPT_NAME"];
+$_SERVER["SCRIPT_NAME"] = $file;
+chdir(dirname($file_path));
+require_once($file_path);
+?>
