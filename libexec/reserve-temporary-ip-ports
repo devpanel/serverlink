@@ -1,0 +1,38 @@
+#!/bin/bash
+
+usage() {
+  echo "Usage: `basename "$0"` <protocol> <port> <temporary|permanent>"
+  exit 1
+}
+
+# main
+[ $# -lt 3 ] && usage
+
+curr_dir=`dirname "$0"`
+if ! source "$curr_dir/../lib/functions"; then
+  echo "Error: unable to load auxiliary functions"
+  exit 1
+fi
+
+data_dir="`dirname "$0"`/../config/reserved-ip-ports"
+if [ ! -e "$data_dir" ]; then
+  error "data directory '$data_dir' doesn't exist"
+elif [ ! -d "$data_dir" ]; then
+  error "path '$data_dir' is not a directory"
+elif [ ! -w "$data_dir" ]; then
+  error "directory '$data_dir' is not writable"
+fi
+
+declare -l proto
+
+proto="$1"
+port="$2"
+lifetime="$3"
+
+port_file="$data_dir/$port.proto"
+
+if [ -e "$port_file" ]; then
+
+else
+  
+fi
