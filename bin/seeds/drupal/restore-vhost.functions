@@ -156,8 +156,8 @@ drupal_update_php_config()
 drupal_update_civicrm_config() {
   if [ -f "$home/public_html/$vhost/sites/default/civicrm.settings.php" ]; then
     /bin/echo "
-     s/^[[:space:]]*define([[:space:]]*'CIVICRM_UF_DSN'[[:space:]]*,[[:space:]]*'mysql:\/\/.*/define('CIVICRM_UF_DSN', 'mysql:\/\/$mysql_user:$urlencoded_mysql_password@$mysql_host:$mysql_port\/drupal\?new_link=true');/
-     s/^[[:space:]]*define([[:space:]]*'CIVICRM_DSN'[[:space:]]*,[[:space:]]*'mysql:\/\/.*/define('CIVICRM_DSN', 'mysql:\/\/$mysql_user:$urlencoded_mysql_password@$mysql_host:$mysql_port\/drupal\?new_link=true');/
+     s/^[[:space:]]*define([[:space:]]*'CIVICRM_UF_DSN'[[:space:]]*,[[:space:]]*'mysql:\/\/.*/define('CIVICRM_UF_DSN', 'mysql:\/\/$mysql_user:$urlencoded_mysql_password@$mysql_host:$mysql_port\/civicrm\?new_link=true');/
+     s/^[[:space:]]*define([[:space:]]*'CIVICRM_DSN'[[:space:]]*,[[:space:]]*'mysql:\/\/.*/define('CIVICRM_DSN', 'mysql:\/\/$mysql_user:$urlencoded_mysql_password@$mysql_host:$mysql_port\/civicrm\?new_link=true');/
      s/^[[:space:]]*\$civicrm_root[[:space:]]*=[[:space:]]*.*/\$civicrm_root = '\/home\/clients\/websites\/$mysql_user\/public_html\/$vhost\/sites\/all\/modules\/civicrm';/
      s/^[[:space:]]*define([[:space:]]*'CIVICRM_TEMPLATE_COMPILEDIR'[[:space:]]*,[[:space:]]*'.*/define('CIVICRM_TEMPLATE_COMPILEDIR', '\/home\/clients\/websites\/$mysql_user\/public_html\/$vhost\/sites\/default\/files\/civicrm\/templates_c\/');/
      s/^[[:space:]]*define([[:space:]]*'CIVICRM_TEMPLATE_COMPILEDIR'[[:space:]]*,[[:space:]]*'.*/define('CIVICRM_TEMPLATE_COMPILEDIR', '\/home\/clients\/websites\/$mysql_user\/public_html\/$vhost\/sites\/default\/files\/civicrm\/templates_c\/');/
@@ -169,9 +169,12 @@ drupal_update_civicrm_config() {
            s/\/public_html\/[[:alnum:]]\{2,6\}\/sites/\/public_html\/$vhost\/sites/g
     " | run_ised "$home/public_html/$vhost/sites/default/files/civicrm/templates_c/en_US/ConfigAndLog/Config.IDS.ini"
 
+    local db_orig="$database" # save the default $database value to restore later
+    database="civicrm"      # work on the civic_crm db, not drupal
     civicrm_domain=`sql_query_result "select config_backend from civicrm_domain where id = 1"`
     new_civicrm_domain=`echo "$civicrm_domain"|"$dir/civicrm-domain-update.php" "$mysql_user" "$fqdn"`
     `sql_query_result "update civicrm_domain set config_backend = '$new_civicrm_domain' where id = 1"`
+    database="$db_orig" # restore the default value back because sql_query_result uses it
   fi
 }
 drupal_custom()
