@@ -1,0 +1,198 @@
+#!/bin/bash
+
+usage() {
+  echo "Usage: `basename "$0"`"
+
+  exit 1
+}
+
+is_installed() {
+  local pkg="$1"
+  local ver="$2"
+  local target_dir="$3"
+
+  if [ -e "$target_dir/$pkg" ]; then
+    return 0
+  else
+    return 1
+  fi
+}
+
+needs_update() {
+  local pkg="$1"
+  local ver="$2"
+  local target_path="$3"
+
+  local curr_ver
+  local link_file="$target_path/$pkg/current"
+
+  # return 2 == internal error
+  # return 1 == no update needed
+
+  if [ -L "$link_file" ]; then
+    curr_ver=`readlink "$link_file"`
+    if [ $? -ne 0 -o -z "$curr_ver" ]; then
+      echo "$FUNCNAME(): unable to get current version" 1>&2
+      return 2
+    elif [ "$curr_ver" == "$ver" ]; then
+      return 1
+    else
+      return 0
+    fi
+  else
+    echo "$FUNCNAME(): path '$link_file' is not a link" 1>&2
+    return 2
+  fi
+}
+
+assemble_pkg_url() {
+  local base_url="$1"
+  local pkg_name="$2"
+  local pkg_version="$3"
+  local distro="$4"
+  local distro_version="$5"
+  local arch="$6"
+
+  local url
+  local relative_url
+
+  relative_url="$pkg_name/${pkg_name}-${pkg_version}"
+  if [ -n "$distro" -a "$distro" != "-" ]; then
+    relative_url+="-$distro"
+  fi
+
+  if [ -n "$distro_version" -a "$distro_version" != "-" ]; then
+    relative_url+="-$distro_version"
+  fi
+
+  if [ -n "$arch" -a "$arch" != "-" ]; then
+    relative_url+="-$arch"
+  fi
+
+  url="$base_url/$relative_url.tar.gz"
+
+  echo "$url"
+}
+
+assemble_pkg_filename() {
+  local pkg_name="$1"
+  local pkg_version="$2"
+  local distro="$3"
+  local distro_version="$4"
+  local arch="$5"
+
+  local filename
+
+  filename="${pkg_name}-${pkg_version}"
+  if [ -n "$distro" -a "$distro" != "-" ]; then
+    filename+="-$distro"
+  fi
+
+  if [ -n "$distro_version" -a "$distro_version" != "-" ]; then
+    filename+="-$distro_version"
+  fi
+
+  if [ -n "$arch" -a "$arch" != "-" ]; then
+    filename+="-$arch"
+  fi
+
+  filename+=".tar.gz"
+
+  echo "$filename"
+}
+
+
+sep=`echo -e '\x09'` # use tab as a separator
+curr_dir=`dirname "${BASH_SOURCE[0]}"`
+lib_file="$curr_dir/../lib/functions"
+
+# main
+
+base_url="http://updates.devpanel.com/"
+base_channel="stable"
+
+[ "$1" == "-h" ] && usage
+
+if ! source "$lib_file"; then
+  echo "Error: unable to source file '$lib_file'" 1>&2
+  exit 1
+fi
+
+if ! tmp_dir=`mktemp -d`; then
+  error "unable to create temporary directory"
+fi
+trap 'ex=$? ; rm -rf "$tmp_dir"; trap - EXIT INT HUP; exit $ex' EXIT INT HUP
+
+target_url="$base_url/$base_channel"
+updates_file="$tmp_dir/updates_$base_channel.txt"
+
+if ! download_file "$target_url" "$updates_file"; then
+  error "unable to download update file"
+fi
+
+declare -i n_updated=0
+declare -i n_installed=0
+while read update_line; do
+  # ignore: empty lines, line with only spaces or lines starting with "#"
+  if [ -z "$update_line" ] || [[ "$update_line" =~ ^\ +$ ]] || \
+    [[ "$update_line" =~ ^\ *# ]]; then
+    continue
+  fi
+
+  unset v_installed v_needs_update
+
+  IFS="$sep" read package latest_version base_path distro distro_version arch flags <<< "$update_line"
+  pkg_url=`assemble_pkg_url "$base_url" "$package" "$latest_version" \
+    "$distro" "$distro_version" "$arch"`
+ 
+  pkg_file="$tmp_dir/"
+  pkg_file+=`assemble_pkg_filename "$package" "$latest_version" \
+    "$distro" "$distro_version" "$arch"`
+
+  target_dir="$curr_dir/../$base_path"
+  if is_installed "$package" "$latest_version" "$target_dir"; then
+    v_installed=1
+  fi
+
+  if [ -n "$v_installed" ] && needs_update "$package" "$latest_version" "$target_dir"; then
+    v_needs_update=1
+  fi
+
+  if [ -n "$v_installed" -a -z "$v_needs_update" ]; then
+    continue # is installed and doesn't need update
+  fi
+
+  if [ -z "$v_installed" -o -n "$v_needs_update" ]; then
+    if ! download_file "$pkg_url" "$pkg_file"; then
+      echo "Warning: failed download for package '$package' version '$latest_version' from URL '$pkg_url'" 1>&2
+      continue
+    fi
+  fi
+
+  if [ -z "$v_installed" ]; then
+    echo "Installing $package version $latest_version..."
+    devpanel_install_pkg "$package" "$latest_version" "$pkg_file" "$target_dir"
+    n_installed+=1
+  elif [ -n "$v_needs_update" ]; then
+    echo "Updating $package version $latest_version..."
+    devpanel_update_pkg "$package" "$latest_version" "$pkg_file" "$target_dir"
+    n_updated+=1
+  fi
+done < "$updates_file"
+
+if [ $n_updated -eq 0 -a $n_installed -eq 0 ]; then
+  echo "Everything up to date."
+  exit 0
+fi
+
+if [ $n_updated -eq 0 ]; then
+  echo "No packages were updated."
+else
+  echo "Updated $n_updated packages"
+fi
+
+if [ $n_installed -eq 0 ]; then
+  echo "No packages were installed"
+else
+  echo "Installed $n_installed packages"
+fi
