@@ -315,13 +315,9 @@ devpanel_install_pkg() {
   local file="$3"
   local system_dir="$4"
   local target_path="$5"
-  local tmp_dir="${6:-/tmp}"
 
-  local pkg_n_version="$package-$version"
-  local tmp_file=`mktemp "$tmp_dir/$pkg_n_version.tar.gz"`
-
-  local tmp_pkg_dir="$tmp_dir/pkgs/$pkg_n_version"
-  if [ ! -d "$tmp_pkg_dir" ] && ! mkdir -m 700 "$tmp_pkg_dir"; then
+  local tmp_pkg_dir=`dirname "$file"`/"$package-$version"
+  if ! mkdir "$tmp_pkg_dir" ; then
     echo "$FUNCNAME(): unable to create temp dir '$tmp_pkg_dir'" 1>&2
     return 1
   fi
@@ -344,7 +340,7 @@ devpanel_install_pkg() {
     return 1
   fi
 
-  tar -zxf "$file" -C "$target_dir" --strip-components 1 pkg-files/
+  tar -zxf "$file" -C "$target_dir" --strip-components 2 ./pkg-files/
   if [ $? -ne 0 ]; then
     echo "$FUNCNAME(): unable to extract package files" 1>&2
     return 1
@@ -368,18 +364,14 @@ devpanel_update_pkg() {
   local file="$3"
   local system_dir="$4"
   local target_path="$5"
-  local tmp_dir="${6:-/tmp}"
 
-  local pkg_n_version="$package-$version"
-  local tmp_file=`mktemp "$tmp_dir/$pkg_n_version.tar.gz"`
-
-  local tmp_pkg_dir="$tmp_dir/pkgs/$pkg_n_version"
-  if [ ! -d "$tmp_pkg_dir" ] && ! mkdir -m 700 "$tmp_pkg_dir"; then
+  local tmp_pkg_dir=`dirname "$file"`/"$package-$version"
+  if ! mkdir "$tmp_pkg_dir" ; then
     echo "$FUNCNAME(): unable to create temp dir '$tmp_pkg_dir'" 1>&2
     return 1
   fi
 
-  tar -zxf "$file" -C "$tmp_pkg_dir" setup
+  tar -zxf "$file" -C "$tmp_pkg_dir" ./setup/
   if [ $? -ne 0 ]; then
     echo "$FUNCNAME(): unable to extract package file" 1>&2
     return 1
@@ -397,7 +389,7 @@ devpanel_update_pkg() {
     return 1
   fi
 
-  tar -zxf "$file" -C "$target_dir" --strip-components 1 pkg-files/
+  tar -zxf "$file" -C "$target_dir" --strip-components 2 ./pkg-files/
   if [ $? -ne 0 ]; then
     echo "$FUNCNAME(): unable to extract package files" 1>&2
     return 1
@@ -420,18 +412,19 @@ devpanel_update_pkg_link_version() {
   local version="$2"
   local pkg_dir="$3"
 
-  target_link="$pkg_dir/current"
+  local target_dir="$pkg_dir/$package/$version"
+  local target_link="$pkg_dir/$package/current"
   local status
 
-  if [ ! -e "$pkg_dir/$version" ]; then
-    echo "$FUNCNAME(): dir '$pkg_dir/$version' doesn't seem to exist" 1>&2
+  if [ ! -e "$target_dir" ]; then
+    echo "$FUNCNAME(): dir '$target_dir' doesn't seem to exist" 1>&2
     return 1
   fi
 
-  if [ -e "$target_link" -a ! -L "$target_link" ]; then
+  if [ ! -L "$target_link" -a -e "$target_link" ]; then
     echo "$FUNCNAME(): path '$target_link' exists but is not a symbolic link" 1>&2
     return 1
-  elif [ -e "$target_link" -a -L "$target_link" ]; then
+  elif [ -L "$target_link" ]; then
     rm -f "$target_link"
   fi
 
