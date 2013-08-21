@@ -52,11 +52,6 @@ set_global_variables() {
   # main config file to be used by DevPanel
   dp_config_file="$target_dir/etc/devpanel.conf"
 
-  _suexec_bin=$(wedp_resolve_link "$we_config_dir/os.$distro/pathnames/sbin/suexec")
-  if [ $? -ne 0  -o -z "$_suexec_bin" ]; then
-    echo "unable to set global variable _suexec_bin" 1>&2
-    return 1
-  fi
   _apache_logs_dir=$(wedp_resolve_link "$we_config_dir/os.$distro/pathnames/var/log/apache_logs_dir")
   if [ $? -ne 0  -o -z "$_apache_logs_dir" ]; then
     echo "unable to set global variable _apache_logs_dir" 1>&2
@@ -156,33 +151,6 @@ install_ce_software() {
     cp -f "$source_dir/install/config/devpanel.conf.template" "$webenabled_install_dir/etc/devpanel.conf"
   fi
 
-  # start of setup of suexec (DevPanel uses a custom suexec)
-  local we_suexec_path="$webenabled_install_dir/compat/suexec/suexec"
-  
-  if [ -L "$_suexec_bin" ]; then
-    rm "$_suexec_bin"
-  elif [ -e "$_suexec_bin" ] && ! mv -f "$_suexec_bin" "$_suexec_bin.dist"; then
-    echo "error: unable to move distro default suexec binary" >&2
-    return 1
-  fi
-
-  ln -sf "$we_suexec_path.$linux_distro.$machine_type" "$we_suexec_path"
-  ln -sf "$webenabled_install_dir/compat/suexec/chcgi.$machine_type" \
-    "$webenabled_install_dir/compat/suexec/chcgi"
-
-  if ! ln -sf "$we_suexec_path" "$_suexec_bin"; then
-    echo "error: unable to link suexec to distro suexec path '$_suexec_bin'" >&2
-    return 1
-  fi
-
-  chown 0:"$_apache_group" "$_suexec_bin"
-  chmod 4711 "$_suexec_bin"
-  chown 0:"$_apache_group" "$we_suexec_path"
-  chmod 4711 "$we_suexec_path"
-  chown 0:0 "$webenabled_install_dir/compat/suexec/config/suexec.map"
-  chmod 0600 "$webenabled_install_dir/compat/suexec/config/suexec.map"
-  # end of suexec setup
-
   ssl_certs_dir=`readlink "$webenabled_install_dir"/config/os/pathnames/etc/ssl/certs`
   ssl_keys_dir=`readlink "$webenabled_install_dir"/config/os/pathnames/etc/ssl/keys`
   [ ! -d "$ssl_certs_dir" ] && mkdir -m 755 -p "$ssl_certs_dir"
@@ -217,9 +185,6 @@ Include $webenabled_install_dir/compat/apache_include/virtwww/*.conf" \
 
   ln -sf "$webenabled_install_dir/compat/apache_include/webenabled.conf.main" \
     "$_apache_includes_dir/webenabled.conf"
-
-  ln -s "utils.$machine_type" \
-    "$webenabled_install_dir/bin/utils"
 
   return 0
 }
@@ -365,6 +330,7 @@ ServerName $dp_server_hostname
     fi
   fi
 
+  "$webenabled_install_dir/libexec/update-packages"
 }
 
 # main
