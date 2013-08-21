@@ -33,8 +33,8 @@ if ! git fetch --tags; then
   error "unable to fetch tags from git"
 fi
 
-if ! git checkout "$ref"; then
-  error "unable to checkout version $ref from git"
+if ! git pull origin "$ref"; then
+  error "unable to merge changes from origin/$ref"
 fi
 
 echo "Successfully updated script files"
