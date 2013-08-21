@@ -1,0 +1,93 @@
+#!/usr/bin/env perl
+use strict;
+use warnings;
+use CGI;
+use FindBin (qw( $RealBin ));
+use Cwd (qw( abs_path ));
+use CGI::Session;
+
+my $cgi;
+my $session;
+
+sub log_error {
+  my($msg) = @_;
+
+  warn "Error: $msg\n";
+  print $cgi->header( -type => "text/plain" );
+  print $msg . "\n";
+}
+
+sub log_error_n_exit {
+  log_error(@_);
+  exit(1);
+}
+
+# main
+
+my @curr_user_ar = getpwuid($>);
+if(!@curr_user_ar) {
+  log_error_n_exit("uname to get the current user information");
+}
+
+my $tokens_dir = abs_path($RealBin . "/../../../../var/tokens");
+my $token_file;
+
+$cgi = CGI->new;
+CGI::Session->name("DP_AUTH");
+
+if(! -d $tokens_dir) {
+  log_error_n_exit("missing tokens dir $tokens_dir");
+}
+
+my $dp_op    = $cgi->param('dp_op');
+if(defined($dp_op) && $dp_op eq "auth") {
+  my $dp_token = $cgi->param('dp_token');
+
+  if(!defined($dp_token)) {
+    log_error_n_exit("missing parameter dp_token");
+  } elsif(length($dp_token) != 50) {
+    log_error_n_exit("invalid token length");
+  } elsif($dp_token !~ /^[A-Za-z0-9_]+$/) {
+    log_error_n_exit("invalid token format");
+  }
+
+  my $vhost = $curr_user_ar[0];
+  if(length($vhost) > 2 && substr($vhost, 0, 2) eq "w_") {
+    $vhost = substr($vhost, 2);
+  }
+
+  $token_file = sprintf("%s/%s.cgit.%s", $vhost, $tokens_dir, $dp_token);
+  if(! -e $token_file) { 
+    log_error_n_exit("Authentication failed");
+  }
+  my @token_stat_ar = stat($token_file);
+  if(@token_stat_ar) {
+    log_error_n_exit("Authentication failed");
+  }
+
+  if($token_stat_ar[9] == 0) { # if mtime == 0, return authentication denied
+    log_error_n_exit("Authentication failed");
+  }
+
+  utime(0, 0, $token_file); # invalidate the token file after using it
+
+  $session = CGI::Session->new();
+  $session->param('auth' => 1);
+  $session->flush(); # save on disk now, because exec() will not return
+
+  printf "Set-Cookie: %s\n", $cgi->cookie(
+    -name    => $session->name(),
+    -value   => $session->id(),
+    -domain  => $cgi->server_name(),
+    -path    => $cgi->path_info(),
+    -expires => '+1h'
+  );
+} else {
+  $session = CGI::Session->load($cgi);
+  if(!$session || $session->is_empty()) {
+    log_error_n_exit("Authentication failed");
+  }
+}
+
+my $cgit_bin = abs_path($RealBin . "/../../../../bin/utils/cgit/cgi-bin/cgit.cgi");
+exec($cgit_bin);
