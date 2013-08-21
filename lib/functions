@@ -327,7 +327,7 @@ devpanel_install_pkg() {
     return 1
   fi
 
-  tar -zxf "$file" -C "$tmp_pkg_dir" ./setup/
+  tar --no-same-owner -zxf "$file" -C "$tmp_pkg_dir" ./setup/
   if [ $? -ne 0 ]; then
     echo "$FUNCNAME(): unable to extract package setup files for package '$package-$version'" 1>&2
     return 1
@@ -339,7 +339,7 @@ devpanel_install_pkg() {
     "$pre_install_script" "$package" "$version" "$system_dir"
   fi
 
-  tar -zxf "$file" -C "$system_dir" --strip-components 2 ./pkg-files/
+  tar --no-same-owner -zxf "$file" -C "$system_dir" --strip-components 2 ./pkg-files/
   if [ $? -ne 0 ]; then
     echo "$FUNCNAME(): unable to extract package files" 1>&2
     return 1
@@ -369,7 +369,7 @@ devpanel_update_pkg() {
     return 1
   fi
 
-  tar -zxf "$file" -C "$tmp_pkg_dir" ./setup/
+  tar --no-same-owner -zxf "$file" -C "$tmp_pkg_dir" ./setup/
   if [ $? -ne 0 ]; then
     echo "$FUNCNAME(): unable to extract package file" 1>&2
     return 1
@@ -381,7 +381,7 @@ devpanel_update_pkg() {
     "$pre_update_script" "$package" "$version" "$system_dir"
   fi
 
-  tar -zxf "$file" -C "$system_dir" --strip-components 2 ./pkg-files/
+  tar --no-same-owner -zxf "$file" -C "$system_dir" --strip-components 2 ./pkg-files/
   if [ $? -ne 0 ]; then
     echo "$FUNCNAME(): unable to extract package files" 1>&2
     return 1
