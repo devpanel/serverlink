@@ -314,7 +314,6 @@ devpanel_install_pkg() {
   local version="$2"
   local file="$3"
   local system_dir="$4"
-  local target_path="$5"
 
   local tmp_pkg_dir=`dirname "$file"`/"$package-$version"
   if ! mkdir "$tmp_pkg_dir" ; then
@@ -322,35 +321,35 @@ devpanel_install_pkg() {
     return 1
   fi
 
-  tar -zxf "$file" -C "$tmp_pkg_dir" setup
+  local pkg_register_dir="$system_dir/config/packages/$package"
+  if [ ! -d "$pkg_register_dir" ] && ! mkdir "$pkg_register_dir"; then
+    echo "$FUNCNAME(): unable to create package dir '$pkg_register_dir'" 1>&2
+    return 1
+  fi
+
+  tar -zxf "$file" -C "$tmp_pkg_dir" ./setup/
   if [ $? -ne 0 ]; then
-    echo "$FUNCNAME(): unable to extract package file" 1>&2
+    echo "$FUNCNAME(): unable to extract package setup files for package '$package-$version'" 1>&2
     return 1
   fi
 
   local pre_install_script="$tmp_pkg_dir/setup/pre-install"
   local post_install_script="$tmp_pkg_dir/setup/post-install"
   if [ -f "$pre_install_script" -a -x "$pre_install_script" ]; then
-    "$pre_install_script" "$package" "$version" "$system_dir" "$target_path"
+    "$pre_install_script" "$package" "$version" "$system_dir"
   fi
 
-  local target_dir="$system_dir/$target_path/$package/$version"
-  if ! mkdir -p "$target_dir"; then
-    echo "$FUNCNAME(): unable to create target dir '$target_dir' for package '$package'" 1>&2
-    return 1
-  fi
-
-  tar -zxf "$file" -C "$target_dir" --strip-components 2 ./pkg-files/
+  tar -zxf "$file" -C "$system_dir" --strip-components 2 ./pkg-files/
   if [ $? -ne 0 ]; then
     echo "$FUNCNAME(): unable to extract package files" 1>&2
     return 1
   fi
 
   if [ -f "$post_install_script" -a -x "$post_install_script" ]; then
-    "$post_install_script" "$package" "$version" "$system_dir" "$target_path"
+    "$post_install_script" "$package" "$version" "$system_dir"
   fi
 
-  devpanel_update_pkg_link_version "$package" "$version" "$system_dir/$target_path"
+  devpanel_update_pkg_link_version "$package" "$version" "$system_dir"
   if [ $? -ne 0 ]; then
     return 1
   fi
@@ -363,7 +362,6 @@ devpanel_update_pkg() {
   local version="$2"
   local file="$3"
   local system_dir="$4"
-  local target_path="$5"
 
   local tmp_pkg_dir=`dirname "$file"`/"$package-$version"
   if ! mkdir "$tmp_pkg_dir" ; then
@@ -380,26 +378,20 @@ devpanel_update_pkg() {
   local pre_update_script="$tmp_pkg_dir/setup/pre-update"
   local post_update_script="$tmp_pkg_dir/setup/post-update"
   if [ -f "$pre_update_script" -a -x "$pre_update_script" ]; then
-    "$pre_update_script" "$package" "$version" "$system_dir" "$target_path"
+    "$pre_update_script" "$package" "$version" "$system_dir"
   fi
 
-  local target_dir="$system_dir/$target_path/$package/$version"
-  if ! mkdir -p "$target_dir"; then
-    echo "$FUNCNAME(): unable to create target dir '$target_dir' for package '$package'" 1>&2
-    return 1
-  fi
-
-  tar -zxf "$file" -C "$target_dir" --strip-components 2 ./pkg-files/
+  tar -zxf "$file" -C "$system_dir" --strip-components 2 ./pkg-files/
   if [ $? -ne 0 ]; then
     echo "$FUNCNAME(): unable to extract package files" 1>&2
     return 1
   fi
 
   if [ -f "$post_update_script" -a -x "$post_update_script" ]; then
-    "$post_update_script" "$package" "$version" "$system_dir" "$target_path"
+    "$post_update_script" "$package" "$version" "$system_dir"
   fi
 
-  devpanel_update_pkg_link_version "$package" "$version" "$system_dir/$target_path"
+  devpanel_update_pkg_link_version "$package" "$version" "$system_dir"
   if [ $? -ne 0 ]; then
     return 1
   fi
@@ -407,7 +399,7 @@ devpanel_update_pkg() {
   return 0
 }
 
-devpanel_update_pkg_link_version() {
+devpanel_update_versioned_pkg_version() {
   local package="$1"
   local version="$2"
   local pkg_dir="$3"
@@ -430,6 +422,29 @@ devpanel_update_pkg_link_version() {
 
   ln -s "$version" "$target_link"
   status=$?
+  if [ $status -ne 0 ]; then
+    echo "$FUNCNAME(): unable to update target link '$target_link'" 1>&2
+  fi
+
+  return $status
+}
+
+devpanel_update_pkg_link_version() {
+  local package="$1"
+  local version="$2"
+  local system_dir="$3"
+
+  local target_link="$system_dir/config/packages/$package/version"
+
+  if [ ! -L "$target_link" -a -e "$target_link" ]; then
+    echo "$FUNCNAME(): path '$target_link' exists but is not a symbolic link" 1>&2
+    return 1
+  elif [ -L "$target_link" ]; then
+    rm -f "$target_link"
+  fi
+
+  ln -s "$version" "$target_link"
+  local status=$?
   if [ $status -ne 0 ]; then
     echo "$FUNCNAME(): unable to update target link '$target_link'" 1>&2
   fi

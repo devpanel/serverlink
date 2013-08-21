@@ -9,9 +9,9 @@ usage() {
 is_installed() {
   local pkg="$1"
   local ver="$2"
-  local target_dir="$3"
+  local system_dir="$3"
 
-  if [ -e "$target_dir/$pkg" ]; then
+  if [ -e "$system_dir/config/packages/$pkg" ]; then
     return 0
   else
     return 1
@@ -21,10 +21,10 @@ is_installed() {
 needs_update() {
   local pkg="$1"
   local ver="$2"
-  local target_path="$3"
+  local system_dir="$3"
 
   local curr_ver
-  local link_file="$target_path/$pkg/current"
+  local link_file="$system_dir/config/packages/$pkg/version"
 
   # return 2 == internal error
   # return 1 == no update needed
@@ -105,10 +105,11 @@ assemble_pkg_filename() {
 sep=`echo -e '\x09'` # use tab as a separator
 curr_dir=`dirname "${BASH_SOURCE[0]}"`
 lib_file="$curr_dir/../lib/functions"
+system_dir="$curr_dir/.."
 
 # main
 
-base_url="http://updates.devpanel.com/"
+base_url="http://updates.devpanel.com"
 base_channel="stable"
 
 [ "$1" == "-h" ] && usage
@@ -130,8 +131,17 @@ if ! download_file "$target_url" "$updates_file"; then
   error "unable to download update file"
 fi
 
-declare -i n_updated=0
-declare -i n_installed=0
+linux_distro=$(wedp_auto_detect_distro)
+if [ $? -ne 0 -o -z "$linux_distro" ]; then
+  error "unable to detect the linux distribution of this server"
+fi
+
+linux_arch=$(uname -m)
+if [ $? -ne 0 -o -z "$linux_arch" ]; then
+  error "unable to detect the machine architecture"
+fi
+
+declare -i n_updated=0 n_failed_update=0 n_installed=0 n_failed_install=0
 while read update_line; do
   # ignore: empty lines, line with only spaces or lines starting with "#"
   if [ -z "$update_line" ] || [[ "$update_line" =~ ^\ +$ ]] || \
@@ -141,20 +151,29 @@ while read update_line; do
 
   unset v_installed v_needs_update
 
-  IFS="$sep" read package latest_version base_path distro distro_version arch flags <<< "$update_line"
+  IFS="$sep" read package latest_version distro distro_version arch flags <<< "$update_line"
   pkg_url=`assemble_pkg_url "$base_url" "$package" "$latest_version" \
     "$distro" "$distro_version" "$arch"`
  
+  # skip if the package is for a specific distro that not the current one
+  if [ "$distro" != "-" -a "$distro" != "$linux_distro" ]; then
+    continue
+  fi
+
+  # skip if it's for an architecture other than this one
+  if [ "$arch" != "-" -a "$arch" != "$linux_arch" ]; then
+    continue
+  fi
+
   pkg_file="$tmp_dir/"
   pkg_file+=`assemble_pkg_filename "$package" "$latest_version" \
     "$distro" "$distro_version" "$arch"`
 
-  target_dir="$curr_dir/../$base_path"
-  if is_installed "$package" "$latest_version" "$target_dir"; then
+  if is_installed "$package" "$latest_version" "$system_dir"; then
     v_installed=1
   fi
 
-  if [ -n "$v_installed" ] && needs_update "$package" "$latest_version" "$target_dir"; then
+  if [ -n "$v_installed" ] && needs_update "$package" "$latest_version" "$system_dir"; then
     v_needs_update=1
   fi
 
@@ -171,28 +190,46 @@ while read update_line; do
 
   if [ -z "$v_installed" ]; then
     echo "Installing $package version $latest_version..."
-    devpanel_install_pkg "$package" "$latest_version" "$pkg_file" "$target_dir"
-    n_installed+=1
+    devpanel_install_pkg "$package" "$latest_version" "$pkg_file" "$system_dir"
+    if [ $? -eq 0 ]; then
+      n_installed+=1
+    else
+      n_failed_install+=1
+    fi
   elif [ -n "$v_needs_update" ]; then
     echo "Updating $package version $latest_version..."
-    devpanel_update_pkg "$package" "$latest_version" "$pkg_file" "$target_dir"
-    n_updated+=1
+    devpanel_update_pkg "$package" "$latest_version" "$pkg_file" "$system_dir"
+    if [ $? -eq 0 ]; then
+      n_updated+=1
+    else
+      n_failed_update=1
+    fi
   fi
 done < "$updates_file"
 
-if [ $n_updated -eq 0 -a $n_installed -eq 0 ]; then
+if [ $n_failed_update -eq 0 -a $n_failed_install -eq 0 \
+  -a $n_updated -eq 0 -a $n_installed -eq 0 ]; then
+
   echo "Everything up to date."
   exit 0
+fi
+
+if [ $n_failed_update -gt 0 ]; then
+  echo "Failed to update $n_failed_update packages."
+fi
+
+if [ $n_failed_install -gt 0 ]; then
+  echo "Failed to install $n_failed_install packages."
 fi
 
 if [ $n_updated -eq 0 ]; then
   echo "No packages were updated."
 else
-  echo "Updated $n_updated packages"
+  echo "Updated $n_updated packages."
 fi
 
 if [ $n_installed -eq 0 ]; then
-  echo "No packages were installed"
+  echo "No packages were installed."
 else
-  echo "Installed $n_installed packages"
+  echo "Installed $n_installed packages."
 fi
