@@ -1,0 +1,393 @@
+#!/usr/bin/perl
+package DevPanel::CLI;
+
+use strict;
+use warnings;
+use lib (qw( /opt/webenabled/lib/perl5 ));
+
+use Getopt::Long;
+use Data::Dumper;
+use Cloudenabled::Util (qw( :DEFAULT ));
+use Cloudenabled::Constants (qw( :DEFAULT %CE_OP_ST_MAP ));
+use File::Basename;
+
+our %ro; # ro == received opts
+$ro{config_file} = "/opt/webenabled/etc/devpanel.conf";
+$ro{taskd_config_file} = "/opt/webenabled/etc/devpanel.conf";
+
+our $prog;
+#our(@get_operations, @post_operations, @unauth_operations, @local_operations);
+#our($help, $http_method, $local_op, $remote_op);
+our $conf;
+our($section, $command, $libdir);
+our(%general_opts, %received_opts, %req_params);
+
+our(%cmd_help_msgs, %section_help, %section_commands);
+
+sub is_valid_dir_entry {
+  my($dir, $entry) = @_;
+
+  if($entry eq "." || $entry eq "..") {
+    return 0;
+  }
+
+  my $path = sprintf("%s/%s", $dir, $entry);
+  if(-d $path) {
+    return 1;
+  } elsif(-f $path) {
+    my $len = length($entry);
+    if(substr($entry, $len-3) eq ".pl") {
+      return 1;
+    }
+  }
+
+  return 0;
+}
+
+sub is_valid_cmd_str {
+  my($cmd) = @_;
+  my $cmd_regex = qr/^[^-][\w_\.-]+$/;
+  if(length($cmd) > 0 && $cmd =~ $cmd_regex) {
+    return 1;
+  } else {
+    return 0;
+  }
+}
+
+sub usage {
+  my $msg = shift;
+
+  my $b = basename($0);
+  print "
+Usage: $b <section> <command> [ options ]
+       $b <section> -h
+
+  Options:
+    -c config_file          Use an alternate config file
+    -d                      Enable debug
+    -s                      Silent (don't display some error messages)
+    -h                      shows help for the given command
+
+  Available sections:
+";
+
+  # foreach my $op (@get_operations, @post_operations, @local_operations) {
+  #  print "    $op\n";
+  # }
+  if(!opendir(LIBDIR, $libdir)) {
+    print "  (unable to load libraries directory. Will not list available sections)\n";
+  } else {
+    my $fmt = "    %-25s %s\n";
+    while(my $entry = readdir(LIBDIR)) {
+      if(!is_valid_dir_entry($libdir, $entry)) {
+        next;
+      }
+
+      my $path      = sprintf("%s/%s", $libdir, $entry);
+      my $help_file = sprintf("%s/%s/_section_info.pl", $libdir, $entry);
+
+      if(-d $path && -f $help_file && (my $hlp_ref = load_command_file($help_file))) {
+        printf $fmt, $entry, $hlp_ref->{short_txt};
+      } elsif(-d $path) {
+        printf $fmt, $entry, "(No description available)";
+      } elsif(-f $path && ($hlp_ref = load_command_file($path))) {
+        printf $fmt, substr($entry, 0, length($entry)-3), $hlp_ref->{short_txt};
+      } elsif(-f $path) {
+        printf $fmt, substr($entry, 0, length($entry)-3), "(No description available)";
+      }
+    }
+    close(LIBDIR);
+  }
+
+  if(defined($msg)) {
+    printf "\n[*] Error: %s\n", $msg;
+  }
+
+  exit(1);
+}
+
+sub print_cmd_help {
+  my($cmd_ref, $errmsg) = @_;
+
+  print "DevPanel Command Line Utility - Help information\n\n";
+
+  my $desc = exists($cmd_ref->{desc}) ? $cmd_ref->{desc} 
+                                      : 'No description available';
+
+  print "Command: $cmd_ref->{op}\n";
+  print "Description: $desc\n\n";
+  if(exists($cmd_ref->{req_params}) && keys %{ $cmd_ref->{req_params} }) {
+    print "Required parameters:\n";
+    foreach my $k (keys %{ $cmd_ref->{req_params} }) {
+      printf "  %s: %s\n", $k, $cmd_ref->{req_params}->{$k};
+    }
+    print "\n";
+  }
+
+  if(exists($cmd_ref->{opt_params}) && keys %{ $cmd_ref->{opt_params} }) {
+    print "Optional parameters:\n";
+    foreach my $k (keys %{ $cmd_ref->{opt_params} }) {
+      printf "  %s: %s\n", $k, $cmd_ref->{opt_params}->{$k};
+    }
+    print "\n";
+  }
+
+  if(exists($cmd_ref->{examples}) && $#{ $cmd_ref->{examples} } >= 0) {
+    my $i = 0;
+    print "Examples:\n";
+    foreach my $ex (@{ $cmd_ref->{examples} }) {
+      printf "  %d. %s %s %s\n", ++$i, $prog, $cmd_ref->{op}, $ex;
+    }
+  }
+
+  if(defined($errmsg)) {
+    print "--\n";
+    printf "Error: %s. Please see the command requirements above.\n", $errmsg;
+  }
+
+  return 0;
+}
+
+sub print_section_help {
+  my($section_name, $errmsg) = @_;
+
+  print "Section: $section_name\n\n";
+
+  my $section_dir = sprintf("%s/%s", $libdir, $section_name);
+  if(!-d $section_dir) {
+    warn "Error: section directory '$section_dir' doesn't seem to exist.\n";
+    return 0;
+  }
+
+  if(!opendir(SEC_DIR, $section_dir)) {
+    warn "Error: unable to open section directory '$section_dir': $!\n";
+    return 0;
+  }
+
+  print "Available sub-commands:\n";
+  my $sub_fmt = "    %-25s %s\n";
+
+  while(my $entry = readdir(SEC_DIR)) {
+    my $file = sprintf("%s/%s", $section_dir, $entry);
+    if(! -f $file || substr($entry, 0, 1) eq "_") {
+      next;
+    }
+
+    if(!is_valid_dir_entry($section_dir, $entry)) {
+      next;
+    } elsif(my $hlp_ref = load_command_file($file)) {
+      printf $sub_fmt, substr($entry, 0, length($entry)-3), $hlp_ref->{desc};
+    } else {
+      printf $sub_fmt, substr($entry, 0, length($entry)-3), "(No description available)";
+    }
+
+  }
+  close(SEC_DIR);
+
+  if(defined($errmsg)) {
+    print "\n--\n";
+    print "[*] Error: $errmsg\n";
+  } else {
+    print "\n--\n";
+    print "For help in a specific sub-command please use: $prog $section_name <subcommand> --help\n";
+  }
+}
+
+sub load_command_file {
+  my($file) = @_;
+
+  my $ref = do($file);
+  if($@) {
+    warn "Error parsing command file '$file': $@\n";
+    return 0;
+  } elsif(!defined($ref)) {
+    warn "Error parsing command file '$file': $!\n";
+    return 0;
+  } elsif(ref($ref) ne 'HASH') {
+    warn "Error: command file '$file' didn't return a hash reference\n";
+    return 0;
+  }
+
+  return $ref;
+}
+
+
+# main()
+
+# $libdir = dirname(__FILE__) . '/lib';
+$libdir = '/opt/webenabled/lib/devpanel-cli/';
+
+%general_opts = (
+  'h|help'     => \$ro{help},
+  'd|debug'    => \$ro{debug},
+  's|silent'   => \$ro{silent},
+  'c|config=s' => \$ro{config_file},
+);
+
+$prog = basename($0);
+
+if($#ARGV < 0) {
+  &usage();
+}
+
+my %opts;
+my $operation;
+my $cmd_ref;
+
+&usage() if($#ARGV < 0);
+
+# determine first and second arguments, if are section/command or options
+if($#ARGV >= 0 && substr($ARGV[0], 0, 1) ne "-") {
+  # is the 1st argument, an option or a section
+  $section = lc(shift(@ARGV));
+  if(!is_valid_cmd_str($section)) {
+    warn "Error: section name (1st argument) has an invalid string format.\n";
+    exit(1);
+  }
+} elsif($#ARGV >= 0 && substr($ARGV[0], 0, 1) eq '-' &&
+  $ARGV[0] ne "-h" && $ARGV[0] ne "--help" && $ARGV[0] ne "-help") {
+  warn "Error: first argument in command line must be a command\n";
+  exit(1);
+}
+
+my $test_section_lib = sprintf('%s/%s.pl', $libdir, $section);
+my $test_section_dir = sprintf('%s/%s', $libdir, $section);
+if(-f $test_section_lib && !($cmd_ref = load_command_file($test_section_lib))) {
+  exit(1);
+} elsif(!$cmd_ref && ! -e $test_section_dir) {
+  warn "Error: unknown section\n";
+  exit(1);
+}
+
+if(defined($section) && $#ARGV >= 0 && substr($ARGV[0], 0, 1) ne "-") {
+  # if a section was defined in the previous test, this might be a command
+  $command = lc(shift(@ARGV));
+  if(!is_valid_cmd_str($command)) {
+    warn "Error: command name (2nd argument) has an invalid string format.\n";
+    exit(1);
+  }
+
+  my $test_cmd_file = sprintf('%s/%s/%s.pl', $libdir, $section, $command);
+  if(-f $test_cmd_file && !($cmd_ref = load_command_file($test_cmd_file))) {
+    exit(1);
+  } elsif(! -e $test_cmd_file) {
+    warn "Error: unknown command name.\n";
+    exit(1);
+  }
+}
+
+if(exists($cmd_ref->{getopt_params})) {
+  foreach my $key (keys %{ $cmd_ref->{getopt_params} }) {
+    $general_opts{$key} = $cmd_ref->{getopt_params}->{$key};
+  }
+}
+
+if(!GetOptions(%general_opts)) {
+  exit(1);
+}
+if(!($conf = cloudenabled_parse_conf($ro{config_file}))) {
+  exit(1);
+}
+
+if($ro{debug}) {
+  print "Parsed operation: ", Dumper($cmd_ref), "\n";
+}
+
+if(($ro{help} && defined($section) && !defined($command)) || !(keys %$cmd_ref)) {
+  print_section_help($section);
+  exit(0);
+} elsif($ro{help}) {
+  print_cmd_help($cmd_ref);
+  exit(0);
+}
+
+if(exists($cmd_ref->{req_params})) {
+  foreach my $param (keys %{ $cmd_ref->{req_params} }) {
+    if(!exists($ro{$param}) || !defined($ro{$param})) {
+      (my $param_tr = $param) =~ tr/_/-/;
+      print_cmd_help($cmd_ref, "missing option --$param_tr");
+      exit(1);
+    } else {
+      $req_params{$param} = $ro{$param};
+    }
+  }
+}
+
+if(exists($cmd_ref->{opt_params})) {
+  foreach my $param (keys %{ $cmd_ref->{opt_params} }) {
+    if(exists($ro{$param}) && defined($ro{$param})) {
+      $req_params{$param} = $ro{$param};
+    }
+  }
+}
+
+my $requires_auth = ( exists($cmd_ref->{requires_auth}) && $cmd_ref->{requires_auth} == 0) ? 0 : 1;
+my $is_local      = ( exists($cmd_ref->{is_local})      && $cmd_ref->{is_local} == 1)      ? 1 : 0;
+
+if(!$is_local && !exists($conf->{api_url})) {
+  warn "Error: missing config parameter api_url in config file '$ro{config_file}'\n";
+  exit(1);
+}
+
+if($requires_auth) {
+  foreach my $key (qw( api_key api_secret )) {
+    if(!exists($conf->{$key})) {
+      warn "Error: missing config parameter $key in config file '$ro{config_file}'\n";
+      exit(1);
+    }
+  }
+}
+
+if(!exists($cmd_ref->{run})) {
+  warn "Error: missing the function to run the code in operation.\n";
+  exit(1);
+} elsif(!ref($cmd_ref->{run}) || ref($cmd_ref->{run}) ne 'CODE') {
+  warn "Error: run function defined, but not a code reference.\n";
+  exit(1);
+}
+
+# before executing the request, check if there's a prerun function
+if(exists($cmd_ref->{prerun}) && ref($cmd_ref->{prerun}) &&
+  ref($cmd_ref->{prerun}) eq 'CODE') {
+
+  my $status = &{ $cmd_ref->{prerun} }($conf, \%ro, \%req_params);
+}
+
+my $http_rsp;
+if(!$is_local) {
+  $req_params{__method}  = $cmd_ref->{method};
+  $req_params{__api_url} = sprintf('%s/api/%s', $conf->{api_url}, $cmd_ref->{op});
+  $req_params{timestamp} = time();
+
+  if($requires_auth) {
+    $req_params{__key} = $conf->{api_secret};
+    $req_params{__headers}->{'X-Webenabled-Key'} = $conf->{api_key};
+
+    $conf->{'api_key'}    = exists($opts{'k'}) ? $opts{'k'} : $conf->{'api_key'};
+    $conf->{'api_url'}    = exists($opts{'u'}) ? $opts{'u'} : $conf->{'api_url'};
+    $conf->{'api_secret'} = exists($opts{'S'}) ? $opts{'S'} : $conf->{'api_secret'};
+  }
+
+  if($requires_auth) {
+    $http_rsp = ce_http_request_new(\%req_params);
+  } else {
+    $http_rsp = ce_http_request_unauth(\%req_params);
+  }
+
+  if($ro{debug}) {
+    print "Received HTTP response: ", Dumper($http_rsp), "\n";
+  }
+
+  if(!ce_was_successful($http_rsp)) {
+    warn sprintf("Error: response error. Returned: %s\n",
+                      $CE_OP_ST_MAP{$http_rsp->{status}});
+    if(exists($http_rsp->{'errmsg'})) {
+      warn sprintf("Error message: %s\n", $http_rsp->{'errmsg'});
+    }
+
+    exit(1);
+  }
+}
+
+my $status = &{ $cmd_ref->{run} }($conf, \%ro, $http_rsp);
+exit($status);
