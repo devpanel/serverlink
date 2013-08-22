@@ -113,8 +113,6 @@ set_global_variables() {
     return 1
   fi
 
-  _git_user="git"
-
   return 0
 }
 
@@ -227,26 +225,6 @@ add_custom_users_n_groups() {
 
 post_software_install() {
   local status
-
-  # start setting up user for git management
-  if ! getent passwd "$_git_user" &>/dev/null; then
-    useradd -m \
-    -c "account for managing DevPanel git repos. Please don't remove" "$_git_user"
-
-    if [ $? -eq 0 ]; then
-      su -l -s /bin/bash -c "[ ! -d ~/.ssh ] && mkdir -m 700 ~/.ssh ; \
-       [ -d ~/.ssh ] && ssh-keygen -f ~/.ssh/devpanel-admin -b 4096 -P ''" "$_git_user"
-
-      if [ $? -eq 0 ]; then
-        su -l -c "$webenabled_install_dir/bin/gitolite \
-                setup -pk ~/.ssh/devpanel-admin.pub" "$_git_user"
-      fi
-    else
-      echo -e "\n\nWarning: failed to setup account for git management\n\n" 1>&2
-      sleep 3
-    fi
-  fi
-  # end of git setup section
 
   # if the installation is not run from bootstrap then update devpanel.conf
   # when running from bootstrap, the values have already been filled
