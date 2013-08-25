@@ -229,7 +229,7 @@ post_software_install() {
   # if the installation is not run from bootstrap then update devpanel.conf
   # when running from bootstrap, the values have already been filled
   dp_config_file="$webenabled_install_dir/etc/devpanel.conf"
-  if [ -z "$from_bootstrap" -a -n "$dp_server_uuid" -a -n "$dp_server_secret_key" ]; then
+  if [ -n "$dp_server_uuid" -a -n "$dp_server_secret_key" ]; then
 
     ini_section_replace_key_value "$dp_config_file" taskd uuid "$dp_server_uuid"
     status=$?
@@ -255,7 +255,7 @@ post_software_install() {
   fi
 
   # if set, fill the api_url on the user_api section
-  if [ -z "$from_bootstrap" -a -n "$dp_user_api_url" ]; then
+  if [ -n "$dp_user_api_url" ]; then
     ini_section_replace_key_value "$dp_config_file" user_api api_url "$dp_user_api_url"
     if [ $? -ne 0 ]; then
       echo -e "\n\nWarning: unable to set user api url\n\n"
@@ -281,7 +281,7 @@ ServerName $dp_server_hostname
     fi
   fi
 
-  if [ -z "$from_bootstrap" -a -n "$dp_auto_register" ]; then
+  if [ -n "$dp_auto_register" ]; then
     ini_section_add_key_value "$dp_config_file" global auto_register 1
     if [ $? -ne 0 ]; then
       echo -e "\n\nWarning: unable to set auto_register on '$dp_config_file'\n\n"
@@ -289,7 +289,7 @@ ServerName $dp_server_hostname
     fi
   fi
 
-  if [ -z "$from_bootstrap" -a -n "$dp_tasks_api_url" ]; then
+  if [ -n "$dp_tasks_api_url" ]; then
     ini_section_replace_key_value "$dp_config_file" taskd api_url "$dp_tasks_api_url"
     if [ $? -ne 0 ]; then
       echo -e "\n\nWarning: unable to set taskd api url\n\n"
@@ -298,6 +298,12 @@ ServerName $dp_server_hostname
   fi
 
 
+  # when running manually (not from the automated install), we need to
+  # (re-)start taskd.
+  #
+  # when running from the front-end install (and installing from the
+  # bootstrap pkg), we don't restart taskd because it needs to notify the
+  # status of the installation script
   if [ -z "$from_bootstrap" ]; then
     "$webenabled_install_dir/libexec/system-services" devpanel-taskd stop
 
@@ -403,7 +409,15 @@ done
 [ -n "$OPTIND" -a $OPTIND -gt 1 ] && shift $(( $OPTIND - 1 )) 
 
 if [ -z "$webenabled_install_dir" ]; then
-  error "please specify the target installation directory with the -d option"
+  error "please specify the target installation directory with the -I option"
+fi
+
+if [[ "$webenabled_install_dir" =~ ^(/+\.*)+$ ]]; then
+  error "the install directory can't be equal /"
+fi
+
+if [ -n "$from_bootstrap" -a -e "$webenabled_install_dir" ]; then
+  rm -rf "$webenabled_install_dir"
 fi
 
 if [ -e "$webenabled_install_dir/config/os" ]; then
