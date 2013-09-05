@@ -2,3 +2,8 @@
 .*.sw[op]
 /etc/devpanel.conf
 /config/packages/*
+/bin/gitolite.d/
+/bin/utils
+/compat/w_/public_html/
+/config/names/
+/config/os
