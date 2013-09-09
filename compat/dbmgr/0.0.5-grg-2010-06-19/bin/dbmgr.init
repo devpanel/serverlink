@@ -20,20 +20,17 @@
 
 OWL_STARTUP_ENABLE=1
 
-self="${BASH_SOURCE[0]}"
-n=0
-while [ -h "$self" ]
-do
- self=`readlink "$self"`
- n=`expr $n + 1`
- [ $n -ge 10 ] && break
-done
+self=`readlink -e "${BASH_SOURCE[0]}"`
+if [ $? -ne 0 ]; then
+  echo "Error: unable to detect self executable path" 1>&2
+  exit 1
+fi
 
 dir=`dirname "$self"`
 
 case "$1" in
 start)
-	$dir/daemon-start
+	"$dir/daemon-start"
 	;;
 stop)
 	killall mysqld
@@ -41,11 +38,11 @@ stop)
 	sleep 5
 	;;
 restart)
-	$0 stop
-	$0 start
+	"$self" stop
+	"$self" start
 	;;
 status)
-	$dir/daemon-status --summary
+	"$dir/daemon-status" --summary
 	;;
 *)
 	echo "Usage: dbmgr {start|stop|restart|status}"
