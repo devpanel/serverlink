@@ -10,7 +10,7 @@ use CGI::Util (qw( escape ));
 use CGI;
 use Data::Dumper;
 
-our $debug = 1;
+our $debug = 0;
 our $cgi_param_separator = '&';
 
 our @EXPORT = (qw(
@@ -18,7 +18,8 @@ our @EXPORT = (qw(
   ce_task_ret_invalid_value ce_task_ret_missing_required
   ce_task_ret_nothing_updated ce_task_ret_permission_denied
   ce_task_ret_signature_error ce_task_ret_not_found
-  ce_task_was_successful
+  ce_task_was_successful ce_task_cgi_2_ref
+  ce_tasks_http_request
 ));
 
 sub ce_task_ret_success {
@@ -150,6 +151,11 @@ sub ce_tasks_http_request {
 
     $req->{whisker}->{proxy_host} = $p_host;
     $req->{whisker}->{proxy_port} = $p_port;
+  }
+
+  if($req->{whisker}->{ssl} > 0) {
+    $req->{whisker}->{ssl_save_info} = 1;
+    $req->{whisker}->{ssl_resume}    = 1;
   }
 
   my $method = defined($prms->{'__method'}) ? lc($prms->{'__method'}) : 'get';

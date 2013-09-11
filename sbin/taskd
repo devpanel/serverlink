@@ -15,7 +15,7 @@ use Getopt::Std (qw( getopts ));
 use POSIX;# qw( setsid :signal_h :errno_h :sys_wait_h );
 use Fcntl (qw( :DEFAULT :flock ));
 use Cloudenabled::Constants (qw( :DEFAULT %CE_TASKS_MSG_TYPES %CE_OP_ST_MAP ));
-use Cloudenabled::Util (qw( :DEFAULT ce_tasks_http_request ce_task_cgi_2_ref ));;
+use Cloudenabled::Util;
 use Cloudenabled::Tasks::Util;
 use Storable (qw( freeze thaw ));
 use Config::Tiny;
