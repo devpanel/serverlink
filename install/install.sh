@@ -178,6 +178,7 @@ install_ce_software() {
 
   echo "
 Include $webenabled_install_dir/compat/apache_include/*.conf
+Include $webenabled_install_dir/compat/apache_include/custom/*.conf
 Include $webenabled_install_dir/compat/apache_include/virtwww/*.conf" \
     >> "$webenabled_install_dir/compat/apache_include/webenabled.conf.main"
 
