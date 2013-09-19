@@ -25,7 +25,7 @@ debian_install_distro_packages() {
     curl apache2 libapache2-mod-macro apache2-suexec zlib1g libapache2-mod-fcgid \
     mysql-server git subversion \
     php5 php5-cli php-pear php5-gd php5-curl php5-mysql \
-    php5-cgi php5-mcrypt php5-sqlite libjson-xs-perl libnet-ssleay-perl
+    php5-cgi php5-mcrypt php5-sqlite libjson-xs-perl libcrypt-ssleay-perl
   do
     apt-get -y install $i
   done

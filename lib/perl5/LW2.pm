@@ -78,19 +78,18 @@ $PACKAGE='LW2';
     if ( !$@ ) {
         eval "use Net::SSLeay (qw( ERROR_NONE ))";    # do we have SSL support?
         if ( !$@ ) {
-            $LW_SSL_LIB   = 1;
-            $_SSL_LIBRARY = 'Net::SSLeay';
-            Net::SSLeay::load_error_strings();
-            Net::SSLeay::SSLeay_add_ssl_algorithms();
-            Net::SSLeay::randomize();
-
-        }
-        else {
             eval "use Net::SSL";
             if ( !$@ ) {
                 $LW_SSL_LIB   = 2;
                 $_SSL_LIBRARY = 'Net::SSL';
             }
+        }
+        else {
+            $LW_SSL_LIB   = 1;
+            $_SSL_LIBRARY = 'Net::SSLeay';
+            Net::SSLeay::load_error_strings();
+            Net::SSLeay::SSLeay_add_ssl_algorithms();
+            Net::SSLeay::randomize();
         }
 
         if ( $^O !~ /Win32/ ) {
