@@ -72,7 +72,8 @@ redhat_install_distro_packages() {
   done
 
   yum -y install perl perl-devel perl-Time-HiRes make php-pear git \
-    perl-Digest-HMAC perl-Digest-SHA perl-CGI mod_ssl perl-Crypt-SSLeay
+    perl-Digest-HMAC perl-Digest-SHA perl-CGI mod_ssl perl-Crypt-SSLeay \
+    perl-CGI-Session
 
   return 0
 }
