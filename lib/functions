@@ -14,6 +14,29 @@ wedp_warn() {
   echo "Warning: $msg" 1>&2
 }
 
+devpanel_auto_detect_distro() {
+  local distro=""
+
+  if hash rpm &>/dev/null && rpm -ql centos-release &>/dev/null; then
+    distro=centos
+  elif hash rpm &>/dev/null && rpm -ql redhat-release-server &>/dev/null; then
+    distro=redhat
+  elif hash rpm &>/dev/null && rpm -ql owl-hier >/dev/null 2>&1; then
+    distro=owl
+  elif hash lsb_release &>/dev/null && [ "`lsb_release -si 2>/dev/null`" == "Debian" ]; then
+    distro=debian
+  elif hash lsb_release &>/dev/null && [ "`lsb_release -si 2>/dev/null`" == "Ubuntu" ]; then
+    distro=ubuntu
+  fi
+
+  if [ -n "$distro" ]; then
+    echo $distro
+    return 0
+  else
+    return 1
+  fi
+}
+
 wedp_auto_detect_distro() {
   local distro=""
 
