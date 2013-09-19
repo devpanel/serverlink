@@ -305,7 +305,10 @@ ServerName $dp_server_hostname
   # when running from the front-end install (and installing from the
   # bootstrap pkg), we don't restart taskd because it needs to notify the
   # status of the installation script
-  if [ -z "$from_bootstrap" ]; then
+  if [ -z "$from_bootstrap" -a \
+      -n "$dp_tasks_api_url" -a -n "$dp_server_uuid" -a \
+      -n  "$dp_server_secret_key"  ]; then
+
     "$webenabled_install_dir/libexec/system-services" devpanel-taskd stop
 
     "$webenabled_install_dir/libexec/system-services" devpanel-taskd start
