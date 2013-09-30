@@ -8,14 +8,18 @@ usage() {
 
   Options:
     -m            move the file to a new name in case it already exists
+    -c <cmd_str>  prepend a forced command to the key
+    -a            output the line with the syntax ready to be piped to
+                  public-key-vhost stdin
+
     -h            displays the usage msg
 "
   exit 1
 }
 
 # main
-getopt_flags='hm'
-unset target_file move_existing
+getopt_flags='ahmc:'
+unset target_file move_existing format_add_stdin forced_command
 while getopts $getopt_flags OPTF; do
   case $OPTF in
     h)
@@ -23,6 +27,12 @@ while getopts $getopt_flags OPTF; do
       ;;
     m)
       move_existing=1
+      ;;
+    c)
+      forced_command="$OPTARG"
+      ;;
+    a)
+      format_add_stdin=1
       ;;
     *)
       usage
@@ -53,6 +63,16 @@ fi
 
 ssh-keygen -b 4096 -f "$target_file" -P '' &>/dev/null
 if [ $? -eq 0 ]; then
+  if [ -n "$format_add_stdin" ]; then
+    echo -n "+:"
+  fi
+
+  if [ -n "$forced_command" ]; then
+    cmd_tmpl='command="%s",no-port-forwarding,no-X11-forwarding,no-agent-forwarding,no-pty'
+    cmd_line=`printf $cmd_tmpl "$forced_command"`
+    echo -n "$cmd_line"' '
+  fi
+
   cat "$target_file.pub"
   if [ $? -ne 0 ]; then
     echo "Error: unable to display key contents" 1>&2
