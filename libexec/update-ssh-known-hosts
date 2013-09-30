@@ -1,0 +1,102 @@
+#!/bin/bash
+
+usage() {
+  echo "Usage: `basename "$0"` <action> <target_file>
+
+  Accepted actions: add_or_update, remove
+
+  This script reads one or more ssh keys from stdin and adds or deletes the 
+  keys on target_file.
+"
+  exit 1
+}
+
+error() {
+  local msg="$1"
+
+  echo "Error: $msg" 1>&2
+  exit 1
+}
+
+[ $# -eq 0 ] && usage
+
+file_dir=`dirname "${BASH_SOURCE[0]}"`
+lib_file="$file_dir/../lib/functions"
+if ! source "$lib_file"; then
+  error "unable to import library file '$lib_file'"
+fi
+
+getopt_flags='i'
+while getopts $getopt_flags OPTNAME; do
+  case $OPTNAME in
+    i)
+      input_file="$OPTARG"
+      ;;
+    *)
+      usage
+      ;;
+  esac
+done
+shift $(( $OPTIND - 1 ))
+
+action="$1"
+if [ -z "$action" ]; then
+  error "missing action parameter"
+fi
+
+target_file="$2"
+if [ ! -e "$target_file" ]; then
+  error "file '$target_file' doesn't exist"
+elif [ ! -f "$target_file" ]; then
+  error "path '$target_file' is not a regular file"
+elif [ ! -w "$target_file" ]; then
+  error "cannot write '$target_file'"
+fi
+
+declare -a keys
+declare -a fingerprints
+
+if [ "$action" != "add_or_update" -a "$action" != "remove" ]; then
+  error "unknown action"
+fi
+
+declare -i key_n=0
+while read ssh_key; do
+  key_n+=1
+  if fingerprint=`get_sshkey_fingerprint "$ssh_key" "$target_file"`; then
+    keys+=( "$ssh_key" )
+    fingerprints+=( $fingerprint )
+  else
+    error "could not calculate fingerprint of key $key_n"
+  fi
+done
+
+if [ "$action" == "add_or_update" ]; then
+  for ((i=0; i < ${#keys[*]}; i+=1)); do
+    key_fp=${fingerprints[$i]}
+    key_txt="${keys[$i]}"
+    if is_sshkey_in_keyfile "$key_fp" "$target_file"; then
+      echo "Warning: skipping key $(( $i + 1 )) (fp: $key_fp) already in file"
+      continue
+    else
+      if ! echo "$key_txt" >> "$target_file"; then
+        error "unable to add key $(( $i + 1 )) (fp: $key_fp)"
+      fi
+    fi
+  done
+elif [ "$action" == "remove" ]; then
+  for ((i=0; i < ${#keys[*]}; i+=1)); do
+    key_fp=${fingerprints[$i]}
+    key_txt="${keys[$i]}"
+    if ! is_sshkey_in_keyfile "$key_fp" "$target_file"; then
+      echo "Warning: skipping key $(( $i + 1 )) (fp: $key_fp) not in file"
+      continue
+    else
+      sed -i -e "$(( $i + 1 )) d" "$target_file"
+      if [ $? -ne 0 ]; then
+        echo "Warning: unable to remove key $(( $i + 1 )) from file '$target_file'" 1>&2
+        continue
+      fi
+    fi
+  done
+fi
