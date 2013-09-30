@@ -1,0 +1,49 @@
+#!/bin/bash
+
+usage() {
+  echo "Usage: `basename "$0"` [ options ] -- <rsync_args>
+
+  Options:
+    -N                            don't use the default filters
+"
+  exit 1
+}
+
+# main
+
+[ $# -eq 0 ] && usage
+
+unset no_default_filters
+getopt_flags='N'
+while getopts $getopt_flags OPTN; do
+  case "$OPTN" in
+    N)
+      no_default_filters=1
+      ;;
+    *)
+      exit 1
+      ;;
+  esac
+done
+[ $OPTIND -gt 1 ] && shift $(( $OPTIND - 1 ))
+
+pre_args=''
+dir=`dirname "${BASE_SOURCE[0]}"`
+real_path=`readlink -e "$dir"`
+if [ -z "$no_default_filters" -a -z "$real_path" ]; then
+  echo "Error: unable to determine the current directory" 1>&2
+  exit 1
+fi
+
+if [ -z "$no_default_filters" ]; then
+  if [ -f "$real_path/../config/sitesync-filters.txt" ]; then
+    default_filter_path="$real_path/../config/sitesync-filters.txt"
+  fi
+
+  if [ -f "$HOME/.devpanel/sitesync-filters.txt" ]; then
+    user_filters="$HOME/.devpanel/sitesync-filters.txt"
+  fi
+fi
+
+rsync ${default_filter_path:+-f '. '"$default_filter_path"} \
+  ${user_filters:+-f '. '"$user_filters"} -av "$@"
