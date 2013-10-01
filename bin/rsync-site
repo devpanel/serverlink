@@ -4,7 +4,9 @@ usage() {
   echo "Usage: `basename "$0"` [ options ] -- <rsync_args>
 
   Options:
-    -N                            don't use the default filters
+    -I                include the system default filters
+    -u                search for the user filters in ~/.devpanel/.rsync-filters
+    -i <file>         read filters from the specified file
 "
   exit 1
 }
@@ -13,12 +15,24 @@ usage() {
 
 [ $# -eq 0 ] && usage
 
-unset no_default_filters
-getopt_flags='N'
+unset include_system_filters include_file search_user_filters
+unset default_filter_file user_filters user_global_filters 
+
+getopt_flags='Iui:'
 while getopts $getopt_flags OPTN; do
   case "$OPTN" in
-    N)
-      no_default_filters=1
+    I)
+      include_system_filters=1
+      ;;
+    i)
+      include_file="$OPTARG"
+      if [ ! -e "$include_file" ]; then
+        echo "Error: include file path '$include_file' doesn't exist." 1>&2
+        exit 1
+      fi
+      ;;
+    u)
+      search_user_filters=1
       ;;
     *)
       exit 1
@@ -27,23 +41,28 @@ while getopts $getopt_flags OPTN; do
 done
 [ $OPTIND -gt 1 ] && shift $(( $OPTIND - 1 ))
 
-pre_args=''
 dir=`dirname "${BASE_SOURCE[0]}"`
 real_path=`readlink -e "$dir"`
-if [ -z "$no_default_filters" -a -z "$real_path" ]; then
+if [ -n "$include_system_filters" -a -z "$real_path" ]; then
   echo "Error: unable to determine the current directory" 1>&2
   exit 1
 fi
 
-if [ -z "$no_default_filters" ]; then
-  if [ -f "$real_path/../config/sitesync-filters.txt" ]; then
-    default_filter_path="$real_path/../config/sitesync-filters.txt"
+if [ -z "$include_system_filters" -a -e "$real_path/../config/rsync-site-filters" ]; then
+  default_filter_file="$real_path/../config/rsync-site-filters"
+fi
+
+if [ -n "$search_user_filters" ]; then
+  if [ -e "$HOME/.devpanel/.rsync-filters" ]; then
+    user_filters="$HOME/.devpanel/.rsync-site-filters"
   fi
 
-  if [ -f "$HOME/.devpanel/sitesync-filters.txt" ]; then
-    user_filters="$HOME/.devpanel/sitesync-filters.txt"
+  if [ -e "$real_path/../config/rsync-site-filters.local" ]; then
+    user_global_filters="$real_path/../config/rsync-site-filters.local"
   fi
 fi
 
-rsync ${default_filter_path:+-f '. '"$default_filter_path"} \
-  ${user_filters:+-f '. '"$user_filters"} -av "$@"
+rsync ${default_filter_file:+-f '. '"$default_filter_file"} \
+  ${user_filters:+-f '. '"$user_filters"} \
+  ${user_global_filters:+-f '. '"$user_global_filters"} \
+  -av "$@"
