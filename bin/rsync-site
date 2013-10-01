@@ -48,7 +48,7 @@ if [ -n "$include_system_filters" -a -z "$real_path" ]; then
   exit 1
 fi
 
-if [ -z "$include_system_filters" -a -e "$real_path/../config/rsync-site-filters" ]; then
+if [ -n "$include_system_filters" -a -e "$real_path/../config/rsync-site-filters" ]; then
   default_filter_file="$real_path/../config/rsync-site-filters"
 fi
 
