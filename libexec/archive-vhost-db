@@ -2,6 +2,19 @@
 
 dir=`dirname "$0"`
 
+usage() {
+  echo "Usage: `basename "$0"` [ options ] <vhost> <archive_dir>
+
+  Options:
+    -n            don't lock DB tables when dumping
+    -e            accept the use of an existing non-empty archive_dir
+
+
+Archives all databases from vhost into the archive dir.
+"
+  exit 1
+}
+
 dir_empty()
 {
   local dir="$1"
@@ -28,19 +41,54 @@ run2()
   "$@"
 }
 
-vhost="$1"
-archive_dir="$2"
-archive_list="$archive_dir/databases"
-archive_my_cnf="$archive_dir/b_.my.cnf"
-user="b_$vhost"
-home="`eval \"echo ~$user\"`"
-date=`date  +'%Y%m%d'`
-
 run_su()
 {
   echo "  running su -s /bin/sh -l -c '$@' $user" >&2
   su -s /bin/bash -l -c "$*" "$user"
 }
+
+create_file()
+{
+  local file="$1"
+  set -C
+  echo -n >"$file"
+  local status=$?
+  set +C
+  return $status
+}
+
+
+# main
+[ $# -lt 2 ] && usage
+
+unset dont_lock_tables use_existing_dir
+getopt_flags='ne'
+while getopts $getopt_flags OPTN; do
+  case $OPTN in
+    n)
+      dont_lock_tables=1
+      ;;
+    e)
+      use_existing_dir=1
+      ;;
+    *)
+      exit 1
+      ;;
+  esac
+done
+[ $OPTIND -gt 0 ] && shift $(( $OPTIND - 1 ))
+
+vhost="$1"
+archive_dir="$2"
+if [ -z "$vhost" -o -z "$archive_dir" ]; then
+  usage
+fi
+
+archive_list="$archive_dir/databases"
+archive_my_cnf="$archive_dir/b_.my.cnf"
+user="b_$vhost"
+home="`eval \"echo ~$user\"`"
+date=`date  +'%Y%m%d'`
 
 if ! `id -u "$user" 2>/dev/null >/dev/null`
 then
@@ -54,24 +102,24 @@ then
   exit 1
 fi
 
-if ! dir_empty "$archive_dir"
+if [ -z "$use_existing_dir" ] && ! dir_empty "$archive_dir"
 then
   echo "Target directory is not empty: $archive_dir" >&2
   exit 1
+elif [ -n "$use_existing_dir" -a ! -e "$archive_dir" ]; then
+  echo "Error: path '$archive_dir' doesn't exist" 1>&2
+  exit 1
+elif [ -n "$use_existing_dir" -a ! -d "$archive_dir" ]; then
+  echo "Error: path '$archive_dir' is not a directory" 1>&2
+  exit 1
+elif [ -z "$use_existing_dir" ]; then
+  echo "Locking $archive_dir..."
+  if ! run mkdir -p "$archive_dir"; then
+    echo "Error: unable to create dir '$archive_dir'" 1>&2
+    exit 1
+  fi
 fi
 
-create_file()
-{
-  local file="$1"
-  set -C
-  echo -n >"$file"
-  local status=$?
-  set +C
-  return $status
-}
-
-echo "Locking $archive_dir..."
-run mkdir -p "$archive_dir" || exit 1
 if ! create_file "$archive_list" 2>/dev/null
 then
   echo "$archive_list must not exist" >&2
@@ -102,7 +150,7 @@ for database in $list
 do
   archive_file="$archive_dir/$database.sql"
   echo "Archiving $database to $archive_file"
-  if ! run2 $dir/dbmgr-mysql-as-root "$user" mysqldump --extended-insert=false "$database" 2>&1 >"$archive_file" ||
+  if ! run2 $dir/dbmgr-mysql-as-root "$user" mysqldump --extended-insert=false ${dont_lock_tables:+--skip-lockdb} "$database" 2>&1 >"$archive_file" ||
      ! run gzip "$archive_file"
   then
     echo "Aborting" >&2
