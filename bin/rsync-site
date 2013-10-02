@@ -41,7 +41,7 @@ while getopts $getopt_flags OPTN; do
 done
 [ $OPTIND -gt 1 ] && shift $(( $OPTIND - 1 ))
 
-dir=`dirname "${BASE_SOURCE[0]}"`
+dir=`dirname "${BASH_SOURCE[0]}"`
 real_path=`readlink -e "$dir"`
 if [ -n "$include_system_filters" -a -z "$real_path" ]; then
   echo "Error: unable to determine the current directory" 1>&2
