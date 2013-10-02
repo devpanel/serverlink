@@ -13,6 +13,7 @@ Usage: $prog [ options ] <vhost>
     -b  <string>          sets the initial string delimiter
     -B  <string>          sets the ending  string delimiter
     -R  <string>          sets the realm of authentication
+    -p                    read user passwords from stdin
 
 EOF
 
@@ -26,7 +27,8 @@ realm="CloudEnabled"
 
 [ $# -lt 1 ] && usage
 
-getopt_flags='b:B:R:'
+unset read_pw_stdin
+getopt_flags='pb:B:R:'
 while getopts $getopt_flags OPT ; do
   case "$OPT" in
     b)
@@ -37,6 +39,9 @@ while getopts $getopt_flags OPT ; do
       ;;
     R)
       realm="$OPTARG"
+      ;;
+    p)
+      read_pw_stdin=1
       ;;
     ?)
       usage
@@ -88,14 +93,16 @@ status=$?
     echo "Warning: unable to create and set permissions for .htpasswd." 1>&2
   fi
 
-  su -l -c "$dir_bin/htpasswd-bulk ~/.htpasswd" "$user"
-  status=$?
-  if [ $status -eq 0 ]; then
-    echo "Successfully password protected vhost." 1>&2
-    exit 0
-  else
-    echo "Error: vhost protected, but unable to add users. htpasswd-bulk returned $status" 1>&2
-    exit $status
+  if [ -n "$read_pw_stdin" ]; then
+    su -l -c "$dir_bin/htpasswd-bulk ~/.htpasswd" "$user"
+    status=$?
+    if [ $status -eq 0 ]; then
+      echo "Successfully password protected vhost." 1>&2
+      exit 0
+    else
+      echo "Error: vhost protected, but unable to add users. htpasswd-bulk returned $status" 1>&2
+      exit $status
+    fi
   fi
 else
   echo "Warning: vhost already locked." 1>&2
