@@ -104,8 +104,9 @@ fi
 
 git init  || { echo "Error while executing: git init" 1>&2 ; exit 1; }
 git add . || { echo "Error while executing: git add"  1>&2 ; exit 1; }
-git -c "user.name=$author_name" -c "user.email=$author_email" \
- commit -am "$commit_msg" || { echo "Error while executing: git commit" 1>&2 ; exit 1; }
+git commit --author="$author_name <$author_email>" -am "$commit_msg" || \
+  { echo "Error while executing: git commit" 1>&2 ; exit 1; }
+
 git remote add origin "$git_proto"://"$repo_user"@"$git_server"/"$repo_name"
 
 git push origin master || \
