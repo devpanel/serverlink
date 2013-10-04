@@ -173,7 +173,7 @@ if [ -e "$target_file" ]; then
 fi
 
 echo "Started packing .tar file '$target_file'"
-tar -C "$tmp_pack_dir" -cpf "$target_file" .
+tar --exclude='*~' --exclude='*.sw[opq]' -C "$tmp_pack_dir" -cpf "$target_file" .
 status=$?
 if [ $status -ne 0 ]; then
   error "unable to create target file '$target_file'. tar returned $status"
