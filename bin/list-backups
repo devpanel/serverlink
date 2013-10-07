@@ -52,7 +52,7 @@ elif [ -z "$1" -a ${#USER} -gt 2 -a "${USER:0:2}" == "w_" ]; then
     error "unable to get user info"
   fi
     
-  IFS=" " read a b c d e user_home g <<< "$user_entry"
+  IFS=":" read a b c d e user_home g <<< "$user_entry"
 
   if [ ! -d "$user_home" ]; then
     error "couldn't find user home directory '$user_home'. Unable to auto detect dir. Please specify the directory manually. For help use -h"
