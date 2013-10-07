@@ -66,5 +66,9 @@ elif [ -z "$1" ]; then
   error "unable to auto detect directory. Please specify it manually (see usage, use argument -h)."
 fi
 
+if ! cd "$backups_dir"; then
+  error "unable to cd into dir '$backups_dir'"
+fi
+
 find_printf_fmt='%Ts\t%s\t%p\n'
-find "$backups_dir" -maxdepth $max_depth -type f \( -iname \*.tgz -o -iname \*.zip \) -printf "$find_printf_fmt" 2>/dev/null
+find . -maxdepth $max_depth -type f \( -iname \*.tgz -o -iname \*.zip \) -printf "$find_printf_fmt" 2>/dev/null
