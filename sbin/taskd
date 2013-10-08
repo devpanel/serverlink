@@ -997,13 +997,21 @@ sub http_child {
       $msg->{__op} = 'run_tasks';
       freeze_and_send(\*TO_PARENT, $msg);
     } elsif($msg_type == CE_TASK_MSG_CHANGE_POLL) {
-      $v{poll_interval}        = $msg->{P};
-      $v{error_retry_intvl} = $msg->{E};
-      taskd_log(undef, "changing poll interval to $v{poll_interval} seconds");
-      if(exists($msg->{e})) {
-        $v{poll_expires} = time() + $msg->{e};
+      if(!exists($v{poll_expires}) ||
+           (exists($v{poll_expires}) && $msg->{P} <= $v{poll_interval})) {
+        # only change the poll interval if not inside a timed one
+        # or if it's inside a time interval and the new one has a poll
+        # interval <= the current interval
+        $v{poll_interval}        = $msg->{P};
+        $v{error_retry_intvl} = $msg->{E};
+        taskd_log(undef, "changing poll interval to $v{poll_interval} seconds"
+                    . (exists($msg->{e}) ? " for $msg->{e} seconds" : ""));
+        if(exists($msg->{e})) {
+          $v{poll_expires} = time() + $msg->{e};
+        }
       }
-      ran_internal($msg->{_I});
+
+      ran_internal($msg->{_I}); # notify as run in all cases
     } elsif($msg_type == CE_TASK_MSG_NO_MESSAGES && $debug) {
       debug_log("No messages available. Doing nothing.");
     }
