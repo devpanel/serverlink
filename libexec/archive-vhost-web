@@ -83,7 +83,12 @@ then
   echo "$archive_id must not exist" >&2
   exit 1
 fi
-chmod +w "$archive_id" || exit 1
+
+if ! chmod +w "$archive_id"; then
+  echo "Error: unable to make file '$archive_id' writable." 1>&2
+  exit 1
+fi
+
 abort_if_exists "$archive_file"
 abort_if_exists "$archive_logs"
 abort_if_exists "$archive_conf"
@@ -91,26 +96,43 @@ abort_if_exists "$archive_conf"
 
 echo "Archiving $home to $archive_file"
 echo "$vhost" >$archive_id
-run tar --exclude ./public_html/gen/archive -C "$home" -zcf "$archive_file" . || exit 1
-
-echo "Copying apache config to $archive_conf"
-cp "$conf" "$archive_conf" || exit 1
-
-echo "Archiving $logs_dir to $archive_logs"
-run mkdir -p "$archive_dir" || exit 1
-run tar -C "$logs_dir" -zcf "$archive_logs" . #|| exit 1
-
-echo "Archiving crontab to $archive_crontab"
-if crontab_contents=`run_su crontab -l` 2>&1
-then
-  echo "$crontab_contents" | sed '/^#/{1d;2d;3d}' |run tee "$archive_crontab" || exit 1
-else
-  touch "$archive_crontab" || exit 1
+if ! run tar --exclude ./public_html/gen/archive -C "$home" -zcf "$archive_file" .; then
+  echo "Error: unable to archive the site files" 1>&2
+  exit 1
 fi
 
-if [ $opt_P = 1 ]
-then
+echo "Copying apache config to $archive_conf"
+if ! cp "$conf" "$archive_conf"; then
+  echo "Error: unable to copy apache file '$conf' to '$archive_conf'" 1>&2
+  exit 1
+fi
+
+echo "Archiving $logs_dir to $archive_logs"
+if ! run mkdir -p "$archive_dir"; then
+  echo "Error: unable to create dir '$archive_dir'" 1>&2
+  exit 1
+fi
+
+if ! run tar --ignore-failed-read -C "$logs_dir" -zcf "$archive_logs" .; then
+  echo "Warning: unable to archive the log files..." 1>&2
+fi
+
+echo "Archiving crontab to $archive_crontab"
+if crontab_contents=`run_su crontab -l` 2>&1; then
+  echo "$crontab_contents" | sed '/^#/{1d;2d;3d}' |run tee "$archive_crontab"
+  if [ $? -ne 0 ]; then
+    echo "Error: unable to archive crontab contents" 1>&2
+    exit 1
+  fi
+else
+  touch "$archive_crontab"
+fi
+
+if [ $opt_P = 1 ]; then
   echo "Saving shadow to $archive_shadow"
-  getent shadow "$user" >"$archive_shadow" || exit 1
+  if ! getent shadow "$user" >"$archive_shadow"; then
+    echo "Error: unable to archive shadow file for user '$user'" 1>&2
+    exit 1
+  fi
 fi
 
