@@ -121,6 +121,8 @@ centos_adjust_system_config() {
   [ -e "$_apache_includes_dir"/php.conf ] && mv -f "$_apache_includes_dir"/php.conf{,.disabled}
 
   sed -i 's/^\(session.save_path.\+\)/;\1/' /etc/php.ini
+  sed -i 's/^[[:space:]]*\(short_open_tag\).\+/\1 = On/' /etc/php.ini
+
   # openssl req -subj "/C=--/ST=SomeState/L=SomeCity/O=SomeOrganization/OU=SomeOrganizationalUnit/CN=*.`hostname`" -new -x509 -days 3650 -nodes -out /opt/webenabled/config/os/pathnames/etc/ssl/certs/wildcard -keyout /opt/webenabled/config/os/pathnames/etc/ssl/keys/wildcard
 
   ln -s "$install_dir/compat/dbmgr/current/bin/dbmgr.init" /etc/init.d/devpanel-dbmgr
