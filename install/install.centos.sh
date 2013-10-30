@@ -118,7 +118,7 @@ centos_adjust_system_config() {
   #else
   #  echo 'Listen 443' >> /etc/httpd/conf.d/webenabled.conf
   #fi
-  [ -e "$_apache_includes_dir"/conf.d/php.conf ] && mv -f "$_apache_includes_dir"/conf.d/php.conf{,.disabled}
+  [ -e "$_apache_includes_dir"/php.conf ] && mv -f "$_apache_includes_dir"/php.conf{,.disabled}
 
   sed -i 's/^\(session.save_path.\+\)/;\1/' /etc/php.ini
   # openssl req -subj "/C=--/ST=SomeState/L=SomeCity/O=SomeOrganization/OU=SomeOrganizationalUnit/CN=*.`hostname`" -new -x509 -days 3650 -nodes -out /opt/webenabled/config/os/pathnames/etc/ssl/certs/wildcard -keyout /opt/webenabled/config/os/pathnames/etc/ssl/keys/wildcard
