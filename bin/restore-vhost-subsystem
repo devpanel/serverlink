@@ -18,14 +18,18 @@ usage() {
   printf "  %s < options >\n" "$progname"
   printf "\n  Options:\n"
   printf "  -s         -- seed app name
-  -i         -- read admin's password from stdin
-  -I         -- set admin's password identical to mysql normal user password
-                found in .mysql.passwd
-  -P         -- ACTION: reset all passwords (no ACTIONS at all defaults to -P)
-  -p         -- ACTION: only reset admin's password
-  -m ADDRESS -- ACTION: change admin's email
-  -M         -- ACTION: send new passwords to admin's address (requires -P)
-  -n         -- ACTION: only update settings.php\n\n"
+  -i              -- read admin's password from stdin
+  -I              -- set admin's password identical to mysql normal user password
+                     found in .mysql.passwd
+  -P              -- ACTION: reset all passwords (no ACTIONS at all defaults to -P)
+  -p              -- ACTION: only reset admin's password
+  -m ADDRESS      -- ACTION: change admin's email
+  -M              -- ACTION: send new passwords to admin's address (requires -P)
+  -n              -- ACTION: only update settings.php
+  -O name=value   -- set the name and value of a variable
+     Accepted variables:
+        use_my_cnf (=1) - read mysql credentials from ~/.my.cnf
+"
 
   [ -n "$msg" ] && echo $msg
 
@@ -107,22 +111,33 @@ is_valid_subsystem_name_format() {
 
 set_database_variables() {
   echo "Obtaining mysql credentials"
-  mysql_passwd_file="$vhost_config_dir/.mysql.passwd"
-  [ -r "$mysql_passwd_file" ] || mysql_passwd_file="$home/.mysql.passwd"
+  if [ -n "$use_my_cnf" ]; then
+    mysql_host=`ini_section_get_key_value ~/.my.cnf client host`
+    mysql_user=`ini_section_get_key_value ~/.my.cnf client user`
+    mysql_port=`ini_section_get_key_value ~/.my.cnf client port`
+    mysql_password=`ini_section_get_key_value  ~/.my.cnf client password`
 
-  if [ -n "$WEBENABLED_HOSTING_LINK_MYSQL_USER" ]
-  then
-    mysql_user="$WEBENABLED_HOSTING_LINK_MYSQL_USER"
-    mysql_password="$WEBENABLED_HOSTING_LINK_MYSQL_PASSWORD"
-    mysql_host="$WEBENABLED_HOSTING_LINK_MYSQL_HOST"
-    mysql_port="$WEBENABLED_HOSTING_LINK_MYSQL_PORT"
-    [ -z "$port" ] && port=3306
+    # remove leading and trailing quotes from the password
+    mysql_password=${mysql_password#[\"\']}
+    mysql_password=${mysql_password%[\"\']}
   else
-    mysql_user=$user_web
-    mysql_password=`run2 awk "BEGIN{FS=\":\";}\\$1==\"$user_web\"{s=\\$0; gsub(\"^[^:]+:\",\"\",s);print s;f=1}END{exit f==0}" "$mysql_passwd_file"` || error
-    mysql_host=`run2 awk "BEGIN{FS=\":\"}\\$1==\"$user_db\"{print \\$5;f=1}END{exit f==0}" $dir/../config/os/pathnames/opt/dbmgr/config/db-daemons.conf` || error
-    mysql_port=`run2 awk "BEGIN{FS=\":\"}\\$1==\"$user_db\"{print \\$6;f=1}END{exit f==0}" $dir/../config/os/pathnames/opt/dbmgr/config/db-daemons.conf` || error
+    mysql_passwd_file="$vhost_config_dir/.mysql.passwd"
+    [ -r "$mysql_passwd_file" ] || mysql_passwd_file="$home/.mysql.passwd"
 
+    if [ -n "$WEBENABLED_HOSTING_LINK_MYSQL_USER" ]
+    then
+      mysql_user="$WEBENABLED_HOSTING_LINK_MYSQL_USER"
+      mysql_password="$WEBENABLED_HOSTING_LINK_MYSQL_PASSWORD"
+      mysql_host="$WEBENABLED_HOSTING_LINK_MYSQL_HOST"
+      mysql_port="$WEBENABLED_HOSTING_LINK_MYSQL_PORT"
+      [ -z "$port" ] && port=3306
+    else
+      mysql_user=$user_web
+      mysql_password=`run2 awk "BEGIN{FS=\":\";}\\$1==\"$user_web\"{s=\\$0; gsub(\"^[^:]+:\",\"\",s);print s;f=1}END{exit f==0}" "$mysql_passwd_file"` || error
+      mysql_host=`run2 awk "BEGIN{FS=\":\"}\\$1==\"$user_db\"{print \\$5;f=1}END{exit f==0}" $dir/../config/os/pathnames/opt/dbmgr/config/db-daemons.conf` || error
+      mysql_port=`run2 awk "BEGIN{FS=\":\"}\\$1==\"$user_db\"{print \\$6;f=1}END{exit f==0}" $dir/../config/os/pathnames/opt/dbmgr/config/db-daemons.conf` || error
+
+    fi
   fi
 
   urlencoded_mysql_password="`urlencode \"$mysql_password\"`" || exit 1
@@ -177,6 +192,7 @@ cleanup_env_vars() {
   action_opt="";
   opt_m="" opt_M="" opt_p="" opt_P="" subsystem="" opt_i="" opt_I="" opt_n=""
   buffer=""  email=""
+  use_my_cnf=""
 }
 
 set_global_variables() {
@@ -359,6 +375,21 @@ test_target_account() {
 
   return 0
 }
+
+is_in_array() {
+  local value="$1"
+  shift
+  local v
+
+  for v in "$@"; do
+    if [ "$v" == "$value" ]; then
+      return 0
+    fi
+  done
+
+  return 1
+}
+
 ##########
 # main()
 ##########
@@ -368,7 +399,17 @@ test_target_account() {
 
 cleanup_env_vars
 
-while getopts 'pPMm:s:iIn' OPTOPT; do
+# load auxiliary functions from devPanel library
+curr_dir="`dirname "${BASH_SOURCE[0]}"`"
+lib_file="`readlink -e "$curr_dir/../lib/functions"`"
+if [ $? -ne 0 ]; then
+  error "unable to find auxiliary library file. Should have been at ../lib/functions from this script directory"
+fi
+if ! source "$lib_file"; then
+  error "unable to load the external library file '$lib_file'"
+fi
+
+while getopts 'pPMm:s:O:iIn' OPTOPT; do
   if ! echo "$OPTOPT" | egrep -q '^(s|i|I)$';then
     action_opt=1
   fi
@@ -382,6 +423,47 @@ while getopts 'pPMm:s:iIn' OPTOPT; do
     P) opt_P=1;;
     p) opt_p=1;;
     n) opt_n=1;;
+    O)
+      # the logic below reads name=value strings passed to the -O option
+      accepted_opt_names=('use_my_cnf')
+      prev_char=""
+      name_value=""
+      declare -i n_pos=0
+      while [ $n_pos -lt ${#OPTARG} ]; do
+        char=${OPTARG:$n_pos:1}
+        n_pos+=1
+        if [ "$char" == "," ] && [ -z "$name_value" -o -z "$prev_char" ]; then
+          continue
+        elif [ "$char" == "," -a "$prev_char" != "\\" -a "$prev_char" != "," ]; then
+          received_options+=( "$name_value" )
+          name_value=""
+          prev_char=""
+        elif [ "$char" == "," -a "$prev_char" == "\\" ]; then
+          name_value="${name_value:0:$(( $n_pos - 1 ))},"
+          prev_char="$char"
+        else
+          name_value+="$char"
+          prev_char="$char"
+        fi
+      done
+      [ -n "$name_value" ] && received_options+=("$name_value")
+
+      for name_value in "${received_options[@]}"; do
+        if ! [[ "$name_value" =~ ^([A-Za-z0-9_]+)=(.+) ]]; then
+          error "option specified in an invalid format: '$name_value'"
+        fi
+
+        opt_name=${name_value%%=*}
+        opt_value=${name_value#*=}
+
+        if is_in_array "$opt_name" ${accepted_opt_names[@]}; then
+          eval "$opt_name"=`printf '%q' "$opt_value"`
+        else
+          error "unknown option name '$opt_name'"
+        fi
+      done
+      ;;
+
     *) error;;
   esac
 done
