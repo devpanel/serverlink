@@ -25,6 +25,20 @@ dir=`dirname "${BASH_SOURCE[0]}"`
 
 [ -z "$1" -o -z "$2" ] && usage
 
+while getopts "PpinS:I" OPTOPT
+do
+  case "$OPTOPT" in
+    P) options="${options+ }-P";;
+    p) target_options="$target_options${target_options+ }-p";;
+    i) opt_i=1; target_options="$target_options${target_options+ }-i";;
+    I) opt_I=1;;
+    n) opt_n=1; target_options="$target_options${target_options+ }-n";;
+    S) opt_S="$OPTARG";;
+    *) exit 1;
+  esac
+done
+shift `expr $OPTIND - 1`
+
 source="$1"
 target="$2"
 shift
@@ -43,7 +57,7 @@ then
 fi
   
 echo "Cloning stage 2: restore $target from $TMP_FILE"
-$dir/restore-vhost "$target" "$TMP_FILE" || error
+$dir/restore-vhost $target_options "$target" "$TMP_FILE" || error
 echo "Cloning stage 3: removing archive from $TMP_FILE"
 rm -f "$TMP_FILE"
 echo Done
