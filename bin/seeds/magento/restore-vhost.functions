@@ -53,6 +53,14 @@ magento_update_config()
    s/^\([[:space:]]*\)\(<password>.*<\/password>\)/\1<password><![CDATA[$sedencoded_mysql_password]]><\/password>/;
    s/^\([[:space:]]*\)\(<dbname>.*<\/dbname>\)/\1<dbname><![CDATA[$hosting_database]]><\/dbname>/;
   " | run_ised "$home/public_html/$vhost/app/etc/local.xml"
+
+  # if use_my_cnf is set, then configure magento to disable the URL
+  # redirects to the base URL (for the child sites to be usable without
+  # redirecting to the main site)
+  if [ -n "$use_my_cnf" ]; then
+    local sql="UPDATE core_config_data SET value = '0' WHERE path = 'web/url/redirect_to_base'"
+    mysql -D "$hosting_database" -e "$sql"
+  fi
 }
 
 magento_custom() {
