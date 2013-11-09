@@ -177,16 +177,18 @@ while read passwd_line; do
 
     # if there's a matching db in db-daemons, then ...
     if db_line=`egrep "^b_$vhost:" "$install_dir/compat/dbmgr/config/db-daemons.conf"`; then
-      if ! getent passwd "b_$vhost" &>/dev/null; then
-        userdel -r "$user"
-      else
+      if getent passwd "b_$vhost" &>/dev/null; then
         # b_et:mysql:5.1.41-gm2:/home/clients/databases/b_et/mysql:127.0.0.1:4018:::
         IFS=":" read db_user db_type db_ver db_dir db_host db_port remaining <<< "$db_line"
         if fuser "$db_port/tcp" &>/dev/null; then
           "$install_dir/libexec/remove-vhost" "$vhost" - >/dev/null
+          if [ $? -ne 0 ]; then
+            "$install_dir/libexec/remove-user" "b_$vhost"
+            "$install_dir/libexec/remove-user" "w_$vhost"
+          fi
         else
-          userdel -r "b_$vhost"
-          userdel -r "$user"
+          "$install_dir/libexec/remove-user" "b_$vhost"
+          "$install_dir/libexec/remove-user" "w_$vhost"
         fi
       fi
     else # no matching db, just remove the w_ user
