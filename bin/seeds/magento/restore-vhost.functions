@@ -54,13 +54,17 @@ magento_update_config()
    s/^\([[:space:]]*\)\(<dbname>.*<\/dbname>\)/\1<dbname><![CDATA[$hosting_database]]><\/dbname>/;
   " | run_ised "$home/public_html/$vhost/app/etc/local.xml"
 
-  # if use_my_cnf is set, then configure magento to disable the URL
-  # redirects to the base URL (for the child sites to be usable without
-  # redirecting to the main site)
-  if [ -n "$use_my_cnf" ]; then
-    local sql="UPDATE core_config_data SET value = '0' WHERE path = 'web/url/redirect_to_base'"
-    mysql -D "$hosting_database" -e "$sql"
-  fi
+  # magento by default does some redirections with the full URL, but this
+  # causes several incoveniences when the database is shared by different
+  # development sites. So by default we configure it to use "absolute local"
+  # URLs that are safe in all cases
+  mysql -D "$hosting_database" -e "
+    UPDATE core_config_data SET value = '/' WHERE path = 'web/secure/base_link_url';
+    UPDATE core_config_data SET value = 'media/' WHERE path = 'web/unsecure/base_media_url';
+    UPDATE core_config_data SET value = 'js/' WHERE path = 'web/unsecure/base_js_url';
+    UPDATE core_config_data SET value = 'skin/' WHERE path = 'web/unsecure/base_skin_url';
+    UPDATE core_config_data SET value = '0' WHERE path = 'web/url/redirect_to_base';
+"
 }
 
 magento_custom() {
