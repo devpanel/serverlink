@@ -67,7 +67,7 @@ centos_install_distro_packages() {
     #   5.2.10-1.el5.centos (CentOS) from CentOS-Testing.repo; required for phpmyadmin
 
 
-  for module in dba gd ldap mysql pdo xml xmlrpc process soap; do
+  for module in dba gd ldap mysql pdo xml xmlrpc process soap mbstring; do
     yum -y install php$phpver-$module
   done
 
