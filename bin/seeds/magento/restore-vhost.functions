@@ -59,6 +59,7 @@ magento_update_config()
   # development sites. So by default we configure it to use "absolute local"
   # URLs that are safe in all cases
   mysql -D "$hosting_database" -e "
+    UPDATE core_config_data SET value = '/' WHERE path = 'web/unsecure/base_link_url';
     UPDATE core_config_data SET value = '/' WHERE path = 'web/secure/base_link_url';
     UPDATE core_config_data SET value = 'media/' WHERE path = 'web/unsecure/base_media_url';
     UPDATE core_config_data SET value = 'js/' WHERE path = 'web/unsecure/base_js_url';
