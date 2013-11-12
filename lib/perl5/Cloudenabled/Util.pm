@@ -109,6 +109,15 @@ sub cloudenabled_daemonize {
     die sprintf("Error: can't redirect stdout to %s: %s\n", $log_file, $!);
 
   open(STDERR, '>&STDOUT') or die "Error: can't dup stderr to stdout. $!\n";
+
+  # enable autoflush
+  my $dist_fh = select(STDOUT);
+  $| = 1;
+
+  select(STDERR);
+  $| = 1;
+
+  select($dist_fh);
 }
 
 sub cloudenabled_sign_data {
