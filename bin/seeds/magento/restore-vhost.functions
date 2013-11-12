@@ -65,9 +65,9 @@ magento_update_config()
       UPDATE core_config_data SET value = 'http://$fqdn/' WHERE path='web/secure/base_url';
       UPDATE core_config_data SET value = '/' WHERE path = 'web/unsecure/base_link_url';
       UPDATE core_config_data SET value = '/' WHERE path = 'web/secure/base_link_url';
-      UPDATE core_config_data SET value = 'media/' WHERE path = 'web/unsecure/base_media_url';
-      UPDATE core_config_data SET value = 'js/' WHERE path = 'web/unsecure/base_js_url';
-      UPDATE core_config_data SET value = 'skin/' WHERE path = 'web/unsecure/base_skin_url';
+      UPDATE core_config_data SET value = '{{unsecure_base_url}}media/' WHERE path = 'web/unsecure/base_media_url';
+      UPDATE core_config_data SET value = '{{unsecure_base_url}}js/' WHERE path = 'web/unsecure/base_js_url';
+      UPDATE core_config_data SET value = '{{unsecure_base_url}}skin/' WHERE path = 'web/unsecure/base_skin_url';
       UPDATE core_config_data SET value = '0' WHERE path = 'web/url/redirect_to_base';
     "
   fi
