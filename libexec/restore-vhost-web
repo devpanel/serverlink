@@ -173,12 +173,11 @@ if [ $create_vhost -eq 1 ]; then
 
   run "$chcgi" "$user" +2
   run "$chcgi" "$user" +7
-  run_su ln -snf $logs_dir logs
-
 fi
 
 if ! run_su tar -C "$home" \
   $([ $sync -eq 1 ] && echo -n --exclude='settings.php') \
+  --exclude ./logs \
   $([ $sync -eq 1 ] && echo -n --exclude='default.settings.php') -zxpf - <"$archive_file"; then
   error "unable to extract files"
 fi
