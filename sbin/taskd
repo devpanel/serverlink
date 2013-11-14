@@ -333,6 +333,8 @@ sub sig_hup_main {
 }
 
 sub master_sig_chld {
+  my @report_ar = ();
+
   while((my $pid = waitpid(-1, WNOHANG)) > 0) {
     my $ret = $? >> 8;
 
@@ -362,19 +364,22 @@ sub master_sig_chld {
                                 $task_id, $pid, $task_ref->{activity_id},
                                 $task_ref->{attempt_id}, $ret));
 
-    my $report_r = {
-        __op => 'report',
-           T => $task_id,
-           e => time(),
-           r => $ret,
-    };
-
-    freeze_and_send(\*TO_CHILD, $report_r);
+    push(@report_ar, 
+                        {
+                               T => $task_id,
+                               e => time(),
+                               r => $ret,
+                        }
+    );
 
     delete($v{"pid:$pid:task"});
     delete($v{"activity:" . $task_ref->{activity_id} . ":pid"});
     delete($v{"task:$task_id"});
     undef($task_ref);
+  }
+
+  if($#report_ar >= 0) {
+    freeze_and_send(\*TO_CHILD, { __op => 'report', tasks => \@report_ar });
   }
 
   $SIG{CHLD} = \&master_sig_chld;
@@ -1190,8 +1195,10 @@ sub child_parse_n_execute {
       push(@set_running_failed, $msg->{task_id});
     }
   } elsif($op eq 'report') {
-    if(!report_task($msg)) {
-      push(@report_failed, $msg);
+    foreach my $task (@{ $msg->{tasks} }) {
+      if(!report_task($task)) {
+        push(@report_failed, $task);
+      }
     }
   } else {
     taskd_log(CE_TASKD_ERR, "unknown operation requested");
