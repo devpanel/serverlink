@@ -379,7 +379,11 @@ sub master_sig_chld {
   }
 
   if($#report_ar >= 0) {
-    freeze_and_send(\*TO_CHILD, { __op => 'report', tasks => \@report_ar });
+    freeze_and_send(\*TO_CHILD, {
+                         __op           => 'report',
+                         tasks          => \@report_ar,
+                         n_exec_child   => $v{n_exec_child} 
+    });
   }
 
   $SIG{CHLD} = \&master_sig_chld;
@@ -859,11 +863,11 @@ sub read_freezed_msg {
       }
 
       $debug and debug_log("read cicle($n_cicle) buf of size: $n_read bytes from $peer_name");
-      if($total_bytes < 4) {
+      if($total_bytes <= 4) {
         next; # didn't read enough yet
       } elsif($total_bytes >= 4 && $msg_len == 0) {
         $msg_len = unpack("I", $buf_acum);
-        $debug and debug_log("read msg_len $msg_len bytes from $peer_name");
+         $debug and debug_log("read msg_len $msg_len bytes from $peer_name");
       }
 
       if($total_bytes > CE_TASKD_MAX_OUTPUT_SIZE) {
@@ -871,7 +875,8 @@ sub read_freezed_msg {
         goto RESET_BUFFERS;
       }
 
-      if($total_bytes >= $msg_len + 4) {
+      # if($total_bytes >= $msg_len + 4) {
+      while($total_bytes >= $msg_len + 4) {
         $msg = eval { thaw(substr($buf_acum, 4, $msg_len)); };
         if($@) {
           taskd_log(CE_TASKD_ERR, "unable to parse msg from $peer_name: $@");
@@ -880,10 +885,23 @@ sub read_freezed_msg {
           $debug and debug_log("read $total_bytes bytes in previous request from $peer_name");
           &$exec_func($msg);
         }
-        goto RESET_BUFFERS;
-      } else {
-        $debug and debug_log("read $total_bytes of $msg_len bytes from $peer_name, waiting for more data");
-        next;
+
+        if(length($buf_acum) > $msg_len + 4) {
+          # has more than one message in the buffer
+          $buf_acum = substr($buf_acum, $msg_len + 4);
+          $total_bytes = length($buf_acum);
+
+          if($msg_len = unpack("I", $buf_acum)) {
+            next;
+          } else {
+            # couldn't get the msg_len from the additional data
+            $msg_len = 0;
+            goto RESET_BUFFERS; # additional data is junk,
+                                # just reset the buffers
+          }
+        } else {
+          last;
+        }
       }
 
       RESET_BUFFERS:
@@ -979,52 +997,55 @@ sub http_child {
       }
     }
 
-    my $msg = retrieve_msgs();
-    $debug and debug_log("Received msg = ", $msg);
-    exists($msg->{_w}) and taskd_log(CE_TASKD_WARN, "server warned: ". $msg->{_w});
-    my $status = $msg->{_s};
+    if($v{can_run} > 0) {
+      my $msg = retrieve_msgs();
+      $debug and debug_log("Received msg = ", $msg);
+      exists($msg->{_w}) and taskd_log(CE_TASKD_WARN, "server warned: ". $msg->{_w});
+      my $status = $msg->{_s};
 
-    if(!ce_task_was_successful($msg)) {
-      log_msg_err("Unable to retrieve messages. Server returned:", $msg);
-      delete($v{session_id}) if(exists($v{session_id}));
-      delete($v{session_last_used}) if(exists($v{session_last_used}));
+      if(!ce_task_was_successful($msg)) {
+        log_msg_err("Unable to retrieve messages. Server returned:", $msg);
+        delete($v{session_id}) if(exists($v{session_id}));
+        delete($v{session_last_used}) if(exists($v{session_last_used}));
 
-      $debug and debug_log("Sleeping for $v{error_retry_intvl} seconds");
-      sleep($v{error_retry_intvl});
-      next;
-    }
-
-    if(!exists($msg->{_M})) {
-      taskd_log(CE_TASKD_ERR, "message type missing in request. Probably a server problem");
-      goto REPORT_AND_WAIT;
-    } elsif(!exists($CE_TASKS_MSG_TYPES{$msg->{_M}})) {
-      taskd_log(CE_TASKD_ERR, "unknown message type '$msg->{_M}'. taskd is probably outdated");
-      goto REPORT_AND_WAIT;
-    }
-
-    my $msg_type = $msg->{_M};
-    if($msg_type == CE_TASK_MSG_RUN_TASKS) {
-      $msg->{n} == 0 and goto REPORT_AND_WAIT;
-      $msg->{__op} = 'run_tasks';
-      freeze_and_send(\*TO_PARENT, $msg);
-    } elsif($msg_type == CE_TASK_MSG_CHANGE_POLL) {
-      if(!exists($v{poll_expires}) ||
-           (exists($v{poll_expires}) && $msg->{P} <= $v{poll_interval})) {
-        # only change the poll interval if not inside a timed one
-        # or if it's inside a time interval and the new one has a poll
-        # interval <= the current interval
-        $v{poll_interval}        = $msg->{P};
-        $v{error_retry_intvl} = $msg->{E};
-        taskd_log(undef, "changing poll interval to $v{poll_interval} seconds"
-                    . (exists($msg->{e}) ? " for $msg->{e} seconds" : ""));
-        if(exists($msg->{e})) {
-          $v{poll_expires} = time() + $msg->{e};
-        }
+        $debug and debug_log("Sleeping for $v{error_retry_intvl} seconds");
+        sleep($v{error_retry_intvl});
+        next;
       }
 
-      ran_internal($msg->{_I}); # notify as run in all cases
-    } elsif($msg_type == CE_TASK_MSG_NO_MESSAGES && $debug) {
-      debug_log("No messages available. Doing nothing.");
+      if(!exists($msg->{_M})) {
+        taskd_log(CE_TASKD_ERR, "message type missing in request. Probably a server problem");
+        goto REPORT_AND_WAIT;
+      } elsif(!exists($CE_TASKS_MSG_TYPES{$msg->{_M}})) {
+        taskd_log(CE_TASKD_ERR, "unknown message type '$msg->{_M}'. taskd is probably outdated");
+        goto REPORT_AND_WAIT;
+      }
+
+      my $msg_type = $msg->{_M};
+      if($msg_type == CE_TASK_MSG_RUN_TASKS) {
+        $msg->{n} == 0 and goto REPORT_AND_WAIT;
+        $msg->{__op} = 'run_tasks';
+        $v{can_run} -= $msg->{n};
+        freeze_and_send(\*TO_PARENT, $msg);
+      } elsif($msg_type == CE_TASK_MSG_CHANGE_POLL) {
+        if(!exists($v{poll_expires}) ||
+             (exists($v{poll_expires}) && $msg->{P} <= $v{poll_interval})) {
+          # only change the poll interval if not inside a timed one
+          # or if it's inside a time interval and the new one has a poll
+          # interval <= the current interval
+          $v{poll_interval}        = $msg->{P};
+          $v{error_retry_intvl} = $msg->{E};
+          taskd_log(undef, "changing poll interval to $v{poll_interval} seconds"
+                      . (exists($msg->{e}) ? " for $msg->{e} seconds" : ""));
+          if(exists($msg->{e})) {
+            $v{poll_expires} = time() + $msg->{e};
+          }
+        }
+
+        ran_internal($msg->{_I}); # notify as run in all cases
+      } elsif($msg_type == CE_TASK_MSG_NO_MESSAGES && $debug) {
+        debug_log("No messages available. Doing nothing.");
+      }
     }
       
   REPORT_AND_WAIT:
@@ -1172,7 +1193,7 @@ sub master_parse_n_execute {
 }
 
 sub child_parse_n_execute {
-  my $msg = shift;
+  my($msg) = @_;
 
   if(!defined($msg)) {
     return 0;
@@ -1195,6 +1216,9 @@ sub child_parse_n_execute {
       push(@set_running_failed, $msg->{task_id});
     }
   } elsif($op eq 'report') {
+    $v{n_exec_child} = $msg->{n_exec_child};
+    $v{can_run}      = $v{max_exec_child} - $v{n_exec_child};
+
     foreach my $task (@{ $msg->{tasks} }) {
       if(!report_task($task)) {
         push(@report_failed, $task);
