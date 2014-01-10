@@ -65,6 +65,11 @@ debian_adjust_system_config() {
   [ -e /etc/init.d/dbmgr ] && rm -f /etc/init.d/dbmgr
   ln -s "$install_dir"/compat/dbmgr/current/bin/dbmgr.init /etc/init.d/devpanel-dbmgr
   update-rc.d devpanel-dbmgr defaults
+
+  local taskd_init=/etc/init.d/devpanel-taskd
+  if [ -L "$taskd_init" -o -e "$taskd_init" ]; then
+    update-rc.d devpanel-taskd defaults
+  fi
 }
 
 debian_post_users_n_groups() {
