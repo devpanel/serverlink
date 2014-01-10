@@ -108,7 +108,8 @@ sub initializeVariables {
   $v->{log_file} = ce_is_hash_key_empty($v, 'log_file') ? 
                    sprintf("%s/%s.log", $v->{work_dir}, $v{p_profile}) : $v->{log_file};
 
-  $v->{pid_file} = sprintf("%s/%s.pid", $v->{work_dir}, $v{p_profile});
+  $v->{pid_file} = ($> == 0 ? "/var/run/$v{p_profile}.pid" :
+                    sprintf("%s/%s.pid", $v->{work_dir}, $v{p_profile}));
 
   $v->{max_output_size} = ce_is_hash_key_empty($conf, 'max_output_size') ?
                         CE_TASKD_MAX_OUTPUT_SIZE : $conf->{max_output_size};
@@ -1353,6 +1354,13 @@ if(!flock(LOCK_FILE, LOCK_EX | LOCK_NB)) {
   exit(1);
 }
 
+if(exists($opts{F})) { # run in foreground
+  open(TASKD_LOG, '>&STDOUT') or die "Error: can't dup stdout to log file. $!\n";
+  open(STDERR, '>&STDOUT') or die "Error: can't dup stderr to stdout. $!\n";
+} else {
+  cloudenabled_daemonize($v{log_file});
+}
+
 if(!open(PID_FILE, '>', $v{pid_file})) {
   warn "Error: couldn't open pid file '$v{pid_file}': $!\n";
   flock(LOCK_FILE, LOCK_UN);
@@ -1368,12 +1376,6 @@ if(!(print PID_FILE $$, "\n")) {
 }
 close(PID_FILE);
 
-if(exists($opts{F})) { # run in foreground
-  open(TASKD_LOG, '>&STDOUT') or die "Error: can't dup stdout to log file. $!\n";
-  open(STDERR, '>&STDOUT') or die "Error: can't dup stderr to stdout. $!\n";
-} else {
-  cloudenabled_daemonize($v{log_file});
-}
 
 local $SIG{CHLD} = \&master_sig_chld;
 local $SIG{HUP}  = \&sig_hup_main;
