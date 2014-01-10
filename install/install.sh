@@ -377,9 +377,6 @@ while getopts $getopt_flags OPTS; do
       ;;
     I)
       webenabled_install_dir="$OPTARG"
-      if [ -d "$webenabled_install_dir" ]; then
-        error "directory '$webenabled_install_dir' already exists"
-      fi
       ;;
     V)
       webenabled_distro_version="$OPTARG"
@@ -422,6 +419,8 @@ fi
 
 if [ -n "$from_bootstrap" -a -e "$webenabled_install_dir" ]; then
   rm -rf "$webenabled_install_dir"
+elif [ -z "$from_bootstrap" ] && [ -L "$webenabled_install_dir" -o -e "$webenabled_install_dir" ]; then
+  error "directory '$webenabled_install_dir' already exists"
 fi
 
 if [ -e "$webenabled_install_dir/config/os" ]; then
