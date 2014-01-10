@@ -31,6 +31,8 @@ declare -a bootstrap_files=( \
   'lib/perl5/' \
   'sbin/taskd' \
   'libexec/system-services' \
+  'bin/run-vhost-shell' \
+  'libexec/run-root-shell' \
   'libexec/download-installer'
 )
 
