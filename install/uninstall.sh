@@ -197,6 +197,13 @@ while read passwd_line; do
   fi
 done < <(getent passwd | egrep ^w_)
 
+# remove database users in case it didn't have the w_user companion on
+# previous loop
+while read passwd_line; do
+  IFS=":" read user x uid gid gecos home shell <<< "$passwd_line"
+  userdel -r "$user"
+done < <(getent passwd | egrep ^b_)
+
 for D in /home/clients/databases/*; do
   fuser -k "$D/mysql" 
 done
