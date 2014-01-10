@@ -89,9 +89,7 @@ sub initializeVariables {
 
   foreach my $k (keys %$config_defaults) {
     if(ce_is_hash_key_empty($conf, $k)) {
-      $v->{$k} = $config_defaults->{$k};
-    } else {
-      $v->{$k} = $conf->{$k};
+      $conf->{$k} = $v->{$k} = $config_defaults->{$k};
     }
   }
 
@@ -100,7 +98,8 @@ sub initializeVariables {
   $v->{set_running}       = [];
   $v->{can_run}           = 0;
 
-  $v->{work_dir} =~ s#/$##g;
+  $v->{work_dir}    =~ s#/$##g;
+  $v->{scripts_dir} =~ s#/$##g;
 
   $v->{output_tmp_dir} = sprintf("%s/%s_output", $v->{work_dir}, $v{p_profile});
   $v->{lock_file} = sprintf("%s/%s.lock", $v->{work_dir}, $v{p_profile});
@@ -341,9 +340,9 @@ sub master_sig_chld {
 
     if($pid eq $v{http_pid}) {
       taskd_log(CE_TASKD_ERR, "http child died (had pid: $v{http_pid})");
+      $master_io->remove(*FROM_CHILD);
       close(FROM_CHILD);
       close(TO_CHILD);
-      $master_io->remove(*FROM_CHILD);
       delete($v{http_pid});
       return;
     }
