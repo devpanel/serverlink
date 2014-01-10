@@ -30,6 +30,13 @@ ubuntu_install_distro_packages() {
   do
     apt-get -y install $i
   done
+
+  # this is Ubuntu specific, that right now doesn't ship with a default MTA
+  # if there isn't anything listening on port 25/tcp then we install Postfix
+  # for the sites to be able to send e-mail
+  if ! fuser -s 25/tcp; then
+    apt-get install postfix
+  fi
 }
 
 ubuntu_adjust_system_config() {
