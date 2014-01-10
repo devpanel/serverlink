@@ -875,6 +875,10 @@ sub read_freezed_msg {
         goto RESET_BUFFERS;
       }
 
+      if($total_bytes < $msg_len) {
+        next;
+      }
+
       # if($total_bytes >= $msg_len + 4) {
       while($total_bytes >= $msg_len + 4) {
         $msg = eval { thaw(substr($buf_acum, 4, $msg_len)); };
