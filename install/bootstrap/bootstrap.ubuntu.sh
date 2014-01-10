@@ -2,5 +2,6 @@
 
 bootstrap_ubuntu() {
   export DEBIAN_FRONTEND='noninteractive'
-  apt-get -y install libnet-ssleay-perl libjson-xs-perl
+  apt-get update
+  apt-get -y install libcrypt-ssleay-perl libjson-xs-perl ca-certificates git
 }
