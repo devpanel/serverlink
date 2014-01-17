@@ -22,11 +22,12 @@ use Config::Tiny;
 
 use constant CE_TASKD_VERSION => '1.2.4.1';
 
-use constant CE_TASKD_WARN    => 1;
-use constant CE_TASKD_ERR     => 2;
-use constant CE_TASKD_DEBUG   => 4;
-use constant CE_TASKD_STD     => 8;
-use constant CE_TASKD_RAW     => 16;
+use constant CE_TASKD_WARN          =>  1;
+use constant CE_TASKD_ERR           =>  2;
+use constant CE_TASKD_DEBUG         =>  4;
+use constant CE_TASKD_STD           =>  8;
+use constant CE_TASKD_RAW           => 16;
+use constant CE_TASKD_WARN_STDOUT   => 32;
 
 use constant CE_TASKD_MAX_OUTPUT_SIZE => 1024 * 1024;
 
@@ -102,7 +103,8 @@ sub initializeVariables {
   $v->{scripts_dir} =~ s#/$##g;
 
   $v->{output_tmp_dir} = sprintf("%s/%s_output", $v->{work_dir}, $v{p_profile});
-  $v->{lock_file} = sprintf("%s/%s.lock", $v->{work_dir}, $v{p_profile});
+  $v->{lock_file} = ($> == 0 ? "/var/run/.$v{p_profile}.lock" :
+                      sprintf("%s/%s.lock", $v->{work_dir}, $v{p_profile}));
 
   $v->{log_file} = ce_is_hash_key_empty($v, 'log_file') ? 
                    sprintf("%s/%s.log", $v->{work_dir}, $v{p_profile}) : $v->{log_file};
@@ -205,19 +207,6 @@ sub validate_config {
     return 0;
   }
 
-  foreach my $dir (qw( work_dir output_tmp_dir scripts_dir )) {
-    if(!-e $v->{$dir}) {
-      taskd_log(CE_TASKD_RAW,
-        "Error: directory '$v->{$dir}' ($dir) doesn't exist.\n");
-      return 0;
-    } elsif(! -d $v->{$dir}) {
-      taskd_log(CE_TASKD_RAW, 
-        "Error: path '$v->{$dir}' ($dir) is not a directory.\n");
-      return 0;
-    }
-  }
-
-
   if($> == 0 && !ce_is_hash_key_empty($conf, 'unpriv_user') &&
       ce_is_hash_key_empty($v, 'unpriv_user')) {
 
@@ -234,6 +223,32 @@ sub validate_config {
     return 0;
   }
 
+
+  return 1;
+}
+
+sub validate_file_permissions {
+  my($v) = @_;
+
+  foreach my $dir (qw( work_dir output_tmp_dir scripts_dir )) {
+    if(!-e $v->{$dir}) {
+      taskd_log(CE_TASKD_RAW | CE_TASKD_WARN_STDOUT,
+        "Error: directory '$v->{$dir}' ($dir) doesn't exist.\n");
+      return 0;
+    } elsif(! -d $v->{$dir}) {
+      taskd_log(CE_TASKD_RAW | CE_TASKD_WARN_STDOUT,
+        "Error: path '$v->{$dir}' ($dir) is not a directory.\n");
+      return 0;
+    }
+  }
+
+  foreach my $dir (qw( output_tmp_dir )) {
+    if(!-w $v->{$dir}) {
+      taskd_log(CE_TASKD_RAW | CE_TASKD_WARN_STDOUT, 
+        "Error: directory '$v->{$dir}' ($dir) is not writable.\n");
+      return 0;
+    }
+  }
 
   return 1;
 }
@@ -638,6 +653,10 @@ sub taskd_log {
 
   if(substr($msg, length($msg) - 1) ne "\n") {
     $msg .= "\n";
+  }
+
+  if($flag & CE_TASKD_WARN_STDOUT) {
+    warn $msg;
   }
 
   ce_log(\*STDOUT, $prep . $msg);
@@ -1353,6 +1372,14 @@ if(exists($opts{T})) {
   exit(0);
 }
 
+if(!fix_directories_struct_perms(\%v)) {
+  exit(1);
+}
+
+if(!validate_file_permissions(\%v)) {
+  exit(1);
+}
+
 if(!open(LOCK_FILE, '>', $v{lock_file})) {
   warn "Error: unable to open lock file '$v{lock_file}' for writing. $!\n";
   exit(1);
@@ -1385,10 +1412,6 @@ if(!(print PID_FILE $$, "\n")) {
   exit(1);
 }
 close(PID_FILE);
-
-if(!fix_directories_struct_perms(\%v)) {
-  exit(1);
-}
 
 local $SIG{CHLD} = \&master_sig_chld;
 local $SIG{HUP}  = \&sig_hup_main;
