@@ -142,7 +142,8 @@ sub initializeVariables {
 sub fix_directories_struct_perms {
   my($v) = @_;
 
-  my $op_perm = oct(2770);
+  my $op_perm_dec = 2770;
+  my $op_perm_oct = oct($op_perm_dec);
 
   foreach my $dir (qw( work_dir output_tmp_dir )) {
     if(! -e $v->{$dir} && !mkdir($v->{$dir})) {
@@ -151,10 +152,25 @@ sub fix_directories_struct_perms {
     }
 
     if(-d $v->{$dir}) {
-      my $d_mode = (stat($v->{$dir}))[2];
-      if(($d_mode & $op_perm) != $op_perm && !chmod($op_perm, $v->{$dir})) {
-        warn "Error: unable to set permissions directory '$dir': $!\n";
-        return 0;
+      my($d_mode_oct, $d_gid) = (stat($v->{$dir}))[2,5];
+      my $d_mode_dec = sprintf("%04o", $d_mode_oct & 07777);
+
+      if($> == 0 && exists($v->{unpriv_gid}) && defined($v->{unpriv_gid}) &&
+         $v->{unpriv_gid} != $d_gid) {
+         taskd_log(undef, "fixing the ownership of directory $v->{$dir} (setting gid $v->{unpriv_gid}, was $d_gid)");
+         if(!chown(0, $v->{unpriv_gid}, $v->{$dir})) {
+           taskd_log(CE_TASKD_ERR, "unable to set directory permissions $v->{$dir}: $!");
+           return 0;
+         }
+      }
+
+      if($> == 0 && $d_mode_dec != $op_perm_dec) {
+        taskd_log(undef, "fixing permissions of directory $v->{$dir}, setting to $op_perm_dec (was $d_mode_dec)");
+
+        if(!chmod($op_perm_oct, $v->{$dir})) {
+          taskd_log(CE_TASKD_ERR, "unable to set permissions directory '$dir': $!\n");
+          return 0;
+        }
       }
     }
   }
@@ -1327,10 +1343,6 @@ if(_has_missing_config_directives($conf)) {
 
 initializeVariables($conf, \%config_defaults, \%v);
 
-if(!fix_directories_struct_perms(\%v)) {
-  exit(1);
-}
-
 if(!validate_config($conf, \%v)) {
   warn "Error: found problem validating configuration. Exiting.\n";
   exit(1);
@@ -1340,7 +1352,6 @@ if(exists($opts{T})) {
   print "Successfully validated configuration file. Exiting.\n";
   exit(0);
 }
-
 
 if(!open(LOCK_FILE, '>', $v{lock_file})) {
   warn "Error: unable to open lock file '$v{lock_file}' for writing. $!\n";
@@ -1375,6 +1386,9 @@ if(!(print PID_FILE $$, "\n")) {
 }
 close(PID_FILE);
 
+if(!fix_directories_struct_perms(\%v)) {
+  exit(1);
+}
 
 local $SIG{CHLD} = \&master_sig_chld;
 local $SIG{HUP}  = \&sig_hup_main;
