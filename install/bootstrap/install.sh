@@ -13,6 +13,7 @@ Usage: $prog [ options ] <-u server_uuid> <-k server_key>
     -k server_key     the server secret key to use on taskd
     -A taskd_api      the api url to use on taskd
     -U api_url        the address of the user api url
+    -D scripts_dir    the dir to use as scripts_dir on taskd
     -d                enable debug mode
 "
 
@@ -36,8 +37,6 @@ error() {
 
 # main
 
-[ $# -lt 2 ] && usage
-
 if [ $EUID -ne 0 ]; then
   error "this script requires ROOT privileges to run successfully"
 fi
@@ -49,10 +48,11 @@ if ! source "$source_dir/root/lib/functions"; then
   error "unable to import library '$source_dir/root/lib/functions'"
 fi
 
-getopt_flags='du:k:A:U:'
-taskd_api="https://tasks.devpanel.com/"
+getopt_flags='Pdu:k:A:U:D:'
+provisioner_repo="https://github.com/devpanel/paas-provisioner"
 
-unset dp_server_uuid dp_server_key dp_server_hostname
+unset dp_server_uuid dp_server_key dp_server_hostname is_provisioner
+unset scripts_dir
 while getopts $getopt_flags OPT; do
   case "$OPT" in
     u)
@@ -70,11 +70,24 @@ while getopts $getopt_flags OPT; do
     U)
       dp_user_api_url="$OPTARG"
       ;;
+    P)
+      is_provisioner=1
+      ;;
+    D)
+      scripts_dir="$OPTARG"
+      ;;
     *)
       exit 1
   esac
 done
 [ -n $OPTIND -a $OPTIND -gt 1 ] && shift $(( $OPTIND - 1 ))
+
+# the lines below are to be uncommented out when this script is served
+# through the install URL
+#dp_server_uuid=""
+#dp_server_key=""
+#taskd_api=""
+#is_provisioner=1
 
 if [ -z "$dp_server_uuid" ]; then
   error "the server uuid was not provided. Please pass it with the option -u"
@@ -124,10 +137,45 @@ fi
 trap 'ex=$?; rm -f "$lock_file" ; trap - EXIT INT HUP TERM; exit $ex' EXIT INT HUP TERM
 
 dp_user="devpanel"
-if ! getent passwd "$dp_user" &>/dev/null; then
-  useradd -m -c "$comment" -d "/home/$dp_user" "$dp_user"
-  if [ $? -ne 0 ]; then
-    error "unable to create user '$dp_user'"
+dp_group="$dp_user"
+if [ "$linux_distro" == "macosx" ]; then
+  if ! dscl . -read "/Groups/$dp_group" &>/dev/null; then
+    next_gid==$(dscl . -list /Groups PrimaryGroupID | awk 'BEGIN{i=0}{if($2>i)i=$2}END{print i+1}')
+    if [ -z "$next_gid" ]; then
+      error "unable to get the next gid to create the group $dp_group"
+    fi
+
+    if ! dscl . -create "/Groups/$dp_group"; then
+      error "unable to create group /Groups/$dp_group"
+    fi
+
+    dscl . -append "/Groups/$dp_group" gid "$next_gid"
+  fi
+
+  if ! id "$dp_user" &>/dev/null; then
+    # got from https://gist.github.com/steakknife/941862
+    next_uid=$(dscl . -list /Users UniqueID | awk 'BEGIN{i=0}{if($2>i)i=$2}END{print i+1}')
+    if [ -z "$next_uid" ]; then
+      error "unable to get the next uid to create the user $dp_user"
+    fi
+
+    next_gid=${next_gid:-20}
+    if ! dscl . -create "/Users/$dp_user"; then
+      error "unable to create user /Users/$dp_user"
+    fi
+
+    dscl . -create "/Users/$dp_user"  UserShell /bin/bash
+    dscl . -create "/Users/$dp_user"  RealName "devpanel user"
+    dscl . -create "/Users/$dp_user"  UniqueID "$next_uid"
+    dscl . -create "/Users/$dp_user"  PrimaryGroupID "$next_gid"
+    dscl . -create "/Users/$dp_user"  NFSHomeDirectory "/Users/$dp_user"
+  fi
+else
+  if ! getent passwd "$dp_user" &>/dev/null; then
+    useradd -m -c "$comment" -d "/home/$dp_user" "$dp_user"
+    if [ $? -ne 0 ]; then
+      error "unable to create user '$dp_user'"
+    fi
   fi
 fi
 
@@ -160,11 +208,23 @@ if [ -n "$dp_user_api_url" ]; then
   ini_section_replace_key_value "$config_file" user_api api_url "$dp_user_api_url"
 fi
 
+if [ -n "$scripts_dir" ]; then
+  ini_section_add_key_value "$config_file" taskd scripts_dir "$scripts_dir"
+fi
+
 "$DP_TARGET_DIR/libexec/system-services" devpanel-taskd start
 status=$?
 if [ $status -ne 0 ]; then
   error "unable to start taskd. Returned $status"
 fi
 
+if [ -n "$is_provisioner" -a "$is_provisioner" != 0 ]; then
+  ( cd "$DP_TARGET_DIR" && git clone "$provisioner_repo" )
+  if [ $? -ne 0 ]; then
+    error "failed to clone the provisioner repository"
+  fi
+fi
+
 echo "Successfully deployed taskd"
+
 exit 0

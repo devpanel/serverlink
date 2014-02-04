@@ -33,7 +33,9 @@ declare -a bootstrap_files=( \
   'libexec/system-services' \
   'bin/run-vhost-shell' \
   'libexec/run-root-shell' \
-  'libexec/download-installer'
+  'libexec/download-installer' \
+  'install/uninstall.sh' \
+  'install/uninstall.macosx.sh'
 )
 
 [ $# -lt 2 ] && usage
