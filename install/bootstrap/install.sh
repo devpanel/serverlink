@@ -14,6 +14,7 @@ Usage: $prog [ options ] <-u server_uuid> <-k server_key>
     -A taskd_api      the api url to use on taskd
     -U api_url        the address of the user api url
     -D scripts_dir    the dir to use as scripts_dir on taskd
+    -N                don't start taskd after install
     -d                enable debug mode
 "
 
@@ -212,17 +213,18 @@ if [ -n "$scripts_dir" ]; then
   ini_section_add_key_value "$config_file" taskd scripts_dir "$scripts_dir"
 fi
 
-"$DP_TARGET_DIR/libexec/system-services" devpanel-taskd start
-status=$?
-if [ $status -ne 0 ]; then
-  error "unable to start taskd. Returned $status"
-fi
-
 if [ -n "$is_provisioner" -a "$is_provisioner" != 0 ]; then
   ( cd "$DP_TARGET_DIR" && git clone "$provisioner_repo" )
   if [ $? -ne 0 ]; then
     error "failed to clone the provisioner repository"
   fi
+fi
+
+# taskd needs to start after the provisioner files are checked out
+"$DP_TARGET_DIR/libexec/system-services" devpanel-taskd start
+status=$?
+if [ $status -ne 0 ]; then
+  error "unable to start taskd. Returned $status"
 fi
 
 echo "Successfully deployed taskd"
