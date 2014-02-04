@@ -53,6 +53,25 @@ debian_service_action() {
   "/etc/init.d/$service" "$action"
 }
 
+macosx_service_action() {
+  local service="$1"
+  local action="$2"
+
+  local macos_action=""
+  local service_path="/System/Library/LaunchDaemons/com.devpanel.$service.plist"
+
+  if [ "$action" == "start" ]; then
+    macos_action="load"
+  elif [ "$action" == "stop" ]; then
+    macos_action="unload"
+  else
+    echo "$FUNCNAME(): unknown action" 1>&2
+    return 1
+  fi
+
+  launchctl "$macos_action" "$service_path"
+}
+
 # main
 
 [ $# -lt 2 ] && usage

@@ -1,5 +1,10 @@
 #!/bin/bash
 
+# avoid a warning on MacOS X because md5sum doesn't exist
+if [ -n "$OSTYPE" ] && [[ "$OSTYPE" =~ ^darwin ]] && hash md5 &>/dev/null; then
+  hash -p $(which md5) md5sum
+fi
+
 error() {
   local msg="$1"
   local exit_code="${2:-1}"
@@ -27,6 +32,8 @@ devpanel_auto_detect_distro() {
     distro=debian
   elif hash lsb_release &>/dev/null && [ "`lsb_release -si 2>/dev/null`" == "Ubuntu" ]; then
     distro=ubuntu
+  elif [[ "$OSTYPE" =~ ^darwin ]]; then
+    distro=macosx
   fi
 
   if [ -n "$distro" ]; then
@@ -56,6 +63,8 @@ wedp_auto_detect_distro() {
     distro=ubuntu
   elif [ -r /etc/gentoo-release ]; then
     distro=gentoo
+  elif [[ "$OSTYPE" =~ ^darwin ]]; then
+    distro=macosx
   fi
 
   if [ -n "$distro" ]; then
@@ -207,8 +216,14 @@ ini_section_replace_key_value() {
   local key=`escape_sed "$3"`
   local value=`escape_sed "$4"`
 
-  local orig_md5=`md5sum "$file"`
-  orig_md5=${orig_md5%% *}
+  local orig_md5 final_md5
+
+  orig_md5=`md5sum "$file"`
+  if [[ "$OSTYPE" =~ ^darwin ]]; then
+    orig_md5=${orig_md5##* }
+  else
+    orig_md5=${orig_md5%% *}
+  fi
 
   sed -i -e "/^\[$section\]/,/^\[/ {
     /^\($key\)[[:space:]]*=.*$/ {
@@ -219,8 +234,12 @@ ini_section_replace_key_value() {
   local status=$?
   [ $status -ne 0 ] && return $status
 
-  local final_md5=`md5sum "$file"`
-  final_md5=${final_md5%% *}
+  final_md5=`md5sum "$file"`
+  if [[ "$OSTYPE" =~ ^darwin ]]; then
+    final_md5=${final_md5##* }
+  else
+    final_md5=${final_md5%% *}
+  fi
 
   if [ "$orig_md5" != "$final_md5" ]; then
     return 0 # file changed, success!

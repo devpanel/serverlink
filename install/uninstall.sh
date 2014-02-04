@@ -101,6 +101,12 @@ set_global_variables() {
 
 [ $# -eq 0 ] && usage
 
+if [ "${0:0:1}" != / ]; then
+  echo "Error: please run this script with the full path, non-relative." 1>&2
+  exit 1
+fi
+script_dir=`dirname "$0"`
+
 if [ $EUID -ne 0 ]; then
   echo "Error: This script needs to run with ROOT privileges." 1>&2
   exit 1
@@ -143,6 +149,22 @@ fi
 
 # cd / to avoid being on the same path of a dir being removed
 cd /
+
+lib_file="$install_dir/lib/functions"
+if ! source "$lib_file"; then
+  echo "Error. Unable to load auxiliary functions from file " 1>&2
+  exit 1
+fi
+
+linux_distro=$(wedp_auto_detect_distro)
+status=$?
+if [ $status -ne 0 ]; then
+  error "unable to detect the system distribution"
+fi
+
+if [ "$linux_distro" == "macosx" ]; then
+  exec "$script_dir/uninstall.$linux_distro.sh" -y "$install_dir"
+fi
 
 "$install_dir/libexec/system-services" devpanel-taskd stop
 
