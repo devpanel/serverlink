@@ -91,6 +91,8 @@ sub initializeVariables {
   foreach my $k (keys %$config_defaults) {
     if(ce_is_hash_key_empty($conf, $k)) {
       $conf->{$k} = $v->{$k} = $config_defaults->{$k};
+    } else {
+      $v->{$k} = $conf->{$k}; # is set in %$config, copy to %$v
     }
   }
 
