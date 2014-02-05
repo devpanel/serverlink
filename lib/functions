@@ -493,3 +493,25 @@ devpanel_update_pkg_link_version() {
 
   return $status
 }
+
+calc_md5_str() {
+  local str="$1"
+  local md5_str=""
+
+  md5_str=`echo -n "$str" | md5sum`
+  if [ $? -ne 0 ]; then
+    echo "$FUNCNAME(): unable to get md5sum of string" 1>&2
+    return 1
+  fi
+
+  if [[ "$OSTYPE" =~ ^darwin ]]; then
+    md5_str=${md5_str##* }
+  else
+    md5_str=${md5_str%% *}
+  fi
+
+  echo -n "$md5_str"
+
+  return 0
+}
+
