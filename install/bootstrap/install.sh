@@ -14,7 +14,7 @@ Usage: $prog [ options ] <-u server_uuid> <-k server_key>
     -A taskd_api      the api url to use on taskd
     -U api_url        the address of the user api url
     -D scripts_dir    the dir to use as scripts_dir on taskd
-    -N                don't start taskd after install
+    -P                clone the provisioner repo
     -d                enable debug mode
 "
 
@@ -218,6 +218,8 @@ if [ -n "$is_provisioner" -a "$is_provisioner" != 0 ]; then
   if [ $? -ne 0 ]; then
     error "failed to clone the provisioner repository"
   fi
+
+  chown -R devpanel:devpanel "$DP_TARGET_DIR/paas-provisioner/var/cache"
 fi
 
 # taskd needs to start after the provisioner files are checked out
@@ -228,5 +230,7 @@ if [ $status -ne 0 ]; then
 fi
 
 echo "Successfully deployed taskd"
+
+echo "Successfully installed devPanel software."
 
 exit 0

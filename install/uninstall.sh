@@ -229,13 +229,12 @@ done < <(getent passwd | egrep ^b_)
 for D in /home/clients/databases/*; do
   fuser -k "$D/mysql" 
 done
-rm -rf /home/clients/databases/*
-
+[ -d /home/clients/databases ] && rm -rf /home/clients/databases/*
 
 for D in /home/clients/websites/*; do
   fuser -k "$D"
 done
-rm -rf /home/clients/websites/*
+[ -d /home/clients/websites ] && rm -rf /home/clients/websites/*
 
 for u in git w_ devpanel; do
   if getent passwd "$u" &>/dev/null; then
@@ -250,3 +249,6 @@ for g in virtwww weadmin w_ devpanel; do
 done
 
 rm -rf "$install_dir"
+
+echo
+echo "Successfully removed devPanel software"
