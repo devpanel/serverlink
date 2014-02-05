@@ -236,6 +236,15 @@ for D in /home/clients/websites/*; do
 done
 [ -d /home/clients/websites ] && rm -rf /home/clients/websites/*
 
+vagrant_dir=~devpanel/vagrant
+if [ -d "$vagrant_dir" ]; then
+  for D in "$vagrant_dir"/*; do
+    if [ -d "$D" ]; then
+      su -l -c "cd $D && vagrant halt" devpanel
+    fi
+  done
+fi
+
 for u in git w_ devpanel; do
   if getent passwd "$u" &>/dev/null; then
     userdel -r "$u"
