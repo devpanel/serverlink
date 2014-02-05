@@ -599,6 +599,22 @@ sub exec_child {
     if(!exec_drop_privs($user, $group)) {
       goto ERR_BEFORE_EXEC;
     }
+  } else {
+    # set the variables for the current user
+    undef(%ENV);
+    my @user_info = getpwuid($>);
+    if(!@user_info) {
+      taskd_log(CE_TASKD_ERR,
+                  "unable to get info about the current user");
+
+      goto ERR_BEFORE_EXEC;
+    }
+
+    $ENV{'USER'} = $ENV{'LOGNAME'} = $user_info[0];
+    $ENV{'HOME'} = $user_info[7];
+    if(-d $ENV{'HOME'}) {
+      chdir($ENV{'HOME'});
+    }
   }
 
   # set the environment variables defined in the command (if any)
