@@ -601,7 +601,7 @@ sub exec_child {
     }
   } else {
     # set the variables for the current user
-    undef(%ENV);
+    # undef(%ENV);
     my @user_info = getpwuid($>);
     if(!@user_info) {
       taskd_log(CE_TASKD_ERR,
