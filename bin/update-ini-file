@@ -1,0 +1,80 @@
+#!/usr/bin/perl
+
+use strict;
+use warnings;
+use File::Basename;
+
+
+BEGIN {
+  my $local_perl5_lib = dirname(__FILE__) . '/../lib/perl5/';
+  if(-d $local_perl5_lib || -l $local_perl5_lib) {
+    unshift(@INC, $local_perl5_lib);
+  }
+}
+
+use Config::Tiny;
+
+sub usage {
+  my $prog = basename($0);
+
+  print "Usage: $prog <file> 
+  
+  Send to STDIN the key = value. The key can be a dotted value, e.g:
+    taskd.uuid = cb5dd59d-890d-4fb9-b2b8-2a4ad091bbc6
+
+";
+  exit(1);
+}
+
+if($#ARGV < 0) {
+  usage();
+}
+
+my $file = $ARGV[0];
+
+if(! -f $file) {
+  die "Error: file '$file' does not exist.\n";
+} elsif(! -w $file) {
+  die "Error: no write access to file '$file'.\n";
+}
+
+my $cfg_r = Config::Tiny->read($file);
+if(!$cfg_r) {
+  die "Error: unable to open file '$file': " . Config::Tiny::errstr() .
+      "\n";
+}
+
+print "Reading stdin...\n";
+my $line_n = 0;
+my $values_set_n = 0;
+while(<STDIN>) {
+  $line_n++;
+  chomp();
+  next if(length($_) == 0);
+
+  if($_ !~ /^([A-Za-z0-9_.-]+)\s*=\s*(.+)$/) {
+    warn "Invalid line format on line $line_n. Skipping...\n";
+    next;
+  }
+
+  my($key, $value) = ($1, $2);
+  if($key !~ /^(.+)\.(.+)$/) {
+    warn "Invalid key value on line $line_n. Skipping...\n";
+    next;
+  }
+
+  my $section = $1;
+  my $sec_key = $2;
+
+  $cfg_r->{$section}->{$sec_key} = $value;
+
+  $values_set_n++;
+}
+
+if($values_set_n > 0) {
+  print "Successfully wrote $values_set_n changes to file '$file'.\n";
+  $cfg_r->write($file);
+} else {
+  print "Error: no values updated.\n";
+  exit(1);
+}
