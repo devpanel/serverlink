@@ -1,0 +1,15 @@
+#!/bin/bash
+
+usage() {
+  echo "Usage: `basename "$0"` <hostname>"
+  exit 1
+}
+
+[ $# -lt 1 ] && usage
+
+hostname="$1"
+
+cd ~/vagrant/$hostname
+
+vagrant ssh -c "sudo /opt/webenabled/bin/update-ini-file /opt/webenabled/etc/devpanel.conf && \
+  sudo initctl start devpanel-taskd"
