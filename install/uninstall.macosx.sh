@@ -79,6 +79,6 @@ if [ $? -eq 0 ]; then
 fi
 
 echo "Removing the install dir $install_dir"
-echo rm -rf "$install_dir"
+rm -rf "$install_dir"
 
 echo "Finished removal of devPanel software"
