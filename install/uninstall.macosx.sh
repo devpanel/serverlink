@@ -58,7 +58,7 @@ if dscl . -read "$user_path" &>/dev/null; then
   if [ $? -eq 0 -a -n "$user_home" ]; then
     user_home="${user_home_line##*: }"
     if [ "$user_home" != "/" -a -d "$user_home" ]; then
-      echo rm -rf "$user_home"
+      rm -rf "$user_home"
     fi
   fi
 
