@@ -128,7 +128,7 @@ fi
 # if it's there it means that a previous installation was successful
 config_dir="$DP_TARGET_DIR/config/os"
 if [ -e "$config_dir" ]; then
-  error "this server seems already configured. Bailing out."
+  error "this server seems already configured. You can re-install it by running: $DP_TARGET_DIR/libexec/uninstall -y $DP_TARGET_DIR"
 fi
 
 lock_file="/var/run/devpanel_install.lock"
@@ -170,6 +170,8 @@ if [ "$linux_distro" == "macosx" ]; then
     dscl . -create "/Users/$dp_user"  UniqueID "$next_uid"
     dscl . -create "/Users/$dp_user"  PrimaryGroupID "$next_gid"
     dscl . -create "/Users/$dp_user"  NFSHomeDirectory "/Users/$dp_user"
+
+    dscacheutil -flushcache
   fi
 else
   if ! getent passwd "$dp_user" &>/dev/null; then
@@ -220,6 +222,8 @@ if [ -n "$is_provisioner" -a "$is_provisioner" != 0 ]; then
   fi
 
   chown -R devpanel:devpanel "$DP_TARGET_DIR/paas-provisioner/var/cache"
+
+  ln -s /dev/null "$DP_TARGET_DIR/config/os"
 fi
 
 # taskd needs to start after the provisioner files are checked out
@@ -229,6 +233,7 @@ if [ $status -ne 0 ]; then
   error "unable to start taskd. Returned $status"
 fi
 
+echo
 echo "Successfully deployed taskd"
 
 echo "Successfully installed devPanel software."
