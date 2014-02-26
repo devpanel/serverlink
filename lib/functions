@@ -499,7 +499,7 @@ calc_md5_str() {
   local md5_str=""
 
   if [[ "$OSTYPE" =~ ^darwin ]]; then
-    md5_str=`echo -n "$str" | md5`
+    md5_str=`echo -n "$str" | /sbin/md5`
   else
     md5_str=`echo -n "$str" | md5sum`
   fi
