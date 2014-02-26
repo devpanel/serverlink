@@ -498,7 +498,12 @@ calc_md5_str() {
   local str="$1"
   local md5_str=""
 
-  md5_str=`echo -n "$str" | md5sum`
+  if [[ "$OSTYPE" =~ ^darwin ]]; then
+    md5_str=`echo -n "$str" | md5`
+  else
+    md5_str=`echo -n "$str" | md5sum`
+  fi
+
   if [ $? -ne 0 ]; then
     echo "$FUNCNAME(): unable to get md5sum of string" 1>&2
     return 1
