@@ -176,7 +176,9 @@ if [ -d "/etc/init.d" ]; then
   rm -f /etc/init/devpanel-*
 fi
 
-"$install_dir/config/os/pathnames/sbin/apachectl" stop
+apache_ctl="$install_dir/config/os/pathnames/sbin/apachectl"
+
+[ -e "$apache_ctl" ] && "$apachectl" stop
 
 rm -f "$_apache_base_dir"/webenabled*
 rm -f "$_apache_base_dir"/devpanel*
@@ -226,15 +228,21 @@ while read passwd_line; do
   userdel -r "$user"
 done < <(getent passwd | egrep ^b_)
 
-for D in /home/clients/databases/*; do
-  fuser -k "$D/mysql" 
-done
-[ -d /home/clients/databases ] && rm -rf /home/clients/databases/*
+if [ -d /home/clients/databases ]; then
+  rm -rf /home/clients/databases/*
 
-for D in /home/clients/websites/*; do
-  fuser -k "$D"
-done
-[ -d /home/clients/websites ] && rm -rf /home/clients/websites/*
+  for D in /home/clients/databases/*; do
+    fuser -k "$D/mysql" 
+  done
+fi
+
+if [ -d /home/clients/websites ]; then 
+  rm -rf /home/clients/websites/*
+
+  for D in /home/clients/websites/*; do
+    fuser -k "$D"
+  done
+fi
 
 vagrant_dir=~devpanel/vagrant
 if [ -d "$vagrant_dir" ]; then
