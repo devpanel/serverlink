@@ -43,6 +43,16 @@ fi
 dp_user="devpanel"
 dp_group="$dp_user"
 
+vagrant_dir=~devpanel/vagrant
+if [ -d "$vagrant_dir" ]; then
+  for D in "$vagrant_dir"/*; do
+    if [ -d "$D" ]; then
+      echo "Destroying VM `basename "$D"`..."
+      su -l -c "cd $D && vagrant destroy -f ; cd $D/.. ; rm -rf $D" devpanel
+    fi
+  done
+fi
+
 user_path="/Users/$dp_user"
 group_path="/Groups/$dp_group"
 if dscl . -read "$group_path" &>/dev/null; then
@@ -81,16 +91,6 @@ fi
 "$install_dir/libexec/system-services" devpanel-taskd stop
 
 rm -f /System/Library/LaunchDaemons/com.devpanel*
-
-vagrant_dir=~devpanel/vagrant
-if [ -d "$vagrant_dir" ]; then
-  for D in "$vagrant_dir"/*; do
-    if [ -d "$D" ]; then
-      echo "Destroying VM `basename "$D"`..."
-      su -l -c "cd $D && vagrant destroy -f ; cd $D/.. ; rm -rf $D" devpanel
-    fi
-  done
-fi
 
 echo "Removing the install dir $install_dir"
 rm -rf "$install_dir"
