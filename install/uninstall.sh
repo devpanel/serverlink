@@ -248,7 +248,7 @@ vagrant_dir=~devpanel/vagrant
 if [ -d "$vagrant_dir" ]; then
   for D in "$vagrant_dir"/*; do
     if [ -d "$D" ]; then
-      su -l -c "cd $D && vagrant halt" devpanel
+      su -l -c "cd $D && vagrant destroy -f" devpanel
     fi
   done
 fi
