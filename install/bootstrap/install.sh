@@ -128,7 +128,7 @@ fi
 # if it's there it means that a previous installation was successful
 config_dir="$DP_TARGET_DIR/config/os"
 if [ -e "$config_dir" ]; then
-  error "this server seems already configured. You can re-install it by running: $DP_TARGET_DIR/libexec/uninstall -y $DP_TARGET_DIR"
+  error "this server is already installed. To re-install it you need to uninstall it first. You can uninstall it by running: $DP_TARGET_DIR/libexec/uninstall -y $DP_TARGET_DIR"
 fi
 
 lock_file="/var/run/devpanel_install.lock"
