@@ -78,6 +78,10 @@ if [ $? -eq 0 ]; then
   fi
 fi
 
+"$install_dir/libexec/system-services" devpanel-taskd stop
+
+rm -f /System/Library/LaunchDaemons/com.devpanel*
+
 echo "Removing the install dir $install_dir"
 rm -rf "$install_dir"
 
