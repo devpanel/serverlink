@@ -48,7 +48,7 @@ if [ -d "$vagrant_dir" ]; then
   for D in "$vagrant_dir"/*; do
     if [ -d "$D" ]; then
       echo "Destroying VM `basename "$D"`..."
-      su -l -c "cd $D && vagrant destroy -f ; cd $D/.. ; rm -rf $D" devpanel
+      su -l devpanel cd "$D" \&\& vagrant destroy -f \; cd "$D/.." \; rm -rf "$D"
     fi
   done
 fi
