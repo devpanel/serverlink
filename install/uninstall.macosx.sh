@@ -92,6 +92,8 @@ fi
 
 rm -f /System/Library/LaunchDaemons/com.devpanel*
 
+sed -E -i -e "/^128\..+devpanel\.net/d;" /etc/hosts
+
 echo "Removing the install dir $install_dir"
 rm -rf "$install_dir"
 
