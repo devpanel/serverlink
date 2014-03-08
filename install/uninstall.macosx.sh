@@ -42,8 +42,10 @@ fi
 
 dp_user="devpanel"
 dp_group="$dp_user"
+user_path="/Users/$dp_user"
+group_path="/Groups/$dp_group"
 
-vagrant_dir=~devpanel/vagrant
+vagrant_dir="$user_path/vagrant"
 if [ -d "$vagrant_dir" ]; then
   for D in "$vagrant_dir"/*; do
     if [ -d "$D" ]; then
@@ -53,22 +55,20 @@ if [ -d "$vagrant_dir" ]; then
   done
 fi
 
-user_path="/Users/$dp_user"
-group_path="/Groups/$dp_group"
-if dscl . -read "$group_path" &>/dev/null; then
-  if dscl . delete "$group_path"; then
-    echo "Successfully removed group $group_path."
-  else
-    echo "Failed to remove group $group_path."
-  fi
-fi
-
 if dscl . -read "$user_path" &>/dev/null; then
   user_home_line=`dscl . -read "$user_path" NFSHomeDirectory`
   if [ $? -eq 0 -a -n "$user_home" ]; then
     user_home="${user_home_line##*: }"
     if [ "$user_home" != "/" -a -d "$user_home" ]; then
       rm -rf "$user_home"
+    fi
+  fi
+
+  if dscl . -read "$group_path" &>/dev/null; then
+    if dscl . delete "$group_path"; then
+      echo "Successfully removed group $group_path."
+    else
+      echo "Failed to remove group $group_path."
     fi
   fi
 
