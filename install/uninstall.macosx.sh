@@ -57,7 +57,7 @@ fi
 
 if dscl . -read "$user_path" &>/dev/null; then
   user_home_line=`dscl . -read "$user_path" NFSHomeDirectory`
-  if [ $? -eq 0 -a -n "$user_home" ]; then
+  if [ $? -eq 0 -a -n "$user_home_line" ]; then
     user_home="${user_home_line##*: }"
     if [ "$user_home" != "/" -a -d "$user_home" ]; then
       rm -rf "$user_home"
