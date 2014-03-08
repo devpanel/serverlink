@@ -165,13 +165,19 @@ if [ "$linux_distro" == "macosx" ]; then
       error "unable to create user /Users/$dp_user"
     fi
 
+    dp_user_home_dir="/Users/$dp_user"
     dscl . -create "/Users/$dp_user"  UserShell /bin/bash
     dscl . -create "/Users/$dp_user"  RealName "devpanel user"
     dscl . -create "/Users/$dp_user"  UniqueID "$next_uid"
     dscl . -create "/Users/$dp_user"  PrimaryGroupID "$next_gid"
-    dscl . -create "/Users/$dp_user"  NFSHomeDirectory "/Users/$dp_user"
+    dscl . -create "/Users/$dp_user"  NFSHomeDirectory "$dp_user_home_dir"
 
     dscacheutil -flushcache
+
+    if [ ! -d "$dp_user_home_dir" ]; then
+      mkdir -p 751 "$dp_user_home_dir"
+    fi
+    chown -R "$dp_user/$dp_group" "$dp_user_home_dir"
   fi
 else
   if ! getent passwd "$dp_user" &>/dev/null; then
