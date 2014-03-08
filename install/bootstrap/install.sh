@@ -177,7 +177,7 @@ if [ "$linux_distro" == "macosx" ]; then
     if [ ! -d "$dp_user_home_dir" ]; then
       mkdir -p 751 "$dp_user_home_dir"
     fi
-    chown -R "$dp_user/$dp_group" "$dp_user_home_dir"
+    chown -R "$dp_user":"$dp_group" "$dp_user_home_dir"
   fi
 else
   if ! getent passwd "$dp_user" &>/dev/null; then
