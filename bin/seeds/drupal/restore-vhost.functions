@@ -13,11 +13,15 @@ drupal_genpass()
 drupal_encrypt()
 {
   local password="$1"
-  if version=`sql_query_result "select schema_version from system where name = 'system' and type = 'module'"` &&
-  [ -n "$version" ] &&
-  [ $version -lt 7000 ]
-  then
-    echo -n "$password"|md5sum|sed 's/  -$//'
+  local version=""
+
+  version=`drupal_detect_version "$database"`
+  if [ $? -ne 0 -o -z "$version" ]; then
+    error 'unable to detect drupal version'
+  fi
+
+  if [ "$version" == 6 ]; then
+    echo -n "$password"| md5sum | cut -d' ' -f 1
   else
     echo -n "$password"|"$dir/drupal7-crypt.php"
   fi
@@ -83,15 +87,12 @@ bb
 }
 "
 
-drupal_base_url_none_sed_script="s|^[[:space:]]*\\\$base_url[[:space:]]*=[[:space:]]*'[^']*';||"
-
 drupal_update_php_config()
 {
-  local perms1=`stat -L -c%a "$home/public_html/$vhost/sites/default"` || exit 1
-  local perms2=`stat -L -c%a "$home/public_html/$vhost/sites/default/settings.php"` || exit 1
-  run chmod +w "$home/public_html/$vhost/sites/default" || exit 1
-  run chmod +w "$home/public_html/$vhost/sites/default/settings.php" || exit 1
+  local drupal_base_url_none_sed_script="s|^[[:space:]]*\\\$base_url[[:space:]]*=[[:space:]]*'[^']*';||"
+
   local driver
+
   if version=`sql_query_result "select schema_version from system where name = 'system ' and type = 'module'"` \
     && [ -n "$version" ] && [ $version -ge 7000 ]
   then
@@ -148,14 +149,147 @@ drupal_update_php_config()
 
     run_mysql -B -D drupal -e "$tmp_sql_str" 
   fi
-      
-  run chmod "$perms1" "$home/public_html/$vhost/sites/default" || exit 1
-  run chmod "$perms2" "$home/public_html/$vhost/sites/default/settings.php" || exit 1
 }
 
+drupal_update_php_config_6()
+{
+  local drupal_base_url_none_sed_script="s|^[[:space:]]*\\\$base_url[[:space:]]*=[[:space:]]*'[^']*';||"
+
+  local driver='\2'
+
+  /bin/echo "s|^\\(\\\$db_url = '\\)\\(mysqli*\\):.*|\\1$driver://$mysql_user:$urlencoded_mysql_password@$mysql_host:$mysql_port/$hosting_database';|" | \
+    run_ised "$home/public_html/$vhost/sites/default/settings.php"
+
+}
+
+drupal_update_php_config_7() {
+  local drupal_base_url_none_sed_script="s|^[[:space:]]*\\\$base_url[[:space:]]*=[[:space:]]*'[^']*';||"
+
+  local driver='\1'
+
+  /bin/echo "
+         s/^[[:space:]]*'driver'[[:space:]]*=>[[:space:]]*'\\([^']*\\)'[[:space:]]*,/    'driver' => '$driver',/
+         s/^[[:space:]]*'username'[[:space:]]*=>[[:space:]]*.*/    'username' => '$mysql_user',/
+         s/^[[:space:]]*'password'[[:space:]]*=>[[:space:]]*.*/    'password' => '$sedphpencoded_mysql_password',/
+         s/^[[:space:]]*'host'[[:space:]]*=>[[:space:]]*.*/    'host' => '$mysql_host',/
+         s/^[[:space:]]*'port'[[:space:]]*=>[[:space:]]*.*/    'port' => '$mysql_port',/
+         s/^[[:space:]]*'database'[[:space:]]*=>[[:space:]]*.*/    'database' => '$hosting_database',/
+  " | run_ised "$home/public_html/$vhost/sites/default/settings.php"
+
+}
+
+drupal_update_php_config_8() {
+  local random_str=""
+  local public_dir="$home/public_html/$vhost"
+  local main_config="$public_dir/sites/default/settings.php"
+
+  local -a old_paths
+  local -a new_paths
+
+  random_str=`wedp_gen_random_str 44`
+
+  local p_dir
+  for p_dir in `sed -ne '/^\$config_directories\[/ {  s/.\+\(sites\/default\/files\/config_[A-Za-z0-9_-]\+\).\+/\1/; p; }' "$main_config" | sort | uniq`; do
+    old_paths+=("$p_dir")
+    new_paths+=("`dirname "$p_dir"`/config_`wedp_gen_random_str 44`")
+  done
+
+  sed -i -e \
+  "/^\$databases\['default'\]\['default'\][[:space:]]*=[[:space:]]*array[[:space:]]*([[:space:]]*$/,/^)\;$/ {
+   s/^[[:space:]]*'username'[[:space:]]*=>[[:space:]]*.*/  'username' => '$mysql_user',/;
+   s/^[[:space:]]*'password'[[:space:]]*=>[[:space:]]*.*/  'password' => '$sedphpencoded_mysql_password',/;
+   s/^[[:space:]]*'host'[[:space:]]*=>[[:space:]]*.*/  'host' => '$mysql_host',/;
+   s/^[[:space:]]*'port'[[:space:]]*=>[[:space:]]*.*/  'port' => '$mysql_port',/;
+   s/^[[:space:]]*'database'[[:space:]]*=>[[:space:]]*.*/  'database' => '$hosting_database',/;
+  }
+  " "$home/public_html/$vhost/sites/default/settings.php"
+
+  if [ ${#old_paths[@]} -gt 0 ]; then
+    local sed_dirs_exp='/^\$config_directories\[/ {';
+    local previous_dir new_dir
+
+    for (( i=0; i < ${#old_paths[@]}; i++ )); do
+      previous_dir="${old_paths[$i]}"
+      new_dir="${new_paths[$i]}"
+
+      if [ -d "$previous_dir" -a ! -e "$new_dir" ]; then
+        echo "Moving $previous_dir to $new_dir"
+        mv -f "$previous_dir" "$new_dir"
+
+        local site_vars
+        local new_site_yml
+        for site_vars in "$new_dir"/*; do
+          if [ ! -d "$site_vars" ]; then
+            continue
+          fi
+
+          new_site_yml="$site_vars/system.site.yml"
+          if [ -f "$new_site_yml" ]; then
+            echo "Setting site name to environment `basename "$site_vars"`"
+            sed -i -e "s/^name:.*/name: `escape_sed "$fqdn"`/;" \
+              "$new_site_yml"
+          fi
+        done
+
+        sed_dirs_exp+="
+          s/`escape_sed "$previous_dir"`/`escape_sed "$new_dir"`/g;
+        "
+      fi
+    done
+
+    sed_dirs_exp+=' }'
+
+    sed -i -e "$sed_dirs_exp" "$main_config"
+  fi
+  
+  # sed -i -e \
+  #  "/^\$config_directories\[/ {
+  #    s|\(sites/default/files/config_\)[A-Za-z0-9_-]\+\(/.\+\)|\1$random_str\2|;
+  #   }
+  #   " "$home/public_html/$vhost/sites/default/settings.php"
+}
+
+drupal_set_tmp_6_or_7() {
+  local is_tmp_set=""
+
+  is_tmp_set=$(mysql -B -D drupal -N -e "SELECT * FROM variable WHERE name = 'file_temporary_path'")
+
+  local tmp_dir="$HOME/.tmp"
+
+  if [ ! -d "$tmp_dir" ] && !  mkdir -m 700 "$tmp_dir"; then
+    echo "Warning: unable to create temporary directory '$tmp_dir'" 1>&2
+    return 1
+  fi
+
+  local tmp_sql_str=""
+
+  if [ -n "$is_tmp_set" ]; then
+    tmp_sql_str="UPDATE variable SET value = 's:${#tmp_dir}:\"$tmp_dir\";' WHERE name = 'file_temporary_path'"
+  else
+    tmp_sql_str="INSERT INTO variable VALUES ( 'file_temporary_path', 's:${#tmp_dir}:\"$tmp_dir\";');"
+  fi
+
+  run_mysql -B -D drupal -e "$tmp_sql_str"
+}
+
+drupal_set_tmp_8() {
+  :
+}
+
+drupal_set_cron_key_6_or_7() {
+  :
+}
+
+drupal_set_cron_key_8() {
+   local new_key=`wedp_gen_random_str 43`
+  local sql_cron_key="UPDATE key_value SET value = 's:${#new_key}:\"$new_key\";' WHERE collection = 'state' AND name = 'system.cron_key';"
+
+  run_mysql -B -D drupal -e "$sql_cron_key"
+}
+
+
 drupal_update_civicrm_config() {
-  if [ -f "$home/public_html/$vhost/sites/default/civicrm.settings.php" ]; then
-    /bin/echo "
+  /bin/echo "
      s/^[[:space:]]*define([[:space:]]*'CIVICRM_UF_DSN'[[:space:]]*,[[:space:]]*'mysql:\/\/.*/define('CIVICRM_UF_DSN', 'mysql:\/\/$mysql_user:$urlencoded_mysql_password@$mysql_host:$mysql_port\/civicrm\?new_link=true');/
      s/^[[:space:]]*define([[:space:]]*'CIVICRM_DSN'[[:space:]]*,[[:space:]]*'mysql:\/\/.*/define('CIVICRM_DSN', 'mysql:\/\/$mysql_user:$urlencoded_mysql_password@$mysql_host:$mysql_port\/civicrm\?new_link=true');/
      s/^[[:space:]]*\$civicrm_root[[:space:]]*=[[:space:]]*.*/\$civicrm_root = '\/home\/clients\/websites\/$mysql_user\/public_html\/$vhost\/sites\/all\/modules\/civicrm';/
@@ -164,31 +298,90 @@ drupal_update_civicrm_config() {
      s/^[[:space:]]*define([[:space:]]*'CIVICRM_UF_BASEURL'[[:space:]]*,[[:space:]]*'.*/define('CIVICRM_UF_BASEURL', 'htpp:\/\/$fqdn\/');/
     " | run_ised "$home/public_html/$vhost/sites/default/civicrm.settings.php"
 
-    echo "
-           s/w_[[:alnum:]]\{2,6\}/$mysql_user/g
-           s/\/public_html\/[[:alnum:]]\{2,6\}\/sites/\/public_html\/$vhost\/sites/g
-    " | run_ised "$home/public_html/$vhost/sites/default/files/civicrm/templates_c/en_US/ConfigAndLog/Config.IDS.ini"
+  echo "
+         s/w_[[:alnum:]]\{2,6\}/$mysql_user/g
+         s/\/public_html\/[[:alnum:]]\{2,6\}\/sites/\/public_html\/$vhost\/sites/g
+  " | run_ised "$home/public_html/$vhost/sites/default/files/civicrm/templates_c/en_US/ConfigAndLog/Config.IDS.ini"
 
-    local db_orig="$database" # save the default $database value to restore later
-    database="civicrm"      # work on the civic_crm db, not drupal
-    civicrm_domain=`sql_query_result "select config_backend from civicrm_domain where id = 1"`
-    new_civicrm_domain=`echo "$civicrm_domain"|"$dir/civicrm-domain-update.php" "$mysql_user" "$fqdn"`
-    `sql_query_result "update civicrm_domain set config_backend = '$new_civicrm_domain' where id = 1"`
-    database="$db_orig" # restore the default value back because sql_query_result uses it
-  fi
+  local db_orig="$database" # save the default $database value to restore later
+  database="civicrm"      # work on the civic_crm db, not drupal
+  civicrm_domain=`sql_query_result "select config_backend from civicrm_domain where id = 1"`
+  new_civicrm_domain=`echo "$civicrm_domain"|"$dir/civicrm-domain-update.php" "$mysql_user" "$fqdn"`
+  `sql_query_result "update civicrm_domain set config_backend = '$new_civicrm_domain' where id = 1"`
+  database="$db_orig" # restore the default value back because sql_query_result uses it
 }
+
+drupal_detect_version() {
+  local db="$1"
+  local version=""
+
+  if run_mysql -BN -D "$db" -e "describe system;" &>/dev/null; then
+    version=`run_mysql -BN -D "$db" \
+      -e "SELECT schema_version FROM system WHERE \
+                  name = 'system ' and type = 'module'"`
+    if [ $? -eq 0 -a -n "$version" ]; then
+      echo "${version:0:1}"
+      return 0
+    fi
+  elif run_mysql -BN -D "$db" -e "describe key_value;" &>/dev/null; then
+    version=`run_mysql -BN -D "$db" \
+      -e "SELECT value FROM key_value WHERE \
+                  collection = 'system.schema' AND name = 'text';"`
+
+    if [ $? -eq 0 -a -n "$version" ]; then
+      version=${version#s:[0-9]:\"}
+      version=${version%\"\;}
+      echo "${version:0:1}"
+      return 0
+    fi
+  fi
+
+  return 1
+}
+
 drupal_custom()
 {
-  if [ -z "$opt_n" ]
-  then
-    echo 'Clearing table cache (ignore errors)'
-    sql_clear_table cache
-    echo 'Clearing table sessions (ignore errors)'
-    sql_clear_table sessions
-    echo 'Checking for drupal6 variables (ignore errors)'
-    drupal_set_drupal6_sitename
+  local version=""
+  local civic_crm_conf="$home/public_html/$vhost/sites/default/civicrm.settings.php"
+
+  run chmod 751 "$home/public_html/$vhost/sites/default"
+  run chmod 640 "$home/public_html/$vhost/sites/default/settings.php"
+
+  version=`drupal_detect_version "$database"`
+  if [ $? -ne 0 -o -z "$version" ]; then
+    error 'unable to detect drupal version'
   fi
-  echo "Updating settings.php"
-  drupal_update_php_config || error "Cannot update settings.php"
-  drupal_update_civicrm_config || error "Cannot update civicrm.settings.php"
+
+  if [ -z "$opt_n" ]; then
+    if [ "$version" == 6 -o "$version" == 7 ]; then
+      echo 'Clearing table cache (ignore errors)'
+      sql_clear_table cache
+      echo 'Clearing table sessions (ignore errors)'
+      sql_clear_table sessions
+
+      if [ "$version" == 6 ]; then
+        echo 'Checking for drupal6 variables (ignore errors)'
+        drupal_set_drupal6_sitename
+      fi
+    fi
+  else
+    echo "Updating settings.php"
+
+    drupal_update_php_config_$version
+
+    if [ "$version" == 6 -o "$version" == 7 ]; then
+      drupal_set_tmp_6_or_7
+      drupal_set_cron_key_6_or_7
+      ( cd "$home/public_html/$vhost" && "$home/bin/drush/drush" cc all )
+    else
+      drupal_set_tmp_$version
+      drupal_set_cron_key_$version
+      ( cd "$home/public_html/$vhost" && "$home/bin/drush/drush" cache-rebuild )
+    fi
+
+    if [ -f "$civic_crm_conf" ]; then
+      drupal_update_civicrm_config
+    fi
+
+  fi
 }
