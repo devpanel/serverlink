@@ -32,5 +32,7 @@ $file_path = sprintf("%s/../%s/current/%s", dirname(__FILE__), $app_name, $file)
 $_SERVER["PATH_INFO"] = $_SERVER["SCRIPT_NAME"];
 $_SERVER["SCRIPT_NAME"] = $file;
 chdir(dirname($file_path));
+
+session_write_close(); // phpmyadmin is picky...it wants to open it's own session or returns error
 require_once($file_path);
 ?>

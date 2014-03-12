@@ -27,10 +27,9 @@ function dp_has_valid_token($vhost, $app, $token_str) {
 }
 
 function dp_is_already_logged_to_app($app) {
-  session_start();
+  ini_get('session.auto_start') || session_start();
 
   if(!empty($_SESSION) && !empty($_SESSION['app']) && $_SESSION['app'] == $app) {
-    session_write_close();
     return true;
   } else {
     return false;
