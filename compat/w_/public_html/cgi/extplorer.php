@@ -15,7 +15,7 @@ if(!$is_logged_in && !($token = dp_get_app_token_from_url())) {
   echo "Access denied. Unable to verify app token.\n";
   exit(1);
 } else if(!$is_logged_in && dp_has_valid_token($vhost, $app_name, $token)) {
-  dp_start_app_session($vhost, $app_name);
+  dp_start_app_session($vhost, $app_name, $token);
   header('Location: ' . str_replace("/$token", "", $_SERVER['SCRIPT_URI']) . '/index.php');
   exit;
 } else if($is_logged_in && dp_get_app_token_from_url()) {

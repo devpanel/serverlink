@@ -76,12 +76,13 @@ function dp_get_token_from_params() {
   }
 }
 
-function dp_start_app_session($vhost, $app) {
+function dp_start_app_session($vhost, $app, $token) {
   session_start();
 
   session_cache_expire(120);
   session_cache_limiter("private");
-  $_SESSION["app"] = $app;
+  $_SESSION["app"]   = $app;
+  $_SESSION["token"] = $token;
 
   session_write_close();
 }

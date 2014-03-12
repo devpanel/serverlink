@@ -12,7 +12,7 @@ $is_logged_in = dp_is_already_logged_to_app($app_name);
 
 if(!$is_logged_in) {
   if(($token = dp_get_app_token_from_url()) && dp_has_valid_token($vhost, $app_name, $token)) {
-    dp_start_app_session($vhost, $app_name);
+    dp_start_app_session($vhost, $app_name, $token);
     header('Location: ' . str_replace("/$token", "/", $_SERVER['SCRIPT_URI']) . '/index.php');
     exit(0);
   } else {
@@ -22,7 +22,11 @@ if(!$is_logged_in) {
 }
 
 if(isset($_SERVER["PATH_INFO"])) {
-  $file = $_SERVER["PATH_INFO"];
+  if($_SERVER["PATH_INFO"] == "/" . $_SESSION["token"]) {
+    $file = "index.php";
+  } else {
+    $file = $_SERVER["PATH_INFO"];
+  }
 } else {
   header('Location: ' . str_replace("/$token", "/", $_SERVER['SCRIPT_URI']) . '/index.php');
   exit;
