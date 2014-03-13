@@ -70,5 +70,7 @@ if ! cd "$backups_dir"; then
   error "unable to cd into dir '$backups_dir'"
 fi
 
-find_printf_fmt='%Ts\t%s\t%p\n'
+#find_printf_fmt='%Ts\t%s\t%p\n'
+#find_printf_fmt='%Ts/%s/%f\n'
+find_printf_fmt='%Tb %Td %TY %TH:%TM %TZ/%s/%f\n'
 find . -maxdepth $max_depth -type f \( -iname \*.tgz -o -iname \*.zip \) -printf "$find_printf_fmt" 2>/dev/null
