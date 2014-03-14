@@ -122,6 +122,8 @@ Usage: $b <section> <command> [ options ]
     close(LIBDIR);
   }
 
+  print "\n\n";
+
   if(defined($msg)) {
     printf "\n[*] Error: %s\n", $msg;
   }
