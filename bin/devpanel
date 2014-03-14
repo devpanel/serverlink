@@ -12,7 +12,6 @@ our $devpanel_lib_dir;
 our $libdir; # bad name, but I'll keep the backwards for now ;)
 
 BEGIN {
-  my @my_inc;
   $main_dir = abs_path(dirname($RealBin));
   $devpanel_lib_dir = "$main_dir/lib/perl5";
   $libdir = "$main_dir/lib/perl5/DevPanel/CLI/includes";
@@ -21,14 +20,12 @@ BEGIN {
   } elsif(! -d $libdir) {
     die "Error: path $libdir is not a directory.\n";
   } elsif(-d $libdir) {
-    push(@my_inc, $libdir);
+    unshift(@INC, $libdir);
   }
 
   if(-d $devpanel_lib_dir) {
-    push(@my_inc, $devpanel_lib_dir);
+    unshift(@INC, $devpanel_lib_dir);
   }
-
-  use lib @my_inc;
 }
 
 use Getopt::Long;
