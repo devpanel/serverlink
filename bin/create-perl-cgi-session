@@ -1,0 +1,68 @@
+#!/usr/bin/env perl
+use strict;
+use warnings;
+use Cwd;
+use FindBin (qw( $RealBin ));
+use File::Basename;
+use Getopt::Long;
+
+unshift(@INC, dirname($RealBin) . "/lib/perl5");
+
+use CGI::Session;
+
+sub usage {
+  print "Usage: $0 [ options ]
+
+  Options:
+    -d directory          directory where to create the file
+    -P <name=value>       set parameters inside the session
+    -e expire_time        set the expire time (shortcuts available, e.g.
+                          +1h, +1m, +1d)
+    -h                    show this usage message
+";
+  exit(1);
+}
+
+# main
+
+
+if($#ARGV < 0) {
+  usage();
+}
+
+my %recvd_opts = ( session_params => [] );
+my %getopt_def = (
+  'd=s'       => \$recvd_opts{dir},
+  'P=s'       => $recvd_opts{session_params},
+  'e=s'       => \$recvd_opts{expire_time},
+  'o'         => \$recvd_opts{to_stdout},
+);
+
+if(!GetOptions(%getopt_def)) {
+  exit(1);
+}
+
+if(!defined($recvd_opts{dir})) {
+  $recvd_opts{dir} = "$ENV{HOME}/.tmp";
+}
+
+my $session_obj = CGI::Session->new(undef, undef,
+                                    { Directory => $recvd_opts{dir} });
+
+
+foreach my $p_pair (@{ $recvd_opts{session_params} }) {
+  my($p_name, $p_value) = split(q'=', $p_pair, 2);
+  $session_obj->param($p_name, $p_value);
+}
+
+if(defined($recvd_opts{expire_time})) {
+  $session_obj->expires($recvd_opts{expire_time});
+}
+
+if(!$session_obj->flush()) {
+  die "Error: unable to save session: $!\n";
+}
+
+if($recvd_opts{to_stdout}) {
+  print $session_obj->id(), "\n";
+}
