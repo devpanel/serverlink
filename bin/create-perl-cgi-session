@@ -19,7 +19,10 @@ sub usage {
     -e expire_time        set the expire time (shortcuts available, e.g.
                           +1h, +1m, +1d)
     -o                    display the session id to stdout before exiting
+    -O string             at the end, output the specified string. The 
+                          placeholder %%session_id%% is allowed.
     -h                    show this usage message
+
 ";
   exit(1);
 }
@@ -37,7 +40,10 @@ my %getopt_def = (
   'P=s'       => $recvd_opts{session_params},
   'e=s'       => \$recvd_opts{expire_time},
   'o'         => \$recvd_opts{to_stdout},
+  'O=s'       => \$recvd_opts{output_str},
 );
+
+Getopt::Long::Configure("no_ignore_case");
 
 if(!GetOptions(%getopt_def)) {
   exit(1);
@@ -64,6 +70,13 @@ if(!$session_obj->flush()) {
   die "Error: unable to save session: $!\n";
 }
 
-if($recvd_opts{to_stdout}) {
-  print $session_obj->id(), "\n";
+my $session_id = $session_obj->id();
+if(defined($recvd_opts{output_str})) {
+  my $output_str;
+  ($output_str = $recvd_opts{output_str}) =~ s/%%session_id%%/$session_id/g;
+  printf "%s\n", $output_str;
+} elsif(defined($recvd_opts{to_stdout})) {
+  printf "%s\n", $session_id;
 }
+
+exit(0);
