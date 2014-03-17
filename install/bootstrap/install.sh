@@ -215,7 +215,7 @@ else
   fi
 fi
 
-one_dir_up=`dirname "$TARGET_DIR"`
+one_dir_up=`dirname "$DP_TARGET_DIR"`
 if [ ! -d "$one_dir_up" ] && ! mkdir -p "$one_dir_up"; then
   error "unable to create upstream directory '$one_dir_up'"
 fi
