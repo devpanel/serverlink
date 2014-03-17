@@ -188,6 +188,11 @@ else
   fi
 fi
 
+one_dir_up=`dirname "$TARGET_DIR"`
+if [ ! -d "$one_dir_up" ] && ! mkdir -p "$one_dir_up"; then
+  error "unable to create upstream directory '$one_dir_up'"
+fi
+
 ( cd "$source_dir/root" && cp -a . "$DP_TARGET_DIR" )
 if [ $? -ne 0 ]; then
   error "unable to copy files to '$DP_TARGET_DIR'"
