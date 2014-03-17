@@ -98,6 +98,32 @@ elif [ -z "$taskd_api" ]; then
   error "the taskd_api was not provided. Please pass it with the option -A"
 fi
 
+if [ -n "$is_provisioner" ]; then
+  declare -a missing_progs
+  if ! hash vagrant &>/dev/null; then
+    missing_progs+=( "vagrant" )
+  fi
+
+  if ! hash git &>/dev/null; then
+    missing_progs+=( "git" )
+  fi
+
+  if ! hash VirtualBox &>/dev/null; then
+    missing_progs+=( "VirtualBox" )
+  fi
+
+  n_missing_progs=${#missing_progs[*]}
+  if [ $n_missing_progs -gt 0 ]; then
+    if [ $n_missing_progs -eq 1 ]; then
+      error "the following program is missing in the PATH: "\
+"${missing_progs[*]}. Please install it before proceeding."
+    else # > 1
+      error "the following programs are missing in the PATH: "\
+"${missing_progs[*]}. Please install it before proceeding."
+    fi
+  fi
+fi
+
 linux_distro=$(wedp_auto_detect_distro)
 if [ $? -ne 0 -o -z "$linux_distro" ]; then
   error "unable to detect linux distro"
