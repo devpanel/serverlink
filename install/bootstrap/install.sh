@@ -179,7 +179,8 @@ if [ "$linux_distro" == "macosx" ]; then
     dscl . -append "/Groups/$dp_group" gid "$next_gid"
   fi
 
-  if ! id "$dp_user" &>/dev/null; then
+  # if ! id "$dp_user" &>/dev/null; then
+  if ! dscl . -read "/Users/$dp_user" &>/dev/null; then
     # got from https://gist.github.com/steakknife/941862
     next_uid=$(dscl . -list /Users UniqueID | awk 'BEGIN{i=0}{if($2>i)i=$2}END{print i+1}')
     if [ -z "$next_uid" ]; then
@@ -193,7 +194,7 @@ if [ "$linux_distro" == "macosx" ]; then
 
     dp_user_home_dir="/Users/$dp_user"
     dscl . -create "/Users/$dp_user"  UserShell /bin/bash
-    dscl . -create "/Users/$dp_user"  RealName "devpanel user"
+    dscl . -create "/Users/$dp_user"  RealName "$dp_user"
     dscl . -create "/Users/$dp_user"  UniqueID "$next_uid"
     dscl . -create "/Users/$dp_user"  PrimaryGroupID "$next_gid"
     dscl . -create "/Users/$dp_user"  NFSHomeDirectory "$dp_user_home_dir"
