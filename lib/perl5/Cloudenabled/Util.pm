@@ -809,6 +809,18 @@ sub ce_in_array {
 sub ce_drop_privs {
   my($uid, $gid) = @_;
 
+  my @u_entry = getpwuid($uid);
+  if($? != 0) {
+    warn "Error: unable to get information about uid $uid: $!\n";
+    return 0;
+  }
+
+  my @g_entry = getgrgid($gid);
+  if($? != 0) {
+    warn "Error: unable to get information about gid $gid: $!\n";
+    return 0;
+  }
+
   $( = $) = $gid;  # setgid(); equivalent
   if($!) {
     warn "Error: unable to setgid() to target_group '$gid': $!";
@@ -820,6 +832,9 @@ sub ce_drop_privs {
     warn "Error: unable to setuid() to target_user '$uid': $! \n";
     return 0;
   }
+
+  $ENV{HOME} = $u_entry[7];
+  $ENV{USER} = $ENV{LOGNAME} = $u_entry[0];
 
   return 1;
 }
@@ -848,6 +863,10 @@ sub ce_get_user_gids {
   while(<CE_GROUP_F>) {
     chomp();
     my($name, undef, $gid, $members) = split(/:/, $_, 4);
+    if(!defined($members)) {
+      next;
+    }
+
     if(grep({ $_ eq $username; } (split(/,/, $members))) &&
       !grep({ $_ eq $gid } @gids)) {
 

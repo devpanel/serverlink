@@ -3,23 +3,46 @@ package DevPanel::CLI;
 
 use strict;
 use warnings;
-use lib (qw( /opt/webenabled/lib/perl5 ));
+use Cwd (qw( abs_path ));
+use File::Basename;
+use FindBin (qw( $RealBin ));
+
+our $main_dir;
+our $devpanel_lib_dir;
+our $libdir; # bad name, but I'll keep the backwards for now ;)
+
+BEGIN {
+  $main_dir = abs_path(dirname($RealBin));
+  $devpanel_lib_dir = "$main_dir/lib/perl5";
+  $libdir = "$main_dir/lib/perl5/DevPanel/CLI/includes";
+  if(! -e $libdir) {
+    die "Error: missing expected lib directory $libdir.\n";
+  } elsif(! -d $libdir) {
+    die "Error: path $libdir is not a directory.\n";
+  } elsif(-d $libdir) {
+    unshift(@INC, $libdir);
+  }
+
+  if(-d $devpanel_lib_dir) {
+    unshift(@INC, $devpanel_lib_dir);
+  }
+}
 
 use Getopt::Long;
 use Data::Dumper;
+use Config::Tiny;
 use Cloudenabled::Util (qw( :DEFAULT ));
 use Cloudenabled::Constants (qw( :DEFAULT %CE_OP_ST_MAP ));
-use File::Basename;
 
 our %ro; # ro == received opts
-$ro{config_file} = "/opt/webenabled/etc/devpanel.conf";
-$ro{taskd_config_file} = "/opt/webenabled/etc/devpanel.conf";
+$ro{config_file} = "$main_dir/etc/devpanel.conf";
+$ro{taskd_config_file} = "$main_dir/config/taskd.conf";
 
 our $prog;
 #our(@get_operations, @post_operations, @unauth_operations, @local_operations);
 #our($help, $http_method, $local_op, $remote_op);
 our $conf;
-our($section, $command, $libdir);
+our($section, $command);
 our(%general_opts, %received_opts, %req_params);
 
 our(%cmd_help_msgs, %section_help, %section_commands);
@@ -98,6 +121,8 @@ Usage: $b <section> <command> [ options ]
     }
     close(LIBDIR);
   }
+
+  print "\n\n";
 
   if(defined($msg)) {
     printf "\n[*] Error: %s\n", $msg;
@@ -214,9 +239,6 @@ sub load_command_file {
 
 # main()
 
-# $libdir = dirname(__FILE__) . '/lib';
-$libdir = '/opt/webenabled/lib/devpanel-cli/';
-
 %general_opts = (
   'h|help'     => \$ro{help},
   'd|debug'    => \$ro{debug},
@@ -285,8 +307,10 @@ if(exists($cmd_ref->{getopt_params})) {
 if(!GetOptions(%general_opts)) {
   exit(1);
 }
-if(!($conf = cloudenabled_parse_conf($ro{config_file}))) {
-  exit(1);
+
+$conf = Config::Tiny->read($ro{config_file});
+if(!$conf) {
+  die "Error: " . Config::Tiny::errstr() .  "\n";
 }
 
 if($ro{debug}) {
@@ -324,15 +348,16 @@ if(exists($cmd_ref->{opt_params})) {
 my $requires_auth = ( exists($cmd_ref->{requires_auth}) && $cmd_ref->{requires_auth} == 0) ? 0 : 1;
 my $is_local      = ( exists($cmd_ref->{is_local})      && $cmd_ref->{is_local} == 1)      ? 1 : 0;
 
-if(!$is_local && !exists($conf->{api_url})) {
-  warn "Error: missing config parameter api_url in config file '$ro{config_file}'\n";
-  exit(1);
-}
-
+my $user_api_r;
 if($requires_auth) {
+  if(!exists($conf->{user_api})) {
+    die "Error: missing user_api section on config file.\n";
+  }
+
+  $user_api_r = $conf->{user_api};
   foreach my $key (qw( api_key api_secret )) {
-    if(!exists($conf->{$key})) {
-      warn "Error: missing config parameter $key in config file '$ro{config_file}'\n";
+    if(!exists($user_api_r->{$key})) {
+      warn "Error: missing parameter $key on user_api section of file '$ro{config_file}'\n";
       exit(1);
     }
   }
@@ -356,16 +381,16 @@ if(exists($cmd_ref->{prerun}) && ref($cmd_ref->{prerun}) &&
 my $http_rsp;
 if(!$is_local) {
   $req_params{__method}  = $cmd_ref->{method};
-  $req_params{__api_url} = sprintf('%s/api/%s', $conf->{api_url}, $cmd_ref->{op});
+  $req_params{__api_url} = sprintf('%s/api/%s', $user_api_r->{api_url}, $cmd_ref->{op});
   $req_params{timestamp} = time();
 
   if($requires_auth) {
-    $req_params{__key} = $conf->{api_secret};
-    $req_params{__headers}->{'X-Webenabled-Key'} = $conf->{api_key};
+    $req_params{__key} = $user_api_r->{api_secret};
+    $req_params{__headers}->{'X-Webenabled-Key'} = $user_api_r->{api_key};
 
-    $conf->{'api_key'}    = exists($opts{'k'}) ? $opts{'k'} : $conf->{'api_key'};
-    $conf->{'api_url'}    = exists($opts{'u'}) ? $opts{'u'} : $conf->{'api_url'};
-    $conf->{'api_secret'} = exists($opts{'S'}) ? $opts{'S'} : $conf->{'api_secret'};
+    $user_api_r->{'api_key'}    = exists($opts{'k'}) ? $opts{'k'} : $user_api_r->{'api_key'};
+    $user_api_r->{'api_url'}    = exists($opts{'u'}) ? $opts{'u'} : $user_api_r->{'api_url'};
+    $user_api_r->{'api_secret'} = exists($opts{'S'}) ? $opts{'S'} : $user_api_r->{'api_secret'};
   }
 
   if($requires_auth) {
