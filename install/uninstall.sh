@@ -162,6 +162,8 @@ if [ $status -ne 0 ]; then
   error "unable to detect the system distribution"
 fi
 
+rm -rf /var/log/webenabled
+
 if [ "$linux_distro" == "macosx" ]; then
   exec "$script_dir/uninstall.$linux_distro.sh" -y "$install_dir"
 fi
