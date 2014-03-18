@@ -262,6 +262,10 @@ if [ -n "$is_provisioner" -a "$is_provisioner" != 0 ]; then
   chown -R devpanel:devpanel "$DP_TARGET_DIR/paas-provisioner/var/cache"
 
   ln -s /dev/null "$DP_TARGET_DIR/config/os"
+
+  echo "globals.provisioner = 1" | "$DP_TARGET_DIR/bin/update-ini-file" \
+    "$DP_TARGET_DIR/etc/devpanel.conf"
+  
 fi
 
 # taskd needs to start after the provisioner files are checked out
