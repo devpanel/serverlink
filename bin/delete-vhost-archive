@@ -1,0 +1,50 @@
+#!/bin/bash
+
+usage() {
+  echo "Usage: `basename "$0"` <file>
+
+  This script removes the specified backup file from the current vhost
+
+"
+  exit 1
+}
+
+error() {
+  local msg="$1"
+  local exit_code="${2:-1}"
+
+  [ -n "$msg" ] && echo "Error: $msg" 1>&2
+  exit $exit_code
+}
+
+
+[ $# -eq 0 -o -z "$1" ] && usage
+
+archive_file="$1"
+if [ "${archive_file:0:1}" != "/" ]; then
+  archive_file="$HOME/$archive_file"
+fi
+
+if [ ! -e "$archive_file" ]; then
+  error "file '$archive_file' doesn't exist."
+elif [ ! -f "$archive_file" ]; then
+  error "path '$archive_file' is not a regular file."
+fi
+
+archive_full_path=`readlink -e "$archive_file"`
+if [ $? -ne 0 ]; then
+  error "unable to determine full path of file"
+fi
+
+archives_dir="$HOME/public_html/gen/archive"
+
+archives_dir_len=${#archives_dir}
+archive_full_path_len=${#archive_full_path}
+
+if [ $archive_full_path_len -le $archives_dir_len ] || \
+   [ "${archive_full_path:0:$archives_dir_len}" != "$archives_dir" ]; then
+
+  error "file $archive_full_path is outside the archives dir (${archive_full_path:0:$archives_dir_len})"
+fi
+
+rm -f "$archive_full_path"
