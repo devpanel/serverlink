@@ -167,44 +167,49 @@ dp_user="devpanel"
 dp_group="$dp_user"
 if [ "$linux_distro" == "macosx" ]; then
   if ! dscl . -read "/Groups/$dp_group" &>/dev/null; then
-    next_gid==$(dscl . -list /Groups PrimaryGroupID | awk 'BEGIN{i=0}{if($2>i)i=$2}END{print i+1}')
+    declare -i next_gid
+    next_gid=$(dscl . -list /Groups gid UniqueID | egrep -o '[0-9]+$' | \
+                  sort -ug | tail -1 )
     if [ -z "$next_gid" ]; then
       error "unable to get the next gid to create the group $dp_group"
     fi
+    next_gid+=1
 
-    if ! dscl . -create "/Groups/$dp_group"; then
+    if dscl . -create "/Groups/$dp_group" gid "$next_gid"; then
+      dscl . -create "/Groups/$dp_group" RealName "devPanel"
+    else
       error "unable to create group /Groups/$dp_group"
     fi
-
-    dscl . -append "/Groups/$dp_group" gid "$next_gid"
   fi
 
-  # if ! id "$dp_user" &>/dev/null; then
   if ! dscl . -read "/Users/$dp_user" &>/dev/null; then
-    # got from https://gist.github.com/steakknife/941862
-    next_uid=$(dscl . -list /Users UniqueID | awk 'BEGIN{i=0}{if($2>i)i=$2}END{print i+1}')
+    declare -i next_uid
+    next_uid=$(dscl . -list /Users UniqueID | egrep -o '[0-9]+$' | \
+                sort -ug | tail -1)
     if [ -z "$next_uid" ]; then
       error "unable to get the next uid to create the user $dp_user"
     fi
+    next_uid+=1
 
     next_gid=${next_gid:-20}
-    if ! dscl . -create "/Users/$dp_user"; then
+    dp_user_home_dir="/Users/$dp_user"
+    if dscl . -create "/Users/$dp_user"; then
+      dp_user_home_dir="/Users/$dp_user"
+      dscl . -create "/Users/$dp_user"  UserShell /bin/bash
+      dscl . -create "/Users/$dp_user"  RealName "$dp_user"
+      dscl . -create "/Users/$dp_user"  UniqueID "$next_uid"
+      dscl . -create "/Users/$dp_user"  PrimaryGroupID "$next_gid"
+      dscl . -create "/Users/$dp_user"  NFSHomeDirectory "$dp_user_home_dir"
+      dscl . -passwd "/Users/$dp_user" '*'
+
+      dscacheutil -flushcache
+
+      if [ ! -d "$dp_user_home_dir" ] && ! createhomedir -c >/dev/null; then
+        error "unable to create home dir for user $dp_user"
+      fi
+    else
       error "unable to create user /Users/$dp_user"
     fi
-
-    dp_user_home_dir="/Users/$dp_user"
-    dscl . -create "/Users/$dp_user"  UserShell /bin/bash
-    dscl . -create "/Users/$dp_user"  RealName "$dp_user"
-    dscl . -create "/Users/$dp_user"  UniqueID "$next_uid"
-    dscl . -create "/Users/$dp_user"  PrimaryGroupID "$next_gid"
-    dscl . -create "/Users/$dp_user"  NFSHomeDirectory "$dp_user_home_dir"
-
-    dscacheutil -flushcache
-
-    if [ ! -d "$dp_user_home_dir" ]; then
-      mkdir -p 751 "$dp_user_home_dir"
-    fi
-    chown -R "$dp_user":"$dp_group" "$dp_user_home_dir"
   fi
 else
   if ! getent passwd "$dp_user" &>/dev/null; then
