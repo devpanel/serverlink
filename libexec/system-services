@@ -64,6 +64,20 @@ macosx_service_action() {
     macos_action="load"
   elif [ "$action" == "stop" ]; then
     macos_action="unload"
+  elif [ "$action" == "status" ]; then
+    local output=""
+    if output=`launchctl list 2>/dev/null | fgrep "$service" | tail -1`; then
+      if [[ "$output" =~ ^[0-9]+[[:space:]] ]]; then
+        echo "Service $service is RUNNING"
+        return 0;
+      else
+        echo "Service $service is STOPPED"
+        return 1;
+      fi
+    else
+      echo "Unknown service '$service' to launchctl list" 2>&1
+      return 1
+    fi
   else
     echo "$FUNCNAME(): unknown action" 1>&2
     return 1
