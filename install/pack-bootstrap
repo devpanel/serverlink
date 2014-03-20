@@ -31,7 +31,10 @@ declare -a bootstrap_files=( \
   'lib/perl5/' \
   'sbin/taskd' \
   'libexec/system-services' \
+  'bin/update-ini-file' \
   'bin/run-vhost-shell' \
+  'bin/devpanel' \
+  'bin/usr.bin/' \
   'libexec/run-root-shell' \
   'libexec/download-installer' \
   'install/uninstall.sh' \
