@@ -8,6 +8,7 @@ Usage: $prog -y [ options ] <install_dir>
 
   Options:
     -d          enable debug, print every command executed
+    -T          don't stop taskd
 
   This script removes all DevPanel software and related data. You'll lose
   data if you run this script!
@@ -112,8 +113,8 @@ if [ $EUID -ne 0 ]; then
   exit 1
 fi
 
-unset confirmed
-getopt_flags='yd'
+unset confirmed dont_stop_taskd
+getopt_flags='ydT'
 while getopts $getopt_flags OPTN; do
   case "$OPTN" in
     y)
@@ -121,6 +122,12 @@ while getopts $getopt_flags OPTN; do
       ;;
     d)
       set -x
+      ;;
+    T)
+      dont_stop_taskd=1
+      ;;
+    *)
+      exit 1
       ;;
   esac
 done
@@ -162,13 +169,13 @@ if [ $status -ne 0 ]; then
   error "unable to detect the system distribution"
 fi
 
-[ -d /var/log/webenabled ] && rm -rf /var/log/webenabled
-
 if [ "$linux_distro" == "macosx" ]; then
   exec "$script_dir/uninstall.$linux_distro.sh" -y "$install_dir"
 fi
 
-"$install_dir/libexec/system-services" devpanel-taskd stop
+if [ -z "$dont_stop_taskd" ]; then # missing -T
+  "$install_dir/libexec/system-services" devpanel-taskd stop
+fi
 
 if [ -d "/etc/init.d" ]; then
   rm -f /etc/init.d/devpanel-*
@@ -269,6 +276,10 @@ for g in virtwww weadmin w_ devpanel; do
 done
 
 rm -rf "$install_dir"
+
+if [ -z "$dont_stop_taskd" ]; then # missing -T
+  [ -d /var/log/webenabled ] && rm -rf /var/log/webenabled
+fi
 
 echo
 echo "Successfully removed devPanel software"

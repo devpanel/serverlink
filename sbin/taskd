@@ -1100,6 +1100,11 @@ sub http_child {
         }
 
         ran_internal($msg->{_I}); # notify as run in all cases
+      } elsif($msg_type == CE_TASK_MSG_RUN_SHUTDOWN) {
+        ran_internal($msg->{_I}); # notify as run in all cases
+        freeze_and_send(\*TO_PARENT, { __op => 'shutdown' });
+        taskd_log(undef, "received shutdown msg. Shutting down...");
+        exit(0);
       } elsif($msg_type == CE_TASK_MSG_NO_MESSAGES && $debug) {
         debug_log("No messages available. Doing nothing.");
       }
@@ -1241,7 +1246,10 @@ sub master_parse_n_execute {
     } else {
       taskd_log(CE_TASKD_ERR, "unable to remove log file '$log_file' for task $task_id");
     }
-     
+  } elsif($op eq 'shutdown') {
+    taskd_log(undef, "received shutdown request from http child. " .
+                     "Shutting down...");
+    exit(0);
   } else {
     taskd_log(CE_TASKD_ERR, "unknown operation requested");
     return 0;
