@@ -1,0 +1,46 @@
+#!/bin/bash
+
+usage() {
+  echo "Usage: `basename "$0"`"
+  exit 1
+}
+
+links_dir="$GIT_DIR/.devpanel/notify-on-update"
+
+forty_zeros="0000000000000000000000000000000000000000"
+
+if [ -z "$GIT_DIR" ]; then
+  echo -n "Error: env variable GIT_DIR is not set.
+  
+This script is meant to be run automatically by git,
+after a commit push or tag push.
+
+It's not meant to be run directly on shell.
+" 1>&2
+  exit 1
+fi
+
+while IFS=" " read old_rev new_rev ref_name; do
+  if [ "$new_rev" == "$forty_zeros" ]; then
+    # it's a delete, no need to do anything
+    continue
+  fi
+
+  newrev_type=$(git-cat-file -t "$new_rev")
+
+  case "$ref_name","$newrev_type" in
+    refs/tags/*,commit|refs/heads/*,commit)
+      name_transl=${ref_name//\//:}
+      target_base="$links_dir/$name_transl"
+
+      for F in "$target_base"--*; do
+        [ "$F" == "${target_base}--*" ] && break
+
+        if [ -L "$F" ]; then
+          ssh_spec="${F#*--}"
+          ssh "$ssh_spec"
+        fi
+      done
+      ;;
+  esac
+done
