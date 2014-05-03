@@ -7,7 +7,8 @@ usage() {
     <file>      generate the key on the specified file
 
   Options:
-    -m            move the file to a new name in case it already exists
+    -p            if the key file already exists, just extract the key and
+                  print to stdout (but don't generate a new one)
     -c <cmd_str>  prepend a forced command to the key
     -a            output the line with the syntax ready to be piped to
                   public-key-vhost stdin
@@ -18,15 +19,15 @@ usage() {
 }
 
 # main
-getopt_flags='ahmc:'
-unset target_file move_existing format_add_stdin forced_command
+getopt_flags='ahpc:'
+unset target_file print_existing format_add_stdin forced_command
 while getopts $getopt_flags OPTF; do
   case $OPTF in
     h)
       usage
       ;;
-    m)
-      move_existing=1
+    p)
+      print_existing=1
       ;;
     c)
       forced_command="$OPTARG"
@@ -44,13 +45,15 @@ done
 [ -z "$1" ] && usage
 target_file="$1"
 
-if [ -e "$target_file" -a -z "$move_existing" ]; then
+if [ -e "$target_file" -a -z "$print_existing" ]; then
   echo "Error: file '$target_file' already exists" 1>&2
   exit 1
-elif [ -e "$target_file" -a -n "$move_existing" ]; then
-  mv -f "$target_file" "$target_file--`date +%b-%d-%Y_%H:%M:%S`.$$.$RANDOM"
-  if [ $? -ne 0 ]; then
-    echo "Error: unable to move the existing file" 1>&2
+elif [ -e "$target_file" -a -n "$print_existing" ]; then
+  ssh-keygen -f "$target_file" -y
+  if [ $? -eq 0 ]; then
+    exit 0
+  else
+    echo "Error: unable to extract public key from file '$target_file'" 1>&2
     exit 1
   fi
 fi
@@ -62,23 +65,24 @@ if [ ! -e "$target_dir" ] && ! mkdir -m 700 "$target_dir"; then
 fi
 
 ssh-keygen -b 4096 -f "$target_file" -P '' &>/dev/null
-if [ $? -eq 0 ]; then
-  if [ -n "$format_add_stdin" ]; then
-    echo -n "+:"
-  fi
-
-  if [ -n "$forced_command" ]; then
-    cmd_tmpl='command="%s",no-port-forwarding,no-X11-forwarding,no-agent-forwarding,no-pty'
-    cmd_line=`printf $cmd_tmpl "$forced_command"`
-    echo -n "$cmd_line"' '
-  fi
-
-  cat "$target_file.pub"
-  if [ $? -ne 0 ]; then
-    echo "Error: unable to display key contents" 1>&2
-    exit 1
-  fi
-else
+if [ $? -ne 0 ]; then
   echo "Error: unable to generate key file" 1>&2
+  exit 1
+fi
+
+if [ -n "$format_add_stdin" ]; then
+  echo -n "+:"
+fi
+
+if [ -n "$forced_command" ]; then
+  cmd_tmpl='command="%q",no-port-forwarding,no-X11-forwarding,no-agent-forwarding,no-pty'
+  cmd_line=`printf $cmd_tmpl "$forced_command"`
+  echo -n "$cmd_line"' '
+fi
+
+cat "$target_file.pub"
+if [ $? -ne 0 ]; then
+  echo #
+  echo "Error: unable to display key contents" 1>&2
   exit 1
 fi
