@@ -1,0 +1,86 @@
+#!/bin/bash
+
+usage() {
+  echo "Usage: `basename "$0"` <op> <tag>
+
+  Manages the deployment using git tags.
+
+  Valid operations: increment, decrement
+"
+  exit 1
+}
+
+[ $# -lt 2 ] && usage
+op="$1"
+if [ "$op" != "increment" -a "$op" != "decrement" ]; then
+  echo "Error: received an invalid operation." 1>&2
+  usage
+fi
+
+tag="$2"
+if ! [[ "$tag" =~ ^[A-Za-z0-9_.-]+$ ]]; then
+  echo "Error: invalid character on tag. The tag must contain only the characters A-Za-z0-9_.-" 1>&2
+  exit 1
+fi
+
+tags_dir="$HOME/.devpanel/notify-on-tag"
+if [ "$op" == "decrement" -a ! -d "$tags_dir" ]; then
+  echo "Warning: missing tags dir '$tags_dir'" 1>&2
+  exit 0
+fi
+
+if [ ! -d "$tags_dir" ] && ! mkdir -m 700 -p "$tags_dir"; then
+  echo "Error: unable to create dir '$tags_dir'" 1>&2
+  exit 1
+fi
+
+tag_link="$tags_dir/tag:$tag"
+curr_value=`readlink "$tag_link"`
+status=$?
+if [ "$op" == "decrement" -a $status -ne 0 ]; then
+  echo "Error: failed to read the tag link value" 1>&2
+  exit 1
+elif [ "$op" == "decrement" -a ! -L "$tag_link" -a -e "$tag_link" ]; then
+  echo "Error: path '$tag_link' is not a symbolic link" 1>&2
+  exit 1
+fi
+
+if [ -n "$curr_value" ] && ! [[ "$curr_value" =~ ^[0-9]+$ ]]; then
+  echo "Error: tag link '$tag_link' has an invalid value." 1>&2
+  exit 1
+fi
+
+if [ "$op" == "increment" ]; then
+  if [ -z "$curr_value" ]; then
+    value=1
+  else
+    value=$(( $curr_value + 1 ))
+  fi
+
+  ln -sf "$value" "$tag_link"
+  if [ $? -eq 0 ]; then
+    echo "Successfully incremented tag '$tag' to value '$value'"
+  else
+    echo "Error: unable to increment tag '$tag' to value '$value'" 1>&2
+    exit 1
+  fi
+elif [ "$op" == "decrement" ]; then
+  value=$(( $curr_value - 1 ))
+  if [ "$value" == "0" ]; then
+    rm -f "$tag_link"
+    status=$?
+    if [ $status -eq 0 ]; then
+      echo "Successfully removed tag '$tag' (reached value 0)"
+      exit 0
+    else
+      echo "Error: unable to remove tag_link '$tag_link'" 1>&2
+      exit $status
+    fi
+  fi
+
+  ln -sf "$value" "$tag_link"
+  if [ $? -ne 0 ]; then
+    echo "Error: unable to update tag link '$tag_link' to value '$value'" 1>&2
+    exit 1
+  fi
+fi
