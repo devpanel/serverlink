@@ -1,128 +1,324 @@
 #!/bin/bash
 error() { echo "ERROR${@+: }$@" >&2; exit 1; }
+
+usage() {
+  local prog=`basename "$0"`
+  echo "
+  Usage: $prog <vhost>
+
+  This script generates apache mod_macro configuration files.
+"
+
+  exit 1
+}
+
 run()
 {
   echo "  running $@"
   "$@"
 }
-backup()
-{ 
-  local filename="$1"
-  if [ -f "$filename" ]
-  then
-     TMP=`mktemp "$filename.renamed.XXXXXXXX"` || exit 1
-     cat "$filename" >$TMP || exit 1
-     rm "$filename" || exit 1
+
+format_hostname() {
+  local server_hostname="$1"
+  local local_hostname="$2"
+  local hostname_stripped="" new_hostname=""
+
+  # remove the server hostname from the end of name
+  hostname_stripped=${local_hostname%$server_hostname}
+  if [ "$hostname_stripped" == "$local_hostname" ]; then
+    # is not a simple alias to the host domain...add a dot
+    # to the end of the name
+    new_hostname+="${local_hostname}."
+  else
+    new_hostname="$hostname_stripped"
   fi
+
+  echo -n "$new_hostname"
 }
+
+# main
+
+[ $# -eq 0 -o -z "$1" ] && usage
+
 dir=`dirname "$0"`
-apachectl="$dir/../config/os/pathnames/sbin/apachectl"
+
 vhost="$1"
 user="w_$vhost"
-apache_config_dir="$dir/../config/os/pathnames/etc/apache_vhosts"
-apache_config_dir_removed="$dir/../config/os/pathnames/etc/apache_vhosts_removed"
-apache_config="$apache_config_dir/$user.conf"
-apache_config_old="$apache_config_dir_removed/$user.conf.old"
-shift
-$dir/check-vhost-name config "$vhost" || error
-config_dir="/opt/webenabled/config/vhosts/$vhost"
-default_apache_macro=Vhost-simple
-macro_file=/opt/webenabled/config/names/apache-macro
-if [ -s "$macro_file" ]
-then
-  default_apache_macro=`cat "$macro_file"`
-  if ! echo "$default_apache_macro"|grep '^Vhost-[-_A-Za-z0-9]*$'
-  then
-    echo "Invalid macro name in $macro_file"
-    exit 1
-  fi
+
+"$dir/check-vhost-name" config "$vhost" || error
+
+we_base_dir=`readlink -e "$dir/.."`
+
+lib_file="$we_base_dir/lib/functions"
+if ! source "$lib_file"; then
+  error "unable to source lib file '$lib_file'"
 fi
 
-echo "Configuring apache for the following names:"
-names_with_ip=`$dir/list-vhost-names -a "$vhost"` || error
-echo "$names_with_ip"
+assign_deref_os_fs_path_ex_or_exit apachectl "$we_base_dir" pathnames/sbin/apachectl
+assign_deref_os_fs_path_ex_or_exit virtwww_dir "$we_base_dir" pathnames/etc/apache_vhosts
 
-[ -r "$apache_config" ] || error "cannot find $apache_config"
+virtwww_file="$virtwww_dir/$user.conf"
+virtwww_file_old="$virtwww_file.old"
+config_dir="$we_base_dir/config/vhosts/$vhost"
+apache_svc_config_dir="$we_base_dir/config/packages/apache_vhost"
+server_hostname_file="$we_base_dir/config/names/default"
 
-change_ssl_settings=0
-fqdn=$vhost.`$dir/list-vhost-names-default` || true
+tmp_new_vhost_file=`mktemp "$virtwww_file.XXXXXXXXXXXXXXX"`
+if [ $? -ne 0 ]; then
+  error "unable to create temporary file"
+fi
+trap 'ex=$?; rm -f "$tmp_new_vhost_file"; exit $ex;' EXIT INT TERM QUIT
 
-output=`echo "$names_with_ip"|perl -e '
-  use strict;
-  my $vhost = shift;
-  my $fqdn = shift;
-  my $default_apache_macro = shift;
-  my $verbatim_flag;
-  my $verbatim = "";
-  my %domains_for_ip;
-  my %ssl_for_ip;
-  my %ssl_intermediate_for_ip;
-  my $template;
-  my ($template_directive, $template_username, $template_ip, $template_subdomain, $template_domain, $template_aliases, $template_home, $template_token);
-  while(<STDIN>)
-  {
-    chomp;
-    my $ip = "*";
-    my ($domain, @options) = split(/\s+/, $_);
-    $domain ne "" or die "invalid domain";
-    my %options = map { /^([^=]+)=(.*)/ ? ($1, $2) : ($_, "yes") } @options;
-    $ip = $options{ip} if defined $options{ip};
-    $domain = "$domain www.$domain" unless $domain =~ /^www\./;
-    if (defined $domains_for_ip{$ip}) { $domains_for_ip{$ip} .= " " } else { $domains_for_ip{$ip} = "" }
-    $domains_for_ip{$ip} .= $domain;
-    $ssl_for_ip{$ip} = 1 if $options{ssl};
-    $ssl_intermediate_for_ip{$ip} = 1 if $options{ssl_intermediate};
-  }
-  while(<>)
-  {
-    $verbatim_flag = 1 if (/^\s*#\s*webenabled_custom\b/);
-    $verbatim .= $_ if $verbatim_flag;
-    my @s = /^Use\s+(Vhost-simple|Vhost-simple-SSL|Vhost-simple-dummy|Vhost-simple-SSL-wildcard|Vhost-simple-SSL-wildcard-dummy|Vhost-simple-SSL-intermediate|Vhost-simple-SSL-intermediate-dummy)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+"([^"]*)"\s+"([^"]*)"\s+(\S+).*/si;
-    if (@s)
-    {
-      ($template_directive, $template_username, $template_ip, $template_subdomain, $template_domain, $template_aliases, $template_home, $template_token) = @s if @s;
-      $template = 1;
-    }
-  }
-  die "no template" unless $template;
-  for my $ip (sort keys %domains_for_ip)
-  {
+vhost_bkp_file=`mktemp "$virtwww_file.bkp.XXXXXXXXXXXXXXX"`
+if [ $? -ne 0 ]; then
+  error "unable to create a temporary backup file"
+fi
+trap 'ex=$?; rm -f "$tmp_new_vhost_file"; rm -f "$vhost_bkp_file"; exit $ex;' \
+ EXIT INT TERM QUIT
 
-    if ($ip ne "*")
-    {
-      print "NameVirtualHost $ip:80\n";
-      print "NameVirtualHost $ip:443\n" if $default_apache_macro =~ /SSL/ || $ssl_for_ip{$ip};
-    }
-    # Vhost-simple-wildcard cannot be used for any IP if Vhost-simple is used for at least one IP
-    my $apache_macro = (grep { $_ ne "*" } keys %ssl_for_ip) ? "Vhost-simple" : $default_apache_macro;
-    if ($ssl_for_ip{$ip})
-    {
-      $apache_macro = $ssl_intermediate_for_ip{$ip} ? "Vhost-simple-SSL-intermediate" : "Vhost-simple-SSL";
-    }
-    print "Use $apache_macro $template_username $ip $template_subdomain $template_domain \"$domains_for_ip{$ip}\" \"$template_home\" $template_token\n";
-  }
-  print $verbatim;
-' "$vhost" "$fqdn" "$default_apache_macro" "$apache_config"` || error
+if ! cat "$virtwww_file" > "$vhost_bkp_file"; then
+  error "unable to write a copy of '$virtwww_file' into '$vhost_bkp_file'"
+fi
 
-echo "Saving old $apache_config as $apache_config_old"
-backup "$apache_config_old" || error
-cat "$apache_config" >"$apache_config_old" || error
-echo "$output" >"$apache_config" || error
+if ! server_hostname=`deref_contents "$server_hostname_file"`; then
+  error "unable to get server hostname from link '$server_hostname_file'"
+fi
+
+for F in "$config_dir/apache_vhost:"[0-9]; do
+  if [ "$F" == "$config_dir/apache_vhost:[0-9]" ]; then
+    error "this vhost has the configuration broken"
+  fi
+
+  sed_line=""
+  sed_include_str=""
+  vhost_base_str=`basename "$F"`
+
+  # 'template' is a special variable
+  # as it's used below, and not set as a variable
+  if [ -L "$config_dir/$vhost_base_str:_:template" ]; then
+    template_link="$config_dir/$vhost_base_str:_:template"
+  else
+    template_link="$apache_svc_config_dir/_:template"
+  fi
+
+  vhost_template=`deref_contents "$template_link"`
+  if [ $? -ne 0 ]; then
+    error "unable to get vhost template name"
+  fi
+
+  # rename the variable below, use a dedicated variable for apache_svc
+  tmpl_basename=`basename "$vhost_template"`
+  local_template="$apache_svc_config_dir/templates/local/$tmpl_basename"
+  template_file="$apache_svc_config_dir/templates/$tmpl_basename"
+
+  if [ -f "$local_template" ]; then
+    template_file="$local_template"
+  elif [ ! -f "$template_file" ]; then
+    error "missing template file '$template_file'"
+  fi
+
+  if ! cat "$template_file" >>"$tmp_new_vhost_file"; then
+    error "unable to copy template contents to '$tmp_new_vhost_file'"
+  fi
+
+  # a few special non-verbatim parameters
+  #
+  for param in IP Port; do
+    # check for these parameters in the following order:
+    # 1) vhost     2) template   3) server
+    if [ -L "$config_dir/$vhost_base_str:_:$param" ]; then
+      param_link="$config_dir/$vhost_base_str:_:$param"
+    elif [ -L "$apache_svc_config_dir/template:$vhost_template:$param" ]; then
+      param_link="$apache_svc_config_dir/template:$vhost_template:$param"
+    elif [ -L "$apache_svc_config_dir/_:$param" ]; then
+      param_link="$apache_svc_config_dir/_:$param"
+    else
+      error "unable to determine apache parameter $param"
+    fi
+
+    param_value=`readlink "$param_link"`
+    param_name_escaped=`escape_sed "${param^^}"`
+    param_value_escaped=`escape_sed "$param_value"`
+
+    sed_line+="s/@@__PARAM_${param_name_escaped}__@@/$param_value_escaped/g;"
+  done
+
+  # a few special verbatim parameters
+  # these are about system defaults, to avoid having to create links on all
+  # vhosts
+  #
+  # This way when a larger system wide change happens, we just update it
+  # once and it applies to all vhosts
+  params_str=""
+  for param in ServerName DocumentRoot SuexecUserGroup CustomLog ErrorLog; do
+    # check for these parameters in the following order:
+    # 1) vhost     2) template   3) server
+    if [ -L "$config_dir/$vhost_base_str:_:$param" ]; then
+      param_link="$config_dir/$vhost_base_str:_:$param"
+    elif [ -L "$apache_svc_config_dir/template:$vhost_template:_:$param" ]; then
+      param_link="$apache_svc_config_dir/template:$vhost_template:_:$param"
+    elif [ -L "$apache_svc_config_dir/_:$param" ]; then
+      param_link="$apache_svc_config_dir/_:$param"
+    else
+      error "unable to determine apache parameter $param"
+    fi
+
+    param_value=`readlink "$param_link"`
+    param_name_escaped=`escape_sed "${param^^}"`
+    param_value_escaped=`escape_sed "$param_value"`
+
+    params_str+="  $param $param_value"$'\n'
+    sed_line+="s/@@__PARAM_${param_name_escaped}__@@/$param_value_escaped/g;"
+  done
+
+  # generic Apache parameters for the template, available system wide.
+  # Have the same intent of the previous one, to make it easy to distribute
+  # mass updates on system templates
+  for P in "$apache_svc_config_dir/template:$vhost_template:param:"[0-9]:*; do
+    [ "$P" == "$apache_svc_config_dir/template:$vhost_template:param:[0-9]:*" ] && break
+
+    param_basename=`basename "$P"`
+    param_name="${param_basename##*:}"
+    param_name_escaped=`escape_sed "$param_name"`
+    param_value=`readlink "$P"`
+    param_value_escaped=`escape_sed "$param_value"`
+
+    # store the params on the sed_line, so it can eventually be re-used in
+    # templates
+    sed_line+="s/@@__PARAM_${param_name_escaped}__@@/$param_value_escaped/g;"
+
+    params_str+="  $param_name $param_value"$'\n'
+  done
+
+
+  # other less important (or less widely-distributed parameters)
+  for P in "$config_dir/$vhost_base_str:param:"[0-9]:*; do
+    [ "$P" == "$config_dir/$vhost_base_str:param:[0-9]:*" ] && break
+    param_basename=`basename "$P"`
+    param_name="${param_basename##*:}"
+    param_name_escaped=`escape_sed "$param_name"`
+    param_value=`readlink "$P"`
+    param_value_escaped=`escape_sed "$param_value"`
+
+    # store the params on the sed_line, so it can eventually be re-used in
+    # templates
+    sed_line+="s/@@__PARAM_${param_name_escaped}__@@/$param_value_escaped/g;"
+
+    params_str+="  $param_name $param_value"$'\n'
+  done
+
+  if [ -n "$params_str" ]; then
+    params_str_escaped=`escape_sed "$params_str"`
+    sed_line+="s/^[[:space:]]*#[[:space:]]*@@__PARAMS__@@/$params_str_escaped/g;"
+  else
+    sed_line+="/^[[:space:]]*#[[:space:]]*@@__PARAMS__@@/d;"
+  fi
+
+  sys_inc_base="$apache_svc_config_dir/template:$vhost_template:include:"
+
+  for inc in "$sys_inc_base"*; do
+    [ "$inc" == "$sys_inc_base*" ] && break
+
+    include_file=`readlink "$inc"`
+    if [ $? -ne 0 -o -z "$include_file" ]; then
+      error "unable to de-reference file '$inc'"
+    fi
+
+    tmpl_file="$apache_svc_config_dir/templates/$include_file"
+    sys_include_str+=`cat "$tmpl_file"`
+  done
+
+  if [ -n "$sys_include_str" ]; then
+    sys_include_str_escaped=`escape_sed "$sys_include_str"`
+    sed_include_str+="s/^[[:space:]]*#[[:space:]]*@@__SYSTEM_INCLUDES__@@/$sys_include_str_escaped/g;"
+  else
+    sed_include_str+="/^[[:space:]]*#[[:space:]]*@@__SYSTEM_INCLUDES__@@/d;"
+  fi
+
+  usr_inc_base="$config_dir/$vhost_base_str:_:include:"
+  for inc in "$usr_inc_base"*; do
+    [ "$inc" == "$usr_inc_base*" ] && break
+
+    include_file=`deref_contents_or_die "$inc"`
+    if [ $? -ne 0 -o -z "$include_file" ]; then
+      error "unable to de-reference file '$inc'"
+    fi
+    tmpl_file="$apache_svc_config_dir/templates/$include_file"
+
+    usr_include_str+=`cat "$tmpl_file"`
+  done
+
+  if [ -n "$usr_include_str" ]; then
+    usr_include_str_escaped=`escape_sed "$usr_include_str"`
+    sed_include_str+="s/^[[:space:]]*#[[:space:]]*@@__USER_INCLUDES__@@/$usr_include_str_escaped/g;"
+  else
+    sed_include_str+="/^[[:space:]]*#[[:space:]]*@@__USER_INCLUDES__@@/d;"
+  fi
+
+  for V in "$config_dir/$vhost_base_str:var:"*; do
+    [ "$V" == "$config_dir/$vhost_base_str:var:*" ] && break
+    var_basename=`basename "$V"`
+    var_name=${var_basename##*:var:}
+    var_value=`readlink "$V"`
+
+    var_name_escaped=`escape_sed "${var_name^^}"`
+    var_value_escaped=`escape_sed "$var_value"`
+
+    sed_line+="s/@@__VAR_${var_name_escaped}__@@/$var_value_escape/g;"
+  done
+
+  # first include all external files
+  sed -i -e "$sed_include_str" "$tmp_new_vhost_file"
+  if [ $? -ne 0 ]; then
+    error "unable to update include lines on file '$tmp_new_vhost_file'"
+  fi
+
+  sed_line+="s/@@__SERVER_HOSTNAME__@@/`escape_sed "$server_hostname"`/g;"
+  sed_line+="s/@@__VHOST__@@/`escape_sed "$vhost"`/g;"
+  sed_line+="s/@@__TEMPLATE_FILE__@@/`escape_sed "$template_file"`/g;"
+  sed_line+="s/@@__TEMPLATE_FILE_BASENAME__@@/`escape_sed "$vhost_template"`/g;"
+
+  # then replace all parameters and variables
+  sed -i -e "$sed_line" "$tmp_new_vhost_file"
+  if [ $? -ne 0 ]; then
+    error "unable to replace variables"
+  fi
+done
 
 echo Validating apache config syntax
 
-if ! run "$apachectl" configtest  
-then
-  echo Syntax validation failed, reverting the changes
-  if cat "$apache_config_old" >"$apache_config" &&
-     rm "$apache_config_old" &&
-     run "$apachectl" configtest
-   then
-        error Aborted
-   else
-	error "Apache config is broken, call a system administrator NOW!"
-   fi
+if ! cat "$tmp_new_vhost_file" > "$virtwww_file"; then
+  error "unable to copy contents from '$tmp_new_vhost_file'"\
+" to '$virtwww_file'"
 fi
 
+if ! "$apachectl" configtest; then
+  echo Syntax validation failed, reverting the changes
+  if ! cat "$vhost_bkp_file" >"$virtwww_file"; then
+    error "unable to copy back the contents from $vhost_bkp_file"\
+" to '$virtwww_file'"
+  fi
+
+  echo
+  echo "-- BROKEN TEMPLATE FILE (?) --"
+  cat "$tmp_new_vhost_file"
+  echo "-- END OF TEMPLATE --"
+  echo
+
+  if ! "$apachectl" configtest; then
+    error "Apache config is broken, call a system administrator NOW!"
+  fi
+else
+  cp -f "$vhost_bkp_file" "$virtwww_file_old"
+  if [ $? -eq 0 ]; then
+    echo "Successfully saved previous vhost file on $virtwww_file_old"
+  else
+    echo "Warning: unable to save a copy of the old file (not critical)" 1>&2
+  fi
+fi
+
+echo "Successfully updated vhost $vhost on file $virtwww_file"
 echo Restarting apache
-run "$apachectl" graceful || error echo "Cannot restart apache, call a system administrator NOW!"
+
+run "$apachectl" graceful || \
+  error "Cannot restart apache, call a system administrator NOW!"

@@ -67,14 +67,16 @@ done
 
 [ $# -lt 2 ] && usage
 
-dir=`dirname $0`
+dir=`dirname "$0"`
 bin_dir="$dir/../bin"
 vhost="$1"
 user="w_$vhost"
 archive_label="$2"
 
-if ! source "$dir/../lib/functions" ; then
-  echo "Error: unable to load auxiliary functions" 1>&2
+we_base_dir=`readlink "$dir/.."`
+lib_file="$we_base_dir/lib/functions"
+if ! source "$lib_file" ; then
+  echo "Error: unable to load auxiliary functions from '$lib_file'" 1>&2
   exit 1
 fi
 
@@ -117,12 +119,14 @@ fi
 old_user="w_$old_vhost"
 date=`date  +'%Y%m%d'`
 archive_file="$archive_dir/$old_user.tgz"
-apache_config_dir="$dir/../config/os/pathnames/etc/apache_vhosts"
-apache_group=`cat "$dir/../config/os/names/apache.group"`
-chcgi="$dir/../config/os/pathnames/sbin/chcgi"
+apache_config_dir=`deref_os_prop_or_exit "$we_base_dir" pathnames/etc/apache_vhosts`
+apache_group=`deref_os_prop_or_exit "$we_base_dir" names/apache.group`
+chcgi=`deref_os_prop_or_exit "$we_base_dir" pathnames/sbin/chcgi`
+apache_logs_dir=`deref_os_prop_or_exit "$we_base_dir" pathnames/var/log/apache_vhosts`
+
 conf="$apache_config_dir/$user.conf"
 archive_conf="$archive_dir/apache_$old_vhost.conf"
-logs_dir="$dir/../config/os/pathnames/var/log/apache_vhosts/$user"
+logs_dir="$apache_logs_dir/$user"
 archive_logs="$archive_dir/logs_$old_vhost.tgz"
 archive_shadow="$archive_dir/$old_user.shadow"
 archive_crontab="$archive_dir/crontab"
@@ -137,7 +141,7 @@ elif [ $create_vhost -eq 1 -a ! -e "$archive_conf" ]; then
 fi
 
 if [ $create_vhost -eq 1 ] && \
-  ! default_domain=`head -1 "$dir/../config/names/default"`; then
+  ! default_domain=`deref_contents "$we_base_dir/config/names/default"`; then
   error "No default domain"
 elif [ $create_vhost -eq 1 ] && \
   ! echo -e "n\nn\ny"| run $dir/create-virtwww $options "$vhost" "$vhost.$default_domain"; then
