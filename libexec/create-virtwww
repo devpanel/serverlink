@@ -16,7 +16,7 @@ shift `expr $OPTIND - 1`
 progname=$(basename "$0")
 dir=$(dirname "$0")
 
-we_base=`readlink "$dir/.."`
+we_base=`readlink -e "$dir/.."`
 dir_bin="$we_base/bin"
 
 pathnames="$dir/../config/os/pathnames"
@@ -24,7 +24,8 @@ pathnames="$dir/../config/os/pathnames"
 
 lib_file="$we_base/lib/functions"
 if ! source "$lib_file"; then
-  error "unable to source lib file '$lib_file'"
+  echo "Error: unable to source lib file '$lib_file'" 1>&2
+  exit 1
 fi
 
 assign_deref_os_fs_path_ex_or_exit chcgi     "$we_base" pathnames/sbin/chcgi
@@ -148,6 +149,8 @@ DB_ACCOUNT_NAME="b_$ACCOUNT_NAME"
 vhost="$ACCOUNT_NAME"
 ACCOUNT_NAME="w_$ACCOUNT_NAME"
 
+config_dir="$we_base/config/vhosts/$vhost"
+
 echo
 VHOST_MULTISITE=
 echo -n 'Is the new vhost a multi-site one (y/N)?'
@@ -252,6 +255,11 @@ else
         exit 2
     fi
     echo 'done'
+fi
+
+if ! mkdir -m 751 "$config_dir"; then
+  echo "Error: unable to create directory '$config_dir'" 1>&2
+  exit 1
 fi
 
 # 20060426 - (GM): added optional database creation
@@ -409,26 +417,11 @@ echo 'done'
 vhost_prefixed_f="$config_dir/apache_vhost:0"
 tools_vhost_prefixed="$config_dir/apache_vhost:1"
 
+ln -s /dev/null "$vhost_prefixed_f"
+ln -s /dev/null "$tools_vhost_prefixed"
+
 ln -s "$apache_vhost_template" "$vhost_prefixed_f:_:template"
-ln -s "$tools_vhost_template" "$vhost_prefixed_f:_:template"
-
-echo -n '+ checking Apache configuration integrity ... '
-RESULT="$("$apachectl" configtest 2>&1)"
-if [ $? -eq 0 ]; then
-	echo 'done'
-else
-	echo 'failed'
-	echo -n "$0: $RESULT"
-fi
-
-echo -n '+ reloading Apache to get new configuration ... '
-RESULT="$("$apachectl" graceful 2>&1)"
-if [ $? -eq 0 ]; then
-	echo 'done'
-else
-	echo 'failed'
-	echo -n "$0: $RESULT"
-fi
+ln -s "$tools_vhost_template" "$tools_vhost_prefixed:_:template"
 
 echo '---[ end of creating new virtual host ]---'
 echo
