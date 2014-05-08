@@ -73,7 +73,7 @@ vhost="$1"
 user="w_$vhost"
 archive_label="$2"
 
-we_base_dir=`readlink "$dir/.."`
+we_base_dir=`readlink -e "$dir/.."`
 lib_file="$we_base_dir/lib/functions"
 if ! source "$lib_file" ; then
   echo "Error: unable to load auxiliary functions from '$lib_file'" 1>&2
@@ -119,10 +119,12 @@ fi
 old_user="w_$old_vhost"
 date=`date  +'%Y%m%d'`
 archive_file="$archive_dir/$old_user.tgz"
-apache_config_dir=`deref_os_prop_or_exit "$we_base_dir" pathnames/etc/apache_vhosts`
-apache_group=`deref_os_prop_or_exit "$we_base_dir" names/apache.group`
-chcgi=`deref_os_prop_or_exit "$we_base_dir" pathnames/sbin/chcgi`
-apache_logs_dir=`deref_os_prop_or_exit "$we_base_dir" pathnames/var/log/apache_vhosts`
+
+assign_deref_os_fs_path_ex_or_exit apache_config_dir "$we_base_dir" pathnames/etc/apache_vhosts
+assign_deref_os_fs_path_ex_or_exit chcgi "$we_base_dir" pathnames/sbin/chcgi
+assign_deref_os_fs_path_ex_or_exit apache_logs_dir  "$we_base_dir" pathnames/var/log/apache_vhosts
+
+assign_deref_os_prop_or_exit apache_group "$we_base_dir" names/apache.group
 
 conf="$apache_config_dir/$user.conf"
 archive_conf="$archive_dir/apache_$old_vhost.conf"
@@ -131,6 +133,8 @@ archive_logs="$archive_dir/logs_$old_vhost.tgz"
 archive_shadow="$archive_dir/$old_user.shadow"
 archive_crontab="$archive_dir/crontab"
 home_prefix=${WEBENABLED_HOME_PREFIX:-/home/clients/websites}
+
+config_dir="$WEBENABLED_BASE_DIR/config/vhosts/$vhost"
 
 if [ ! -e "$archive_file" ]; then
   error "missing archive file '$archive_file'"
@@ -146,18 +150,7 @@ if [ $create_vhost -eq 1 ] && \
 elif [ $create_vhost -eq 1 ] && \
   ! echo -e "n\nn\ny"| run $dir/create-virtwww $options "$vhost" "$vhost.$default_domain"; then
   error "unable to create vhost"
-fi
-
-config_dir="$WEBENABLED_BASE_DIR/config/vhosts/$vhost"
-
-if [ $create_vhost -eq 1 ]; then
-  default_name="$vhost.$default_domain"
-  if ! run "$dir/config-vhost-names" "$vhost" '*' "$default_name" '+' "$default_name"; then
-    error "unable to configure vhost hostname"
-  fi
-fi
-
-if [ $create_vhost -eq 0 ] && locked; then
+elif [ $create_vhost -eq 0 ] && locked; then
   echo "Restoring the locked state of apache cofig"
   if ! run $dir/lock-vhost-apache "$vhost"; then
     error "Cannot restore apache config in locked state"
