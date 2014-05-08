@@ -45,6 +45,7 @@ set_global_variables() {
   local target_dir="$2"
   local distro="$3"
 
+  local -i st
   # initialize global variables used throughout this script
 
   local we_config_dir="$source_dir/config"
@@ -52,66 +53,35 @@ set_global_variables() {
   # main config file to be used by DevPanel
   dp_config_file="$target_dir/etc/devpanel.conf"
 
-  _apache_logs_dir=$(wedp_resolve_link "$we_config_dir/os.$distro/pathnames/var/log/apache_logs_dir")
-  if [ $? -ne 0  -o -z "$_apache_logs_dir" ]; then
-    echo "unable to set global variable _apache_logs_dir" 1>&2
-    return 1
-  fi
+  _apache_logs_dir=`deref_os_fs_path "$source_dir" \
+    pathnames/var/log/apache_logs_dir` || return 1
 
-   _apache_vhost_logs_dir=$(wedp_resolve_link "$we_config_dir/os.$distro/pathnames/var/log/apache_vhosts")
-  if [ $? -ne 0  -o -z "$_apache_vhost_logs_dir" ]; then
-    echo "unable to set global variable _apache_vhost_logs_dir" 1>&2
-    return 1
-  fi
+  _apache_vhost_logs_dir=`deref_os_fs_path "$source_dir" \
+    pathnames/var/log/apache_vhosts` || return 1
+
+  _apache_base_dir=`deref_os_fs_path "$source_dir" \
+    pathnames/etc/apache_base_dir` || return 1
   
-  _apache_base_dir=$(wedp_resolve_link "$we_config_dir/os.$distro/pathnames/etc/apache_base_dir")
-  if [ $? -ne 0  -o -z "$_apache_base_dir" ]; then
-    echo "unable to set global variable _apache_base_dir" 1>&2
-    return 1
-  fi
+  _apache_includes_dir=`deref_os_fs_path "$source_dir" \
+    pathnames/etc/apache_includes_dir` || return 1
 
-  _apache_includes_dir=$(wedp_resolve_link "$we_config_dir/os.$distro/pathnames/etc/apache_includes_dir")
-  if [ $? -ne 0  -o -z "$_apache_includes_dir" ]; then
-    echo "unable to set global variable _apache_includes_dir" 1>&2
-    return 1
-  fi
+  _apache_vhosts=`deref_os_fs_path "$source_dir" \
+    pathnames/etc/apache_vhosts` || return 1
 
-  _apache_vhosts=$(wedp_resolve_link "$we_config_dir/os.$distro/pathnames/etc/apache_vhosts")
-  if [ $? -ne 0  -o -z "$_apache_vhosts" ]; then
-    echo "unable to set global variable _apache_vhosts" 1>&2
-    return 1
-  fi
+  _apache_vhosts_removed=`deref_os_fs_path "$source_dir" \
+    pathnames/etc/apache_vhosts_removed` || return 1
 
-  _apache_vhosts_removed=$(wedp_resolve_link "$we_config_dir/os.$distro/pathnames/etc/apache_vhosts_removed")
-  if [ $? -ne 0  -o -z "$_apache_vhosts_removed" ]; then
-    echo "unable to set global variable _apache_vhosts_removed" 1>&2
-    return 1
-  fi
+  _apache_main_config_file=`deref_os_fs_path "$source_dir" \
+    pathnames/etc/apache_main_config_file` || return 1
 
-  _apache_user=`head -1 "$we_config_dir/os.$distro/names/apache.user"`
-  if [ $? -ne 0 -o -z "$_apache_user" ]; then
-    echo "unable to resolve apache user" 1>&2
-    return 1
-  fi
+  _apache_user=`deref_os_prop "$source_dir" names/apache.user` \
+    || return 1
 
+  _apache_group=`deref_os_prop "$source_dir" names/apache.group` \
+    || return 1
 
-  _apache_group=`head -1 "$we_config_dir/os.$distro/names/apache.group"`
-  if [ $? -ne 0 ]; then
-    echo "unable to resolve apache group" 1>&2
-    return 1
-  fi
-
-  _apache_exec_group=`head -1 "$we_config_dir/os.$distro/names/apache-exec.group"`
-  if [ $? -ne 0 ]; then
-    echo "unable to resolve apache exec group" 1>&2
-    return 1
-  fi
-
-  _apache_main_config_file=`readlink "$we_config_dir/os.$distro/pathnames/etc/apache_main_config_file"`
-  if [ $? -ne 0 -o -z "$_apache_main_config_file" ]; then
-    echo "unable to resolve apache_main_config_file" 1>&2
-    return 1
-  fi
+  _apache_exec_group=`deref_os_prop "$source_dir" names/apache-exec.group` \
+    || return 1
 
   return 0
 }
@@ -435,10 +405,17 @@ if [ -z "$linux_distro" ]; then
   fi
 fi
 
-if [ ! -e "$install_source_dir/config/os.$linux_distro" ]; then
+source_config_dir="$install_source_dir/config/os.$linux_distro"
+source_config_shortcut=`dirname "$source_config_dir"`/os
+if [ ! -e "$source_config_dir" ]; then
   error "missing the configuration directory for distro '$linux_distro'.
 There seems to be a problem in this installation package."
   exit 1
+else
+  # link the source dir /os/ link to be used by function set_variables
+  if ! ln -sf "$source_config_dir" "$source_config_shortcut"; then
+    error "unable to link source config shortcut $source_config_shortcut"
+  fi
 fi
 
 if [ -z "$webenabled_distro_version" ]; then
