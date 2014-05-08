@@ -23,48 +23,47 @@ usage() {
 
 format_hostname() {
   local server_hostname="$1"
-  local local_hostname="$2"
+  local test_hostname="$2"
   local force_subdomain="$3"
 
-  local hostname_stripped="" new_hostname="" has_dot=""
+  local test_host_stripped="" final_hostname="" has_dot=""
 
-  if [[ "$local_hostname" =~ \. ]]; then
-    has_dot=1
+  if [[ "$test_hostname" =~ \. ]]; then
+   has_dot=1
   fi
 
   # remove the server hostname from the end of name
-  if [ "${local_hostname: -1}" == "." ]; then
-    hostname_stripped=${local_hostname%$server_hostname.}
+  if [ "${test_hostname: -1}" == "." ]; then
+    test_host_stripped=${test_hostname%.$server_hostname.}
   else
-    hostname_stripped=${local_hostname%$server_hostname}
+    test_host_stripped=${test_hostname%.$server_hostname}
   fi
 
   if [ "$force_subdomain" == "1" ]; then
-    if [ "${local_hostname: -1}" == "." ]; then
-      new_hostname="${hostname_stripped:0:-1}"
+    if [ "${test_hostname: -1}" == "." ]; then
+      final_hostname="${test_host_stripped:0:-1}"
     else
-      new_hostname="$hostname_stripped"
+      final_hostname="$test_host_stripped"
     fi
   else
-    if [ "${local_hostname: -1}" == "." ]; then
+    if [ "$test_host_stripped" != "$test_hostname" ]; then
+      # had the server name successfully stripped, so it's a subdomain
+      final_hostname="$test_host_stripped"
+    elif [ "${test_hostname: -1}" == "." ]; then
       # if the hostname ends with a dot, then take it as fully defined
-      new_hostname="$local_hostname"
-    elif [ "$hostname_stripped" != "$local_hostname" ]; then
-      # is not a simple alias to the host domain...add a dot
-      # to the end of the name
-      new_hostname+="$hostname_stripped"
+      final_hostname="$test_hostname"
     elif [ -n "$has_dot" ]; then
       # hostname doesn't end with a dot, but has a dot in the name
       # so let's guess it's a full domain
-      new_hostname="$local_hostname."
+      final_hostname="$test_hostname."
     else
       # hostname doesn't end with a dot, doesn't have a dot
       # consider it a sub domain of the default server domain
-      new_hostname="$local_hostname"
+      final_hostname="$test_hostname"
     fi
   fi
 
-  echo -n "$new_hostname"
+  echo -n "$final_hostname"
 }
 
 format_to_apache() {
@@ -193,8 +192,6 @@ if [ -L "$base_host_link" ]; then
   if [ -z "$default_name" ]; then
     error "unable to get default hostname from vhost $vhost"
   fi
-else
-  default_name="$vhost.$server_hostname."
 fi
 
 unset changed
@@ -219,30 +216,35 @@ for i; do
         new_name="$i"
 
         new_default_name=`format_hostname "$server_hostname" "$new_name" ${force_subdomain:0:-1}`
+        default_name_fmt="$new_default_name" # to check later in the '+' if present
         default_name_apache=`format_to_apache "$server_hostname" "$new_default_name"`
 
-        previous_name=`readlink "$base_host_link"`
-        previous_name_cut=${previous_name%.$server_hostname}
-        if [ $? -eq 0 -a "$previous_name" == "$default_name_apache" ]; then
-          echo "Warning: the default name hasn't changed..." 1>&2
-          continue
-        fi
-
-        alias_fmt_hn=`format_hostname "$server_hostname" "$previous_name_cut"`
-        alias_file="$alias_base:$previous_name_cut"
-        alias_file_previous="$alias_priv:$alias_fmt_hn"
         # saving the previous name into the aliases
-        if [ -L "$alias_file_previous" ]; then
-          echo "Warning: default file is already on the list of aliases" 1>&2
-        else
-          if ! ln -sf "$alias_fmt_hn" "$alias_file_previous"; then
-            error "unable to move the default name to an alias"
+        [ -L "$base_host_link" ] && previous_name=`readlink "$base_host_link"`
+
+        if [ -n "$previous_name" ]; then
+          previous_name_cut=${previous_name%.$server_hostname}
+          if [ "$previous_name" == "$default_name_apache" ]; then
+            echo "Warning: the default name hasn't changed..." 1>&2
+            continue
           fi
 
-          if [ -n "$prefix_with_www" ]; then
-            www_alias_link="$alias_priv:www.$alias_fmt_hn"
-            if ! ln -sf "$previous_name" "$www_alias_link"; then
-              error "unable to save www alias to default name"
+          alias_fmt_hn=`format_hostname "$server_hostname" "$previous_name_cut"`
+          alias_file="$alias_base:$previous_name_cut"
+          alias_file_previous="$alias_priv:$alias_fmt_hn"
+
+          if [ -L "$alias_file_previous" ]; then
+            echo "Warning: default file is already on the list of aliases" 1>&2
+          else
+            if ! ln -sf "$alias_fmt_hn" "$alias_file_previous"; then
+              error "unable to move the default name to an alias"
+            fi
+
+            if [ -n "$prefix_with_www" ]; then
+              www_alias_link="$alias_priv:www.$alias_fmt_hn"
+              if ! ln -sf "$previous_name" "$www_alias_link"; then
+                error "unable to save www alias to default name"
+              fi
             fi
           fi
         fi
@@ -254,7 +256,7 @@ for i; do
 
         if [ -n "$prefix_with_www" ]; then
           www_alias_link="$alias_priv:www.$new_default_name"
-          if ! ln -sf "$default_name_apache" "$www_alias_link"; then
+          if ! ln -sf "www.$new_default_name" "$www_alias_link"; then
             error "unable to set www alias to default name"
           fi
         fi
@@ -270,12 +272,20 @@ for i; do
           echo "Warning: unable to chfn the vhost..." 1>&2
         fi
 
+        echo "Successfully set the ServerName to $default_name_apache"
+
         changed=1
         ;;
     '+')
         this_hostname="$i"
 
         this_hostname=`format_hostname "$server_hostname" "$this_hostname" ${force_subdomain:-0}`
+        this_name_apache=`format_to_apache "$server_hostname" "$this_hostname" ${force_subdomain:-0}`
+
+        if [ "$this_hostname" == "$default_name_fmt" ]; then
+          echo "Warning: this hostname is equal to the default hostname.  Skipping..." 1>&2
+          break;
+        fi
 
         name_file="$alias_priv:$this_hostname"
 
@@ -293,6 +303,8 @@ for i; do
             fi
           fi
         fi
+
+        echo "Successfully added alias hostname $this_name_apache"
 
         changed=1
         ;;
