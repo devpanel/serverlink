@@ -4,6 +4,7 @@
 
 dummy=""
 
+unset custom_template
 while getopts "n" OPTOPT
 do
   case "$OPTOPT" in
@@ -35,10 +36,17 @@ assign_deref_os_fs_path_ex_or_exit VIRTWWW_LOGDIR "$we_base" pathnames/var/log/a
 assign_deref_os_fs_path_ex_or_exit VIRTWWW_CFGDIR "$we_base" pathnames/etc/apache_vhosts
 
 assign_deref_os_prop_or_exit apache_group          "$we_base" names/apache-exec.group
-assign_deref_os_prop_or_exit apache_vhost_template "$we_base" names/apache_vhost_template
 assign_deref_os_prop_or_exit tools_vhost_template  "$we_base" names/tools_vhost_template
 assign_deref_os_prop_or_exit WEBSITES_HOME         "$we_base" websites_basedir
- 
+
+template_file="$we_base/config/packages/apache_vhost/_:template"
+if [ -f "$template_file" ]; then
+  assign_deref_contents_or_exit apache_vhost_template "$template_file"
+else
+  assign_deref_os_prop_or_exit apache_vhost_template "$we_base" \
+    names/apache_vhost_template
+fi
+
 passgen="$dir_bin/genpass"
 
 ADDON_GROUPS=
@@ -421,11 +429,17 @@ echo 'done'
 vhost_prefixed_f="$config_dir/apache_vhost:0"
 tools_vhost_prefixed="$config_dir/apache_vhost:1"
 
-ln -s /dev/null "$vhost_prefixed_f"
-ln -s /dev/null "$tools_vhost_prefixed"
+if ! ln -s /dev/null "$vhost_prefixed_f"; then
+  error "unable to create vhost entry $vhost_prefixed_f"
+fi
 
-ln -s "$apache_vhost_template" "$vhost_prefixed_f:_:template"
-ln -s "$tools_vhost_template" "$tools_vhost_prefixed:_:template"
+if ln -s /dev/null "$tools_vhost_prefixed"; then
+  if ! ln -s /dev/null "$tools_vhost_prefixed:_:is_tools_vhost"; then
+    error "unable to set the tools vhost flag"
+  fi
+else
+  error "unable to create vhost entry $tools_vhost_prefixed"
+fi
 
 echo '---[ end of creating new virtual host ]---'
 echo
