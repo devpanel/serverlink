@@ -51,7 +51,7 @@ ubuntu_adjust_system_config() {
     fi
   fi
 
-  for module in rewrite macro suexec ssl proxy proxy_http; do
+  for module in rewrite macro cgi suexec ssl proxy proxy_http; do
     if [ ! -e "$_apache_base_dir/mods-enabled/$module.load" \
       -a -f "$_apache_base_dir/mods-available/$module.load" ]; then
       ln -sf ../mods-available/$module.load "$_apache_base_dir"/mods-enabled/
