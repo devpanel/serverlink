@@ -309,16 +309,9 @@ fi
 shopt -s expand_aliases
 
 current_dir=`dirname "${BASH_SOURCE[0]}"`
-if [ -n "$DP_INSTALL_SOURCE_DIR" -a -d "$DP_INSTALL_SOURCE_DIR" ]; then
-  install_source_dir="$DP_INSTALL_SOURCE_DIR"
-else
-  if [ "$current_dir" == "." ]; then
-    current_dir="$PWD"
-  elif [ "${current_dir:0:1}" != "/" ]; then
-    current_dir="$PWD/$current_dir"
-  fi
-
-  install_source_dir=${current_dir%/*}
+install_source_dir=`readlink -e "$current_dir"`
+if [ $? -ne 0 ]; then
+  error "unable to determine local source dir"
 fi
 
 echo -e "\nStarting DevPanel installation from '$install_source_dir'\n" 1>&2
