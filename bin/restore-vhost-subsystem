@@ -494,7 +494,10 @@ fi
 test_flags_logic    || error "Inconsistency in the cmdline flags"
 test_target_account || error "Problems in target user account"
 
-if ! fqdn=`readlink $config_dir/names/default` || ! [ -n "$fqdn" ]
+servername_link="$config_dir/apache_vhost:0:_:ServerName"
+if fqdn=`deref_contents "$servername_link"`; then
+  :
+elif ! fqdn=`readlink $config_dir/names/default` || ! [ -n "$fqdn" ]
 then
   error "Cannot get the primary name from $config_dir/names/default"
 fi
