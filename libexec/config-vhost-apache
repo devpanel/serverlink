@@ -226,7 +226,13 @@ for F in "$config_dir/apache_vhost:"[0-9]; do
     fi
 
     tmpl_file="$apache_svc_config_dir/templates/$include_file"
-    sys_include_str+=`cat "$tmpl_file"`
+    if [ ! -f "$tmpl_file" ] || ! tmp_str=`cat "$tmpl_file"`; then
+      error "unable to include template file '$tmpl_file' for template $vhost_template"
+    else
+      sys_include_str+="# system defined template include: $tmpl_file"$'\n'
+      sys_include_str+="$tmp_str"$'\n'
+      sys_include_str+="# // end of system defined template include: $tmpl_file"$'\n\n'
+    fi
   done
 
   if [ -n "$sys_include_str" ]; then
@@ -246,7 +252,13 @@ for F in "$config_dir/apache_vhost:"[0-9]; do
     fi
     tmpl_file="$apache_svc_config_dir/templates/$include_file"
 
-    usr_include_str+=`cat "$tmpl_file"`
+    if [ ! -f "$tmpl_file" ] || ! tmp_str=`cat "$tmpl_file"`; then
+      error "unable to include template file '$tmpl_file' for template $vhost_template"
+    else
+      usr_include_str+="# user defined template include: $tmpl_file"$'\n'
+      usr_include_str+="$tmp_str"$'\n'
+      usr_include_str+="# // end of user defined template include: $tmpl_file"$'\n\n'
+    fi
   done
 
   if [ -n "$usr_include_str" ]; then
