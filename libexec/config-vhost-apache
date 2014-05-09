@@ -56,6 +56,7 @@ fi
 
 assign_deref_os_fs_path_ex_or_exit apachectl "$we_base_dir" pathnames/sbin/apachectl
 assign_deref_os_fs_path_ex_or_exit virtwww_dir "$we_base_dir" pathnames/etc/apache_vhosts
+assign_deref_os_prop_or_exit websites_basedir "$we_base_dir" websites_basedir
 
 virtwww_file="$virtwww_dir/$user.conf"
 virtwww_file_old="$virtwww_file.old"
