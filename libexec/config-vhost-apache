@@ -98,13 +98,20 @@ for F in "$config_dir/apache_vhost:"[0-9]; do
   # as it's used below, and not set as a variable
   if [ -L "$config_dir/$vhost_base_str:_:template" ]; then
     template_link="$config_dir/$vhost_base_str:_:template"
-  else
+  elif [ -L "$apache_svc_config_dir/_:template" ]; then
     template_link="$apache_svc_config_dir/_:template"
+  elif [ -L "$config_dir/$vhost_base_str:_:is_tools_vhost" ]; then
+    vhost_template=`deref_os_prop "$we_base_dir" \
+                      names/tools_vhost_template`
+  else
+    vhost_template=`deref_os_prop "$we_base_dir" names/apache_vhost_template`
   fi
 
-  vhost_template=`deref_contents "$template_link"`
-  if [ $? -ne 0 ]; then
-    error "unable to get vhost template name"
+  if [ -z "$vhost_template" ]; then
+    vhost_template=`deref_contents "$template_link"`
+    if [ $? -ne 0 ]; then
+        error "unable to get vhost template name"
+    fi
   fi
 
   # rename the variable below, use a dedicated variable for apache_svc
