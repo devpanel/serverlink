@@ -316,7 +316,7 @@ if ! "$apachectl" configtest; then
 
   echo
   echo "-- BROKEN TEMPLATE FILE (?) --"
-  cat "$tmp_new_vhost_file"
+  cat -n "$tmp_new_vhost_file"
   echo "-- END OF TEMPLATE --"
   echo
 
