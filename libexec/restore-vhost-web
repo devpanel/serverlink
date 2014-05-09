@@ -125,6 +125,7 @@ assign_deref_os_fs_path_ex_or_exit chcgi "$we_base_dir" pathnames/sbin/chcgi
 assign_deref_os_fs_path_ex_or_exit apache_logs_dir  "$we_base_dir" pathnames/var/log/apache_vhosts
 
 assign_deref_os_prop_or_exit apache_group "$we_base_dir" names/apache.group
+assign_deref_os_prop_or_exit home_prefix  "$we_base_dir" websites_basedir
 
 conf="$apache_config_dir/$user.conf"
 archive_conf="$archive_dir/apache_$old_vhost.conf"
@@ -132,7 +133,6 @@ logs_dir="$apache_logs_dir/$user"
 archive_logs="$archive_dir/logs_$old_vhost.tgz"
 archive_shadow="$archive_dir/$old_user.shadow"
 archive_crontab="$archive_dir/crontab"
-home_prefix=${WEBENABLED_HOME_PREFIX:-/home/clients/websites}
 
 config_dir="$WEBENABLED_BASE_DIR/config/vhosts/$vhost"
 
