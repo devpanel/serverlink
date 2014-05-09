@@ -286,6 +286,8 @@ for F in "$config_dir/apache_vhost:"[0-9]; do
     error "unable to update include lines on file '$tmp_new_vhost_file'"
   fi
 
+  sed_line+="s/@@__DEVPANEL_BASEDIR__@@/`escape_sed "$we_base_dir"`/g;"
+  sed_line+="s/@@__WEBSITES_BASEDIR__@@/`escape_sed "$websites_basedir"`/g;"
   sed_line+="s/@@__SERVER_HOSTNAME__@@/`escape_sed "$server_hostname"`/g;"
   sed_line+="s/@@__VHOST__@@/`escape_sed "$vhost"`/g;"
   sed_line+="s/@@__TEMPLATE_FILE__@@/`escape_sed "$template_file"`/g;"
