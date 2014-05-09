@@ -83,6 +83,15 @@ set_global_variables() {
   _apache_exec_group=`deref_os_prop "$source_dir" names/apache-exec.group` \
     || return 1
 
+  _apache_main_include=`deref_os_prop "$source_dir" names/apache_main_include` \
+    || return 1
+
+  [ -z "$homedir_base" ] && \
+  { homedir_base=`deref_os_prop "$source_dir" websites_basedir` || return 1; }
+
+  [ -z "$databasedir_base" ] && \
+  { databasedir_base=`deref_os_prop "$source_dir" databases_basedir` || return 1; }
+
   return 0
 }
 
@@ -146,14 +155,11 @@ install_ce_software() {
 
   ln -s "$_apache_logs_dir" "$_apache_base_dir/webenabled-logs"
 
-  echo "
-Include $webenabled_install_dir/compat/apache_include/*.conf
-Include $webenabled_install_dir/compat/apache_include/custom/*.conf
-Include $webenabled_install_dir/compat/apache_include/virtwww/*.conf" \
-    >> "$webenabled_install_dir/compat/apache_include/webenabled.conf.main"
+  ln -s "$webenabled_install_dir/compat/apache_include/virtwww" \
+    "$_apache_base_dir/devpanel-virtwww"
 
-  ln -sf "$webenabled_install_dir/compat/apache_include/webenabled.conf.main" \
-    "$_apache_includes_dir/webenabled.conf"
+  ln -sf "$webenabled_install_dir/compat/apache_include/$_apache_main_include" \
+    "$_apache_includes_dir/devpanel.conf"
 
   return 0
 }
