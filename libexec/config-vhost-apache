@@ -118,6 +118,7 @@ for F in "$config_dir/apache_vhost:"[0-9]; do
   tmpl_basename=`basename "$vhost_template"`
   local_template="$apache_svc_config_dir/templates/local/$tmpl_basename"
   template_file="$apache_svc_config_dir/templates/$tmpl_basename"
+  tmpl_short_name=${tmpl_basename%.*}
 
   if [ -f "$local_template" ]; then
     template_file="$local_template"
@@ -136,8 +137,8 @@ for F in "$config_dir/apache_vhost:"[0-9]; do
     # 1) vhost     2) template   3) server
     if [ -L "$config_dir/$vhost_base_str:_:$param" ]; then
       param_link="$config_dir/$vhost_base_str:_:$param"
-    elif [ -L "$apache_svc_config_dir/template:$vhost_template:$param" ]; then
-      param_link="$apache_svc_config_dir/template:$vhost_template:$param"
+    elif [ -L "$apache_svc_config_dir/template:$tmpl_short_name:$param" ]; then
+      param_link="$apache_svc_config_dir/template:$tmpl_short_name:$param"
     elif [ -L "$apache_svc_config_dir/_:$param" ]; then
       param_link="$apache_svc_config_dir/_:$param"
     else
@@ -163,8 +164,8 @@ for F in "$config_dir/apache_vhost:"[0-9]; do
     # 1) vhost     2) template   3) server
     if [ -L "$config_dir/$vhost_base_str:_:$param" ]; then
       param_link="$config_dir/$vhost_base_str:_:$param"
-    elif [ -L "$apache_svc_config_dir/template:$vhost_template:_:$param" ]; then
-      param_link="$apache_svc_config_dir/template:$vhost_template:_:$param"
+    elif [ -L "$apache_svc_config_dir/template:$tmpl_short_name:_:$param" ]; then
+      param_link="$apache_svc_config_dir/template:$tmpl_short_name:_:$param"
     elif [ -L "$apache_svc_config_dir/_:$param" ]; then
       param_link="$apache_svc_config_dir/_:$param"
     else
@@ -182,8 +183,8 @@ for F in "$config_dir/apache_vhost:"[0-9]; do
   # generic Apache parameters for the template, available system wide.
   # Have the same intent of the previous one, to make it easy to distribute
   # mass updates on system templates
-  for P in "$apache_svc_config_dir/template:$vhost_template:param:"[0-9]:*; do
-    [ "$P" == "$apache_svc_config_dir/template:$vhost_template:param:[0-9]:*" ] && break
+  for P in "$apache_svc_config_dir/template:$tmpl_short_name:param:"[0-9]:*; do
+    [ "$P" == "$apache_svc_config_dir/template:$tmpl_short_name:param:[0-9]:*" ] && break
 
     param_basename=`basename "$P"`
     param_name="${param_basename##*:}"
@@ -222,7 +223,7 @@ for F in "$config_dir/apache_vhost:"[0-9]; do
     sed_line+="/^[[:space:]]*#[[:space:]]*@@__PARAMS__@@/d;"
   fi
 
-  sys_inc_base="$apache_svc_config_dir/template:$vhost_template:include:"
+  sys_inc_base="$apache_svc_config_dir/template:$tmpl_short_name:include:"
 
   for inc in "$sys_inc_base"*; do
     [ "$inc" == "$sys_inc_base*" ] && break
