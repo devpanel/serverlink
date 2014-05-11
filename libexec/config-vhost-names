@@ -268,7 +268,7 @@ for i; do
           rm -f "$alias_file"
         fi
 
-        if ! chfn -f "$new_default_name" "$user"; then
+        if ! chfn -f "$default_name_apache" "$user"; then
           echo "Warning: unable to chfn the vhost..." 1>&2
         fi
 
