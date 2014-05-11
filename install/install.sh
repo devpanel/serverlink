@@ -309,7 +309,7 @@ fi
 shopt -s expand_aliases
 
 current_dir=`dirname "${BASH_SOURCE[0]}"`
-install_source_dir=`readlink -e "$current_dir"`
+install_source_dir=`readlink -e "$current_dir/.."`
 if [ $? -ne 0 ]; then
   error "unable to determine local source dir"
 fi
