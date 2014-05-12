@@ -426,16 +426,19 @@ else
 fi
 echo 'done'
 
-vhost_prefixed_f="$config_dir/apache_vhost:0"
-tools_vhost_prefixed="$config_dir/apache_vhost:1"
+vhost_prefix_f="$config_dir/apache_vhost:"
 
-if ! ln -s /dev/null "$vhost_prefixed_f"; then
-  error "unable to create vhost entry $vhost_prefixed_f"
+if ln -s "devpanel_main" "$vhost_prefix_f:0"; then
+  if ! ln -s 0 "$vhost_prefix_f:_:name:devpanel_main"; then
+    error "unable to set the name for vhost 0 (devpanel_main)"
+  fi
+else
+  error "unable to create vhost entry $vhost_prefix_f:0"
 fi
 
-if ln -s /dev/null "$tools_vhost_prefixed"; then
-  if ! ln -s /dev/null "$tools_vhost_prefixed:_:is_tools_vhost"; then
-    error "unable to set the tools vhost flag"
+if ln -s "devpanel_tools" "$vhost_prefix_f:1"; then
+  if ! ln -s 1 "$vhost_prefix_f:_:devpanel_tools"; then
+    error "unable to set the name for vhost 1 (tools vhost)"
   fi
 else
   error "unable to create vhost entry $tools_vhost_prefixed"
