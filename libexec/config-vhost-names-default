@@ -1,6 +1,11 @@
 #!/bin/bash
 config=/opt/webenabled/config/names/default
 tmp=`mktemp "$config.XXXXXX"` || exit 1
-chmod --reference="$config" "$tmp" || exit 1
+if [ -f "$config" ]; then
+  chmod --reference="$config" "$tmp" || exit 1
+else
+  umask 022
+fi
+
 echo "$1" >"$tmp" || exit 1
 mv "$tmp" "$config" || exit 1
