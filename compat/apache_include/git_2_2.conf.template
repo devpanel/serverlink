@@ -1,0 +1,10 @@
+NameVirtualHost *:80
+<VirtualHost *:80>
+  ServerName git.@@__APACHE_VIRTWWW_DOMAIN__@@
+  DocumentRoot @@__APACHE_VIRTWWW_HOMEDIR__@@/w_/public_html/w_
+  SuexecUserGroup git virtwww
+  CustomLog webenabled-logs/git-access_log combined
+  ErrorLog webenabled-logs/git-error_log
+
+  Scriptalias /cgit @@__APACHE_VIRTWWW_DOMAIN__@@/w_/public_html/cgi/cgit.cgi
+</VirtualHost>

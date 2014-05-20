@@ -87,10 +87,10 @@ set_global_variables() {
     || return 1
 
   [ -z "$homedir_base" ] && \
-  { homedir_base=`deref_os_prop "$source_dir" websites_basedir` || return 1; }
+  { homedir_base=`deref_os_prop "$source_dir" apache_virtwww_homedir` || return 1; }
 
   [ -z "$databasedir_base" ] && \
-  { databasedir_base=`deref_os_prop "$source_dir" databases_basedir` || return 1; }
+  { databasedir_base=`deref_os_prop "$source_dir" mysql_instances_homedir` || return 1; }
 
   return 0
 }
@@ -395,6 +395,8 @@ fi
 if [ -e "$webenabled_install_dir/config/os" ]; then
   error "this software seems to be already installed. To reinstall, please clean up the previous installation."
 fi
+
+# TODO: lsb_release install
 
 if [ -z "$linux_distro" ]; then
   linux_distro=$(wedp_auto_detect_distro)

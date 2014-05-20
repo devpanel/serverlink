@@ -35,8 +35,8 @@ assign_deref_os_fs_path_ex_or_exit edquota   "$we_base" pathnames/sbin/edquota
 assign_deref_os_fs_path_ex_or_exit VIRTWWW_LOGDIR "$we_base" pathnames/var/log/apache_vhosts
 assign_deref_os_fs_path_ex_or_exit VIRTWWW_CFGDIR "$we_base" pathnames/etc/apache_vhosts
 
-assign_deref_os_prop_or_exit apache_group          "$we_base"  names/apache-exec.group
-assign_deref_os_prop_or_exit WEBSITES_HOME         "$we_base"  websites_basedir
+assign_deref_os_prop_or_exit apache_group    "$we_base"  names/apache-exec.group
+assign_deref_os_prop_or_exit WEBSITES_HOME   "$we_base" apache_virtwww_homedir
 
 template_file="$we_base/config/packages/apache_vhost/_:template"
 if [ -f "$template_file" ]; then
@@ -268,8 +268,13 @@ else
     echo 'done'
 fi
 
-if ! mkdir -m 751 "$config_dir"; then
+if ! mkdir -m 750 "$config_dir"; then
   echo "Error: unable to create directory '$config_dir'" 1>&2
+  exit 1
+fi
+
+if ! chown "root":"$ACCOUNT_NAME" "$config_dir"; then
+  echo "Error: unable to chown dir '$config_dir' to user '$ACCOUNT_NAME'" 1>&2
   exit 1
 fi
 

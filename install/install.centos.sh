@@ -82,19 +82,6 @@ centos_post_software_install() {
   local source_dir="$1"
   local dest_dir="$1"
 
-  # will issue a warning about a signature and a recommendation to look at config samples
-  if [ `uname -m` = x86_64 ]
-  then
-    rpm -U "$source_dir/compat/RPMS/mod_macro-1.1.10-1.x86_64.rpm"
-  else
-    rpm -U "$source_dir/compat/RPMS/mod_macro-1.1.8-2.i386.rpm"
-  fi
-
-  if [ $? -ne 0 ]; then
-    echo -e "\n\nWarning: failed to install mod_macro, Apache will not work\n\n"
-    sleep 3
-  fi
-
   # included JSON::PP on the default install (no need anymore for the lines
   # below)
   # 

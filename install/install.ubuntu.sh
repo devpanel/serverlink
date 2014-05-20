@@ -69,6 +69,11 @@ ubuntu_adjust_system_config() {
   [ -e "$_apache_base_dir"/mods-enabled/php5.load ] && rm -f "$_apache_base_dir"/mods-enabled/php5.load
   [ -e "$_apache_base_dir"/mods-enabled/php5.conf ] && rm -f "$_apache_base_dir"/mods-enabled/php5.conf
 
+  # enable php mcrypt module that is generally disabled
+  if hash php5enmod &>/dev/null; then
+    php5enmod mcrypt
+  fi
+
   [ -e /etc/init.d/dbmgr ] && rm -f /etc/init.d/dbmgr
   ln -s "$install_dir"/compat/dbmgr/current/bin/dbmgr.init /etc/init.d/devpanel-dbmgr
   update-rc.d devpanel-dbmgr defaults

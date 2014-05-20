@@ -174,12 +174,10 @@ if [ -z "$ip" ]; then
 fi
 
 config_dir="$we_dir/config/vhosts/$vhost"
-server_hostname_file="$we_dir/config/names/default"
 
-
-server_hostname=`deref_contents "$server_hostname_file"`
+server_hostname=`deref_os_prop "$we_dir" apache_virtwww_domain`
 if [ $? -ne 0 ]; then
-  error "unable to get server hostname from link '$server_hostname_file'"
+  error "unable to get base domain name for apache virtual hosts"
 fi
 
 mode=""

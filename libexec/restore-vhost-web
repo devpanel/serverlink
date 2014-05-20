@@ -125,7 +125,7 @@ assign_deref_os_fs_path_ex_or_exit chcgi "$we_base_dir" pathnames/sbin/chcgi
 assign_deref_os_fs_path_ex_or_exit apache_logs_dir  "$we_base_dir" pathnames/var/log/apache_vhosts
 
 assign_deref_os_prop_or_exit apache_group "$we_base_dir" names/apache.group
-assign_deref_os_prop_or_exit home_prefix  "$we_base_dir" websites_basedir
+assign_deref_os_prop_or_exit home_prefix  "$we_base_dir" apache_virtwww_homedir
 
 conf="$apache_config_dir/$user.conf"
 archive_conf="$archive_dir/apache_$old_vhost.conf"
@@ -145,8 +145,8 @@ elif [ $create_vhost -eq 1 -a ! -e "$archive_conf" ]; then
 fi
 
 if [ $create_vhost -eq 1 ] && \
-  ! default_domain=`deref_contents "$we_base_dir/config/names/default"`; then
-  error "No default domain"
+  ! default_domain=`deref_os_prop "$we_base_dir" apache_virtwww_domain`; then
+  error "Unable to get apache domain for virtualhosts"
 elif [ $create_vhost -eq 1 ] && \
   ! echo -e "n\nn\ny"| run $dir/create-virtwww $options "$vhost" "$vhost.$default_domain"; then
   error "unable to create vhost"
