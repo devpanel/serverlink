@@ -280,7 +280,8 @@ ServerName $dp_server_hostname
   cp -f "$dbmgr_conf_dir/db-shadow.conf"{.template,}
   chmod 600 "$dbmgr_conf_dir/db-shadow.conf"
 
-  chmod 700 "$webenabled_install_dir/var/tokens"
+  chown root:"$_apache_exec_group" "$webenabled_install_dir/var/tokens"
+  chmod 711 "$webenabled_install_dir/var/tokens"
 
   # when running manually (not from the automated install), we need to
   # (re-)start taskd.
