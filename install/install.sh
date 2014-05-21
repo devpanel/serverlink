@@ -274,6 +274,12 @@ ServerName $dp_server_hostname
     fi
   fi
 
+  local dbmgr_conf_dir="$webenabled_install_dir/compat/dbmgr/config"
+  cp -f "$dbmgr_conf_dir/db-daemons.conf"{.template,}
+  cp -f "$dbmgr_conf_dir/db-shadow.conf"{.template,}
+  chmod 600 "$dbmgr_conf_dir/db-shadow.conf"
+
+  chmod 700 "$webenabled_install_dir/var/tokens"
 
   # when running manually (not from the automated install), we need to
   # (re-)start taskd.
