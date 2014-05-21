@@ -1,6 +1,24 @@
 #!/bin/bash
-config=/opt/webenabled/config/names/default
-tmp=`mktemp "$config.XXXXXX"` || exit 1
-chmod --reference="$config" "$tmp" || exit 1
-echo "$1" >"$tmp" || exit 1
-mv "$tmp" "$config" || exit 1
+
+usage() {
+  echo "Usage: `basename "$0"` <domain>
+  
+This script sets the default domain name for Apache virtualhosts."
+  exit 1
+}
+
+# main
+
+[ $# -eq 0 -o -z "$1" ] && usage
+
+dir=`dirname "${BASH_SOURCE[0]}"`
+
+we_dir=`readlink -e "$dir/.."`
+
+domain="$1"
+domain_link="$we_dir/config/key_value/local/apache_virtwww_domain"
+
+if ! ln -sf "$domain" "$domain_link"; then
+  echo "Error: unable to set default name for apache vhosts" 1>&2
+  exit 1
+fi

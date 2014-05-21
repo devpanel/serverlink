@@ -121,6 +121,7 @@ escape_sed() {
   escaped=${escaped//\\\(/\(}
   escaped=${escaped//\\\)/\)}
   escaped=${escaped//\//\\/}
+  escaped=${escaped//$'\n'/\\n}
 
   echo -n "$escaped"
 }
@@ -520,3 +521,253 @@ calc_md5_str() {
   return 0
 }
 
+devpanel_get_os_version() {
+  if ! hash lsb_release &>/dev/null; then
+    echo "$FUNCNAME(): error - didn't find lsb_release in PATH" 1>&2
+    return 1
+  fi
+
+  local version=""
+  version=`lsb_release -r 2>/dev/null | egrep -o '[0-9\.]+$'`
+  if [ -z "$version" ]; then
+    echo "$FUNCNAME(): error, unable to get OS version" 1>&2
+    return 1
+  fi
+
+  echo -n "$version"
+}
+
+devpanel_get_os_version_major() {
+  if ! hash lsb_release &>/dev/null; then
+    echo "$FUNCNAME(): error - didn't find lsb_release in PATH" 1>&2
+    return 1
+  fi
+
+  local version="" major=""
+  version=`lsb_release -r 2>/dev/null | egrep -o '[0-9\.]+$'`
+  if [ -z "$version" ]; then
+    echo "$FUNCNAME(): error, unable to get OS version" 1>&2
+    return 1
+  fi
+
+  major=${version%%.*}
+
+  echo -n "$major"
+}
+
+devpanel_get_os_version_minor() {
+  if ! hash lsb_release &>/dev/null; then
+    echo "$FUNCNAME(): error - didn't find lsb_release in PATH" 1>&2
+    return 1
+  fi
+
+  local version="" minor=""
+  version=`lsb_release -r 2>/dev/null | egrep -o '[0-9\.]+$'`
+  if [ -z "$version" ]; then
+    echo "$FUNCNAME(): error, unable to get OS version" 1>&2
+    return 1
+  fi
+
+  minor=${version%*.}
+
+  echo -n "$minor"
+}
+
+deref_contents() {
+  local path="$1"
+
+  local value=""
+
+  if [ -L "$path" ]; then
+    value=`readlink "$path"`
+  elif [ -f "$path" ]; then
+    value=`cat "$path"`
+  elif [ ! -e "$path" ]; then
+    echo "$FUNCNAME(): path doesn't exist $path" 1>&2
+    return 1
+  else
+    echo "$FUNCNAME(): don't know how to de-reference path $path" 1>&2
+    return 1
+  fi
+
+  echo -n "$value"
+}
+
+deref_contents_or_exit() {
+  local path="$1"
+
+  deref_contents "$path"
+  if [ $? -ne 0 ]; then
+    echo "Error: unable to de-reference path '$path'" 1>&2
+    exit 1
+  fi
+
+}
+
+assign_deref_contents_or_exit() {
+  local var="$1"
+  local path="$2"
+  local value=""
+
+  value=`deref_contents "$path"`
+  if [ $? -ne 0 -o -z "$value" ]; then
+    echo "Error: unable to de-reference path '$path'" 1>&2
+    exit 1
+  else
+    eval $var="$value"
+    return $?
+  fi
+}
+
+
+deref_os_prop() {
+  local base_dir="$1"
+  local key_name="$2"
+
+  local os_name="" os_version="" os_major=""
+  local base_path="" key_path="" v="" resolved="" local_value=""
+  local ver_specific="" ver_major="" os_specific="" devpanel_specific=""
+
+  os_version=`devpanel_get_os_version`
+  [ $? -ne 0 ] && return 1
+
+  os_major=`devpanel_get_os_version_major`
+  [ $? -ne 0 ] && return 1
+
+  base_path="$base_dir/config/os"
+
+  ver_specific="$base_path/$os_version/$key_name"
+  ver_major="$base_path/$os_major/$key_name"
+  os_specific="$base_path/$key_name"
+  local_value="$base_dir/config/key_value/local/$key_name"
+  devpanel_specific="$base_dir/config/key_value/$key_name"
+
+  # check in this order:
+  #   config/key_value/local/ -> local custom value
+  #   os/<specific_version>   -> for the specific version
+  #   os/<os_major>           -> for the specific major version
+  #   os/                     -> for the specific distro
+  #   config/key_value/       -> generic devPanel convention
+
+  for v in "$local_value" "$ver_specific" "$ver_major" \
+           "$os_specific" "$devpanel_specific"; do
+
+    if [ -L "$v" -o -f "$v" ]; then
+      key_path="$v"
+      break
+    fi
+  done
+
+  if [ -z "$key_path" ]; then
+    echo "$FUNCNAME(): unable to find key $key_name in $base_dir" 1>&2
+    return 1
+  fi
+
+  deref_contents "$key_path" || return 1
+
+  echo -n "$resolved"
+}
+
+deref_os_prop_or_exit() {
+  local base_dir="$1"
+  local key_name="$2"
+
+  deref_os_prop "$base_dir" "$key_name"
+  [ $? -ne 0 ] && exit 1
+}
+
+assign_deref_os_prop_or_exit() {
+  local var="$1"
+  local base_dir="$2"
+  local key_name="$3"
+
+  local value=""
+
+  value=`deref_os_prop "$base_dir" "$key_name"`
+  if [ $? -ne 0 -o -z "$value" ]; then
+    echo "Error: unable to de-reference path '$path'" 1>&2
+    exit 1
+  else
+    eval $var="$value"
+    return $?
+  fi
+}
+
+deref_os_fs_path() {
+  local base_dir="$1"
+  local key_name="$2"
+
+  local orig_value="" value="" value_norm="" key_dir=""
+
+  orig_value=`deref_os_prop "$base_dir" "$key_name"`
+  [ $? -ne 0 -o -z "$orig_value" ] && return 1
+
+  if [ "${orig_value:0:1}" != "/" ]; then
+    key_dir=`dirname "$base_dir/config/os/$key_name"`
+    value="$key_dir/$orig_value"
+  else
+    value="$orig_value"
+  fi
+  
+  # existence of the target path not required
+  value_norm=`readlink -m "$value"`
+
+  echo -n "$value_norm"
+}
+
+deref_os_fs_path_ex() {
+  local base_dir="$1"
+  local key_name="$2"
+
+  local orig_value="" value="" value_norm="" key_dir=""
+
+  orig_value=`deref_os_prop "$base_dir" "$key_name"`
+  [ $? -ne 0 -o -z "$orig_value" ] && return 1
+
+  if [ "${orig_value:0:1}" != "/" ]; then
+    key_dir=`dirname "$base_dir/config/os/$key_name"`
+    value="$key_dir/$orig_value"
+  else
+    value="$orig_value"
+  fi
+
+  # requires the existence of the target path
+  value_norm=`readlink -e "$value"`
+  [ $? -ne 0 ] && return 1
+
+  echo -n "$value_norm"
+}
+
+
+deref_os_fs_path_or_exit() {
+  local base_dir="$1"
+  local key_name="$2"
+
+  deref_os_fs_path "$base_dir" "$key_name"
+  [ $? -ne 0 ] && exit 1
+}
+
+deref_os_fs_path_ex_or_exit() {
+  local base_dir="$1"
+  local key_name="$2"
+
+  deref_os_fs_path_ex "$base_dir" "$key_name"
+  [ $? -ne 0 ] && exit 1
+}
+
+assign_deref_os_fs_path_ex_or_exit() {
+  local var="$1"
+  local base_dir="$2"
+  local key_name="$3"
+
+  local value=""
+
+  value=`deref_os_fs_path_ex "$base_dir" "$key_name"`
+  if [ $? -eq 0 -a -n "$value" ]; then
+    eval $var="$value"
+    return $?
+  else
+    echo "Error: unable to dereference path: $key_name" 1>&2
+    exit 1
+  fi
+}

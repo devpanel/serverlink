@@ -237,7 +237,13 @@ do
   fi
   if grep -q "^$subsystem\$" "$archive_dir/db/databases"
   then
-    run_su $dir_bin/restore-vhost-subsystem $subsystem_options -I -s "$subsystem" || exit 1
+    if ! run_su cd \~ \; $dir_bin/restore-vhost-subsystem \
+      $subsystem_options -n -s "$subsystem"; then
+
+      error "unable to update app configuration files"
+    fi
+
+    run_su cd \~ \; $dir_bin/restore-vhost-subsystem $subsystem_options -I -s "$subsystem" || exit 1
   fi
 done
 

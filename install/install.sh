@@ -45,6 +45,7 @@ set_global_variables() {
   local target_dir="$2"
   local distro="$3"
 
+  local -i st
   # initialize global variables used throughout this script
 
   local we_config_dir="$source_dir/config"
@@ -52,66 +53,44 @@ set_global_variables() {
   # main config file to be used by DevPanel
   dp_config_file="$target_dir/etc/devpanel.conf"
 
-  _apache_logs_dir=$(wedp_resolve_link "$we_config_dir/os.$distro/pathnames/var/log/apache_logs_dir")
-  if [ $? -ne 0  -o -z "$_apache_logs_dir" ]; then
-    echo "unable to set global variable _apache_logs_dir" 1>&2
-    return 1
-  fi
+  _apache_logs_dir=`deref_os_fs_path "$source_dir" \
+    pathnames/var/log/apache_logs_dir` || return 1
 
-   _apache_vhost_logs_dir=$(wedp_resolve_link "$we_config_dir/os.$distro/pathnames/var/log/apache_vhosts")
-  if [ $? -ne 0  -o -z "$_apache_vhost_logs_dir" ]; then
-    echo "unable to set global variable _apache_vhost_logs_dir" 1>&2
-    return 1
-  fi
+  _apache_vhost_logs_dir=`deref_os_fs_path "$source_dir" \
+    pathnames/var/log/apache_vhosts` || return 1
+
+  _apache_base_dir=`deref_os_fs_path "$source_dir" \
+    pathnames/etc/apache_base_dir` || return 1
   
-  _apache_base_dir=$(wedp_resolve_link "$we_config_dir/os.$distro/pathnames/etc/apache_base_dir")
-  if [ $? -ne 0  -o -z "$_apache_base_dir" ]; then
-    echo "unable to set global variable _apache_base_dir" 1>&2
-    return 1
-  fi
+  _apache_includes_dir=`deref_os_fs_path "$source_dir" \
+    pathnames/etc/apache_includes_dir` || return 1
 
-  _apache_includes_dir=$(wedp_resolve_link "$we_config_dir/os.$distro/pathnames/etc/apache_includes_dir")
-  if [ $? -ne 0  -o -z "$_apache_includes_dir" ]; then
-    echo "unable to set global variable _apache_includes_dir" 1>&2
-    return 1
-  fi
+  _apache_vhosts=`deref_os_fs_path "$source_dir" \
+    pathnames/etc/apache_vhosts` || return 1
 
-  _apache_vhosts=$(wedp_resolve_link "$we_config_dir/os.$distro/pathnames/etc/apache_vhosts")
-  if [ $? -ne 0  -o -z "$_apache_vhosts" ]; then
-    echo "unable to set global variable _apache_vhosts" 1>&2
-    return 1
-  fi
+  _apache_vhosts_removed=`deref_os_fs_path "$source_dir" \
+    pathnames/etc/apache_vhosts_removed` || return 1
 
-  _apache_vhosts_removed=$(wedp_resolve_link "$we_config_dir/os.$distro/pathnames/etc/apache_vhosts_removed")
-  if [ $? -ne 0  -o -z "$_apache_vhosts_removed" ]; then
-    echo "unable to set global variable _apache_vhosts_removed" 1>&2
-    return 1
-  fi
+  _apache_main_config_file=`deref_os_fs_path "$source_dir" \
+    pathnames/etc/apache_main_config_file` || return 1
 
-  _apache_user=`head -1 "$we_config_dir/os.$distro/names/apache.user"`
-  if [ $? -ne 0 -o -z "$_apache_user" ]; then
-    echo "unable to resolve apache user" 1>&2
-    return 1
-  fi
+  _apache_user=`deref_os_prop "$source_dir" names/apache.user` \
+    || return 1
 
+  _apache_group=`deref_os_prop "$source_dir" names/apache.group` \
+    || return 1
 
-  _apache_group=`head -1 "$we_config_dir/os.$distro/names/apache.group"`
-  if [ $? -ne 0 ]; then
-    echo "unable to resolve apache group" 1>&2
-    return 1
-  fi
+  _apache_exec_group=`deref_os_prop "$source_dir" names/apache-exec.group` \
+    || return 1
 
-  _apache_exec_group=`head -1 "$we_config_dir/os.$distro/names/apache-exec.group"`
-  if [ $? -ne 0 ]; then
-    echo "unable to resolve apache exec group" 1>&2
-    return 1
-  fi
+  _apache_main_include=`deref_os_prop "$source_dir" names/apache_main_include` \
+    || return 1
 
-  _apache_main_config_file=`readlink "$we_config_dir/os.$distro/pathnames/etc/apache_main_config_file"`
-  if [ $? -ne 0 -o -z "$_apache_main_config_file" ]; then
-    echo "unable to resolve apache_main_config_file" 1>&2
-    return 1
-  fi
+  [ -z "$homedir_base" ] && \
+  { homedir_base=`deref_os_prop "$source_dir" apache_virtwww_homedir` || return 1; }
+
+  [ -z "$databasedir_base" ] && \
+  { databasedir_base=`deref_os_prop "$source_dir" mysql_instances_homedir` || return 1; }
 
   return 0
 }
@@ -154,12 +133,13 @@ install_ce_software() {
   [ ! -d "$ssl_certs_dir" ] && mkdir -m 755 -p "$ssl_certs_dir"
   [ ! -d "$ssl_keys_dir"  ] && mkdir -m 755 -p "$ssl_keys_dir"
 
+  chmod 600 "$webenabled_install_dir/etc/devpanel.conf"
+
   # openssl req -subj "/C=--/ST=SomeState/L=SomeCity/O=SomeOrganization/OU=SomeOrganizationalUnit/CN=*.`hostname`" -new -x509 -days 3650 -nodes -out /opt/webenabled/config/os/pathnames/etc/ssl/certs/wildcard -keyout /opt/webenabled/config/os/pathnames/etc/ssl/keys/wildcard
   # cp -a "$source_dir"/install/old/cloudenabled/wildcard.cloudenabled.net.key "$webenabled_install_dir"/config/os/pathnames/etc/ssl/keys/wildcard
   # cp -a "$source_dir"/install/old/cloudenabled/wildcard.cloudenabled.net.crt "$webenabled_install_dir"/config/os/pathnames/etc/ssl/certs/wildcard
 
   # echo Vhost-simple-SSL-wildcard > "$webenabled_install_dir"/config/names/apache-macro
-  echo Vhost-simple > "$webenabled_install_dir"/config/names/apache-macro
 
   if [ -e "$_apache_vhost_logs_dir" -a ! -d "$_apache_vhost_logs_dir" ]; then
     mv "$_apache_vhost_logs_dir" "$_apache_vhost_logs_dir".old
@@ -176,14 +156,11 @@ install_ce_software() {
 
   ln -s "$_apache_logs_dir" "$_apache_base_dir/webenabled-logs"
 
-  echo "
-Include $webenabled_install_dir/compat/apache_include/*.conf
-Include $webenabled_install_dir/compat/apache_include/custom/*.conf
-Include $webenabled_install_dir/compat/apache_include/virtwww/*.conf" \
-    >> "$webenabled_install_dir/compat/apache_include/webenabled.conf.main"
+  ln -s "$webenabled_install_dir/compat/apache_include/virtwww" \
+    "$_apache_base_dir/devpanel-virtwww"
 
-  ln -sf "$webenabled_install_dir/compat/apache_include/webenabled.conf.main" \
-    "$_apache_includes_dir/webenabled.conf"
+  ln -sf "$webenabled_install_dir/compat/apache_include/$_apache_main_include" \
+    "$_apache_includes_dir/devpanel.conf"
 
   return 0
 }
@@ -298,6 +275,12 @@ ServerName $dp_server_hostname
     fi
   fi
 
+  local dbmgr_conf_dir="$webenabled_install_dir/compat/dbmgr/config"
+  cp -f "$dbmgr_conf_dir/db-daemons.conf"{.template,}
+  cp -f "$dbmgr_conf_dir/db-shadow.conf"{.template,}
+  chmod 600 "$dbmgr_conf_dir/db-shadow.conf"
+
+  chmod 700 "$webenabled_install_dir/var/tokens"
 
   # when running manually (not from the automated install), we need to
   # (re-)start taskd.
@@ -333,16 +316,9 @@ fi
 shopt -s expand_aliases
 
 current_dir=`dirname "${BASH_SOURCE[0]}"`
-if [ -n "$DP_INSTALL_SOURCE_DIR" -a -d "$DP_INSTALL_SOURCE_DIR" ]; then
-  install_source_dir="$DP_INSTALL_SOURCE_DIR"
-else
-  if [ "$current_dir" == "." ]; then
-    current_dir="$PWD"
-  elif [ "${current_dir:0:1}" != "/" ]; then
-    current_dir="$PWD/$current_dir"
-  fi
-
-  install_source_dir=${current_dir%/*}
+install_source_dir=`readlink -e "$current_dir/.."`
+if [ $? -ne 0 ]; then
+  error "unable to determine local source dir"
 fi
 
 echo -e "\nStarting DevPanel installation from '$install_source_dir'\n" 1>&2
@@ -427,6 +403,8 @@ if [ -e "$webenabled_install_dir/config/os" ]; then
   error "this software seems to be already installed. To reinstall, please clean up the previous installation."
 fi
 
+# TODO: lsb_release install
+
 if [ -z "$linux_distro" ]; then
   linux_distro=$(wedp_auto_detect_distro)
   status=$?
@@ -435,10 +413,17 @@ if [ -z "$linux_distro" ]; then
   fi
 fi
 
-if [ ! -e "$install_source_dir/config/os.$linux_distro" ]; then
+source_config_dir="$install_source_dir/config/os.$linux_distro"
+source_config_shortcut=`dirname "$source_config_dir"`/os
+if [ ! -e "$source_config_dir" ]; then
   error "missing the configuration directory for distro '$linux_distro'.
 There seems to be a problem in this installation package."
   exit 1
+else
+  # link the source dir /os/ link to be used by function set_variables
+  if ! ln -sf "$source_config_dir" "$source_config_shortcut"; then
+    error "unable to link source config shortcut $source_config_shortcut"
+  fi
 fi
 
 if [ -z "$webenabled_distro_version" ]; then

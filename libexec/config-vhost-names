@@ -1,61 +1,354 @@
 #!/bin/bash
 error() { echo "ERROR${@+: }$@" >&2; exit 1; }
+
+usage() {
+  local prog=`basename "$0"`
+
+  echo "
+  Usage: $prog [ options ]  {*|+|-} name [name ...]
+
+  Options:
+    -s                      force the name to be a subdomain of the main
+                            server domain
+
+    -i ip_address           Add/remove to the specified IP address
+
+    -n                      don't add the www prefix to aliases when adding
+                            or removing a hostname
+
+  This script adds or removes hostnames to/from the specified virtual host.
+"
+  exit 1
+}
+
+format_hostname() {
+  local server_hostname="$1"
+  local test_hostname="$2"
+  local force_subdomain="$3"
+
+  local test_host_stripped="" final_hostname="" has_dot=""
+
+  if [[ "$test_hostname" =~ \. ]]; then
+   has_dot=1
+  fi
+
+  # remove the server hostname from the end of name
+  if [ "${test_hostname: -1}" == "." ]; then
+    test_host_stripped=${test_hostname%.$server_hostname.}
+  else
+    test_host_stripped=${test_hostname%.$server_hostname}
+  fi
+
+  if [ "$force_subdomain" == "1" ]; then
+    if [ "${test_hostname: -1}" == "." ]; then
+      final_hostname="${test_host_stripped:0:-1}"
+    else
+      final_hostname="$test_host_stripped"
+    fi
+  else
+    if [ "$test_host_stripped" != "$test_hostname" ]; then
+      # had the server name successfully stripped, so it's a subdomain
+      final_hostname="$test_host_stripped"
+    elif [ "${test_hostname: -1}" == "." ]; then
+      # if the hostname ends with a dot, then take it as fully defined
+      final_hostname="$test_hostname"
+    elif [ -n "$has_dot" ]; then
+      # hostname doesn't end with a dot, but has a dot in the name
+      # so let's guess it's a full domain
+      final_hostname="$test_hostname."
+    else
+      # hostname doesn't end with a dot, doesn't have a dot
+      # consider it a sub domain of the default server domain
+      final_hostname="$test_hostname"
+    fi
+  fi
+
+  echo -n "$final_hostname"
+}
+
+format_to_apache() {
+  local server_hostname="$1"
+  local local_hostname="$2"
+  local hostname_stripped="" new_hostname=""
+
+  local host_fmt=""
+
+  if [ "${local_hostname: -1}" == "." ]; then
+    host_fmt="${local_hostname:0:-1}" # remove the last dot
+  else
+    host_fmt="$local_hostname.$server_hostname"
+  fi
+
+  echo -n "$host_fmt"
+}
+
+generate_serveralias() {
+  local base="$1"
+  local server_hostname="$2"
+
+  local alias_link="$base:param:1:ServerAlias"
+  local alias_hostname="" aliases_str="" hostname_fmt=""
+
+  for alias_host in "$base":_:ServerAlias:*; do
+    if [ "$alias_host" == "$base:_:ServerAlias:*" ]; then
+      if [ -L "$alias_link" ]; then
+        rm -f "$alias_link" && return 0 || return 1
+      fi
+    fi
+
+    alias_hostname="${alias_host##*:}"
+    if [ -z "$alias_hostname" ]; then
+      continue # just ignore an empty
+    fi
+
+    [ -n "$aliases_str" ] && aliases_str+=" "
+
+    hostname_fmt=`format_to_apache "$server_hostname" "$alias_hostname"`
+
+    aliases_str+="$hostname_fmt"
+  done
+
+  if [ -n "$aliases_str" ]; then
+    ln -sf "$aliases_str" "$alias_link"
+    if [ $? -eq 0 ]; then
+      return 0
+    else
+      echo "$FUNCNAME(): unable to update link '$alias_link'" 1>&2
+      return 1
+    fi
+  fi
+
+  return 1 # unknown condition
+}
+
+# main
+[ $# -eq 0 -o -z "$1" ] && usage
+
+if [ "${0:0:1}" != "/" ]; then
+  error "please call this script with the full path"
+fi
+
 dir=`dirname "$0"`
-ip=""
-ip_subdir=""
-while getopts "i:" OPTOPT
+dir=`readlink -e "$dir"`
+if [ ! -d "$dir" ]; then
+  error "couldn't determine current dir"
+fi
+
+we_dir=`dirname "$dir"`
+
+lib_file="$we_dir/lib/functions"
+if ! source "$lib_file"; then
+  error "unable to source lib file '$lib_file'"
+fi
+
+prefix_with_www=1
+getopt_flags='nsi:'
+unset ip force_subdomain
+while getopts $getopt_flags OPTOPT
 do
   case "$OPTOPT" in
-    i) ip=$OPTARG; ip_subdir="$ip/";;
-    *) exit 1;;
+    i)
+      ip="$OPTARG"
+      ;;
+    s)
+      force_subdomain=1
+      ;;
+    n)
+      unset prefix_with_www
+      ;;
+    *)
+      exit 1
+      ;;
   esac
 done
 shift `expr $OPTIND - 1`
+
 vhost="$1"
+if ! "$dir/check-vhost-name" archive "$vhost"; then
+  error "vhost argument is in an invalid format"
+fi
 user="w_$vhost"
-shift
-$dir/check-vhost-name archive "$vhost" || error
-config_dir="/opt/webenabled/config/vhosts/$vhost"
-name_dir="$config_dir/names"
-if ! [ -d "$name_dir" ]
-then
-  echo "Warning: creating $name_dir" >&2
-  mkdir -p "$name_dir" || error
-  chgrp -R "$user" "$config_dir" || error
-  chmod -R g+rX "$config_dir" || error
+
+if [ -z "$ip" ]; then
+  ip='*'
 fi
+
+config_dir="$we_dir/config/vhosts/$vhost"
+
+server_hostname=`deref_os_prop "$we_dir" apache_virtwww_domain`
+if [ $? -ne 0 ]; then
+  error "unable to get base domain name for apache virtual hosts"
+fi
+
 mode=""
-default_name=`readlink $name_dir/default`
-if [ -n "$ip_subdir" -a ! -d "$ip_subdir" ]
-then
-  mkdir -p "$name_dir/$ip_subdir" || error
-  chgrp "$user" "$name_dir/$ip_subdir" || error
-  chmod g+rX "$name_dir/$ip_subdir" || error
+vhost_base="$config_dir/apache_vhost:0"
+base_host_link="$vhost_base:_:ServerName"
+
+if [ -L "$base_host_link" ]; then
+  default_name=`readlink "$base_host_link"`
+
+  if [ -z "$default_name" ]; then
+    error "unable to get default hostname from vhost $vhost"
+  fi
 fi
-for i
-do
-  if echo "$i" | egrep -q "^[-+*]$"
-  then
+
+unset changed
+alias_base="$vhost_base:param:1:ServerAlias"
+alias_priv="$vhost_base:_:ServerAlias"
+shift # remove the last argument and leave only the options on $*
+
+# note: can't use 'for i in' style here, because when i=* it'll expand 
+# to list all local files. Using this contracted form it doesn't expand.
+for i; do
+
+  case "$i" in
+    +|-|'*')
     mode="$i"
     continue
-  fi
+    ;;
+  esac
+
   [ -n "$mode" ] || error "Usage: $0 VHOST {*|+|-} name [name ...]"
   case $mode   in
-    '*') default_name="$i"
-         touch "$name_dir/$ip_subdir$default_name" || error
-         ln -snf "$default_name" "$name_dir/default" || error
-         chfn -f "$default_name" "$user";;
-    '+') touch "$name_dir/$ip_subdir$i" || error ;;
-    '-') [ o"$default_name" = o"$i" ] && error "Cannot remove the default name $i; change the default name first"
-         if [ -r "$name_dir/$ip_subdir$i" ]
-         then
-           rm -f "$name_dir/$ip_subdir$i"         
-         else
-           echo "Warning: $i was not defined, not removing anything" >&2
-         fi;;
-  esac
+    '*')
+        new_name="$i"
+
+        new_default_name=`format_hostname "$server_hostname" "$new_name" ${force_subdomain:0:-1}`
+        default_name_fmt="$new_default_name" # to check later in the '+' if present
+        default_name_apache=`format_to_apache "$server_hostname" "$new_default_name"`
+
+        # saving the previous name into the aliases
+        [ -L "$base_host_link" ] && previous_name=`readlink "$base_host_link"`
+
+        if [ -n "$previous_name" ]; then
+          previous_name_cut=${previous_name%.$server_hostname}
+          if [ "$previous_name" == "$default_name_apache" ]; then
+            echo "Warning: the default name hasn't changed..." 1>&2
+            continue
+          fi
+
+          alias_fmt_hn=`format_hostname "$server_hostname" "$previous_name_cut"`
+          alias_file="$alias_base:$previous_name_cut"
+          alias_file_previous="$alias_priv:$alias_fmt_hn"
+
+          if [ -L "$alias_file_previous" ]; then
+            echo "Warning: default file is already on the list of aliases" 1>&2
+          else
+            if ! ln -sf "$alias_fmt_hn" "$alias_file_previous"; then
+              error "unable to move the default name to an alias"
+            fi
+
+            if [ -n "$prefix_with_www" ]; then
+              www_alias_link="$alias_priv:www.$alias_fmt_hn"
+              if ! ln -sf "$previous_name" "$www_alias_link"; then
+                error "unable to save www alias to default name"
+              fi
+            fi
+          fi
+        fi
+
+        # overwriting the existing value
+        if ! ln -sf "$default_name_apache" "$base_host_link"; then
+          error "unable to set the default name"
+        fi
+
+        if [ -n "$prefix_with_www" ]; then
+          www_alias_link="$alias_priv:www.$new_default_name"
+          if ! ln -sf "www.$new_default_name" "$www_alias_link"; then
+            error "unable to set www alias to default name"
+          fi
+        fi
+
+
+        # if this same name is already a domain alias, then remove it
+        if [ -L "$alias_file" ]; then
+          echo "Removing old alias to this name..."
+          rm -f "$alias_file"
+        fi
+
+        if ! chfn -f "$default_name_apache" "$user"; then
+          echo "Warning: unable to chfn the vhost..." 1>&2
+        fi
+
+        echo "Successfully set the ServerName to $default_name_apache"
+
+        changed=1
+        ;;
+    '+')
+        this_hostname="$i"
+
+        this_hostname=`format_hostname "$server_hostname" "$this_hostname" ${force_subdomain:-0}`
+        this_name_apache=`format_to_apache "$server_hostname" "$this_hostname" ${force_subdomain:-0}`
+
+        if [ "$this_hostname" == "$default_name_fmt" ]; then
+          echo "Warning: this hostname is equal to the default hostname.  Skipping..." 1>&2
+          break;
+        fi
+
+        name_file="$alias_priv:$this_hostname"
+
+        if [ -L "$name_file" -o -e "$name_file" ]; then
+          echo "Warning: name $this_hostname already exists..." 1>&2
+        else 
+          if ! ln -sf /dev/null "$name_file"; then
+            error "unable to add hostname $this_hostname"
+          fi
+
+          if [ -n "$prefix_with_www" ]; then
+            www_name_file="$alias_priv:www.$this_hostname"
+            if ! ln -sf /dev/null "$www_name_file"; then
+              error "unable to add hostname www.$this_hostname"
+            fi
+          fi
+        fi
+
+        echo "Successfully added alias hostname $this_name_apache"
+
+        changed=1
+        ;;
+    '-')
+        this_hostname="$i"
+
+        this_hostname=`format_hostname "$server_hostname" "$this_hostname" ${force_subdomain:-0}`
+
+        [ "$default_name" = "$this_hostname" ] && \
+          error "Cannot remove the default name $this_hostname; change the default name first"
+        
+        name_file="$alias_priv:$this_hostname"
+        if [ ! -L "$name_file" ]; then
+          printf "Warning: name %s doesn't exist for vhost %s and IP %s\n" \
+            "$this_hostname" "$vhost" "$ip" 1>&2
+          continue
+        else
+          rm -f "$name_file"
+        fi
+
+        if [ -n "$prefix_with_www" ]; then
+          www_name_file="$alias_priv:www.$this_hostname"
+          if [ ! -L "$www_name_file" ]; then
+            printf "Warning: name %s doesn't exist for vhost %s and IP %s\n" \
+              "www.$this_hostname" "$vhost" "$ip" 1>&2
+            continue
+          else
+            rm -f "$www_name_file"
+          fi
+        fi
+
+        changed=1
+        ;;
+      *)
+        error "unknown mode '$mode'"
+        ;;
+   esac
 done
 
-rmdir "$name_dir"/*/ 2>/dev/null
+if [ -z "$changed" ]; then
+  echo "Nothing changed."
+  exit 0
+fi
 
-$dir/config-vhost-apache "$vhost" || exit 1
+if ! generate_serveralias "$vhost_base" "$server_hostname"; then
+  error "unable to regenerate the ServerAlias entry"
+fi
+
+"$dir/config-vhost-apache" "$vhost" || exit 1

@@ -1,0 +1,126 @@
+#!/bin/bash
+
+error() {
+  local msg="$1"
+  echo "Error: $msg" 1>&2
+  exit 1
+}
+
+usage() {
+  echo "Usage: `basename "$0"` [ options ] <original_file> <key1> [ key2 ] [ keyN ]
+
+  Options
+    -o output_file                write the output to output_file instead of
+                                  modifying the original file
+    -n                            don't load default keys
+    -v                            display more verbose messages
+"
+  exit 1
+}
+
+load_defaults() {
+  local base_dir="$1"
+
+  local apache_virtwww_domain=`deref_os_prop "$base_dir" apache_virtwww_domain`
+  local apache_virtwww_homedir=`deref_os_prop "$base_dir" apache_virtwww_homedir`
+
+  echo "s/@@__APACHE_VIRTWWW_DOMAIN__@@/`escape_sed "$apache_virtwww_domain"`/g;"
+  echo "s/@@__APACHE_VIRTWWW_HOMEDIR__@@/`escape_sed "$apache_virtwww_homedir"`/g;"
+}
+
+# main
+
+[ $# -lt 2 -o -z "$1" -o -z "$2" ] && usage
+
+getopt_flags='o:vn'
+load_defaults=1
+
+unset output_file verbose
+while getopts $getopt_flags OPTN; do
+  case $OPTN in
+    o)
+      output_file="$OPTARG"
+      ;;
+    v)
+      verbose=1
+      ;;
+    n)
+      unset load_defaults
+      ;;
+    *)
+      usage
+      ;;
+  esac
+done
+[ $OPTIND -gt 1 ] && shift $(( $OPTIND - 1 ))
+
+dir=`dirname "${BASH_SOURCE[0]}"`
+we_base=`readlink -e "$dir/.."`
+
+lib_file="$we_base/lib/functions"
+if ! source "$lib_file"; then
+  error "unable to source lib file $lib_file"
+fi
+
+umask 077
+tmp_sed_file=`mktemp`
+if [ $? -ne 0 ]; then
+  error "unable to create temporary file"
+fi
+
+original_file="$1"
+
+if [ -n "$output_file" ]; then
+  tmp_output_file=`mktemp "$output_file.XXXXXXXXXXXXXX"`
+  if [ $? -ne 0 ]; then
+    error "unable to create temporary file (output)"
+  fi
+
+  if ! cat "$original_file" > "$tmp_output_file"; then
+    error "unable to copy the contents of '$file' to '$tmp_output_file'"
+  fi
+else
+  tmp_output_file="$original_file"
+  output_file="$original_file"
+fi
+
+trap 'rm -f "$tmp_sed_file" "$tmp_output_file"' HUP INT QUIT EXIT TERM
+
+shift
+
+while [ -n "$1" ]; do
+  name="$1"
+  value=`deref_os_prop "$we_base" "$name"`
+  if [ $? -ne 0 ]; then
+    error "unable to de-reference key $name"
+  fi
+
+  name_escaped=`escape_sed "$name"`
+  value_escaped=`escape_sed "$value"`
+
+  echo "s/@@__${name_escaped^^}__@@/$value_escaped/g;" >> "$tmp_sed_file"
+  if [ $? -ne 0 ]; then
+    error "unable to add line to temp file $tmp_sed_file"
+  fi
+  shift
+done
+
+if [ -n "$load_defaults" ]; then
+  load_defaults "$we_base" >> "$tmp_sed_file"
+  if [ $? -ne 0 ]; then
+    error "unable to load defaults into $tmp_sed_file"
+  fi
+fi
+
+sed -i -f "$tmp_sed_file" "$tmp_output_file"
+if [ $? -ne 0 ]; then
+  error "unable to update file '$tmp_output_file'"
+fi
+
+if [ "$tmp_output_file" == "$output_file" ]; then
+  [ -n "$verbose" ] && echo "Successfully wrote output file '$output_file'"
+  exit 0
+else
+  cp -f "$tmp_output_file" "$output_file"
+  [ -n "$verbose" ] && echo "Successfully wrote output file '$output_file'"
+fi

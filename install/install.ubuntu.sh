@@ -24,7 +24,7 @@ ubuntu_install_distro_packages() {
 
   for i in \
     curl apache2 libapache2-mod-macro apache2-suexec zlib1g libapache2-mod-fcgid \
-    mysql-server git subversion \
+    mysql-server git subversion apache2-utils \
     php5 php5-cli php-pear php5-gd php5-curl php5-mysql \
     php5-cgi php5-mcrypt php5-sqlite libjson-xs-perl libcrypt-ssleay-perl libcgi-session-perl
   do
@@ -51,7 +51,7 @@ ubuntu_adjust_system_config() {
     fi
   fi
 
-  for module in rewrite macro suexec ssl proxy proxy_http; do
+  for module in rewrite macro cgi suexec ssl proxy proxy_http; do
     if [ ! -e "$_apache_base_dir/mods-enabled/$module.load" \
       -a -f "$_apache_base_dir/mods-available/$module.load" ]; then
       ln -sf ../mods-available/$module.load "$_apache_base_dir"/mods-enabled/
@@ -68,6 +68,11 @@ ubuntu_adjust_system_config() {
 
   [ -e "$_apache_base_dir"/mods-enabled/php5.load ] && rm -f "$_apache_base_dir"/mods-enabled/php5.load
   [ -e "$_apache_base_dir"/mods-enabled/php5.conf ] && rm -f "$_apache_base_dir"/mods-enabled/php5.conf
+
+  # enable php mcrypt module that is generally disabled
+  if hash php5enmod &>/dev/null; then
+    php5enmod mcrypt
+  fi
 
   [ -e /etc/init.d/dbmgr ] && rm -f /etc/init.d/dbmgr
   ln -s "$install_dir"/compat/dbmgr/current/bin/dbmgr.init /etc/init.d/devpanel-dbmgr

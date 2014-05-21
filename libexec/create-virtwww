@@ -4,6 +4,7 @@
 
 dummy=""
 
+unset custom_template
 while getopts "n" OPTOPT
 do
   case "$OPTOPT" in
@@ -13,36 +14,49 @@ do
 done
 shift `expr $OPTIND - 1`
 
-progname="$(basename $0)"
-dir="$(dirname $0)"
+progname=$(basename "$0")
+dir=$(dirname "$0")
+
+we_base=`readlink -e "$dir/.."`
+dir_bin="$we_base/bin"
+
 pathnames="$dir/../config/os/pathnames"
-macro_file="$dir/../config/names/apache-macro"
-dir_bin="$dir/../bin"
-chcgi="$pathnames/sbin/chcgi"
-apachectl="$pathnames/sbin/apachectl"
-edquota="$pathnames/sbin/edquota"
+#macro_file="$dir/../config/names/apache-macro"
+
+lib_file="$we_base/lib/functions"
+if ! source "$lib_file"; then
+  echo "Error: unable to source lib file '$lib_file'" 1>&2
+  exit 1
+fi
+
+assign_deref_os_fs_path_ex_or_exit chcgi     "$we_base" pathnames/sbin/chcgi
+assign_deref_os_fs_path_ex_or_exit apachectl "$we_base" pathnames/sbin/apachectl
+assign_deref_os_fs_path_ex_or_exit edquota   "$we_base" pathnames/sbin/edquota
+assign_deref_os_fs_path_ex_or_exit VIRTWWW_LOGDIR "$we_base" pathnames/var/log/apache_vhosts
+assign_deref_os_fs_path_ex_or_exit VIRTWWW_CFGDIR "$we_base" pathnames/etc/apache_vhosts
+
+assign_deref_os_prop_or_exit apache_group    "$we_base"  names/apache-exec.group
+assign_deref_os_prop_or_exit WEBSITES_HOME   "$we_base" apache_virtwww_homedir
+
+template_file="$we_base/config/packages/apache_vhost/_:template"
+if [ -f "$template_file" ]; then
+  assign_deref_contents_or_exit apache_vhost_template "$template_file"
+else
+  assign_deref_os_prop_or_exit apache_vhost_template "$we_base" \
+    names/apache_vhost_template
+fi
+
 passgen="$dir_bin/genpass"
-WEBSITES_HOME=/home/clients/websites
-VIRTWWW_LOGDIR=`readlink "$dir/../config/os/pathnames/var/log/apache_vhosts"`
-VIRTWWW_CFGDIR="$pathnames/etc/apache_vhosts"
+
 ADDON_GROUPS=
 ADDON_GROUPS_FILE="$dir/../config/os/names/groups"
-apache_group=`head -1 $dir/../config/os/names/apache-exec.group`
+
 if [ -s "$ADDON_GROUPS_FILE" ]
 then
   ADDON_GROUPS=`paste -sd, <"$ADDON_GROUPS_FILE"`
 fi
 MYSQL_LOCAL=yes
-macro=Vhost-simple
-if [ -s "$macro_file" ]
-then
-  macro=`cat "$macro_file"`
-  if ! echo "$macro"|grep '^Vhost-[-_A-Za-z0-9]*$'
-  then
-    echo "Invalid macro name in $macro_file"
-    exit 1
-  fi
-fi
+
 
 function usage() {
     cat << EOF
@@ -140,6 +154,13 @@ fi
 DB_ACCOUNT_NAME="b_$ACCOUNT_NAME"
 vhost="$ACCOUNT_NAME"
 ACCOUNT_NAME="w_$ACCOUNT_NAME"
+
+config_base_dir="$we_base/config/vhosts"
+config_dir="$config_base_dir/$vhost"
+if [ ! -e "$config_base_dir" ] && \
+  ! mkdir -m 755 "$config_base_dir"; then
+  error "unable to create directory '$config_base_dir'"
+fi
 
 echo
 VHOST_MULTISITE=
@@ -247,6 +268,16 @@ else
     echo 'done'
 fi
 
+if ! mkdir -m 750 "$config_dir"; then
+  echo "Error: unable to create directory '$config_dir'" 1>&2
+  exit 1
+fi
+
+if ! chown "root":"$ACCOUNT_NAME" "$config_dir"; then
+  echo "Error: unable to chown dir '$config_dir' to user '$ACCOUNT_NAME'" 1>&2
+  exit 1
+fi
+
 # 20060426 - (GM): added optional database creation
 DB_CREATE_FAILED=
 DB_HOST=
@@ -321,37 +352,6 @@ else
     echo 'failed'
 fi
 
-# Thu Oct 14 2005 20:05 PM (galaxy@initsoft.com): added this section
-echo -n '+ setting up Webalizer directory ... '
-su - -c "
-set -e
-test ! -d \"$VHOST_HOME/public_html/gen/$PRIMARY_NAME-usage\" && mkdir \"$VHOST_HOME/public_html/gen/$PRIMARY_NAME-usage\"
-chmod 0711 \"$VHOST_HOME/public_html/gen/$PRIMARY_NAME-usage\"
-cat << EOF > \"$VHOST_HOME/public_html/gen/$PRIMARY_NAME-usage/.htaccess\"
-DirectoryIndex index.html
-
-AuthUserFile \"$VHOST_HOME/.htpasswd.stats\"
-AuthType Basic
-AuthName "Statistics"
-Require valid-user
-Satisfy all
-Deny from all
-Allow from all
-Order Deny,Allow
-EOF
-chmod 0644 \"$VHOST_HOME/public_html/gen/$PRIMARY_NAME-usage/.htaccess\"
-cat << EOF > \"$VHOST_HOME/.htpasswd.stats\"
-stats:\\\$apr1\\\$UtFyb/..\\\$CJolXmFkT3rgUuPVWU6Pf.
-EOF
-chmod 0644 \"$VHOST_HOME/.htpasswd.stats\"
-set +e
-" -s /bin/bash "$ACCOUNT_NAME"
-if [ "$?" -eq 0 ]; then
-    echo 'done'
-else
-    echo 'failed'
-fi
-
 echo -n '+ configuring httpd log directory for virtual host ... '
 set -e
 mkdir -p -m 0750 "$VIRTWWW_LOGDIR/$ACCOUNT_NAME"
@@ -362,20 +362,6 @@ touch "$VIRTWWW_LOGDIR/$ACCOUNT_NAME/$PRIMARY_NAME-"{access,error}_log
 chmod 0644 "$VIRTWWW_LOGDIR/$ACCOUNT_NAME/$PRIMARY_NAME-"{access,error}_log
 set +e
 echo 'done'
-
-# (GM): XXX: unsafe - race!
-echo -n '+ configuring WIT (Webalize-IT) ... '
-if [ -w /opt/wit/config/wit.conf ]
-then
-  echo "$ACCOUNT_NAME:$(echo -n $DOMAIN_NAMES | cut -f1 -d' ' | cut -f1 -d','):$VIRTWWW_LOGDIR/$ACCOUNT_NAME/$PRIMARY_NAME-access_log.1:$VHOST_HOME/public_html/gen/$PRIMARY_NAME-usage:" >> /opt/wit/config/wit.conf
-  if [ "$?" -eq 0 ]; then
-      echo 'done'
-  else
-      echo 'failed'
-  fi
-else
-  echo "skipped (wit.conf not found)"
-fi
 
 echo '+ enabling personal CGIs:'
 "$chcgi" "$ACCOUNT_NAME" +0
@@ -428,31 +414,6 @@ for domain in $DOMAIN_NAMES ; do
     count=$(($count+1))
 done
 
-echo -n '+ generating phpmyadmin token ... '
-PHPMYADMINTOKEN="$($passgen 2>/dev/null)"
-if [ $? -eq 0 ]; then
-        echo 'done'
-else
-        echo 'failed'
-fi
-
-if [ -n "$VHOST_MULTISITE" ]; then
-    cat << EOF >> "$TMPFILE"
-Use Vhost-multi$dummy $ACCOUNT_NAME * $PRIMARY_NAME $PRIMARY_DOMAIN "${ALIAS_LIST:-$PRIMARY_NAME.$PRIMARY_DOMAIN}" "$WEBSITES_HOME/$ACCOUNT_NAME" $PHPMYADMINTOKEN
-EOF
-else
-    cat << EOF >> "$TMPFILE"
-Use $macro$dummy $ACCOUNT_NAME * $PRIMARY_NAME $PRIMARY_DOMAIN "${ALIAS_LIST:-$PRIMARY_NAME.$PRIMARY_DOMAIN}" "$WEBSITES_HOME/$ACCOUNT_NAME" $PHPMYADMINTOKEN
-EOF
-fi
-
-config_dir="/opt/webenabled/config/vhosts/$PRIMARY_NAME"
-mkdir -p "$config_dir/apache-include"
-if [ -r /opt/webenabled/config/features/enabled/cloud9 ]
-then
-  touch "$config_dir/apache-include/cloud9"
-fi
-
 if ! ln "$TMPFILE" "$VIRTWWW_CFGDIR/$ACCOUNT_NAME.conf" 2>/dev/null ; then
 	echo 'failed'
 	echo "$0: could not add configuration for '$ACCOUNT_NAME'"
@@ -469,22 +430,30 @@ else
 fi
 echo 'done'
 
-echo -n '+ checking Apache configuration integrity ... '
-RESULT="$("$apachectl" configtest 2>&1)"
-if [ $? -eq 0 ]; then
-	echo 'done'
+vhost_prefix_f="$config_dir/apache_vhost"
+
+if ln -s "devpanel_main" "$vhost_prefix_f:0"; then
+  if ! ln -s 0 "$vhost_prefix_f:_:name:devpanel_main"; then
+    error "unable to set the name for vhost 0 (devpanel_main)"
+  fi
+
+  if ! ln -s "names/apache_vhost_template" "$vhost_prefix_f:0:_:template_ref"; then
+    error "unable to create template ref $vhost_prefix_f:0:_:template_ref"
+  fi
 else
-	echo 'failed'
-	echo -n "$0: $RESULT"
+  error "unable to create vhost entry $vhost_prefix_f:0"
 fi
 
-echo -n '+ reloading Apache to get new configuration ... '
-RESULT="$("$apachectl" graceful 2>&1)"
-if [ $? -eq 0 ]; then
-	echo 'done'
+if ln -s "devpanel_tools" "$vhost_prefix_f:1"; then
+  if ! ln -s 1 "$vhost_prefix_f:_:name:devpanel_tools"; then
+    error "unable to set the name for vhost 1 (tools vhost)"
+  fi
+
+  if ! ln -s "names/tools_vhost_template" "$vhost_prefix_f:1:_:template_ref"; then
+    error "unable to create template ref $vhost_prefix_f:1:_:template_ref"
+  fi
 else
-	echo 'failed'
-	echo -n "$0: $RESULT"
+  error "unable to create vhost entry $vhost_prefix_f:1"
 fi
 
 echo '---[ end of creating new virtual host ]---'
@@ -513,8 +482,14 @@ count=0
 for domain in $DOMAIN_NAMES; do
   if [ $count -eq 0 ]; then
     "$dir/config-vhost-names" "$vhost" '*' "$domain"
+    if [ $? -ne 0 ]; then
+      error "unable to set the ServerName for vhost $vhost"
+    fi
   else
     "$dir/config-vhost-names" "$vhost" '+' "$domain"
+    if [ $? -ne 0 ]; then
+      error "unable to add domain $domain to vhost $vhost"
+    fi
   fi 
   count=$(( $count + 1 ))
 done 
