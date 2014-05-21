@@ -138,7 +138,6 @@ install_ce_software() {
   # cp -a "$source_dir"/install/old/cloudenabled/wildcard.cloudenabled.net.crt "$webenabled_install_dir"/config/os/pathnames/etc/ssl/certs/wildcard
 
   # echo Vhost-simple-SSL-wildcard > "$webenabled_install_dir"/config/names/apache-macro
-  echo Vhost-simple > "$webenabled_install_dir"/config/names/apache-macro
 
   if [ -e "$_apache_vhost_logs_dir" -a ! -d "$_apache_vhost_logs_dir" ]; then
     mv "$_apache_vhost_logs_dir" "$_apache_vhost_logs_dir".old
