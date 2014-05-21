@@ -2,6 +2,7 @@
 .*.sw[op]
 /etc/devpanel.conf
 /config/packages/*
+!/config/packages/apache_vhost
 /bin/gitolite.d/
 /bin/utils
 /compat/w_/public_html/
