@@ -124,3 +124,5 @@ else
   cp -f "$tmp_output_file" "$output_file"
   [ -n "$verbose" ] && echo "Successfully wrote output file '$output_file'"
 fi
+
+exit 0
