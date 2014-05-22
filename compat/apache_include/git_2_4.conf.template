@@ -5,4 +5,5 @@
   ErrorLog webenabled-logs/git-error_log
 
   Scriptalias /cgit @@__APACHE_VIRTWWW_HOMEDIR__@@/w_/public_html/cgi/cgit.cgi
+  Scriptalias /-ctl/cgit @@__APACHE_VIRTWWW_HOMEDIR__@@/w_/public_html/cgi/cgit.cgi
 </VirtualHost>
