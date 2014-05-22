@@ -32,7 +32,7 @@ if (is_integer($salt)) {
 return $salt===false ? md5($password) : md5($salt.$password).':'.$salt;
 }
 
-$f = STDIN;
+$f = fopen("php://stdin","r");
 $password = fgets($f);
 $value = getHash($password, 2);
 echo("$value\n");
