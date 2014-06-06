@@ -1,24 +1,31 @@
-#!/usr/bin/perl
+#!/usr/bin/env perl
 
 use strict;
 use warnings;
 use File::Basename;
 
-
 BEGIN {
-  my $local_perl5_lib = dirname(__FILE__) . '/../lib/perl5/';
-  if(-d $local_perl5_lib || -l $local_perl5_lib) {
+  use Cwd (qw( abs_path ));
+  my $local_perl5_lib = abs_path(dirname(__FILE__) . '/../lib/perl5/');
+  if(length($local_perl5_lib) > 0 && -d $local_perl5_lib || -l $local_perl5_lib) {
     unshift(@INC, $local_perl5_lib);
   }
 }
 
 use Config::Tiny;
+use Getopt::Long;
 
 sub usage {
   my $prog = basename($0);
 
-  print "Usage: $prog <file> 
+  print "Usage: $prog [ -c ] <file> 
   
+  Options:
+    -c            create the specified file if it doesn't exist
+
+
+  This script creates or updates a .ini file.
+
   Send to STDIN the key = value. The key can be a dotted value, e.g:
     taskd.uuid = cb5dd59d-890d-4fb9-b2b8-2a4ad091bbc6
 
@@ -30,11 +37,31 @@ if($#ARGV < 0) {
   usage();
 }
 
+my %r_opts;
+my %getopt_flags = (
+    'c'         => \$r_opts{create_file},
+);
+
+if(!GetOptions(%getopt_flags)) {
+  exit(1);
+}
+
 my $file = $ARGV[0];
 
-if(! -f $file) {
-  die "Error: file '$file' does not exist.\n";
-} elsif(! -w $file) {
+if(defined($r_opts{create_file}) && ! -e $file) {
+  # just creating it, to check if we're really able to do or not, and exit
+  # early if not
+  if(!open(INI_FILE, ">$file")) {
+    die "Error: unable to create file $file: $!\n";
+  }
+  close(INI_FILE); # the actual write will be done by Config::Tiny
+} else {
+  if(! -f $file) {
+    die "Error: file '$file' does not exist.\n";
+  }
+}
+
+if(! -w $file) {
   die "Error: no write access to file '$file'.\n";
 }
 
