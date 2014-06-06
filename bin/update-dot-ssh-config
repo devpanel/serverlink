@@ -114,3 +114,5 @@ elif [ "$action" == "remove_section" ]; then
     fi
   fi
 fi
+
+exit 0
