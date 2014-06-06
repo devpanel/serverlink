@@ -20,6 +20,7 @@ our @EXPORT = (qw(
   ce_ret_invalid_value ce_ret_missing_required ce_ret_nothing_updated
   ce_ret_permission_denied ce_was_successful ce_ret_signature_error
   ce_ret_not_found ce_ret_local_error ce_log ce_map_op_st_str
+  ce_error_r_str
   ce_convert_task_ret ce_extract_cmd_params
   ce_map_task_msg_str ce_set_autoflush_noblock
   ce_in_array ce_drop_privs ce_get_user_gids
@@ -30,6 +31,7 @@ our @EXPORT = (qw(
   ce_set_flag
   ce_clear_flag
   ce_toggle_flag
+  ce_add_to_hash
 ));
 
 our @EXPORT_OK = (qw(
@@ -186,7 +188,7 @@ sub ce_ret_internal_error {
 
   $r->{status} = CE_OP_ST_INTERNAL_ERROR;
   if(defined($errmsg)) {
-    $r->{errmsg} = $errmsg;
+    $r->{error_msg} = $errmsg;
   }
 
   return $r;
@@ -196,7 +198,7 @@ sub ce_ret_format_error {
   my($r, $p, $msg) = @_;
 
   $r->{status} = CE_OP_ST_PARAMETER_FORMAT_ERROR;
-  $r->{errmsg} = defined($msg) ? $msg : "Invalid syntax of parameter $p";
+  $r->{error_msg} = defined($msg) ? $msg : "Invalid syntax of parameter $p";
 
   return $r;
 }
@@ -205,7 +207,7 @@ sub ce_ret_invalid_value {
   my($r, $p, $msg) = @_;
 
   $r->{status} = CE_OP_ST_PARAMETER_INVALID_VALUE;
-  $r->{errmsg} = defined($msg) ? $msg : "Invalid value for parameter $p";
+  $r->{error_msg} = defined($msg) ? $msg : "Invalid value for parameter $p";
 
   return $r;
 }
@@ -214,7 +216,7 @@ sub ce_ret_missing_required {
   my($r, $p, $msg) = @_;
 
   $r->{status} = CE_OP_ST_MISSING_PARAMETERS;
-  $r->{errmsg} = defined($msg) ? $msg : "Missing parameter $p";
+  $r->{error_msg} = defined($msg) ? $msg : "Missing parameter $p";
 
   return $r;
 }
@@ -223,7 +225,7 @@ sub ce_ret_nothing_updated {
   my($r, $p) = @_;
   $r->{status} = CE_OP_ST_NOTHING_UPDATED;
   if(defined($p)) {
-    $r->{errmsg} = $p;
+    $r->{error_msg} = $p;
   }
 
   return $r;
@@ -234,7 +236,7 @@ sub ce_ret_permission_denied {
   $r->{status} = CE_OP_ST_PERMISSION_DENIED;
 
   if(defined($p)) {
-    $r->{errmsg} = $p;
+    $r->{error_msg} = $p;
   }
 
   return $r;
@@ -247,7 +249,7 @@ sub ce_ret_signature_error {
   $r->{status} = CE_OP_ST_SIGNATURE_ERROR;
 
   if(defined($msg)) {
-    $r->{errmsg} = $msg;
+    $r->{error_msg} = $msg;
   }
 
   return $r;
@@ -261,7 +263,7 @@ sub ce_ret_not_found {
   $r->{status} = CE_OP_ST_NOT_FOUND;
 
   if(defined($msg)) {
-    $r->{errmsg} = $msg;
+    $r->{error_msg} = $msg;
   }
 
   return $r;
@@ -275,7 +277,7 @@ sub ce_ret_local_error {
   $r->{status} = CE_OP_ST_LOCAL_ERROR;
 
   if(defined($msg)) {
-    $r->{errmsg} = $msg;
+    $r->{error_msg} = $msg;
   }
 
   return $r;
@@ -289,7 +291,7 @@ sub ce_ret_unknown_operation {
   $r->{status} = CE_OP_ST_UNKNOWN_OPERATION;
 
   if(defined($msg)) {
-    $r->{errmsg} = $msg;
+    $r->{error_msg} = $msg;
   }
 
   return $r;
@@ -312,6 +314,15 @@ sub ce_map_op_st_str {
   }
 
   return exists($CE_OP_ST_MAP{$st}) ? $CE_OP_ST_MAP{$st} : '(unknown)';
+}
+
+sub ce_error_r_str {
+  my($rsp_r) = @_;
+
+  my $errmsg = exists($rsp_r->{error_msg}) ? $rsp_r->{error_msg} : "(none)";
+  my $tag    = exists($rsp_r->{ctl_tag})   ? $rsp_r->{ctl_tag}   : "";
+
+  return "Error[$tag]: " . ce_map_op_st_str($rsp_r->{status}) . ": $errmsg.";
 }
 
 sub ce_map_task_msg_str {
@@ -960,6 +971,22 @@ sub ce_toggle_flag {
   my($base_value, $flag) = @_;
 
   return $base_value ^ $flag;
+}
+
+sub ce_add_to_hash {
+  my($hash_r, $key, $value) = @_;
+
+  if(!exists($hash_r->{$key}) || !defined($hash_r->{$key})) {
+    $hash_r->{$key} = $value;
+  } elsif(!ref($hash_r->{$key})) {
+    my $curr_value = $hash_r->{$key};
+    $hash_r->{$key} = [ $curr_value, $value ];
+  } elsif(ref($hash_r->{$key}) eq "ARRAY") {
+    push(@{ $hash_r->{$key} }, $value);
+  } else {
+    warn "ce_add_to_hash(): invalid value for key $key\n";
+    return 0;
+  }
 }
 
 1;
