@@ -1,2 +1,4 @@
 db-daemons.conf
 db-shadow.conf
+db-daemons.conf.old
+db-shadow.conf.old
