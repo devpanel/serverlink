@@ -771,3 +771,77 @@ assign_deref_os_fs_path_ex_or_exit() {
     exit 1
   fi
 }
+
+lock_path() {
+  local path="$1"
+  local sleep_n="${2:-0.1}"
+  local -i max_retries="${3:-100}"
+
+  local lock_file=""
+
+  if [ ! -L "$path" -a ! -e "$path" ]; then
+    wedp_warn "path '$path' doesn't exist"
+    return 1
+  else
+    lock_file="`dirname "$path"`/.`basename "$path"`.lock"
+  fi
+
+  local -i retries=1
+  while [ $retries -le $max_retries ]; do
+    ln -s "pid:$PPID" "$lock_file" 2>/dev/null
+    if [ $? -eq 0 ]; then
+      return 0
+    else
+      sleep $sleep_n
+    fi
+    retries+=1
+  done
+
+  wedp_warn "unable to lock path '$path', timed out"
+  return 1 # failed
+}
+
+unlock_path() {
+  local path="$1"
+  
+  local lock_file=""
+
+  if [ ! -L "$path" -a ! -e "$path" ]; then
+    wedp_warn "path '$path' doesn't exist"
+    return 1
+  else
+    lock_file="`dirname "$path"`/.`basename "$path"`.lock"
+  fi
+
+  if [ ! -L "$lock_file" -a ! -e "$lock_file" ]; then
+    wedp_warn "didn't find lock file '$lock_file'"
+    return 0
+  elif [ ! -L "$lock_file" ]; then
+    echo "$FUNCNAME(): path '$lock_file' is not a symlink" 1>&2
+    return 1
+  fi
+
+  rm -f "$lock_file"
+}
+
+rm_rf_safer() {
+  local dir="$1"
+
+  if [ -z "$dir" -o ! -d "$dir" ]; then
+    return 1
+  fi
+
+  local dir_full_path=`readlink -e "$dir"`
+  if [ $? -ne 0 -o -z "$dir_full_path" ]; then
+    echo "$FUNCNAME(): unable to determine full path of '$dir'" 1>&2
+    return 1
+  fi
+
+  if [ "$dir_full_path" == "/" ]; then
+    echo "$FUNCNAME(): can't use dir as /" 1>&2
+    return 1
+  fi
+
+  rm -rf "$dir_full_path"
+}
+

@@ -1,0 +1,175 @@
+#!/bin/bash
+
+usage() {
+  local prog=`basename "$0"`
+  echo "
+  Usage: $prog <directory>
+
+  This script sets or deletes metadata links on the specified directory. It
+  receives data from STDIN in the following format:
+
+  Set a new metadata key:
+  set key value
+
+  Set a new metadata key with the prefix local/:
+  set key value
+
+  Remove a metadata key:
+  rm  key
+"
+  exit 1
+}
+
+set_metadata() {
+  local path="$1"
+  local key="$2"
+  local value="$3"
+
+  local key_basename=`basename "$key"`
+
+  ln -sf "$value" "$path/$key_basename"
+}
+
+rm_metadata() {
+  local path="$1"
+  local key="$2"
+
+  local key_basename=`basename "$key"`
+  rm -f "$path/$key_basename"
+}
+
+backup_dir_contents() {
+  local src_dir="$1"
+  local dst_dir="$2"
+
+  if [ $EUID -eq 0 ]; then
+    cp -a "$src_dir/." "$dst_dir"
+  else
+    cp -dpr "$src_dir/." "$dst_dir"
+  fi
+}
+
+# main
+[ $# -lt 1 -o -z "$1" ] && usage
+
+curr_dir=`dirname "$0"`
+lib_file=`readlink -e "$curr_dir/../lib/functions"`
+
+if ! source "$lib_file"; then
+  echo "Error: unable to load lib file '$lib_file'" 1>&2
+  exit 1
+fi
+
+metadata_dir=`readlink -e "$1"`
+if [ $? -ne 0 -o -z "$1" ]; then
+  error "path '$1' doesn't exist"
+elif [ ! -d "$metadata_dir" ]; then
+  error "path '$metadata_dir' is not a directory"
+elif [ "$metadata_dir" == "/" ]; then
+  error "can't use / as the metadata dir"
+fi
+
+if ! lock_path "$metadata_dir"; then
+  exit 1
+fi
+trap 'exit 1' INT HUP TERM QUIT
+trap 'unlock_path "$metadata_dir"' EXIT
+
+upper_dir=`dirname "$metadata_dir"`
+tmp_metadata_dir=`mktemp -d "$upper_dir/.tmp_metadata.XXXXXX"`
+if [ $? -ne 0 ]; then
+  error "unable to create temporary directory"
+fi
+trap 'rm_rf_safer "$tmp_metadata_dir"; unlock_path "$metadata_dir";' EXIT
+
+if ! backup_dir_contents "$metadata_dir" "$tmp_metadata_dir"; then
+  error "unable to copy dir '$metadata_dir' to '$tmp_metadata_dir'"
+fi
+
+tmp_local_metadata_dir="$tmp_metadata_dir/local"
+
+if [ ! -d "$tmp_local_metadata_dir" ] && ! mkdir "$tmp_local_metadata_dir"; then
+  error "unable to create dir $tmp_local_metadata_dir"
+fi
+
+echo "Reading from STDIN..." 1>&2
+
+TMOUT=60 # timeout for the read below
+         # if you find this annoying it's because you're trying to do
+         # something dumb or there's another problem with the server (e.g.
+         # low memory conditon)
+declare -i line_n=0 n_successful=0
+while read op key value; do
+  line_n+=1
+
+  if [ -z "$op" -a -z "$key" -a -z "$value" ]; then
+    continue # empty line
+  fi
+
+  if [ -z "$op" ]; then
+    error "missing operator on line $line_n"
+  elif [ -z "$key" ]; then
+    error "missing key on line $line_n"
+  fi
+
+  if [ "${op:0:1}" == "#" ]; then
+    # line starts with: #
+    continue
+  fi
+
+  if [ "$op" == "set" -o "$op" == "set-local" ]; then
+    if [ -z "$value" ]; then
+      error "missing value on line $line_n"
+    fi
+
+    if [ "$op" == "set" ]; then
+      set_metadata "$tmp_metadata_dir" "$key" "$value"
+    elif [ "$op" == "set-local" ]; then
+      set_metadata "$tmp_local_metadata_dir" "$key" "$value"
+    fi
+
+    if [ $? -eq 0 ]; then
+      n_successful+=1
+    else
+      error "unable to set key '$key'"
+    fi
+  elif [ "$op" == "rm" -o "$op" == "rm-local" ]; then
+    if [ "$op" == "rm" ]; then
+      rm_metadata "$tmp_metadata_dir" "$key"
+    elif [ "$op" == "rm-local" ]; then
+      rm_metadata "$tmp_local_metadata_dir" "$key"
+    fi
+
+    if [ $? -eq 0 ]; then
+      n_successful+=1
+    else
+      error "unable to remove key '$key' from '$path'"
+    fi
+  else
+    error "unknown operation on line $line_n"
+  fi
+done
+
+if [ $n_successful -gt 0 ]; then
+  previous_metadata_dir="$metadata_dir.previous.$RANDOM"
+  if ! mv -f "$metadata_dir" "$previous_metadata_dir"; then
+    error "unable to move old '$metadata_dir' to '$previous_metadata_dir'"
+  fi
+
+  # the lock protection on the directory protects against the theoretical
+  # race condition that exists here that would happen if the execution moves
+  # to another process and a process tries to access the directory in
+  # between
+  if ! mv -f "$tmp_metadata_dir" "$metadata_dir"; then
+    # failed, so a last attempt to fix the situation
+    mv -f "$previous_metadata_dir" "$metadata_dir"
+
+    error "unable to move $tmp_metadata_dir to $metadata_dir"
+  fi
+
+  rm_rf_safer "$previous_metadata_dir"
+
+  exit 0
+else
+  exit 1
+fi

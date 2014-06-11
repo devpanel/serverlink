@@ -1,0 +1,43 @@
+#!/bin/bash
+
+usage() {
+  local prog=`basename "$0"`
+
+  echo "Usage: $prog <vhost>"
+
+  exit 1
+}
+
+error() {
+  local msg="$1"
+  local exit_code="${2:-1}"
+
+  [ -n "$msg" ] && echo "Error: $msg" 1>&2
+  exit $exit_code
+}
+
+# main
+
+[ $# -eq 0 -o -z "$1" ] && usage
+
+if [ $EUID -ne 0 ]; then
+  error "this command requires ROOT privileges to be run."
+fi
+
+vhost=`basename "$1"`
+
+curr_dir=`dirname "$0"`
+base_dir=`readlink -e "$curr_dir/.."`
+bin_file="$base_dir/bin/metadata-handler"
+if [ $? -ne 0 -o -z "$bin_file" ]; then
+  error "couldn't find metadata-handler executable"
+fi
+
+vhost_dir="$base_dir/config/vhosts/$vhost"
+if [ ! -e "$vhost_dir" ]; then
+  error "vhost dir '$vhost_dir' doesn't exist."
+elif [ ! -d "$vhost_dir" ]; then
+  error "path '$vhost_dir' is not a directory."
+fi
+
+"$bin_file" "$vhost_dir"

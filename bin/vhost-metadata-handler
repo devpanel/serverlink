@@ -1,0 +1,42 @@
+#!/bin/bash
+
+usage() {
+  local prog=`basename "$0"`
+
+  echo "Usage: $prog [ vhost ]
+
+  The parameter vhost is required for the user ROOT
+"
+
+  exit 1
+}
+
+error() {
+  local msg="$1"
+  local exit_code="${2:-1}"
+
+  [ -n "$msg" ] && echo "Error: $msg" 1>&2
+  exit $exit_code
+}
+
+# main
+
+[ $EUID -eq 0 -a -z "$1" ] && usage
+
+curr_dir=`dirname "$0"`
+bin_file=`readlink -e "$curr_dir/metadata-handler"`
+if [ $? -ne 0 -o -z "$bin_file" ]; then
+  error "couldn't find metadata-handler executable"
+fi
+
+if [ $EUID -eq 0 ]; then
+  vhost="$1"
+  vhost_dir=`eval echo -n \~"$vhost"`
+  if [ -z "$vhost_dir" ]; then
+    error "couldn't resolve home dir for vhost $vhost"
+  fi
+else
+  vhost_dir="$HOME/.devpanel"
+fi
+
+"$bin_file" "$vhost_dir"
