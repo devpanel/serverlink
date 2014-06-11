@@ -299,6 +299,65 @@ sub in_array {
   return scalar(grep { $_ eq $entry } @array);
 }
 
+sub query_gitolite_rc {
+  my($value) = @_;
+
+  my $bin_file = $FindBin::RealBin . '/gitolite';
+
+  if(!open(GITOLITE_EXEC_FH, "$bin_file query-rc $value|")) {
+    warn "query_gitolite_rc(): [Error] unable to execute $bin_file: $!\n";
+    return undef;
+  }
+
+  my $returned_value = <GITOLITE_EXEC_FH>;
+  close(GITOLITE_EXEC_FH);
+  my $ret = $? >> 8;
+
+  if($ret != 0) {
+    warn "query_gitolite_rc(): [Error] unable to query gitolite value $value\n";
+    return undef;
+  }
+
+  chomp($returned_value);
+
+  return $returned_value;
+}
+
+sub set_metadata {
+  my($dir, $metadata_str) = @_;
+
+  my $bin_file = $FindBin::RealBin . '/metadata-handler';
+
+  if(!open(METADATA_FH, "|$bin_file $dir")) {
+    return "set_metadata(): unable to exec $bin_file: $!\n";
+  }
+
+  print METADATA_FH $metadata_str;
+  close(METADATA_FH);
+
+  my $ret = $? >> 8;
+
+  if($ret != 0) {
+    return "[Error] unable to set metadata for this change\n";
+  }
+
+  return undef;
+}
+
+sub update_user_cgit_file {
+  my($user) = @_;
+
+  my $bin_file = $FindBin::RealBin . '/cgit-gen-user-config';
+
+  my $ret = system($bin_file, $user);
+
+  my $exit_code = $? >> 8;
+
+  if($ret != 0) {
+    warn "[Warning] unable update cgitrc for user $user\n";
+  }
+}
+
 # side-effect functions, calling any of these
 # functions will result on a new commit and
 # possible a push to the remote repo.
@@ -571,6 +630,13 @@ $gl_repo_dir = untaint_path($gl_repo_dir, dirname($gl_repo_dir));
 $gl_config = "$gl_repo_dir/conf/gitolite.conf";
 $gl_keydir = "$gl_repo_dir/keydir";
 
+my $dot_devpanel_dir = "$ENV{HOME}/.devpanel";
+my $metadata_dir = "$dot_devpanel_dir/metadata";
+
+my $gl_base_repo_dir = query_gitolite_rc('GL_REPO_BASE');
+if(!defined($gl_base_repo_dir)) {
+  die "Error: unable to query for gitolite variable GL_REPO_BASE\n";
+}
 
 if ($command eq 'setperms') {
   # setperms command
@@ -594,8 +660,14 @@ if ($command eq 'setperms') {
     check_gitolite_repo();
     my ($config) = parse_rules();
 
+    my $metadata_r = {};
+    my $metadata_str = '';
     success_or_revert(sub {
       open PERMS, "<$file" or die "can't open permissions file.\n";
+      print "Reading permission data from " . 
+                          ($file eq '-' ? "STDIN" : "file $file") . "...\n";
+
+      my @valid_users;
       while (<PERMS>) {
         next if /^$/;
 
@@ -611,9 +683,47 @@ if ($command eq 'setperms') {
           next;
         }
 
+        my $tmp_repo_dir = sprintf("%s/%s.git", $gl_base_repo_dir, $repo);
+        if(! -d $tmp_repo_dir) {
+          $errors .= "[line $.] dir '$tmp_repo_dir' doesn't exist. ".
+                     "Probably repo doesn't exists too";
+          next;
+        }
+
         set_permissions($config, $repo, $user, $remove?'':$perms, 0);
+        if(!in_array($user, @valid_users)) {
+          push(@valid_users, $user);
+        }
+
+        my $metadata_op;
+        if($remove) {
+          $metadata_str = sprintf("rm config:permission:User:%s:Repo:%s\n",
+                                      $user, $repo);
+        } else {
+          $metadata_str = sprintf("set config:permission:User:%s:Repo:%s %s\n",
+                                    $user, $repo, $perms);
+        }
+
+        if(exists($metadata_r->{$repo})) {
+          $metadata_r->{$repo} .= $metadata_str;
+        } else {
+          $metadata_r->{$repo} = $metadata_str;
+        }
       }
       close PERMS;
+
+      foreach my $tmp_repo (keys %$metadata_r) {
+        if(!$errors) {
+          $errors = set_metadata($metadata_dir, $metadata_r->{$tmp_repo});
+        }
+      }
+
+      if(!$errors) {
+        foreach my $tmp_user (@valid_users) {
+          # best effort, won't check for errors
+          update_user_cgit_file($tmp_user);
+        }
+      }
 
       return $errors;
     });
@@ -655,6 +765,25 @@ if ($command eq 'setperms') {
 
   check_gitolite_repo();
   delete_user_key($userkey);
+
+  my $username = (split(q'@', $userkey, 2))[0];
+  if(index($userkey, '@')) {
+    $username = (split(q'@', $userkey, 2))[0];
+  } else {
+    $username = $userkey;
+  }
+
+  my $user_keys_glob  = "$gl_keydir/$username@*.pub";
+  my $conf_glob = "$dot_devpanel_dir/config:*:User:$username:*";
+
+  my $metadata_str = '';
+  if(!bsd_glob($user_keys_glob) && bsd_glob($conf_glob)) {
+    foreach my $entry (bsd_glob($conf_glob)) {
+      $metadata_str .= sprintf("rm %s\n", basename($entry));
+    }
+
+    set_metadata($metadata_dir, $metadata_str);
+  }
 
 } elsif ($command eq 'setkeys') {
   # setkeys command
