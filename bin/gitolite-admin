@@ -736,6 +736,11 @@ if ($command eq 'setperms') {
     check_gitolite_repo();
     my ($config) = parse_rules();
     set_permissions($config, $repo, $user, $perms);
+
+    my $metadata_str = sprintf("set config:permissions:User:%s:Repo:%s %s\n",
+                              $user, $repo, $perms);
+    set_metadata($metadata_dir, $metadata_str);
+    update_user_cgit_file($user);
   }
 
 } elsif ($command eq 'addkey') {
