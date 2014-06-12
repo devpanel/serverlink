@@ -402,6 +402,7 @@ sub master_sig_chld {
                                T => $task_id,
                                e => time(),
                                r => $ret,
+                               f => $v{"task:$task_id:flags"},
                         }
     );
 
@@ -425,9 +426,10 @@ sub master_sig_chld {
 sub report_task {
   my($msg) = @_;
 
-  my $task_id  = $msg->{T};
-  my $ret      = $msg->{r};
-  my $end_time = $msg->{e};
+  my $task_id    = $msg->{T};
+  my $ret        = $msg->{r};
+  my $end_time   = $msg->{e};
+  my $task_flags = $msg->{f};
 
   my $out_file = sprintf('%s/%d', $v{output_tmp_dir}, $task_id);
 
@@ -437,14 +439,63 @@ sub report_task {
     return 0;
   }
 
+  my $default_buf_len = 8192;
   my($read_len, $n);
   $read_len = $n = 0;
   my $output_str = '';
+  my $pre_buf = "";
+  my $params_found_r = {};
+
   while($read_len <= $v{max_output_size} &&
-    defined($n = sysread(OUTPUT_F, my $buf, 8192)) && $n > 0) {
+    defined($n = sysread(OUTPUT_F, my $buf, $default_buf_len - length($pre_buf))) && $n > 0) {
     $debug and debug_log("read $n characters from file '$out_file'");
+
+    # if the task is marked to search for parameters in output, then search for it
+    if($task_flags & CE_TASK_FL_SEARCH_FOR_OUTPUT_PARAMS) {
+      my $full_str = $pre_buf . $buf;
+      my $pos_i = 0;
+      my $full_str_len = length($full_str);
+
+      while($pos_i < $full_str_len) {
+        my $pos_m = index($full_str, "\n", $pos_i);
+
+        if($pos_m > -1 && $pos_m == $pos_i) {
+          # matched, but are consecutive \n's, just read again to
+          # find more lines
+          $pre_buf = "";
+          $pos_i = $pos_m + 1;
+          next;
+        } elsif($pos_m > - 1) {
+          my $line = substr($full_str, $pos_i, $pos_m);
+          if(my($param, $value) = extract_param_from_line($line)) {
+            ce_add_to_hash($params_found_r, $param, $value);
+          }
+          $pre_buf = "";
+          $pos_i = $pos_m + 1;
+        } elsif($pos_m == -1 && $pos_i != $pos_m) {
+          # there isn't a \n here, it means a partial line
+          # copy the remaining characters to $pre_buf to use later when the
+          # new line comes
+          if(length($pre_buf) == $default_buf_len) {
+            # read a very big line and didn't find a \n, don't store this
+            # line
+            $pre_buf = "";
+          } else {
+            $pre_buf = substr($full_str, $pos_i);
+          }
+
+          last; # skip, wait for the next reading cycle
+        } elsif($pos_m == -1 && $pos_i == $pos_m) {
+          # didn't match and got to the end of the string
+          # just end this search cycle
+          $pre_buf = "";
+          last;
+        }
+      }
+    }
+
     $output_str .= $buf;
-    $read_len += $n;
+    $read_len   += $n;
   }
   close(OUTPUT_F);
 
@@ -455,7 +506,7 @@ sub report_task {
     return 0;
   }
 
-  my $ht_ret = ce_tasks_http_request({
+  my $req_r = {
       __api_url => $conf->{api_url},
           __key => $conf->{key},
        __method => 'post',
@@ -465,7 +516,20 @@ sub report_task {
               o => $output_base64,
               r => $ret,
               e => $end_time,
-            });
+  };
+
+
+  if($task_flags & CE_TASK_FL_SEARCH_FOR_OUTPUT_PARAMS && $params_found_r) {
+    my $pi = 1;
+    $req_r->{pn} = scalar(keys(%$params_found_r));
+    foreach my $p (keys(%$params_found_r)) {
+      $req_r->{"p$pi"} = $p;
+      $req_r->{"v$pi"} = $params_found_r->{$p};
+      $pi++;
+    }
+  }
+
+  my $ht_ret = ce_tasks_http_request($req_r);
 
   undef($output_base64);
   undef($output_str);
@@ -543,6 +607,7 @@ sub exec_child {
     };
 
     $v{"task:$task_id"}             = $task_ref;
+    $v{"task:$task_id:flags"}       = $flags;
     $v{"pid:$pid:task"}             = $task_id;
     $v{"activity:$activity_id:pid"} = $pid;
 
@@ -1314,6 +1379,56 @@ sub get_local_interface_ip {
     return $ip;
   } else {
     return 0;
+  }
+}
+
+sub extract_param_from_line {
+  my($line) = @_;
+
+  my $start_str = '@devpanel_param';
+  my $start_str_len = length($start_str);
+
+  if(length($line) <= $start_str_len) {
+    return ();
+  }
+
+  if(substr($line, 0, $start_str_len) ne $start_str) {
+    return ();
+  }
+
+  if($line !~ /^\Q$start_str\E ([A-Za-z0-9_-]+) (.+)/) {
+    return ();
+  }
+
+  my($param, $value) = ($1, $2);
+
+  return ($param, $value);
+}
+
+sub send_params_found {
+  my($params_r) = @_;
+
+  $debug and log_params_found($params_r);
+
+  return 1;
+}
+
+sub log_params_found {
+  my($params_r) = @_;
+
+  my $log_str = "found parameter %s = %s";
+  my $value;
+
+  foreach my $p (keys(%$params_r)) {
+    if(ref($params_r->{$p}) eq "ARRAY") {
+      $value = join(", ", @{ $params_r->{$p} });
+    } elsif(!ref($params_r->{$p})) {
+      $value = $params_r->{$p};
+    } else {
+      $value = "";
+    }
+
+    debug_log(sprintf($log_str, $p, $value));
   }
 }
 

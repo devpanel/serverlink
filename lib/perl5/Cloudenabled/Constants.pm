@@ -42,10 +42,15 @@ use constant CE_TASK_OP_REPORT         => 3;
 use constant CE_TASK_OP_SET_RUNNING    => 4;
 use constant CE_TASK_OP_RAN_INTERNAL   => 5;
 
-# before adding more values to task flags, please consult Controller/Constants.pm
-use constant CE_TASK_FL_READ_STDIN    =>    2;
-use constant CE_TASK_FL_DROP_PRIVS    =>    4;
-use constant CE_TASK_FL_STDIN_BASE64  =>  256;
+use constant CE_TASK_FL_READ_STDIN                     =>     2;
+use constant CE_TASK_FL_DROP_PRIVS                     =>     4;
+use constant CE_TASK_FL_SEND_OUTPUT                    =>     8;
+use constant CE_TASK_FL_INTERNAL_HIDDEN                =>    16;
+use constant CE_TASK_FL_EXPORT_OUTPUT                  =>    64;
+use constant CE_TASK_FL_IMPORT_STDIN                   =>   128;
+use constant CE_TASK_FL_STDIN_BASE64                   =>   256;
+use constant CE_TASK_FL_NOT_CRITICAL                   =>   512;
+use constant CE_TASK_FL_SEARCH_FOR_OUTPUT_PARAMS       =>  1024;
 
 use constant CE_FL_AUTH_IS_ADMIN      => 1;
 use constant CE_FL_ACCEPT_MULT_PARAMS => 2;
@@ -81,7 +86,10 @@ our @EXPORT = (qw(
 
   CE_TASK_MAX_OUTPUT_LEN
 
-  CE_TASK_FL_READ_STDIN CE_TASK_FL_DROP_PRIVS CE_TASK_FL_STDIN_BASE64
+  CE_TASK_FL_READ_STDIN CE_TASK_FL_DROP_PRIVS CE_TASK_FL_SEND_OUTPUT
+  CE_TASK_FL_INTERNAL_HIDDEN CE_TASK_FL_EXPORT_OUTPUT
+  CE_TASK_FL_IMPORT_STDIN CE_TASK_FL_STDIN_BASE64 CE_TASK_FL_NOT_CRITICAL
+  CE_TASK_FL_SEARCH_FOR_OUTPUT_PARAMS
 
   CE_HEADER_SIGNATURE_STR CE_HEADER_SERVER_STR CE_HEADER_STATUS_STR
   CE_HEADER_SESSION_STR CE_HEADER_ERRMSG_STR
