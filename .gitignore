@@ -6,4 +6,5 @@
 /bin/gitolite.d/
 /bin/utils
 /compat/w_/public_html/
+!/compat/w_/public_html/cgi/cgit.cgi
 /config/os
