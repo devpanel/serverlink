@@ -226,7 +226,7 @@ get_list_of_items() {
   local vhost_name_link="$config_prefix:_:name:$vhost_sym_name"
   local vhn=`deref_contents "$vhost_name_link"`
 
-  local this_vhost_prefix="$config_prefix:$vhn"
+  local this_vhost_prefix="apache_vhost:$vhn"
 
 
   # checks for these parameters in the following order:
@@ -244,7 +244,7 @@ get_list_of_items() {
   #        config/packages/apache_vhost/<param>
 
   local items_str="" tmp_str
-  tmp_str=`ls "$config_dir/$p_prefix"* 2>/dev/null`
+  tmp_str=`ls "$config_dir/$this_vhost_prefix:$p_prefix"* 2>/dev/null`
   [ $? -eq 0 ] && items_str+="$tmp_str"
 
   tmp_str+=`ls "$local_tmpl_dir/$p_prefix"* 2>/dev/null`
@@ -368,34 +368,6 @@ for this_vhost_prefix in "$vhost_prefix_f:"[0-9] "$vhost_prefix_f:"[0-9][0-9]; d
   declare -a vhost_var_links_ar=()
   declare -a vhost_rpl_var_links_ar=()
 
-  template_file=`get_template_file "$we_base_dir" "$vhost" "$vhost_name"`
-  if [ $? -ne 0 ]; then
-    error "unable to de-reference template for vhost $vhn"
-  fi
-  tmp_tmpl_name=`dirname "$template_file"`
-  tmpl_name=`basename "$tmp_tmpl_name"`
-
-  if ! cat "$template_file" >>"$tmp_new_vhost_file"; then
-    error "unable to copy template contents to '$tmp_new_vhost_file'"
-  fi
-
-  # Super-special required parameters
-  for param in ${super_special_params[*]}; do
-    # check for these parameters in the following order:
-    # 1) vhost     2) template   3) server
-    if ! param_link=`get_vhost_metadata_link "$we_base_dir" "$vhost" "$vhost_name" \
-                              "$tmpl_name" "$param"`; then
-      error "unable to determine apache parameter $param"
-    fi
-
-    param_name=${param_link##*:}
-    param_value=`readlink "$param_link"`
-    param_name_escaped=`escape_sed "${param_name^^}"`
-    param_value_escaped=`escape_sed "$param_value"`
-
-    sed_line+="s/@@__PARAM_${param_name_escaped}__@@/$param_value_escaped/g;"
-  done
-
   # check if this template is meant to replicate data from another vhost
   # if it is, then all data (params, includes and vars) not set explictily
   # to this vhost, are copied from the replica template
@@ -411,6 +383,41 @@ for this_vhost_prefix in "$vhost_prefix_f:"[0-9] "$vhost_prefix_f:"[0-9][0-9]; d
     repl_template_dir=`dirname "$repl_template_file"`
     repl_template=`basename "$repl_template_dir"`
   fi
+
+  template_file=`get_template_file "$we_base_dir" "$vhost" "$vhost_name" 2>/dev/null`
+  if [ $? -ne 0 ]; then
+    # didn't find a template on this vhost. So check the replicate vhost as
+    # the last chance
+    template_file=`get_template_file "$we_base_dir" "$vhost" "$repl_name" 2>/dev/null`
+    if [ $? -ne 0 ]; then
+      error "unable to de-reference template for vhost $vhn"
+    fi
+  fi
+
+  tmp_tmpl_name=`dirname "$template_file"`
+  tmpl_name=`basename "$tmp_tmpl_name"`
+  if ! cat "$template_file" >>"$tmp_new_vhost_file"; then
+    error "unable to copy template contents to '$tmp_new_vhost_file'"
+  fi
+
+  declare -a missing_params_ar
+  # Super-special required parameters
+  for param in ${super_special_params[*]}; do
+    # check for these parameters in the following order:
+    # 1) vhost     2) template   3) server
+    if ! param_link=`get_vhost_metadata_link "$we_base_dir" "$vhost" "$vhost_name" \
+                              "$tmpl_name" "$param"`; then
+      # error "unable to determine apache parameter $param"
+      missing_params_ar+=( "$param" )
+    fi
+
+    param_name=${param_link##*:}
+    param_value=`readlink "$param_link"`
+    param_name_escaped=`escape_sed "${param_name^^}"`
+    param_value_escaped=`escape_sed "$param_value"`
+
+    sed_line+="s/@@__PARAM_${param_name_escaped}__@@/$param_value_escaped/g;"
+  done
 
   # a few special verbatim parameters
   # these are about system defaults, to avoid having to create links on all
@@ -431,10 +438,19 @@ for this_vhost_prefix in "$vhost_prefix_f:"[0-9] "$vhost_prefix_f:"[0-9][0-9]; d
         vhost_rpl_param_links_ar+=( "$pl" )
       fi
     else
-      error "unable to determine apache parameter $param"
+      # error "unable to determine apache parameter $param"
+      missing_params_ar+=( "$param" )
     fi
   done
 
+  if [ ${#missing_params_ar[@]} -gt 0 ]; then
+    echo "Error: missing the following critical parameters on vhost $vhost_base_str ($vhost_name)" 1>&2
+    for param in ${missing_params_ar[@]}; do
+      echo "  $param"
+    done
+
+    exit 1
+  fi
 
   # generic Apache parameters for the template, available system wide.
   # Have the same intent of the previous one, to make it easy to distribute
@@ -471,7 +487,7 @@ for this_vhost_prefix in "$vhost_prefix_f:"[0-9] "$vhost_prefix_f:"[0-9][0-9]; d
 
     while read tmp_param_entry; do
       tmp_inc_basename=`basename "$tmp_param_entry"`
-      tmp_stripped=${tmp_inc_basename#param:}
+      tmp_stripped=${tmp_inc_basename#*:param:}
       tmp_p_n=${tmp_stripped%%:*}
       tmp_p_name=${tmp_inc_basename##*:}
 
@@ -496,12 +512,12 @@ for this_vhost_prefix in "$vhost_prefix_f:"[0-9] "$vhost_prefix_f:"[0-9][0-9]; d
 
       while read tmp_param_entry; do
         tmp_inc_basename=`basename "$tmp_param_entry"`
-        tmp_stripped=${tmp_inc_basename#param:}
+        tmp_stripped=${tmp_inc_basename#*:param:}
         tmp_p_n=${tmp_stripped%%:*}
         tmp_p_name=${tmp_inc_basename##*:}
 
         tmp_link=`get_vhost_param_link "$we_base_dir" "$vhost" "$vhost_name" \
-                                      "$vhost_template" "$tmp_p_n" "$tmp_p_name"`
+                                      "$tmpl_name" "$tmp_p_n" "$tmp_p_name"`
 
         if [ $? -eq 0 ]; then
           continue # already defined in the original template
@@ -600,7 +616,7 @@ for this_vhost_prefix in "$vhost_prefix_f:"[0-9] "$vhost_prefix_f:"[0-9][0-9]; d
   # the system included templates from the replica
   # It takes care not to duplicate includes that are already included into
   # this one
-  if [ -L "$repl_name" ]; then
+  if [ -n "$repl_name" ]; then
     repl_incl_list=`get_list_of_items "$we_base_dir" "$vhost" "$repl_name" \
                    "$repl_template" "include:"`
 
@@ -617,7 +633,7 @@ for this_vhost_prefix in "$vhost_prefix_f:"[0-9] "$vhost_prefix_f:"[0-9][0-9]; d
           continue
         else
           tmp_file=`get_vhost_data_link "$we_base_dir" "$vhost" \
-                    "$vhost_name" "$repl_template" include "$tmp_inc_name"`
+                    "$repl_name" "$repl_template" include "$tmp_inc_name"`
 
           if [ $? -ne 0 ]; then
             error "unable to find template $repl_template for vhost $vhn"
@@ -638,7 +654,7 @@ for this_vhost_prefix in "$vhost_prefix_f:"[0-9] "$vhost_prefix_f:"[0-9][0-9]; d
 
     while read tmp_var_entry; do
       tmp_var_basename=`basename "$tmp_var_entry"`
-      tmp_var_name=${tmp_var_basename#var:}
+      tmp_var_name=${tmp_var_basename#*:var:}
 
       tmp_link=`get_vhost_data_link "$we_base_dir" "$vhost" "$vhost_name" \
                                     "$tmpl_name" var "$tmp_var_name"`
@@ -661,7 +677,7 @@ for this_vhost_prefix in "$vhost_prefix_f:"[0-9] "$vhost_prefix_f:"[0-9][0-9]; d
 
       while read tmp_var_entry; do
         tmp_var_basename=`basename "$tmp_var_entry"`
-        tmp_var_name=${tmp_var_basename#var:}
+        tmp_var_name=${tmp_var_basename#*:var:}
 
         tmp_link=`get_vhost_data_link "$we_base_dir" "$vhost" "$vhost_name" \
                                       "$tmpl_name" var "$tmp_var_name"`
@@ -669,7 +685,7 @@ for this_vhost_prefix in "$vhost_prefix_f:"[0-9] "$vhost_prefix_f:"[0-9][0-9]; d
         if [ $? -eq 0 ]; then
           continue # already exists in the original template, skipping...
         else
-          tmp_link=`get_vhost_data_link "$we_base_dir" "$vhost" "$vhost_name" \
+          tmp_link=`get_vhost_data_link "$we_base_dir" "$vhost" "$repl_name" \
                                       "$repl_template" var "$tmp_var_name"`
 
           if ! in_array "$tmp_var_name" "${tmp_repl_var_inc_list[*]}"; then
@@ -794,7 +810,7 @@ for this_vhost_prefix in "$vhost_prefix_f:"[0-9] "$vhost_prefix_f:"[0-9][0-9]; d
   # variables
   for var_link in ${vhost_var_links_ar[@]} ${vhost_rpl_var_links_ar[@]}; do
     var_basename=`basename "$var_link"`
-    var_name=${var_basename##var:}
+    var_name=${var_basename##*:var:}
     var_value=`readlink "$var_link"`
 
     var_name_escaped=`escape_sed "${var_name^^}"`
