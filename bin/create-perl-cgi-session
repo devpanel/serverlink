@@ -14,6 +14,8 @@ sub usage {
   print "Usage: $0 [ options ]
 
   Options:
+    -i session_id         the session_id to be used for the new session
+                          (otherwise a new one is created)
     -d directory          directory where to create the file
     -P <name=value>       set parameters inside the session
     -e expire_time        set the expire time (shortcuts available, e.g.
@@ -41,6 +43,7 @@ my %getopt_def = (
   'e=s'       => \$recvd_opts{expire_time},
   'o'         => \$recvd_opts{to_stdout},
   'O=s'       => \$recvd_opts{output_str},
+  'i=s'       => \$recvd_opts{session_id},
 );
 
 Getopt::Long::Configure("no_ignore_case");
@@ -64,6 +67,11 @@ foreach my $p_pair (@{ $recvd_opts{session_params} }) {
 
 if(defined($recvd_opts{expire_time})) {
   $session_obj->expires($recvd_opts{expire_time});
+}
+
+if(defined($recvd_opts{session_id})) {
+  my $data_r = $session_obj->dataref();
+  $data_r->{_SESSION_ID} = $recvd_opts{session_id};
 }
 
 if(!$session_obj->flush()) {
