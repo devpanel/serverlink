@@ -194,7 +194,7 @@ sub dump_rules
 
     foreach my $p (qw( config option )) {
       if(exists($repo_r{$p})) {
-        foreach my $key (keys $repo_r{$p}) {
+        foreach my $key (keys %{ $repo_r{$p} }) {
           printf CONF "    %s %s = %s\n", $p, $key, $repo_r{$p}{$key};
         }
       }
@@ -697,10 +697,10 @@ if ($command eq 'setperms') {
 
         my $metadata_op;
         if($remove) {
-          $metadata_str = sprintf("rm config:permission:User:%s:Repo:%s\n",
+          $metadata_str = sprintf("rm config:permissions:User:%s:Repo:%s\n",
                                       $user, $repo);
         } else {
-          $metadata_str = sprintf("set config:permission:User:%s:Repo:%s %s\n",
+          $metadata_str = sprintf("set config:permissions:User:%s:Repo:%s %s\n",
                                     $user, $repo, $perms);
         }
 
