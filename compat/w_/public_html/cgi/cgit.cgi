@@ -5,6 +5,7 @@ use CGI (qw( -oldstyle_urls ));
 use CGI::Session;
 use Cwd (qw( abs_path ));
 use FindBin (qw( $RealBin ));
+use File::Basename (qw( basename ));
 use lib $RealBin . "/../../../../lib/perl5";
 
 my $cgi;
@@ -45,12 +46,20 @@ if(!$session->param('cgit_config')) {
   log_error_n_exit("missing cgit_conf file in session");
 }
 
+my $cgit_config_file;
+if(substr($session->param('cgit_config'), 0, 1) eq "/") {
+  $cgit_config_file = $session->param('cgit_config');
+} else {
+  $cgit_config_file = sprintf("%s/.devpanel/cgit/%s", $user_ar[7],
+                                basename($session->param('cgit_config')));
+}
+
 printf "Set-Cookie: %s\n", $cgi->cookie(
   -name    => $session->name(),
   -value   => $session->id(),
   -domain  => $cgi->server_name(),
   -path    => $cgi->url( -absolute => 1 ),
-  -expires => '+1h'
+  -expires => time() + $session->expire(),
 );
 
 if($cgi->param('devpanel_repo')) {
@@ -63,7 +72,7 @@ if($cgi->param('devpanel_repo')) {
 
 my $cgit_bin = abs_path($RealBin . "/../../../../bin/utils/cgit/current/cgi-bin/cgit.cgi");
 if( -x $cgit_bin ) {
-  $ENV{CGIT_CONFIG} = $session->param('cgit_config');
+  $ENV{CGIT_CONFIG} = $cgit_config_file;
   exec($cgit_bin);
 } else {
   log_error_n_exit("unable to find the executable binary $cgit_bin");

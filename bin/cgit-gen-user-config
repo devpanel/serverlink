@@ -43,7 +43,7 @@ fi
 trap 'exit 1' INT HUP TERM QUIT
 trap 'rm -f "$tmp_file"' EXIT
 
-user="$1"
+user=`basename "$1"`
 
 gitolite_repos_dir=`$gitolite_bin query-rc GL_REPO_BASE`
 if [ $? -ne 0 -o -z "$gitolite_repos_dir" ]; then
@@ -65,9 +65,28 @@ if [ ! -d "$cgit_conf_dir" ] && ! mkdir -m 700 "$cgit_conf_dir"; then
   error "unable to create $cgit_conf_dir"
 fi
 
-echo "cache-dynamic-ttl=1" > "$tmp_file"
+system_template="$we_base_dir/compat/w_cgit/cgitrc.template"
+user_template="$cgit_conf_dir/cgitrc.user.$user.template"
+local_template="$cgit_conf_dir/cgitrc.template"
+
+# initiate the cgitrc from the template file
+# check for a user specific template, then fallback to a local general
+# template file and then fallback to a system general template file
+unset cgitrc_template
+for tmpl_file in "$user_template" "$local_template" "$system_template"; do
+  if [ -f "$tmpl_file" ]; then
+    cgitrc_template="$tmpl_file"
+    break
+  fi
+done
+
+if [ -z "$cgitrc_template" ]; then
+  error "unable to find the cgit template file"
+fi
+
+cat "$cgitrc_template" > "$tmp_file" # copy the template into temporary file
 if [ $? -ne 0 ]; then
-  error "unable to do initial write to tmp file '$tmp_file'"
+  error "unable to copy template file '$tmpl_file' to '$tmp_file'"
 fi
 
 declare -i n_repos=0
