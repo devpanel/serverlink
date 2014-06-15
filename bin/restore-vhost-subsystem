@@ -110,6 +110,11 @@ is_valid_subsystem_name_format() {
 }
 
 set_database_variables() {
+  database=`deref_contents "$config_dir/app:0:_:db_name"`
+  if [ $? -ne 0 ]; then
+    database="$subsystem"
+  fi
+
   echo "Obtaining mysql credentials"
   if [ -n "$use_my_cnf" ]; then
     mysql_host=`ini_section_get_key_value ~/.my.cnf client host`
@@ -120,6 +125,11 @@ set_database_variables() {
     # remove leading and trailing quotes from the password
     mysql_password=${mysql_password#[\"\']}
     mysql_password=${mysql_password%[\"\']}
+  elif [ -L "$config_dir/app:0:_:db_host" ]; then
+    mysql_host=`deref_contents "$config_dir/app:0:_:db_host"`
+    mysql_port=`deref_contents "$config_dir/app:0:_:db_port"`
+    mysql_user=`deref_contents "$config_dir/app:0:_:db_user"`
+    mysql_password=`deref_contents "$config_dir/app:0:_:db_password"`
   else
     mysql_passwd_file="$vhost_config_dir/.mysql.passwd"
     [ -r "$mysql_passwd_file" ] || mysql_passwd_file="$home/.mysql.passwd"
@@ -193,19 +203,6 @@ cleanup_env_vars() {
   opt_m="" opt_M="" opt_p="" opt_P="" subsystem="" opt_i="" opt_I="" opt_n=""
   buffer=""  email=""
   use_my_cnf=""
-}
-
-set_global_variables() {
-  user_web=`whoami`
-  vhost=`echo "$user_web"|sed 's/w_//'`
-  user_db="b_$vhost"
-  config_dir="/opt/webenabled/config/vhosts/$vhost"
-  database="$subsystem"
-  home="`eval \"echo ~$user_web\"`"
-  vhost_config_dir=.webenabled/private
-  dir=`dirname "$0"`
-  seeds_home_dir="$dir/seeds/"
-  subsystem_seeds_dir="$seeds_home_dir/$subsystem"
 }
 
 generate_password() {
@@ -401,6 +398,8 @@ cleanup_env_vars
 
 # load auxiliary functions from devPanel library
 curr_dir="`dirname "${BASH_SOURCE[0]}"`"
+we_base_dir=`readlink -e "$curr_dir/.."`
+
 lib_file="`readlink -e "$curr_dir/../lib/functions"`"
 if [ $? -ne 0 ]; then
   error "unable to find auxiliary library file. Should have been at ../lib/functions from this script directory"
@@ -468,11 +467,26 @@ while getopts 'pPMm:s:O:iIn' OPTOPT; do
   esac
 done
 
-# if didn't receive a subsystem name, show usage()
-[ -z "$subsystem" ] && usage "[i] Please provide a subsystem (-s)"
-
 # set main system variables
-set_global_variables
+user_web="$USER"
+vhost="${user_web#w_}"
+user_db="b_$vhost"
+config_dir="$we_base_dir/config/vhosts/$vhost"
+home="`eval \"echo ~$user_web\"`"
+vhost_config_dir=.webenabled/private
+dir=`dirname "$0"`
+seeds_home_dir="$dir/seeds"
+
+if [ -z "$subsystem" ]; then
+  subsystem=`deref_contents "$config_dir/app:0:_:seed_app"`
+  if [ $? -ne 0 ]; then
+    # if didn't receive a subsystem name, show usage()
+    usage "[i] Please provide a subsystem (-s)"
+  fi
+fi
+subsystem_seeds_dir="$seeds_home_dir/$subsystem"
+
+set_database_variables # load database information
 
 # validate subsystem syntax
 if ! is_valid_subsystem_name_format "$subsystem"; then
@@ -482,12 +496,13 @@ fi
 if [ ! -d "$subsystem_seeds_dir" ]; then
   error "missing subsystem seeeds dir. Did you enter a valid subsystem name?"
 fi
-  
+
 # load subsystem helper functions that will be used later
 if ! load_subsystem_functions "$subsystem"; then
   error "unable to load helper functions for subsystem $subsystem"
 fi
 
+ 
 # if all specific options are missing, then reset all passwords (-P)
 [ -z "$action_opt" ] && opt_P=1
 
@@ -497,12 +512,10 @@ test_target_account || error "Problems in target user account"
 servername_link="$config_dir/apache_vhost:0:_:ServerName"
 if fqdn=`deref_contents "$servername_link"`; then
   :
-elif ! fqdn=`readlink $config_dir/names/default` || ! [ -n "$fqdn" ]
+elif ! fqdn=`deref_contents "$config_dir/names/default"` || ! [ -n "$fqdn" ]
 then
   error "Cannot get the primary name from $config_dir/names/default"
 fi
-
-set_database_variables # load database information
 
 # connect to the database (credentials from ~/.my.cnf)
 echo "Looking for database '$database'"
@@ -513,7 +526,7 @@ fi
 
 if ! echo "$databases"|egrep -q "^$database\$"
 then
-  error "not a $subsystem site"
+  error "couldn't find database '$database'"
 fi
 
 # call seed's API to get the admin's user

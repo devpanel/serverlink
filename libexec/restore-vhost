@@ -91,8 +91,11 @@ done
 
 dir=`dirname "$0"`
 dir_bin="$dir/../bin"
+we_base_dir=`readlink -e "$dir/.."`
+
 vhost="$1"
-config_dir="/opt/webenabled/config/vhosts/$vhost"
+
+config_dir="$we_base_dir/config/vhosts/$vhost"
 user_web="w_$vhost"
 home="`eval \"echo ~$user_web\"`" || error
 user_db="b_$vhost"
@@ -227,8 +230,41 @@ s//\1/
 s/'\''/\\&/g
 s/.*/password='\''&'\''/
 }'|run_su "cat >$home/.my.cnf" || exit 1
-run_su $dir_bin/phpMyAdmin.fix -f || exit 1
-run_su $dir_bin/vhost-archive.fix -f || exit 1
+run_su $dir_bin/phpMyAdmin.fix -f
+run_su $dir_bin/vhost-archive.fix -f
+
+tmp_mysql_host=`echo -n "$output3" | egrep ^host=`
+tmp_mysql_host=${tmp_mysql_host#*=}
+tmp_mysql_host=${tmp_mysql_host#[\"\']}
+tmp_mysql_host=${tmp_mysql_host%[\"\']}
+mysql_host="$tmp_mysql_host"
+
+tmp_mysql_port=`echo -n "$output3" | egrep ^port=`
+tmp_mysql_port=${tmp_mysql_port#*=}
+tmp_mysql_port=${tmp_mysql_port#[\"\']}
+tmp_mysql_port=${tmp_mysql_port%[\"\']}
+mysql_port="$tmp_mysql_port"
+
+tmp_mysql_user=`echo -n "$output3" | egrep ^user=`
+tmp_mysql_user=${tmp_mysql_user#*=}
+tmp_mysql_user=${tmp_mysql_user#[\"\']}
+tmp_mysql_user=${tmp_mysql_user%[\"\']}
+mysql_user="$tmp_mysql_user"
+
+tmp_mysql_password=`echo -n "$output3" | egrep ^password=`
+tmp_mysql_password=${tmp_mysql_password#*=}
+tmp_mysql_password=${tmp_mysql_password#[\"\']}
+tmp_mysql_password=${tmp_mysql_password%[\"\']}
+mysql_password="$tmp_mysql_password"
+
+metadata_str="
+set app:_:default app:0
+set app:0:_:db_host $mysql_host
+set app:0:_:db_port $mysql_port
+set app:0:_:db_user $mysql_user
+set app:0:_:db_password $mysql_password
+"
+
 for subsystem in drupal joomla wordpress magento projectpier mantis scratch omb elgg silverstripe limesurvey zencart redmine vanillaforums mediawiki pivotx opencart moodle
 do
   if [ $opt_p = 0 ]
@@ -237,6 +273,9 @@ do
   fi
   if grep -q "^$subsystem\$" "$archive_dir/db/databases"
   then
+    metadata_str+="set app:0:_:seed_app $subsystem"$'\n'
+    metadata_str+="set app:0:_:db_name $subsystem"$'\n'
+
     if ! run_su cd \~ \; $dir_bin/restore-vhost-subsystem \
       $subsystem_options -n -s "$subsystem"; then
 
@@ -244,7 +283,11 @@ do
     fi
 
     run_su cd \~ \; $dir_bin/restore-vhost-subsystem $subsystem_options -I -s "$subsystem" || exit 1
+
+    echo "$metadata_str" | "$we_base_dir/libexec/apache-metadata-handler" "$vhost"
   fi
+
+
 done
 
 run_su 'restore_script="$HOME/etc/rc.webenabled.restore";
