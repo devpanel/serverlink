@@ -1,0 +1,32 @@
+#!/bin/bash
+
+usage() {
+  local prog=`basename "$0"`
+
+  echo "Usage: $prog"
+
+  exit 1
+}
+
+error() {
+  local msg="$1"
+  local exit_code="${2:-1}"
+
+  [ -n "$msg" ] && echo "Error: $msg" 1>&2
+  exit $exit_code
+}
+
+# main
+
+if [ $EUID -ne 0 ]; then
+  error "this command requires ROOT privileges to be run."
+fi
+
+curr_dir=`dirname "$0"`
+base_dir=`readlink -e "$curr_dir/.."`
+bin_file="$base_dir/bin/metadata-handler"
+if [ $? -ne 0 -o -z "$bin_file" ]; then
+  error "couldn't find metadata-handler executable"
+fi
+
+"$bin_file" "$base_dir"
