@@ -12,7 +12,7 @@ usage() {
   set key value
 
   Set a new metadata key with the prefix local/:
-  set key value
+  set-local key value
 
   Remove a metadata key:
   rm  key
