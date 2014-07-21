@@ -16,13 +16,13 @@ ini_file="$base_dir/etc/aws-cluster.ini"
 rds_db=`ini_section_get_key_value "$ini_file" rds database`
 rds_host=`ini_section_get_key_value "$ini_file" rds host`
 rds_port=`ini_section_get_key_value "$ini_file" rds port`
-rds_user=`ini_section_get_key_value "$ini_file" rds user`
+rds_user=`ini_section_get_key_value "$ini_file" rds username`
 rds_pw=`ini_section_get_key_value "$ini_file" rds password`
 
 sed -i -e "
-  s/^\([[:space:]]*[\"']database[\"'][[:space:]]*\)=>/\1 => $rds_db/;
-  s/^\([[:space:]]*[\"']host[\"'][[:space:]]*\)=>/\1 => $rds_host/;
-  s/^\([[:space:]]*[\"']port[\"'][[:space:]]*\)=>/\1 => $rds_port/;
-  s/^\([[:space:]]*[\"']username[\"'][[:space:]]*\)=>/\1 => $rds_user/;
-  s/^\([[:space:]]*[\"']password[\"'][[:space:]]*\)=>/\1 => $rds_pw/;
+  s/^\([[:space:]]*[\"']database[\"'][[:space:]]*\)=>.\+/\1 => '$rds_db',/;
+  s/^\([[:space:]]*[\"']host[\"'][[:space:]]*\)=>.\+/\1 => '$rds_host',/;
+  s/^\([[:space:]]*[\"']port[\"'][[:space:]]*\)=>.\+/\1 => '$rds_port',/;
+  s/^\([[:space:]]*[\"']username[\"'][[:space:]]*\)=>.\+/\1 => '$rds_user',/;
+  s/^\([[:space:]]*[\"']password[\"'][[:space:]]*\)=>.\+/\1 => '$rds_pw',/;
 " "$settings_file"
