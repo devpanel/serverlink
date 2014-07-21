@@ -1,0 +1,43 @@
+#!/bin/bash
+
+usage() {
+  :
+}
+
+remote_docroot_dir="/var/www/html"
+
+# main
+
+dir=`dirname "$0"`
+we_base_dir=`readlink -e "$dir/../.."`
+
+lib_file="$we_base_dir/lib/functions"
+if ! source "$lib_file"; then
+  error "unable to source lib file '$lib_file'"
+fi
+
+assign_deref_os_prop_or_exit region   "$we_base_dir" aws_cluster_region
+assign_deref_os_prop_or_exit stack_id "$we_base_dir" aws_cluster_stack_id
+
+webserver_ips=`"$dir/get-cluster-webservers-ips" "$region" "$stack_id"`
+if [ $? -ne 0 ]; then
+  echo "Error: unable to get IPs of webservers" 1>&2
+  exit 1
+fi
+
+tmp_checkout_dir=`mktemp -d`
+if [ $? -ne 0 ]; then
+  echo "Error: unable to create temporary dir" 1>&2
+  exit 1
+fi
+trap 'rm -rf -- "tmp_checkout_dir"' EXIT
+
+cd "$tmp_checkout_dir"
+git checkout
+
+for ip in "$webserver_ips"; do
+  rsync av ./ "root@$ip:$remote_docroot_dir"
+
+  ssh root@"$ip" chown -R www-data:www-data "$remote_docroot_dir" \
+    \; /opt/webenabled/paas-provisioner/aws/update-drupal-settings
+done

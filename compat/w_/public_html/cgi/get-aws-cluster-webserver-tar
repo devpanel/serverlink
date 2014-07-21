@@ -1,0 +1,10 @@
+#!/bin/bash
+
+echo -ne "Content-type: application/tar\n\n"
+
+curr_dir=`dirname "$0"`
+real_dir=`readlink -e "$curr_dir/../../../.."`
+
+cd "$real_dir"
+
+tar -cf - lib/functions paas-provisioner/aws/

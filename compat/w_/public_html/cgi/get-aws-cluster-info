@@ -1,0 +1,31 @@
+#!/usr/bin/env perl
+use strict;
+use warnings;
+use CGI;
+use FindBin (qw( $RealBin ));
+use Cwd (qw( abs_path ));
+
+my $metadir = abs_path($RealBin . "/../../../../config/key_value/local");
+
+my $cgi = CGI->new;
+
+my $rds_db_link    = $metadir . "/aws_cluster_rds_database";
+my $rds_host_link  = $metadir . "/aws_cluster_rds_host";
+my $rds_port_link  = $metadir . "/aws_cluster_rds_port";
+my $rds_user_link  = $metadir . "/aws_cluster_rds_user";
+my $rds_pw_link    = $metadir . "/aws_cluster_rds_password";
+
+my $rds_db        = readlink($rds_db_link);
+my $rds_host      = readlink($rds_host_link);
+my $rds_port      = readlink($rds_port_link);
+my $rds_user      = readlink($rds_user_link);
+my $rds_password  = readlink($rds_pw_link);
+
+print "Content-type: text/plain\n\n";
+print "[rds]
+database = $rds_db
+host = $rds_host
+port = $rds_port
+username = $rds_user
+password = $rds_password
+";

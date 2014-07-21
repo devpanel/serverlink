@@ -1,0 +1,41 @@
+#!/bin/bash
+
+usage() {
+  echo "Usage: `basename "$0"` <region_name> <stack_id>"
+  exit 1
+}
+
+[ $# -lt 2 ] && usage
+
+region="$1"
+stack_name="$2"
+
+tmp_file=`mktemp`
+if [ $? -ne 0 ]; then
+  echo "Error: unable to create temporary file" 1>&2
+  exit 1
+fi
+trap 'rm -f -- "$tmp_file"' EXIT
+
+curr_dir=`dirname "$0"`
+base_dir=`readlink -e "$curr_dir"`
+info_bin="$base_dir/get-aws-json-property"
+
+hash -p "$info_bin" aws_get_info
+
+aws ec2 describe-instances --region "$region" \
+  --filters "Name=tag:aws:cloudformation:stack-name,Values=$stack_name" \
+  "Name=tag:aws:cloudformation:logical-id,Values=WebServerGroup" >"$tmp_file"
+
+if [ $? -ne 0 ]; then
+  echo "Error: unable to get list of running instances" >&2
+  exit 1
+fi
+
+aws_get_info get-webservers-ipv4 "$tmp_file"
+if [ $? -ne 0 ]; then
+  echo "Error: unable to get list of IPs" >&2
+  exit 1
+fi
+
+exit 0
