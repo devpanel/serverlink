@@ -190,7 +190,8 @@ add_custom_users_n_groups() {
   local comment="required by DevPanel service. Please don't remove."
   if ! getent passwd w_ &>/dev/null; then
     echo "Adding user w_ ..."
-    useradd -M -c "$comment" -d "$homedir_base"/w_ -G w_ -g "$_apache_group" w_
+    useradd -M -c "$comment" -d "$homedir_base"/w_ -G w_ \
+      -g "$_apache_exec_group" w_
   fi
 
   if ! getent passwd devpanel &>/dev/null; then
@@ -257,6 +258,11 @@ ServerName $dp_server_hostname
 ;
       }  }" "$_apache_main_config_file"
     fi
+
+    "$webenabled_install_dir/bin/add-to-known-hosts" \
+      -a "$dp_server_hostname" localhost
+  else
+    "$webenabled_install_dir/bin/add-to-known-hosts" localhost
   fi
 
   if [ -n "$dp_auto_register" ]; then
