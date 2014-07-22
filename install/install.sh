@@ -201,7 +201,6 @@ add_custom_users_n_groups() {
 
   usermod -a -G virtwww "$_apache_user"
 
-  "$webenabled_install_dir/compat/suexec/chcgi" w_ +7
 }
 
 post_software_install() {
@@ -311,6 +310,8 @@ ServerName $dp_server_hostname
   fi
 
   "$webenabled_install_dir/libexec/update-packages"
+
+  "$webenabled_install_dir/compat/suexec/chcgi" w_ +7
 }
 
 # main
