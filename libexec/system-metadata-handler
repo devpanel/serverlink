@@ -23,10 +23,10 @@ if [ $EUID -ne 0 ]; then
 fi
 
 curr_dir=`dirname "$0"`
-base_dir=`readlink -e "$curr_dir/../config/key_value"`
+base_dir=`readlink -e "$curr_dir/../"`
 bin_file="$base_dir/bin/metadata-handler"
 if [ $? -ne 0 -o -z "$bin_file" ]; then
   error "couldn't find metadata-handler executable"
 fi
 
-"$bin_file" "$base_dir"
+"$bin_file" "$base_dir/config/key_value"
