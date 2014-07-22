@@ -19,7 +19,7 @@ fi
 assign_deref_os_prop_or_exit region   "$we_base_dir" aws_cluster_region
 assign_deref_os_prop_or_exit stack_id "$we_base_dir" aws_cluster_stack_id
 
-webserver_ips=`"$dir/get-cluster-webservers-ips" "$region" "$stack_id"`
+webserver_ips=`"$dir/get-cluster-webserver-ips" "$region" "$stack_id"`
 if [ $? -ne 0 ]; then
   echo "Error: unable to get IPs of webservers" 1>&2
   exit 1
