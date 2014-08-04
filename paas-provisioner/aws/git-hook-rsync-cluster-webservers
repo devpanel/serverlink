@@ -1,4 +1,5 @@
 #!/bin/bash
+#set -x
 
 usage() {
   :
@@ -8,7 +9,10 @@ remote_docroot_dir="/var/www/html"
 
 # main
 
-dir=`dirname "$0"`
+umask 022
+
+self=`readlink -e "${BASH_SOURCE[0]}"`
+dir=`dirname "$self"`
 we_base_dir=`readlink -e "$dir/../.."`
 
 lib_file="$we_base_dir/lib/functions"
@@ -19,10 +23,19 @@ fi
 assign_deref_os_prop_or_exit region   "$we_base_dir" aws_cluster_region
 assign_deref_os_prop_or_exit stack_id "$we_base_dir" aws_cluster_stack_id
 
-webserver_ips=`"$dir/get-cluster-webserver-ips" "$region" "$stack_id"`
-if [ $? -ne 0 ]; then
-  echo "Error: unable to get IPs of webservers" 1>&2
-  exit 1
+export GIT_DIR=`readlink -e "$GIT_DIR"`
+if [ -z "$GIT_DIR" ]; then
+  assign_deref_os_prop_or_exit repo_name "$we_base_dir" aws_cluster_repo_name
+  export GIT_DIR="$HOME/repositories/$repo_name.git"
+  webserver_ips="$SSH_ORIGINAL_COMMAND"
+fi
+
+if [ -z "$webserver_ips" ]; then
+  webserver_ips=`"$dir/get-cluster-webserver-ips" "$region" "$stack_id"`
+  if [ $? -ne 0 ]; then
+    echo "Error: unable to get IPs of webservers" 1>&2
+    exit 1
+  fi
 fi
 
 tmp_checkout_dir=`mktemp -d`
@@ -32,11 +45,12 @@ if [ $? -ne 0 ]; then
 fi
 trap 'rm -rf -- "tmp_checkout_dir"' EXIT
 
+chmod 755 "$tmp_checkout_dir" # needed for rsync to set proper remote perms
 cd "$tmp_checkout_dir"
-git checkout
+git -c core.bare=false checkout -f
 
 for ip in "$webserver_ips"; do
-  rsync av ./ "root@$ip:$remote_docroot_dir"
+  rsync -a ./ "root@$ip:$remote_docroot_dir"
 
   ssh root@"$ip" chown -R www-data:www-data "$remote_docroot_dir" \
     \; /opt/webenabled/paas-provisioner/aws/update-drupal-settings
