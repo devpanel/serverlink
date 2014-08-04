@@ -17,7 +17,8 @@ if [ $? -ne 0 ]; then
 fi
 trap 'rm -f -- "$tmp_file"' EXIT
 
-curr_dir=`dirname "$0"`
+self_bin=`readlink -e "${BASH_SOURCE[0]}"`
+curr_dir=`dirname "$self_bin"`
 base_dir=`readlink -e "$curr_dir"`
 info_bin="$base_dir/get-aws-json-property"
 
