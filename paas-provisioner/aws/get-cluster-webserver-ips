@@ -1,14 +1,19 @@
 #!/bin/bash
 
-usage() {
-  echo "Usage: `basename "$0"` <region_name> <stack_id>"
+# main
+
+self_bin=`readlink -e "$0"`
+curr_dir=`dirname "$self_bin"`
+we_base_dir=`readlink -e "$curr_dir/../.."`
+lib_file="$we_base_dir/lib/functions"
+
+if ! source "$lib_file"; then
+  echo "Error: unable to source lib file $lib_file" 1>&2
   exit 1
-}
+fi
 
-[ $# -lt 2 ] && usage
-
-region="$1"
-stack_name="$2"
+assign_deref_os_prop_or_exit region   "$we_base_dir" aws_cluster_region
+assign_deref_os_prop_or_exit stack_name "$we_base_dir" aws_cluster_stack_id
 
 tmp_file=`mktemp`
 if [ $? -ne 0 ]; then
