@@ -22,10 +22,18 @@ my $rds_user      = readlink($rds_user_link);
 my $rds_password  = readlink($rds_pw_link);
 
 print "Content-type: text/plain\n\n";
-print "[rds]
+no strict 'refs';
+foreach my $p (qw(rds_db rds_host rds_port rds_user rds_password)) {
+  if(!defined(${$p}) || length(${$p}) == 0) {
+    warn "missing variable $p, exiting\n";
+    exit(0); # missing a required parameter, exiting
+  }
+}
+
+print "[client]
 database = $rds_db
 host = $rds_host
 port = $rds_port
-username = $rds_user
+user = $rds_user
 password = $rds_password
 ";
