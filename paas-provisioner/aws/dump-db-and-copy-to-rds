@@ -54,10 +54,9 @@ for ip in $ip_list; do
 
   if scp "$temp_file" "root@$ip:$target_file"; then
     ssh "root@$ip" /opt/webenabled/paas-provisioner/aws/mysql-copy-db \
-      "$db_name" "$target_file"
+      "$db_name" "$target_file" \; rm -f -- "$target_file"
     if [ $? -eq 0 ]; then
       success=1
-      ssh "root@$ip" rm -f -- "$target_file"
       break
     fi
   fi
