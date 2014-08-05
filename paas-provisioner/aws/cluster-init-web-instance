@@ -1,0 +1,98 @@
+#!/bin/bash
+
+usage() {
+  echo "Usage: `basename "$0"`"
+  exit 1
+}
+
+get_www_contents() {
+  local file="$1"
+  local url="$2"
+  local -l expected_content_type="$3"
+
+  local output
+  local -i size=0 http_code=0
+  local -l content_type # lowercase
+
+  output=`curl -s --max-time 10 -o "$file" -w "%{http_code}|%{size_download}|%{content_type}" \
+    "$url"`
+
+  if [ $? -ne 0 ]; then
+    return 1 # connectivity error
+  fi
+
+  IFS="|" read http_code size content_type <<< "$output"
+  
+  if [ -n "$size" -a $size -gt 0 -a -n "$http_code" -a $http_code -eq 200 \
+     -a -n "$content_type" -a "$content_type" == "$expected_content_type" ];
+  then
+    return 0
+  else
+    return 1
+  fi
+}
+
+# main
+#[ $# -lt 1 ] && usage
+
+curr_dir=`basename "$0"`
+
+#trap - HUP CHLD
+
+deploy_srv_addr="@@__DEPLOYMENT_HOSTNAME__@@"
+#deploy_srv_addr="$1"
+
+echo "Started running: `date`"
+
+cluster_info_url="http://$deploy_srv_addr/cgi/get-aws-cluster-info"
+web_tar_url="http://$deploy_srv_addr/cgi/get-aws-cluster-webserver-tar"
+rsync_starter_url="http://$deploy_srv_addr/cgi/aws-cluster-rsync-starter"
+
+tmp_info=`mktemp`
+tmp_tar=`mktemp`
+
+trap 'rm -f "$tmp_info"; rm -f "$tmp_tar"; echo "Exited script: `date`"' EXIT
+
+unset got_cluster_info successful
+for i in {1..1500}; do
+  [ $(( $i % 10 )) -eq 0 ] && echo "Running loop attempt $i"
+
+  if [ -z "$got_cluster_info" ]; then
+    get_www_contents "$tmp_info" "$cluster_info_url" text/plain
+    if [ $? -eq 0 ]; then
+      got_cluster_info=1
+    fi
+  fi
+
+  if [ -n "$got_cluster_info" ]; then
+    get_www_contents "$tmp_tar" "$web_tar_url" application/tar
+    if [ $? -eq 0 ]; then
+      successful=1
+      break
+    fi
+  fi
+
+  sleep 10
+done
+
+if [ -z "$successful" ]; then
+  echo "Error: unable to download files from deployment server $deploy_srv_addr" 1>&2
+  exit 1
+fi
+
+umask 022
+mkdir -p /opt/webenabled/etc
+
+tar -xf "$tmp_tar" -C /opt/webenabled
+
+mv -f "$tmp_info" "/opt/webenabled/etc/aws-cluster.ini"
+
+sed -i -e "/^[[:space:]]*DirectoryIndex/ a \\
+\t<Directory /var/www/html/>\\
+\t\tAllowOverride All\\
+\t</Directory>
+" /etc/apache2/sites-enabled/000-default.conf
+
+apache2ctl graceful
+
+curl --max-time 10 --retry 3 -s -o /dev/null "$rsync_starter_url"

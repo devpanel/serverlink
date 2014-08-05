@@ -1,0 +1,68 @@
+#!/bin/bash
+
+usage() {
+  echo "Usage: `basename "$0"` <target_db_name> <dump_file>"
+  exit 1
+}
+
+error() {
+  local msg="$1"
+  local exit_code="${2:-1}"
+
+  [ -n "$msg" ] && echo "Error: $msg" 1>&2
+  exit $exit_code
+}
+
+# main
+[ $# -lt 2 ] && usage
+
+self_bin=`readlink -e "$0"`
+curr_dir=`dirname "$self_bin"`
+we_base_dir=`readlink -e "$curr_dir/../.."`
+
+getopt_flags='i:'
+
+while getopts $getopt_flags OPTN; do
+  case $OPTN in
+    i)
+      my_cnf_file="$OPTARG"
+      ;;
+    *)
+      usage
+      ;;
+  esac
+done
+
+[ $OPTIND -gt 1 ] && shift $(( $OPTIND - 1 ))
+
+my_cnf_file=${my_cnf_file:-"$we_base_dir/etc/aws-cluster.ini"}
+
+if [ -z "$my_cnf_file" ]; then
+  error "please specify the ini with the remote db configuration (option -i)"
+elif [ ! -e "$my_cnf_file" ]; then
+  error "file '$my_cnf_file' doesn't exist"
+elif [ ! -f "$my_cnf_file" ]; then
+  error "path '$my_cnf_file' is not a regular file"
+elif [ ! -r "$my_cnf_file" ]; then
+  error "file '$my_cnf_file' is not readable"
+fi
+
+target_db_name="$1"
+dump_file="$2"
+
+if [ ! -e "$dump_file" ]; then
+  error "file '$dump_file' doesn't exist."
+elif [ ! -f "$dump_file" ]; then
+  error "path '$dump_file' is not a regular file"
+fi
+
+if ! mysql --defaults-file="$my_cnf_file" -BN -D "$target_db_name" -e "SHOW TABLES;" >/dev/null; then
+  error "unable to connect to target db"
+fi
+
+mysql --defaults-file="$my_cnf_file" -e "DROP DATABASE $target_db_name; CREATE DATABASE $target_db_name;"
+
+mysql --defaults-file="$my_cnf_file" -D "$target_db_name" < "$dump_file"
+if [ $? -ne 0 ]; then
+  error "unable to import dump file"
+fi

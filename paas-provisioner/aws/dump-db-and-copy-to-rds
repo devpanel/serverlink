@@ -1,0 +1,72 @@
+#!/bin/bash
+
+error() {
+  local msg="$1"
+  local exit_code="${2:-1}"
+
+  [ -n "$msg" ] && echo "Error: $msg" 1>&2
+  exit $exit_code
+}
+
+self_bin=`readlink -e "$0"`
+curr_dir=`dirname "$self_bin"`
+we_base_dir=`readlink -e "$curr_dir/../.."`
+lib_file="$we_base_dir/lib/functions"
+
+if ! source "$lib_file"; then
+  error "unable to source lib file $lib_file"
+fi
+
+assign_deref_os_prop_or_exit local_vhost "$we_base_dir" aws_cluster_local_vhost
+assign_deref_os_prop_or_exit db_name "$we_base_dir" aws_cluster_rds_database
+
+vhost_user="w_$local_vhost"
+if ! getent passwd "$vhost_user" 2>/dev/null; then
+  error "unable to get information about user $vhost_user"
+fi
+vhost_home=`eval echo \~"$vhost_user"`
+my_cnf_file="$vhost_home/.my.cnf"
+if [ ! -e "$my_cnf_file" ]; then
+  error "missing $my_cnf_file"
+fi
+
+temp_file=`mktemp`
+if [ $? -ne 0 ]; then
+  error "unable to create temporary file"
+fi
+trap 'rm -f "$temp_file"' EXIT
+
+mysqldump --defaults-file="$my_cnf_file" "$db_name" >"$temp_file"
+if [ $? -ne 0 ]; then
+  error "unable to dump database"
+fi
+
+# by this architecture only the web servers have access to the db
+# so we'll try to import the db from the first web server that works
+ip_list=`"$curr_dir/get-cluster-webserver-ips"`
+if [ $? -ne 0 ]; then
+  error "unable to get the list of web server IPs"
+fi
+
+unset success
+target_file="/tmp/`basename "$temp_file"`"
+for ip in $ip_list; do
+
+  if scp "$temp_file" "root@$ip:$target_file"; then
+    ssh "root@$ip" /opt/webenabled/paas-provisioner/aws/mysql-copy-db \
+      "$db_name" "$target_file"
+    if [ $? -eq 0 ]; then
+      success=1
+      ssh "root@$ip" rm -f -- "$target_file"
+      break
+    fi
+  fi
+done
+
+if [ -n "$success" ]; then
+  echo "Successfully imported database."
+  exit 0
+else
+  echo "Failed to import database." 1>&2
+  exit 1
+fi
