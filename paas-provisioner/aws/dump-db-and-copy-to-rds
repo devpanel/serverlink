@@ -21,7 +21,7 @@ assign_deref_os_prop_or_exit local_vhost "$we_base_dir" aws_cluster_local_vhost
 assign_deref_os_prop_or_exit db_name "$we_base_dir" aws_cluster_rds_database
 
 vhost_user="w_$local_vhost"
-if ! getent passwd "$vhost_user" 2>/dev/null; then
+if ! getent passwd "$vhost_user" &>/dev/null; then
   error "unable to get information about user $vhost_user"
 fi
 vhost_home=`eval echo \~"$vhost_user"`
