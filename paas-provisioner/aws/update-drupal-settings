@@ -17,7 +17,7 @@ ini_file="$base_dir/etc/aws-cluster.ini"
 rds_db=`ini_section_get_key_value "$ini_file" client database`
 rds_host=`ini_section_get_key_value "$ini_file" client host`
 rds_port=`ini_section_get_key_value "$ini_file" client port`
-rds_user=`ini_section_get_key_value "$ini_file" client username`
+rds_user=`ini_section_get_key_value "$ini_file" client user`
 rds_pw=`ini_section_get_key_value "$ini_file" client password`
 
 sed -i -e "
