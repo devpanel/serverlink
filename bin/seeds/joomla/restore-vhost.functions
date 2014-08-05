@@ -1,5 +1,7 @@
+table_prefix=${table_prefix:-"jos_"}
+
 joomla_get_users() {
-  sql_query_result "select username from jos_users where username <> ''"
+  sql_query_result "select username from ${table_prefix}users where username <> ''"
 }
 
 joomla_genpass() {
@@ -19,24 +21,25 @@ joomla_set_password() {
   local encrypted_password="$2"
   local salt
 
-  sql_query "update jos_users set password = '$encrypted_password' where username = '$user';"
+  sql_query "update ${table_prefix}users set password = '$encrypted_password' where username = '$user';"
 }
 
 joomla_set_email() {
   local user="$1"
   local email="$2"
 
-  sql_query "update jos_users set email = '$email' where username = '$user';"
+  sql_query "update ${table_prefix}users set email = '$email' where username = '$user';"
 }
 
 joomla_get_email() {
   local user="$1"
 
-  sql_query_result "select email from jos_users where username = '$user'"
+  sql_query_result "select email from ${table_prefix}users where username = '$user'"
 }
 
 joomla_update_php_config()
 {
+
   echo "
    s/^\([[:space:]]*\)\(var\|public\)[[:space:]]\{1,\}\\\$sitename[[:space:]]\{1,\}=.*/\1\2\\\$sitename = '$fqdn';/
    s/^\([[:space:]]*\)\(var\|public\)[[:space:]]\{1,\}\\\$host[[:space:]]\{1,\}=.*/\1\2 \\\$host = '$mysql_host:$mysql_port';/
@@ -44,6 +47,7 @@ joomla_update_php_config()
    s/^\([[:space:]]*\)\(var\|public\)[[:space:]]\{1,\}\\\$mysql_password[[:space:]]\{1,\}=.*/\1\2 \\\$mysql_password = '$sedphpencoded_mysql_password';/
    s/^\([[:space:]]*\)\(var\|public\)[[:space:]]\{1,\}\\\$password[[:space:]]\{1,\}=.*/\1\2 \\\$password = '$sedphpencoded_mysql_password';/
    s/^\([[:space:]]*\)\(var\|public\)[[:space:]]\{1,\}\\\$db[[:space:]]\{1,\}=.*/\1\2 \\\$db = '$hosting_database';/
+   s/^\([[:space:]]*\)\(var\|public\)[[:space:]]\{1,\}\\\$dbprefix[[:space:]]\{1,\}=.*/\1\2 \\\$dbprefix = '$table_prefix';/
    s/^\([[:space:]]*\)\(var\|public\)[[:space:]]\{1,\}\\\$log_path[[:space:]]\{1,\}=.*/\1\2 \\\$log_path = '\/home\/clients\/websites\/w_$vhost\/public_html\/$vhost\/logs';/
    s/^\([[:space:]]*\)\(var\|public\)[[:space:]]\{1,\}\\\$tmp_path[[:space:]]\{1,\}=.*/\1\2 \\\$tmp_path = '\/home\/clients\/websites\/w_$vhost\/public_html\/$vhost\/tmp';/" \
    | run_ised "$home/public_html/$vhost/configuration.php"
@@ -56,7 +60,7 @@ joomla_update_php_config()
 }
 
 joomla_get_admin_user() {
-  sql_query_result "select username from jos_users where username = 'admin'"
+  sql_query_result "select username from ${table_prefix}users where username = 'admin'"
 }
 
 joomla_custom()

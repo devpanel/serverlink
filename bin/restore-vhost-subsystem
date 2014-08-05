@@ -130,6 +130,7 @@ set_database_variables() {
     mysql_port=`deref_contents "$config_dir/app:0:_:db_port"`
     mysql_user=`deref_contents "$config_dir/app:0:_:db_user"`
     mysql_password=`deref_contents "$config_dir/app:0:_:db_password"`
+    table_prefix=`deref_contents "$config_dir/app:0:_:db_table_prefix" 2>/dev/null`
   else
     mysql_passwd_file="$vhost_config_dir/.mysql.passwd"
     [ -r "$mysql_passwd_file" ] || mysql_passwd_file="$home/.mysql.passwd"
