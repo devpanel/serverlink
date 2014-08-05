@@ -154,6 +154,17 @@ install_ce_software() {
   fi
   chmod 751 "$_apache_logs_dir"
 
+  if [ -d "$source_dir/install/skel/common" ]; then
+    cp -fdR --preserve=mode,timestamps "$source_dir/install/skel/common/." /
+  fi
+
+  echo "DEVPANEL_HOME=\"$webenabled_install_dir\"" >/etc/defaults/devpanel
+
+  local prof_d_file="$webenabled_install_dir/install/utils/profile.d/devpanel.sh"
+  if [ -d /etc/profile.d -a -f "$prof_d_file" ]; then
+    ln -sf "$prof_d_file" /etc/profile.d/devpanel.sh
+  fi
+
   ln -s "$_apache_logs_dir" "$_apache_base_dir/webenabled-logs"
 
   ln -s "$webenabled_install_dir/compat/apache_include/virtwww" \
