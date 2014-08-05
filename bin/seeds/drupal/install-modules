@@ -1,0 +1,36 @@
+#!/bin/bash
+
+usage() {
+  echo "Usage: `basename "$0"` <module1> [ module2 ] [ ... ]
+
+  This script installs and enables the specified drupal modules
+"
+
+  exit 1
+}
+
+[ $# -eq 0 ] && usage
+
+self_bin=`readlink -e "$0"`
+curr_dir=`dirname "$self_bin"`
+base_dir=`readlink -e "$curr_dir/../../.."`
+
+if [ -x "$base_dir/bin/drush" ]; then
+  hash -p "$base_dir/bin/drush" drush
+elif ! hash drush &>/dev/null; then
+  echo "Error: unable to find drush" 1>&2
+  exit 1
+fi
+
+vhost_dir="$HOME/public_html/${USER#w_}"
+
+if ! cd "$vhost_dir"; then
+  echo "Error: unable to chdir to '$vhost_dir'" 1>&2
+  exit 1
+fi
+
+for module in "$@"; do
+  if drush dl "$module"; then
+    drush en "$module"
+  fi
+done
