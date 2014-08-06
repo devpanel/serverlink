@@ -165,6 +165,14 @@ install_ce_software() {
     ln -sf "$prof_d_file" /etc/profile.d/devpanel.sh
   fi
 
+  local d cron_file
+  for d in cron.hourly cron.daily cron.weekly cron.monthly; do
+    cron_file="$webenabled_install_dir/install/utils/crontab/$d"
+    if [ -d "/etc/$d" -a -f "$cron_file" ]; then
+      ln -sf "$cron_file" "/etc/$d/devpanel"
+    fi
+  done
+
   ln -s "$_apache_logs_dir" "$_apache_base_dir/webenabled-logs"
 
   ln -s "$webenabled_install_dir/compat/apache_include/virtwww" \
