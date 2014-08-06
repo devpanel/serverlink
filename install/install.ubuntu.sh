@@ -3,6 +3,34 @@ ubuntu_set_variables() {
 }
 
 ubuntu_pre_run() {
+  local has_ssh=""
+
+  for i in {1..3}; do
+    fuser ssh/tcp &>/dev/null
+    if [ $? -eq 0 ]; then
+      has_ssh=1
+      break
+    fi
+  done
+
+  if [ -z "$has_ssh" ]; then
+    if hash sshd &>/dev/null; then
+      if ! service ssh start; then
+        echo "Error: unable to start sshd service. It's required by devPanel" 1>&2
+        exit 1
+      fi
+    else
+      apt-get update
+
+      apt-get install openssh-server
+      if [ $? -ne 0 ]; then
+        echo "Error: unable to install OpenSSH. It's required by many"\
+        "functionalities of devPanel" 1>&2
+        return 1
+      fi
+    fi
+  fi
+
   return 0
 }
 
