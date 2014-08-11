@@ -20,6 +20,7 @@ Usage: $prog [ OPTIONS ] <vhost>
     -l                vhost is a literal user (don't prepend w_ to
                       the vhost name)
     -i                read the contents of the token file from stdin
+    -p                print token to stdout
 "
   exit 1
 }
@@ -41,8 +42,8 @@ elif [ ! -d "$token_dir" ]; then
 fi
 
 delete_token=0
-unset token_str token_type token_str token_contents literal_user
-getopt_flags='rn:t:T:li'
+unset token_str token_type token_str token_contents literal_user print_token
+getopt_flags='rn:t:T:lip'
 while getopts $getopt_flags OPTN; do
   case $OPTN in
     n)
@@ -77,6 +78,9 @@ while getopts $getopt_flags OPTN; do
     i)
       echo "reading token contents from stdin" 1>&2
       read token_contents
+      ;;
+    p)
+      print_token=1
       ;;
     *)
       usage
@@ -160,6 +164,10 @@ if ! getent passwd "$token_owner" >/dev/null; then
   wedp_warn "vhost '$token_owner' doesn't exist yet (this is just a warning)"
 elif ! chown "$token_owner" "$token_file"; then
   error "unable to chown '$token_file' to '$token_owner'"
+fi
+
+if [ -n "$print_token" ]; then
+  echo "$token_str"
 fi
 
 exit 0
