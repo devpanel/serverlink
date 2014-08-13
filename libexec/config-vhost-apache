@@ -487,7 +487,8 @@ for this_vhost_prefix in "$vhost_prefix_f:"[0-9] "$vhost_prefix_f:"[0-9][0-9]; d
 
     while read tmp_param_entry; do
       tmp_inc_basename=`basename "$tmp_param_entry"`
-      tmp_stripped=${tmp_inc_basename#*:param:}
+      tmp_stripped=${tmp_inc_basename#param:}
+      tmp_stripped=${tmp_stripped#*:param:}
       tmp_p_n=${tmp_stripped%%:*}
       tmp_p_name=${tmp_inc_basename##*:}
 
