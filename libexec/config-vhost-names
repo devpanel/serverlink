@@ -41,7 +41,10 @@ format_hostname() {
 
   if [ "$force_subdomain" == "1" ]; then
     if [ "${test_hostname: -1}" == "." ]; then
-      final_hostname="${test_host_stripped:0:-1}"
+      # $len_minus_one is a workaround for older bash versions that don't know
+      # negative lengths (e.g. CentOS 6.5 and previous)
+      local len_minus_one=$(( ${#test_hostname} - 1 ))
+      final_hostname="${test_host_stripped:0:$len_minus_one}"
     else
       final_hostname="$test_host_stripped"
     fi
@@ -74,7 +77,10 @@ format_to_apache() {
   local host_fmt=""
 
   if [ "${local_hostname: -1}" == "." ]; then
-    host_fmt="${local_hostname:0:-1}" # remove the last dot
+    # $len_minus_one is a workaround for older bash versions that don't know
+    # negative lengths (e.g. CentOS 6.5 and previous)
+    local len_minus_one=$(( ${#local_hostname} - 1 ))
+    host_fmt="${local_hostname:0:$len_minus_one}" # remove the last dot
   else
     host_fmt="$local_hostname.$server_hostname"
   fi
