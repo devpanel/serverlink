@@ -15,6 +15,7 @@ usage() {
     -b          backup existing files to random names
                 (if this parameter is not passed and one of the cert/key files 
                 exist, then the whole operation is aborted)
+    -q          print less informative messages
 
 
   This script receives in STDIN the SSL files (CA bundle, certificate, key) and
@@ -75,11 +76,11 @@ read_pem_certificate_stdin() {
   read_cert+="$line\n"
 
   while read line; do
+    read_cert+="$line\n"
     if [[ "$line" =~ ^-+END\ CERTIFICATE-+$ ]]; then
       echo -n -e "$read_cert"
       return 0
     fi
-    read_cert+="$line\n"
 
     if [ ${#read_cert} -gt $max_bytes ]; then
       echo "$FUNCNAME(): read ${#read_cert} bytes already and hadn't completed a certificate yet" 1>&2
@@ -128,10 +129,10 @@ read_pem_key_stdin() {
 validate_pem_key() {
   local key="$1"
 
-  openssl rsa -check -noout -in <(echo "$key")
+  openssl rsa -check -noout -in <(echo "$key") &>/dev/null
 }
 
-backup_existing() {
+backup_file() {
   local file="$1"
 
   if [ -L "$file" ]; then
@@ -156,7 +157,7 @@ backup_existing() {
 
 # main
 
-unset skip_CA previous_buffer backup_existing
+unset skip_CA previous_buffer backup_existing quiet
 unset orig_ca_bundle_file orig_cert_file orig_key_file from_stdin
 
 getopt_flags='iNbC:c:k:'
@@ -179,6 +180,9 @@ while getopts $getopt_flags OPTN; do
       ;;
     i)
       from_stdin=1
+      ;;
+    q)
+      quiet=1
       ;;
     *)
       usage
@@ -237,8 +241,9 @@ if [ $? -ne 0 ]; then
   error "unable to create temporary file for key file"
 fi
 
+trap 'exit 1' QUIT INT HUP TERM
 trap 'rm -f "$tmp_ca_bundle_file" "$tmp_cert_file" "$tmp_key_file"' \
-  EXIT QUIT INT HUP TERM
+  EXIT
 
 declare -i n_ca_certs=0
 if [ -z "$skip_CA" ]; then
@@ -276,7 +281,7 @@ if [ -z "$skip_CA" ]; then
 
     orig_ca_bundle_file="$tmp_ca_bundle_file"
   elif [ -n "$orig_ca_bundle_file" ]; then
-    validate_pem_certificate `cat "$orig_ca_bundle_file"`
+    validate_pem_certificate "`cat "$orig_ca_bundle_file"`"
     if [ $? -ne 0 ]; then
       error "CA bundle file '$orig_ca_bundle_file' seems invalid"
     fi
@@ -394,6 +399,24 @@ if [ -n "$backup_existing" ]; then
       exit 1 # the error msg is provided by backup_file function
     fi
   done
+else
+  unset already_exists
+
+  if [ -z "$skip_CA" ]; then
+    if [ -e "$tst_file" ]; then
+      echo "Error: file '$target_ca_bundle_file' already exists" 1>&2
+      already_exists=1
+    fi
+  fi
+
+  for tst_file in "$target_cert_file" "$target_key_file"; do
+    if [ -e "$tst_file" ]; then
+      echo "Error: file '$tst_file' already exists" 1>&2
+      already_exists=1
+    fi
+  done
+
+  [ -n "$already_exists" ] && exit 1
 fi
 
 if [ -z "$skip_CA" ]; then
@@ -423,3 +446,13 @@ if ! chmod 600 "$target_key_file"; then
   error "unable to chmod file $target_key_file"
 fi
 
+if [ -z "$skip_CA" -a -z "$quiet" ]; then
+  echo "Successfully wrote CA bundle file '$target_ca_bundle_file'"
+fi
+
+if [ -z "$quiet" ]; then
+  echo "Successfully wrote certificate file '$target_cert_file'"
+  echo "Successfully wrote private key file '$target_key_file'"
+fi
+
+exit 0
