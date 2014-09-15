@@ -831,6 +831,7 @@ for this_vhost_prefix in "$vhost_prefix_f:"[0-9] "$vhost_prefix_f:"[0-9][0-9]; d
   sed_line+="s/@@__WEBSITES_BASEDIR__@@/`escape_sed "$websites_basedir"`/g;"
   sed_line+="s/@@__SERVER_HOSTNAME__@@/`escape_sed "$server_hostname"`/g;"
   sed_line+="s/@@__VHOST__@@/`escape_sed "$vhost"`/g;"
+  sed_line+="s/@@__VHOST_INTERNAL_NAME__@@/`escape_sed "$vhost_name"`/g;"
   sed_line+="s/@@__VHOST_NUMBER__@@/$vhn/g;"
   sed_line+="s/@@__TEMPLATE_FILE__@@/`escape_sed "$template_file"`/g;"
   sed_line+="s/@@__TEMPLATE_FILE_BASENAME__@@/`escape_sed "$vhost_template"`/g;"

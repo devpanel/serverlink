@@ -15,6 +15,8 @@ usage() {
     -b          backup existing files to random names
                 (if this parameter is not passed and one of the cert/key files 
                 exist, then the whole operation is aborted)
+    -z          don't apply the new config to production, just store the
+                certs
     -q          print less informative messages
 
 
@@ -160,7 +162,8 @@ backup_file() {
 unset skip_CA previous_buffer backup_existing quiet
 unset orig_ca_bundle_file orig_cert_file orig_key_file from_stdin
 
-getopt_flags='iNbC:c:k:'
+apply_config=1
+getopt_flags='izNbC:c:k:'
 while getopts $getopt_flags OPTN; do
   case "$OPTN" in
     N)
@@ -184,6 +187,9 @@ while getopts $getopt_flags OPTN; do
     q)
       quiet=1
       ;;
+    z)
+      unset apply_config
+      ;;
     *)
       usage
       ;;
@@ -201,7 +207,8 @@ declare -r n_max_ca_certs=7
 declare -r start_ca_str='--start CA'
 declare -r end_ca_str='--end CA'
 
-curr_dir=`dirname "${BASH_SOURCE[0]}"`
+self_bin=`readlink -e "$0"`
+curr_dir=`dirname "$self_bin"`
 we_base_dir=`readlink -e "$curr_dir/.."`
 
 lib_file="$we_base_dir/lib/functions"
@@ -453,6 +460,12 @@ fi
 if [ -z "$quiet" ]; then
   echo "Successfully wrote certificate file '$target_cert_file'"
   echo "Successfully wrote private key file '$target_key_file'"
+fi
+
+if [ -n "$apply_config" ]; then
+  "$curr_dir/apply-ssl-config" -c "$target_cert_file" -k "$target_key_file" \
+    ${target_ca_bundle_file:+ -C "$target_ca_bundle_file"} "$vhost"
+  exit $?
 fi
 
 exit 0
