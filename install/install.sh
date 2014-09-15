@@ -158,7 +158,7 @@ install_ce_software() {
     cp -fdR --preserve=mode,timestamps "$source_dir/install/skel/common/." /
   fi
 
-  echo "DEVPANEL_HOME=\"$webenabled_install_dir\"" >/etc/defaults/devpanel
+  echo "DEVPANEL_HOME=\"$webenabled_install_dir\"" >/etc/default/devpanel
 
   local prof_d_file="$webenabled_install_dir/install/utils/profile.d/devpanel.sh"
   if [ -d /etc/profile.d -a -f "$prof_d_file" ]; then
