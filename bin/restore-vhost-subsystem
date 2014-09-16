@@ -26,6 +26,8 @@ usage() {
   -m ADDRESS      -- ACTION: change admin's email
   -M              -- ACTION: send new passwords to admin's address (requires -P)
   -n              -- ACTION: only update settings.php
+  -F              -- initial deployment - indicates the this is the first
+                     time the app is being configured
   -O name=value   -- set the name and value of a variable
      Accepted variables:
         use_my_cnf (=1) - read mysql credentials from ~/.my.cnf
@@ -409,7 +411,7 @@ if ! source "$lib_file"; then
   error "unable to load the external library file '$lib_file'"
 fi
 
-while getopts 'pPMm:s:O:iIn' OPTOPT; do
+while getopts 'pPMm:s:O:iInF' OPTOPT; do
   if ! echo "$OPTOPT" | egrep -q '^(s|i|I)$';then
     action_opt=1
   fi
@@ -423,6 +425,7 @@ while getopts 'pPMm:s:O:iIn' OPTOPT; do
     P) opt_P=1;;
     p) opt_p=1;;
     n) opt_n=1;;
+    F) initial_deployment=1 ;;
     O)
       # the logic below reads name=value strings passed to the -O option
       accepted_opt_names=('use_my_cnf')

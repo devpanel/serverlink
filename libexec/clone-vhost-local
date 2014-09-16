@@ -25,7 +25,7 @@ dir=`dirname "${BASH_SOURCE[0]}"`
 
 [ -z "$1" -o -z "$2" ] && usage
 
-while getopts "PpinS:I" OPTOPT
+while getopts "PpinS:IF" OPTOPT
 do
   case "$OPTOPT" in
     P) options="${options+ }-P";;
@@ -33,6 +33,7 @@ do
     i) opt_i=1; target_options="$target_options${target_options+ }-i";;
     I) opt_I=1;;
     n) opt_n=1; target_options="$target_options${target_options+ }-n";;
+    F) initial_deployment=1; target_options="$target_options${target_options+ }$OPTOPT";;
     S) opt_S="$OPTARG";;
     *) exit 1;
   esac

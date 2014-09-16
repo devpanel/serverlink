@@ -11,13 +11,14 @@ search_in_users_home=0
 options=""
 create_db_instance=1
 
-while getopts "NiSH" OPTOPT
+while getopts "NiSHF" OPTOPT
 do
   case "$OPTOPT" in
     i) options="-i";;
     S) sync=1 ;;
     H) search_in_users_home=1 ;;
     N) create_db_instance=0 ;;
+    F) initial_deployment=1 ;;
     *) exit 1;
   esac
 done

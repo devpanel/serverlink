@@ -24,6 +24,8 @@ Usage: $0 [ OPTIONS ] VHOST ARCHIVE_DIR
     -H          search for the archive in the users HOME dir
                 public_html/gen/archive
     -N          don't create a vhost user
+    -F          initial deployment - this is the first time that the app is
+                being configured
 
     VHOST is the target vhost to be created or sync'ed
     ARCHIVE_DIR is the dir where the archive files reside in
@@ -52,7 +54,7 @@ abort_if_not_exist()
 opt_P=0 options="" sync=0 search_in_users_home=0
 create_vhost=1
 
-while getopts "NPnSH" OPTOPT
+while getopts "NPnSHF" OPTOPT
 do
   case "$OPTOPT" in
     P) opt_P=1;;
@@ -60,6 +62,7 @@ do
     S) sync=1 ;;
     H) search_in_users_home=1 ;;
     N) create_vhost=0 ;;
+    F) initial_deployment=1 ;;
     *) exit 1;;
   esac
 done
