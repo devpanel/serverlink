@@ -30,7 +30,7 @@ if ! cd "$vhost_dir"; then
 fi
 
 for module in "$@"; do
-  if drush dl "$module"; then
-    drush en "$module"
+  if drush -y dl "$module"; then
+    drush -y en "$module"
   fi
 done
