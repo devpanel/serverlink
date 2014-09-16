@@ -379,6 +379,11 @@ drupal_custom()
       ( cd "$home/public_html/$vhost" && "$home/bin/drush/drush" cache-rebuild )
     fi
 
+    aws_cdn_endpoint=`deref_os_prop "$we_base_dir" aws_cdn_endpoint 2>/dev/null`
+    if [ -n "$initial_deployment" -a -n "$aws_cdn_endpoint" ]; then
+      "$we_base_dir/bin/seeds/drupal/install-modules" cdn
+    fi
+
     if [ -f "$civic_crm_conf" ]; then
       drupal_update_civicrm_config
     fi
