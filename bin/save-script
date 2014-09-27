@@ -1,32 +1,62 @@
 #!/bin/bash
 
-TARGET_DIR="$HOME/bin/custom-scripts"
+target_dir_default="$HOME/bin/custom-scripts"
 
 usage() {
-  echo "Usage: `basename "$0"` <basename>
+  echo "Usage: `basename "$0"` [ options ] <script_basename>
 
-Saves the script to the target dir ($TARGET_DIR) using the specified
-basename, and makes the script executable.
+  Options:
+    -d target_dir           the path of the target dir where files
+                            should be stored
+
+Saves the script to the target dir (default: $target_dir_default)
+using the specified basename, and makes the script executable.
 "
   exit 1
 }
 
-[ $# -eq 0 -o -z "$1" ] && usage
+# main
+
+[ $# -eq 0 ] && usage
+
+getopt_flags='d:'
+while getopts $getopt_flags OPTN; do
+  case $OPTN in
+    d)
+      target_dir="$OPTARG"
+      ;;
+    *)
+      usage
+      ;;
+  esac
+done
+[ $OPTIND -gt 1 ] && shift $(( $OPTIND - 1 ))
+
+[ -z "$1" ] && usage
+script_name="`basename "$1"`"
+
+self_bin=`readlink -e "$0"`
+curr_dir=`dirname "$self_bin"`
+we_base_dir=`readlink -e "$curr_dir/.."`
+target_dir=${target_dir:-"$target_dir_default"}
+
+# allow the use of %devpanel_dir% as a variable
+target_dir=${target_dir/%devpanel_dir%/$we_base_dir}
 
 umask 077
 TMPDIR="$HOME/tmp"
 TMP_DIR="$TMPDIR"
 export TMPDIR TMP_DIR
 
-target_file="$TARGET_DIR/`basename "$1"`"
+target_file="$target_dir/$script_name"
 
 if [ ! -d "$TMPDIR" ] && ! mkdir "$TMPDIR"; then
   echo "Error: unable to create dir $TMPDIR" 1>&2
   exit 1
 fi
 
-if [ ! -d "$TARGET_DIR" ] && ! mkdir "$TARGET_DIR"; then
-  echo "Error: unable to create dir '$TARGET_DIR'" 1>&2
+if [ ! -d "$target_dir" ] && ! mkdir -p "$target_dir"; then
+  echo "Error: unable to create dir '$target_dir'" 1>&2
   exit 1
 fi
 
