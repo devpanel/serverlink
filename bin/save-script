@@ -41,7 +41,7 @@ we_base_dir=`readlink -e "$curr_dir/.."`
 target_dir=${target_dir:-"$target_dir_default"}
 
 # allow the use of %devpanel_dir% as a variable
-target_dir=${target_dir/%devpanel_dir%/$we_base_dir}
+target_dir=${target_dir/\%devpanel_dir\%/$we_base_dir}
 
 umask 077
 TMPDIR="$HOME/tmp"
