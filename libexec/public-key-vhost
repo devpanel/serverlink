@@ -1,12 +1,5 @@
 #!/bin/bash
 #set -x
-dir=`dirname $0`
-[ "$dir" == "." ] && dir="$PWD"
-dir_bin="$dir/../bin"
-www_group='virtwww'
-
-declare -a add_keys
-declare -a remove_keys
 
 usage() {
   local prog=$(basename "$0")
@@ -17,7 +10,6 @@ Usage: $prog [ options ] <vhost>
     -r <key>        removes key from vhost
     -i              read keys from stdin
     -d <directory>  install the key in a custom directory (not \$HOME)
-    -n              don't append or remove the CE string in operations
     -S <string>     set a custom string to append to the key
     -R              set the key for a root user
 
@@ -33,24 +25,14 @@ EOF
   exit 1
 }
 
-escape_sed() {
-  local key="$1"
-  local escaped
-
-  escaped=${key//\//\\\/} # escape all / (slashes)
-
-  echo "$escaped"
-}
-
 key_is_installed() {
   local user="$1"
   local key_file="$2"
   local key="$3"
-  local ce_str="$4"
 
   [ ! -e "$key_file" ] && return 1
 
-  if su -l -c "grep -q '${key}${ce_str:+ $ce_str}\$' '$key_file'" "$user" ; then
+  if su -l -c "fgrep -q '$key' '$key_file'" "$user" ; then
     return 0
   else
     return 1
@@ -73,10 +55,9 @@ remove_key() {
   local user="$1"
   local key_file="$2"
   local key="$3"
-  local ce_str="$4"
 
   key=$(escape_sed "$key")
-  su -l -c "sed -e '/${key}${ce_str:+ $ce_str}\$/d' -i '$key_file'" "$user"
+  su -l -c "sed -e '/${key}/d' -i '$key_file'" "$user"
   return $? # return the status of sed
 }
 
@@ -97,10 +78,24 @@ key_str() {
 # main()
 [ $# -lt 1 ] && usage
 
-CE_STR="managed by CloudEnabled"
+self_bin=`readlink -e "$0"`
+dir=`dirname "$self_bin"`
+we_base_dir=`readlink -e "$dir/.."`
+dir_bin=`readlink -e "$dir/../bin"`
+www_group='virtwww'
+
+declare -a add_keys
+declare -a remove_keys
+
+lib_file="$we_base_dir/lib/functions"
+if ! source "$lib_file"; then
+  echo "Error: unable to source lib file '$lib_file'" 1>&2
+  exit 1
+fi
+
 getopt_flags="Rnir:a:d:S:"
 
-unset read_stdin OPTS for_root
+unset read_stdin OPTS for_root append_str
 while getopts $getopt_flags OPTS; do
   case "$OPTS" in
     a)
@@ -116,10 +111,13 @@ while getopts $getopt_flags OPTS; do
       key_dir="$OPTARG"
       ;;
     n)
-      unset CE_STR
+      # this option is deprecated. Will not use it anymore
+      # it's just here not to break any legacy code that might use it
+      # will be removed soon
+      :
       ;;
     S)
-      CE_STR="$OPTARG"
+      append_str="$OPTARG"
       ;;
     R)
       for_root=1
@@ -164,6 +162,13 @@ if [ ! -f "$key_file" ]; then
     chown "${user}":"${www_group}" "$key_file"
 fi
 
+lock_file="`lock_path "$key_file"`"
+if [ $? -ne 0 ]; then
+  exit 1
+fi
+trap 'exit 1' INT QUIT TERM HUP
+trap 'rm -f -- "$lock_file"' EXIT
+
 # reads from stdin if requested
 line_n=0
 if [ -n "$read_stdin" ]; then
@@ -190,11 +195,11 @@ n_max=${#add_keys[@]}
 n_add=0
 while [ $n_add -ne $n_max ]; do
   new_key="${add_keys[$n_add]}"
-  if key_is_installed "$user" "$key_file" "$new_key" "$CE_STR"; then
+  if key_is_installed "$user" "$key_file" "$new_key"; then
     key_str=$(key_str "$new_key")
     echo "Warning: key '$key_str' already installed for user '$user'" 1>&2
   else
-    install_key "$user" "$key_file" "$new_key" "$CE_STR"
+    install_key "$user" "$key_file" "$new_key" "$append_str"
   fi
 
   n_add=$(( $n_add + 1 ))
@@ -204,8 +209,12 @@ n_max=${#remove_keys[@]}
 n_rem=0
 while [ $n_rem -ne $n_max ]; do
   new_key="${remove_keys[$n_rem]}"
-  if key_is_installed "$user" "$key_file" "$new_key" "$CE_STR"; then
-    remove_key "$user" "$key_file" "$new_key" "$CE_STR"
+  if key_is_installed "$user" "$key_file" "$new_key"; then
+    remove_key "$user" "$key_file" "$new_key"
+    if [ $? -ne 0 ]; then
+      echo "Error: unable to remove key from file '$key_file'" 1>&2
+      exit 1
+    fi
   else
     key_str=$(key_str "$new_key")
     echo "Warning: key '$key_str' is not installed for user '$user', ignoring..." 1>&2
