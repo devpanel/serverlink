@@ -8,6 +8,8 @@ usage() {
   Options:
     -d target_dir           the path of the target dir where files
                             should be stored
+    -o user                 after saving, chown the file to the 
+                            specified user
 
 Saves the script to the target dir (default: $target_dir_default)
 using the specified basename, and makes the script executable.
@@ -19,11 +21,23 @@ using the specified basename, and makes the script executable.
 
 [ $# -eq 0 ] && usage
 
-getopt_flags='d:'
+unset target_dir chown_user
+getopt_flags='d:o:'
 while getopts $getopt_flags OPTN; do
   case $OPTN in
     d)
       target_dir="$OPTARG"
+      ;;
+    o)
+      chown_user="$OPTARG"
+      if ! getent passwd "$chown_user" &>/dev/null; then
+        echo "Error: user doesn't exist" 1>&2
+        exit 1
+      fi
+      if [ $EUID -ne 0 -a "$chown_user" != "$USER" ]; then
+        echo "Error: no permissions to chown file." 1>&2
+        exit 1
+      fi
       ;;
     *)
       usage
@@ -55,7 +69,7 @@ if [ ! -d "$TMPDIR" ] && ! mkdir "$TMPDIR"; then
   exit 1
 fi
 
-if [ ! -d "$target_dir" ] && ! mkdir -p "$target_dir"; then
+if [ ! -d "$target_dir" ] && ! mkdir -m 711 -p "$target_dir"; then
   echo "Error: unable to create dir '$target_dir'" 1>&2
   exit 1
 fi
@@ -80,6 +94,11 @@ fi
 
 if ! mv -f "$tmp_file" "$target_file"; then
   echo "Error: unable to move temp file '$tmp_file' to '$target_file'" 1>&2
+  exit 1
+fi
+
+if [ -n "$chown_user" ] && ! chown "$chown_user" "$target_file"; then
+  echo "Error: unable to chown file '$target_file' to '$chown_user'" 1>&2
   exit 1
 fi
 
