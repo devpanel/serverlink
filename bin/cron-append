@@ -32,10 +32,12 @@ elif [ ! -s "$tmp_new_lines" ]; then
   exit 1
 fi
 
-crontab -l >"$tmp_curr_cron"
+crontab -l 2>/dev/null >"$tmp_curr_cron"
 if [ $? -ne 0 ]; then
-  echo "Error: unable to save existing cron lines." 1>&2
-  exit 1
+  if ! crontab -l 2>&1 | fgrep -q "no crontab for"; then
+    echo "Error: unable to save existing cron lines." 1>&2
+    exit 1
+  fi
 fi
 
 cat "$tmp_new_lines" >> "$tmp_curr_cron"
