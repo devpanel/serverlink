@@ -56,23 +56,31 @@ remove_key() {
   local key_file="$2"
   local key="$3"
 
-  key=$(escape_sed "$key")
-  su -l -c "sed -e '/${key}/d' -i '$key_file'" "$user"
+  local key_sed_escaped=$(escape_sed "$key")
+
+  su -l -c "sed -e '/$key_sed_escaped/d' -i '$key_file'" "$user"
   return $? # return the status of sed
 }
 
-key_str() {
+key_substr() {
   local key="$1"
   local key_str
 
   key=${key#* *}
-  if [ ${#key} -lt 7 ]; then
+  if [ ${#key} -lt 40 ]; then
     key_str="$key"
   else
-    key_str="${key:0:7}..."
+    key_str="${key:0:40}..."
   fi
 
   echo "$key_str"
+}
+
+validate_keystr() {
+  local keystr="$1"
+  [ -z "$keystr" ] && return 1
+
+  ssh-keygen -f <(echo "$keystr") -l &>/dev/null
 }
 
 # main()
@@ -99,10 +107,20 @@ unset read_stdin OPTS for_root append_str
 while getopts $getopt_flags OPTS; do
   case "$OPTS" in
     a)
-      add_keys+=( "$OPTARG" )
+      if validate_keystr "$OPTARG"; then
+        add_keys+=( "$OPTARG" )
+      else
+        echo "Error: unable to validate key to add, received on command line." 1>&2
+        exit 1
+      fi
       ;;
     r)
-      remove_keys+=( "$OPTARG" )
+      if validate_keystr "$OPTARG"; then
+        remove_keys+=( "$OPTARG" )
+      else
+        echo "Error: unable to validate key to remove, received on command line." 1>&2
+        exit 1
+      fi
       ;;
     i)
       read_stdin=1
@@ -172,9 +190,14 @@ trap 'rm -f -- "$lock_file"' EXIT
 # reads from stdin if requested
 line_n=0
 if [ -n "$read_stdin" ]; then
+  echo "Reading from STDIN, add keys with +:key_string, "\
+"remove keys with -:key_string. One key per line." 1>&2
+
   while read LINE; do
     line_n=$(( $line_n + 1 ))
     [ ${#LINE} -eq 0 ] && continue # next if line empty
+    [ "${LINE:0:1}" == "#" ] && continue
+
     cmd="${LINE:0:1}"
     if [ "$cmd" != "+" -a "$cmd" != "-" -o ${#LINE} -lt 3 -o "${LINE:1:1}" != ':' ]; then
       echo "Warning: invalid line $line_n"
@@ -182,6 +205,11 @@ if [ -n "$read_stdin" ]; then
     fi
 
     key=${LINE:2}
+    if ! validate_keystr "$key"; then
+      echo "Warning: failed validation for key received on STDIN on line $line_n. Skipping..." 1>&2
+      continue
+    fi
+
     if [ "$cmd" == "+" ]; then
       add_keys+=( "$key" )
     else
@@ -190,37 +218,53 @@ if [ -n "$read_stdin" ]; then
   done
 fi
 
+# check if received any key
+if [ ${#add_keys[@]} -eq 0 -a ${#remove_keys[@]} -eq 0 ]; then
+  echo "Error: didn't receive any key to work on. Either pass keys on "\
+"command line with -a or -r or send it through stdin (-i)."
+  exit 1
+fi
+
 # Process the request
 n_max=${#add_keys[@]}
+
+declare -i n_eval=0
 n_add=0
-while [ $n_add -ne $n_max ]; do
-  new_key="${add_keys[$n_add]}"
+while [ $n_eval -ne $n_max ]; do
+  new_key="${add_keys[$n_eval]}"
+  n_eval+=1
+
   if key_is_installed "$user" "$key_file" "$new_key"; then
-    key_str=$(key_str "$new_key")
+    key_str=$(key_substr "$new_key")
     echo "Warning: key '$key_str' already installed for user '$user'" 1>&2
   else
     install_key "$user" "$key_file" "$new_key" "$append_str"
+    if [ $? -ne 0 ]; then
+      echo "Error: unable to add key '$new_key'" 1>&2
+      exit 1
+    fi
+    n_add=$(( $n_add + 1 ))
   fi
-
-  n_add=$(( $n_add + 1 ))
 done
 
-n_max=${#remove_keys[@]}
+n_eval=0
 n_rem=0
-while [ $n_rem -ne $n_max ]; do
-  new_key="${remove_keys[$n_rem]}"
+n_max=${#remove_keys[@]}
+while [ $n_eval -ne $n_max ]; do
+  new_key="${remove_keys[$n_eval]}"
+  n_eval+=1
   if key_is_installed "$user" "$key_file" "$new_key"; then
     remove_key "$user" "$key_file" "$new_key"
     if [ $? -ne 0 ]; then
       echo "Error: unable to remove key from file '$key_file'" 1>&2
       exit 1
     fi
+    n_rem=$(( $n_rem + 1 ))
   else
-    key_str=$(key_str "$new_key")
+    key_str=$(key_substr "$new_key")
     echo "Warning: key '$key_str' is not installed for user '$user', ignoring..." 1>&2
   fi
-
-  n_rem=$(( $n_rem + 1 ))
 done
 
+echo "Added $n_add keys, removed $n_rem keys."
 exit 0
