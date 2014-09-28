@@ -77,19 +77,24 @@ wedp_auto_detect_distro() {
 
 wedp_auto_detect_distro_version() {
   local distro="$1"
-  local version_str="" version=""
+  local version_str="" version_number=""
 
-  if [ "$distro" == "centos" ]; then
-    version_str=$(head -1 "/etc/redhat-release")
-    if [[ "$version_str" =~ CentOS\ release\ ([0-9]+\.[0-9]+) ]]; then
-      version="${BASH_REMATCH[1]}"
-    fi
-  else
-    version="0"
+  if hash lsb_release &>/dev/null; then
+    version_number=`lsb_release -sr`
+    [ $? -ne 0 ] && return 1
+  elif [ "$distro" == "centos" ]; then
+      version_str=$(head -1 "/etc/redhat-release" 2>/dev/null)
+      [ $? -ne 0 ] && return 1
+
+      # the line below is an invalid syntax on older systems with bash 3
+      #if [[ "$version_str" =~ CentOS\ release\ ([0-9]+\.[0-9]+) ]]; then
+      # so we have to pipe fgrep and egrep to have a compatible way on all
+      # systems
+      version_number=`echo "$version_str" | fgrep 'CentOS release' 2>/dev/null | egrep -o '[0-9]+\.[0-9]+ 2>/dev/null'`
   fi
 
-  if [ -n "$version" ]; then
-    echo $version
+  if [ -n "$version_number" ]; then
+    echo -n "$version_number"
     return 0
   else
     return 1
