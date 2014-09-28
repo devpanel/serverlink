@@ -22,22 +22,32 @@ wedp_warn() {
 devpanel_auto_detect_distro() {
   local distro=""
 
-  if hash rpm &>/dev/null && rpm -ql centos-release &>/dev/null; then
+  # can't use local -l below because of systems with bash 3
+  local lsb_distro_str="" lsb_distro_raw=""
+
+  if hash lsb_release &>/dev/null; then
+    lsb_distro_raw=`lsb_release -si 2>/dev/null`
+    lsb_distro_str=`echo -n "$lsb_distro_raw" | tr A-Z a-z`
+  fi
+
+  if [ -n "$lsb_distro_str" ]; then
+    distro="$lsb_distro_str"
+  elif [ -r /etc/debian_version ] && apt-cache show lsb-base | egrep -q '^Maintainer: .+debian\.org>'; then
+    distro=debian
+  elif [ -r /etc/debian_version ] && apt-cache show lsb-base | egrep -q '^Maintainer: .+ubuntu\.com>'; then
+    distro=ubuntu
+  elif hash rpm &>/dev/null && rpm -ql centos-release &>/dev/null; then
     distro=centos
   elif hash rpm &>/dev/null && rpm -ql redhat-release-server &>/dev/null; then
     distro=redhat
   elif hash rpm &>/dev/null && rpm -ql owl-hier >/dev/null 2>&1; then
     distro=owl
-  elif hash lsb_release &>/dev/null && [ "`lsb_release -si 2>/dev/null`" == "Debian" ]; then
-    distro=debian
-  elif hash lsb_release &>/dev/null && [ "`lsb_release -si 2>/dev/null`" == "Ubuntu" ]; then
-    distro=ubuntu
   elif [[ "$OSTYPE" =~ ^darwin ]]; then
     distro=macosx
   fi
 
   if [ -n "$distro" ]; then
-    echo $distro
+    echo "$distro"
     return 0
   else
     return 1
@@ -47,7 +57,17 @@ devpanel_auto_detect_distro() {
 wedp_auto_detect_distro() {
   local distro=""
 
-  if grep -qis centos /etc/redhat-release; then
+  # can't use local -l below because of systems with bash 3
+  local lsb_distro_str="" lsb_distro_raw=""
+
+  if hash lsb_release &>/dev/null; then
+    lsb_distro_raw=`lsb_release -si 2>/dev/null`
+    lsb_distro_str=`echo -n "$lsb_distro_raw" | tr A-Z a-z`
+  fi
+
+  if [ -n "$lsb_distro_str" ]; then
+    distro="$lsb_distro_str"
+  elif grep -qis centos /etc/redhat-release; then
     distro=centos
   elif grep -qis "Red Hat Enterprise Linux" /etc/redhat-release; then
     distro=redhat
@@ -55,11 +75,9 @@ wedp_auto_detect_distro() {
     distro=fedora
   elif rpm -ql owl-hier >/dev/null 2>&1; then
     distro=owl
-  elif lsb_release -a 2>/dev/null | egrep -q "^Distributor ID:[[:space:]]+Debian" || \
-    [ -r /etc/debian_version ] && apt-cache show lsb-base | egrep -q '^Maintainer: .+debian\.org>'; then
+  elif [ -r /etc/debian_version ] && apt-cache show lsb-base | egrep -q '^Maintainer: .+debian\.org>'; then
     distro=debian
-  elif lsb_release -a 2>/dev/null | egrep -q "^Distributor ID:[[:space:]]+Ubuntu" || \
-    [ -r /etc/debian_version ] && apt-cache show lsb-base | egrep -q '^Maintainer: .+ubuntu\.com>'; then
+  elif [ -r /etc/debian_version ] && apt-cache show lsb-base | egrep -q '^Maintainer: .+ubuntu\.com>'; then
     distro=ubuntu
   elif [ -r /etc/gentoo-release ]; then
     distro=gentoo
@@ -68,7 +86,7 @@ wedp_auto_detect_distro() {
   fi
 
   if [ -n "$distro" ]; then
-    echo $distro
+    echo "$distro"
     return 0
   else
     return 1
