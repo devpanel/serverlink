@@ -31,6 +31,8 @@ key_is_installed() {
   local key="$3"
 
   [ ! -e "$key_file" ] && return 1
+  [ ! -f "$key_file" ] && return 1
+  [ ! -s "$key_file" ] && return 1
 
   if su -l -c "fgrep -q '$key' '$key_file'" "$user" ; then
     return 0
@@ -58,7 +60,7 @@ remove_key() {
 
   local key_sed_escaped=$(escape_sed "$key")
 
-  su -l -c "sed -e '/$key_sed_escaped/d' -i '$key_file'" "$user"
+  su -l -c "sed -e /""`printf '%q' "$key_sed_escaped"`""/d -i `printf '%q' $key_file`" "$user"
   return $? # return the status of sed
 }
 
