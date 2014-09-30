@@ -708,7 +708,7 @@ assign_deref_os_prop_or_exit() {
 
   value=`deref_os_prop "$base_dir" "$key_name"`
   if [ $? -ne 0 -o -z "$value" ]; then
-    echo "Error: unable to de-reference path '$path'" 1>&2
+    echo "Error: unable to de-reference key '$key_name'" 1>&2
     exit 1
   else
     eval $var="$value"
