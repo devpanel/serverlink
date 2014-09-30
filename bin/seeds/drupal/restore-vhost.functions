@@ -73,6 +73,26 @@ drupal_set_drupal6_sitename()
   fi
 }
 
+drupal_set_drupal7_sitename()
+{
+  local old_fqdn
+  if old_fqdn=`sql_query_result "select * from variable where name='site_name'"` &&
+     [ -n "$old_fqdn" ]
+  then
+    echo Found, changing site_name to $fqdn
+    sql_query "update variable set value=concat('s:', length('$fqdn'), ':\"', '$fqdn', '\"') where name='site_name'" || error
+    #if [ -z "$email" ]
+    #then
+    #  error "Empty admin's email"
+    #else
+      echo "Changing site_mail to admin's email $email"
+      sql_query "update variable set value=concat('s:', length('$email'), ':\"', '$email', '\"') where name='site_mail'" || error
+    #fi
+  else
+    echo Not found
+  fi
+}
+
 drupal_base_url_sed_script=":a
 s|^[[:space:]]*\\\$base_url[[:space:]]*=[[:space:]]*'[^']*';|\\\$base_url = '$WEBENABLED_HOSTING_LINK_BASE_URL';|
 tb
@@ -362,6 +382,8 @@ drupal_custom()
       if [ "$version" == 6 ]; then
         echo 'Checking for drupal6 variables (ignore errors)'
         drupal_set_drupal6_sitename
+      elif [ "$version" == 7 ]; then
+        drupal_set_drupal7_sitename
       fi
     fi
   else
