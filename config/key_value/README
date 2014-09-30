@@ -1,0 +1,9 @@
+
+This directory contains the system defaults. If you want to override any
+value, create links with the same name on subdirectory local/. Please, don't
+change any link on this base directory.
+
+NOTE: some values like apache_virtwww_homedir and
+mysql_instances_homedir cannot be overwritten yet, as they are hardcoded on
+some binaries, e.g. suexec and will break the system if overwritten.
+
