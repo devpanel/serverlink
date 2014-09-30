@@ -11,11 +11,37 @@ is_installed() {
   local ver="$2"
   local system_dir="$3"
 
-  if [ -e "$system_dir/config/packages/$pkg" ]; then
+  if [ -L "$system_dir/config/packages/$pkg/version" ]; then
     return 0
   else
     return 1
   fi
+}
+
+has_config_link() {
+  local system_dir="$1"
+  local pkg="$2"
+  local link="$3"
+
+  if [ -L "$system_dir/config/packages/$pkg/$link" ]; then
+    return 0
+  else
+    return 1
+  fi
+}
+
+is_to_skip_install() {
+  local system_dir="$1"
+  local pkg="$2"
+
+  has_config_link "$system_dir" "$pkg" dont_install
+}
+
+is_to_skip_updates() {
+  local system_dir="$1"
+  local pkg="$2"
+
+  has_config_link "$system_dir" "$pkg" dont_update
 }
 
 needs_update() {
@@ -39,9 +65,11 @@ needs_update() {
     else
       return 0
     fi
-  else
+  elif [ -e "$link_file" -a ! -L "$link_file" ]; then
     echo "$FUNCNAME(): path '$link_file' is not a link" 1>&2
     return 2
+  else
+    return 1
   fi
 }
 
@@ -69,7 +97,19 @@ assemble_pkg_url() {
     relative_url+="-$arch"
   fi
 
-  url="$base_url/$relative_url.tar.gz"
+  local previous_url="$base_url" stripped_url=""
+  while echo "$previous_url" | egrep -q '^[a-z0-9A-Z]+://[^/]+/'; do
+    # recursively remove the /path/some/other/nested/path from the URL 
+    # until all paths are removed and remains only the proto/host
+    stripped_url=${previous_url%/*}
+    if [ "$stripped_url" != "$previous_url" ]; then
+      previous_url="$stripped_url"
+    else
+      break
+    fi
+  done
+
+  url="$stripped_url/$relative_url.tar.gz"
 
   echo "$url"
 }
@@ -101,33 +141,67 @@ assemble_pkg_filename() {
   echo "$filename"
 }
 
+usage() {
+  echo "Usage: `basename "$0"` [ options ] -y
 
-sep=`echo -e '\x09'` # use tab as a separator
-curr_dir=`dirname "${BASH_SOURCE[0]}"`
-lib_file="$curr_dir/../lib/functions"
-system_dir="$curr_dir/.."
+  Options:
+    -y            effectively update
+    -h            show this usage msg
+"
+  exit 1
+}
 
 # main
 
-base_url="http://updates.devpanel.com"
-base_channel="stable"
+declare -i verbose=0
+getopt_flags='hyv'
+unset yes_sure_update
+while getopts $getopt_flags OPTN; do
+  case $OPTN in
+    y)
+      yes_sure_update=1
+      ;;
+    v)
+      verbose+=1
+      ;;
+    h|*)
+      usage
+      ;;
+  esac
+done
+[ $OPTIND -gt 1 ] && shift $(( $OPTIND - 1 ))
 
-[ "$1" == "-h" ] && usage
+if [ -z "$yes_sure_update" ]; then
+  usage
+fi
+
+sep=`echo -e '\x09'` # use tab as a separator
+self_bin=`readlink -e "$0"`
+curr_dir=`dirname "$self_bin"`
+system_dir=`readlink -e "$curr_dir/.."`
+lib_file="$system_dir/lib/functions"
 
 if ! source "$lib_file"; then
   echo "Error: unable to source file '$lib_file'" 1>&2
   exit 1
 fi
 
-if ! tmp_dir=`mktemp -d`; then
+assign_deref_os_prop_or_exit packages_url "$system_dir" packages_url
+if deref_os_prop "$system_dir" no_package_updates &>/dev/null; then
+  error "this system is configured not to have automated updates."
+fi
+
+# should not use /tmp here because the need to execute post-install and
+# post-update scripts, and it breaks if /tmp is mounted with noexec
+if ! tmp_dir=`mktemp -d "$system_dir/var/tmp/tmp.XXXXXX"`; then
   error "unable to create temporary directory"
 fi
-trap 'ex=$? ; rm -rf "$tmp_dir"; trap - EXIT INT HUP; exit $ex' EXIT INT HUP
+trap 'exit 1' INT HUP TERM QUIT
+trap 'rm -rf "$tmp_dir"' EXIT
 
-target_url="$base_url/$base_channel"
 updates_file="$tmp_dir/updates_$base_channel.txt"
 
-if ! download_file "$target_url" "$updates_file"; then
+if ! download_file "$packages_url" "$updates_file"; then
   error "unable to download update file"
 fi
 
@@ -152,7 +226,7 @@ while read update_line; do
   unset v_installed v_needs_update
 
   IFS="$sep" read package latest_version distro distro_version arch flags <<< "$update_line"
-  pkg_url=`assemble_pkg_url "$base_url" "$package" "$latest_version" \
+  pkg_url=`assemble_pkg_url "$packages_url" "$package" "$latest_version" \
     "$distro" "$distro_version" "$arch"`
  
   # skip if the package is for a specific distro that not the current one
@@ -173,15 +247,20 @@ while read update_line; do
     v_installed=1
   fi
 
-  if [ -n "$v_installed" ] && needs_update "$package" "$latest_version" "$system_dir"; then
-    v_needs_update=1
-  fi
-
-  if [ -n "$v_installed" -a -z "$v_needs_update" ]; then
+  if [ -z "$v_installed" ] && is_to_skip_install "$system_dir" "$package"; then
+    [ $verbose -gt 0 ] && echo "Skipping $package, configured not to install"
+    continue # not installed, and configured not to install
+  elif [ -n "$v_installed" ] && is_to_skip_updates "$system_dir" "$package"; then
+    [ $verbose -gt 0 ] && echo "Skipping $package, configured not to update"
+    continue # installed but configured not to update
+  elif [ -n "$v_installed" ] && needs_update "$package" "$latest_version" "$system_dir"; then
+    v_needs_update=1 # installed and needs update
+  elif [ -n "$v_installed" -a -z "$v_needs_update" ]; then
     continue # is installed and doesn't need update
   fi
 
   if [ -z "$v_installed" -o -n "$v_needs_update" ]; then
+    echo "Downloading $package $latest_version from $pkg_url..." 1>&2
     if ! download_file "$pkg_url" "$pkg_file"; then
       echo "Warning: failed download for package '$package' version '$latest_version' from URL '$pkg_url'" 1>&2
       continue
@@ -222,14 +301,14 @@ if [ $n_failed_install -gt 0 ]; then
   echo "Failed to install $n_failed_install packages."
 fi
 
-if [ $n_updated -eq 0 ]; then
-  echo "No packages were updated."
-else
+if [ $n_updated -gt 0 ]; then
   echo "Updated $n_updated packages."
 fi
 
-if [ $n_installed -eq 0 ]; then
-  echo "No packages were installed."
-else
+if [ $n_installed -gt 0 ]; then
   echo "Installed $n_installed packages."
+elif [ $n_installed -eq 0 -a $n_updated -eq 0 ]; then
+  echo "No packages were updated."
 fi
+
+exit 0
