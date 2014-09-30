@@ -80,7 +80,20 @@ validate_keystr() {
   local keystr="$1"
   [ -z "$keystr" ] && return 1
 
-  ssh-keygen -f <(echo "$keystr") -l &>/dev/null
+  # why doesn't this work on newer systems?
+  # ssh-keygen -f <(echo "$keystr") -l &>/dev/null
+
+  local tmp_file=`mktemp`
+  [ $? -ne 0 ] && return 1
+
+  echo "$keystr" >"$tmp_file"
+  [ $? -ne 0 ] && return 1
+
+  ssh-keygen -f "$tmp_file" -l &>/dev/null
+  local status=$?
+  rm -f "$tmp_file"
+
+  return $status
 }
 
 # main()
