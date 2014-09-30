@@ -30,10 +30,10 @@ user="w_$vhost"
 home="`eval \"echo ~$user\"`"
 date=`date  +'%Y%m%d'`
 archive_file="$archive_dir/$user.tgz"
-conf="$dir/../config/os/pathnames/etc/apache_vhosts/$user.conf"
+conf=`readlink -e "$dir/../config/os/pathnames/etc/apache_vhosts/$user.conf"`
 archive_shadow="$archive_dir/$user.shadow"
 archive_conf="$archive_dir/apache_$vhost.conf"
-logs_dir="$dir/../config/os/pathnames/var/log/apache_vhosts/$user"
+logs_dir=`readlink -e "$dir/../config/os/pathnames/var/log/apache_vhosts/$user"`
 archive_logs="$archive_dir/logs_$vhost.tgz"
 archive_id="$archive_dir/id"
 archive_crontab="$archive_dir/crontab"
@@ -114,7 +114,7 @@ if ! run mkdir -p "$archive_dir"; then
   exit 1
 fi
 
-run tar --ignore-failed-read -C "$logs_dir" -zcf "$archive_logs"
+run tar --ignore-failed-read -C "$logs_dir" -zcf "$archive_logs" .
 status=$?
 if [ $status -ne 0 -a $status -ne 1 ]; then
   echo "Error: unable to archive the log files." 1>&2
