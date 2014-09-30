@@ -22,8 +22,8 @@ run_su()
   su -l -c "$*" "$user"
 }
 
-
-dir=`dirname $0`
+self_bin=`readlink -e "$0"`
+dir=`dirname "$self_bin"`
 vhost="$1"
 archive_dir="$2"
 user="w_$vhost"
@@ -114,8 +114,11 @@ if ! run mkdir -p "$archive_dir"; then
   exit 1
 fi
 
-if ! run tar --ignore-failed-read -C "$logs_dir" -zcf "$archive_logs" .; then
-  echo "Warning: unable to archive the log files..." 1>&2
+run tar --ignore-failed-read -C "$logs_dir" -zcf "$archive_logs"
+status=$?
+if [ $status -ne 0 -a $status -ne 1 ]; then
+  echo "Error: unable to archive the log files." 1>&2
+  exit 1
 fi
 
 echo "Archiving crontab to $archive_crontab"
