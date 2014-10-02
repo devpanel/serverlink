@@ -9,9 +9,4 @@ user="w_$vhost"
 # using mode archive: it's OK to operate on a locked vhost
 $dir/check-vhost-name archive "$vhost" || exit 1
 
-su -l -c "rm $param $rm_src" $user
-echo "file removed successfull"
-exit 0
-
-echo "file or directory are not exist"
-exit 1
+su -l -c "rm -- $param $rm_src" "$user"

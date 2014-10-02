@@ -10,5 +10,3 @@ user="w_$vhost"
 $dir/check-vhost-name archive "$vhost" || exit 1
 
 su -l -c "tar $param $tar_command" $user
-exit 0
-
