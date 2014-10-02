@@ -1,0 +1,24 @@
+#!/bin/bash
+
+# this script tries to select the 'best' drush version available to be run
+
+self_bin=`readlink -e "$0"`
+curr_dir=`dirname "$self_bin"`
+devpanel_dir=`readlink -e "$curr_dir/../.."`
+
+home_1_drush="$HOME/.drush/drush"
+home_2_drush="$HOME/.drush/drush/drush"
+devpanel_drush="$devpanel_dir/bin/packages/drush/drush"
+
+# first check for drush on the user directory
+# if not found, and there isn't another dursh in PATH, fallback to
+#  ...the drush version shipped with devPanel
+if [ -f "$home_1_drush" -a -x "$home_1_drush" ]; then
+  hash -p "$home_1_drush" drush
+elif [ -f "$home_2_drush" -a -x "$home_2_drush" ]; then
+  hash -p "$home_2_drush" drush
+elif ! hash drush &>/dev/null && [ -x "$devpanel_drush" ]; then
+  hash -p "$devpanel_drush" drush
+fi
+
+drush "$@"

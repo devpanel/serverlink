@@ -15,8 +15,9 @@ self_bin=`readlink -e "$0"`
 curr_dir=`dirname "$self_bin"`
 base_dir=`readlink -e "$curr_dir/../../.."`
 
-if [ -x "$base_dir/bin/drush" ]; then
-  hash -p "$base_dir/bin/drush" drush
+devpanel_drush="$base_dir/bin/.path/drush"
+if [ -x "$devpanel_drush" ]; then
+  hash -p "$devpanel_drush" drush
 elif ! hash drush &>/dev/null; then
   echo "Error: unable to find drush" 1>&2
   exit 1
