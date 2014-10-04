@@ -3,7 +3,11 @@
 usage() {
   local prog=`basename "$0"`
 
-  echo "Usage: $prog <vhost>"
+  echo "Usage: $prog [ options ] <vhost>
+  
+  For the [ options ] see ../bin/metadata-handler usage.
+
+"
 
   exit 1
 }
@@ -18,11 +22,27 @@ error() {
 
 # main
 
-[ $# -eq 0 -o -z "$1" ] && usage
+[ $# -eq 0 ] && usage
 
 if [ $EUID -ne 0 ]; then
   error "this command requires ROOT privileges to be run."
 fi
+
+getopt_flags='n'
+target_opts=''
+while getopts $getopt_flags OPTN; do
+  case $OPTN in
+    n)
+      target_opts+=' -n'
+      ;;
+    *)
+      usage
+      ;;
+  esac
+done
+[ $OPTIND -gt 1 ] && shift $(( $OPTIND - 1 ))
+
+[ -z "$1" ] && usage
 
 vhost=`basename "$1"`
 
@@ -40,4 +60,4 @@ elif [ ! -d "$vhost_dir" ]; then
   error "path '$vhost_dir' is not a directory."
 fi
 
-"$bin_file" "$vhost_dir"
+"$bin_file" ${target_opts:+ $target_opts} "$vhost_dir"

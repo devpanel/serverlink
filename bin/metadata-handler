@@ -3,7 +3,12 @@
 usage() {
   local prog=`basename "$0"`
   echo "
-  Usage: $prog <directory>
+  Usage: $prog [ options ] <directory>
+
+  Options:
+    -n          don't lock the target directory (for the cases when a bigger
+                operation is already ongoing on the directory and it already 
+                acquired the lock)
 
   This script sets or deletes metadata links on the specified directory. It
   receives data from STDIN in the following format:
@@ -50,7 +55,7 @@ backup_dir_contents() {
 }
 
 # main
-[ $# -lt 1 -o -z "$1" ] && usage
+[ $# -lt 1 ] && usage
 
 curr_dir=`dirname "$0"`
 lib_file=`readlink -e "$curr_dir/../lib/functions"`
@@ -59,6 +64,22 @@ if ! source "$lib_file"; then
   echo "Error: unable to load lib file '$lib_file'" 1>&2
   exit 1
 fi
+
+do_lock=1
+getopt_flags='n'
+while getopts $getopt_flags OPTN; do
+  case $OPTN in
+    n)
+      unset do_lock
+      ;;
+    *)
+      usage
+      ;;
+  esac
+done
+[ $OPTIND -gt 1 ] && shift $(( $OPTIND - 1 ))
+
+[ -z "$1" ] && usage
 
 metadata_dir=`readlink -e "$1"`
 if [ $? -ne 0 -o -z "$1" ]; then
@@ -69,18 +90,18 @@ elif [ "$metadata_dir" == "/" ]; then
   error "can't use / as the metadata dir"
 fi
 
-if ! lock_path "$metadata_dir"; then
-  exit 1
+if [ -n "$do_lock" ]; then
+  lock_path "$metadata_dir" || exit 1
+  trap 'exit 1' INT HUP TERM QUIT
+  trap 'unlock_path "$metadata_dir"' EXIT
 fi
-trap 'exit 1' INT HUP TERM QUIT
-trap 'unlock_path "$metadata_dir"' EXIT
 
 upper_dir=`dirname "$metadata_dir"`
 tmp_metadata_dir=`mktemp -d "$upper_dir/.tmp_metadata.XXXXXX"`
 if [ $? -ne 0 ]; then
   error "unable to create temporary directory"
 fi
-trap 'rm_rf_safer "$tmp_metadata_dir"; unlock_path "$metadata_dir";' EXIT
+trap 'rm_rf_safer "$tmp_metadata_dir"; [ -n "$do_lock" ] && unlock_path "$metadata_dir";' EXIT
 
 if ! backup_dir_contents "$metadata_dir" "$tmp_metadata_dir"; then
   error "unable to copy dir '$metadata_dir' to '$tmp_metadata_dir'"
