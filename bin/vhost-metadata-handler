@@ -23,20 +23,27 @@ error() {
 
 [ $EUID -eq 0 -a -z "$1" ] && usage
 
-curr_dir=`dirname "$0"`
+self_bin=`readlink -e "$0"`
+cmd_name=`basename "$0"`
+curr_dir=`dirname "$self_bin"`
 bin_file=`readlink -e "$curr_dir/metadata-handler"`
 if [ $? -ne 0 -o -z "$bin_file" ]; then
   error "couldn't find metadata-handler executable"
 fi
 
-if [ $EUID -eq 0 ]; then
-  vhost="$1"
-  vhost_dir=`eval echo -n \~"$vhost"`
-  if [ -z "$vhost_dir" ]; then
-    error "couldn't resolve home dir for vhost $vhost"
+if [ "$cmd_name" == "vhost-metadata-handler" ]; then
+  if [ $EUID -eq 0 ]; then
+    vhost="$1"
+    metadata_dir=`eval echo -n \~"$vhost"`
+    if [ -z "$vhost_dir" ]; then
+      error "couldn't resolve home dir for vhost $vhost"
+    fi
+  else
+    metadata_dir="$HOME/.devpanel"
   fi
-else
-  vhost_dir="$HOME/.devpanel"
+elif [ "$cmd_name" == "git-metadata-handler" ]; then
+  repo="$1"
+  metadata_dir="$HOME/.devpanel/metadata"
 fi
 
-"$bin_file" "$vhost_dir"
+"$bin_file" "$metadata_dir"
