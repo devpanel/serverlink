@@ -1,7 +1,14 @@
 #!/bin/bash
 
 usage() {
-  echo "Usage: `basename "$0"` <target_db_name> <dump_file>"
+  echo "Usage: `basename "$0"` [options] <target_db_name> <dump_file>
+
+  Options:
+    -i my_cnf_file            path to an alternate cnf file
+    -s vhost_name             the vhost name (used to figured the my_cnf
+                              file automatically)
+  
+"
   exit 1
 }
 
@@ -20,12 +27,15 @@ self_bin=`readlink -e "$0"`
 curr_dir=`dirname "$self_bin"`
 we_base_dir=`readlink -e "$curr_dir/../.."`
 
-getopt_flags='i:'
+getopt_flags='i:s:'
 
 while getopts $getopt_flags OPTN; do
   case $OPTN in
     i)
       my_cnf_file="$OPTARG"
+      ;;
+    s)
+      site_name="$OPTARG"
       ;;
     *)
       usage
@@ -35,7 +45,12 @@ done
 
 [ $OPTIND -gt 1 ] && shift $(( $OPTIND - 1 ))
 
-my_cnf_file=${my_cnf_file:-"$we_base_dir/etc/aws-cluster.ini"}
+template_my_cnf="$we_base_dir/etc/aws-rds--my_cnf.ini"
+if [ -z "$my_cnf_file" -a -z "$site_name" ]; then
+  my_cnf_file=${my_cnf_file:-"$template_my_cnf"}
+elif [ -z "$my_cnf_file" -a -n "$site_name" ]; then
+  my_cnf_file=${my_cnf_file:-"$we_base_dir/etc/aws-rds--my_cnf-$site_name.ini"}
+fi
 
 if [ -z "$my_cnf_file" ]; then
   error "please specify the ini with the remote db configuration (option -i)"
@@ -56,11 +71,16 @@ elif [ ! -f "$dump_file" ]; then
   error "path '$dump_file' is not a regular file"
 fi
 
-if ! mysql --defaults-file="$my_cnf_file" -BN -D "$target_db_name" -e "SHOW TABLES;" >/dev/null; then
-  error "unable to connect to target db"
-fi
+if mysql --defaults-file="$my_cnf_file" -BN -D "$target_db_name" -e "SHOW TABLES;" >/dev/null; then
 
-mysql --defaults-file="$my_cnf_file" -e "DROP DATABASE $target_db_name; CREATE DATABASE $target_db_name;"
+  if ! mysql --defaults-file="$my_cnf_file" -e "DROP DATABASE $target_db_name; CREATE DATABASE $target_db_name;"; then
+    error "unable to DROP and CREATE database $target_db_name"
+  fi
+else
+  if ! mysql --defaults-file="$my_cnf_file" -e "CREATE DATABASE $target_db_name;" >/dev/null; then
+    error "unable to create database $target_db_name"
+  fi
+fi
 
 mysql --defaults-file="$my_cnf_file" -D "$target_db_name" < "$dump_file"
 if [ $? -ne 0 ]; then

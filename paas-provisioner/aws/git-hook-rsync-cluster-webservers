@@ -1,11 +1,8 @@
 #!/bin/bash
-#set -x
 
 usage() {
   :
 }
-
-remote_docroot_dir="/var/www/html"
 
 # main
 
@@ -17,22 +14,44 @@ we_base_dir=`readlink -e "$dir/../.."`
 
 lib_file="$we_base_dir/lib/functions"
 if ! source "$lib_file"; then
-  error "unable to source lib file '$lib_file'"
+  echo "Error: unable to source lib file '$lib_file'" 1>&2
+  exit 1
 fi
 
-export GIT_DIR=`readlink -e "$GIT_DIR"`
-if [ -z "$GIT_DIR" ]; then
-  assign_deref_os_prop_or_exit repo_name "$we_base_dir" aws_cluster_repo_name
+if [ -n "$GL_REPO" ]; then
+  repo_name="$GL_REPO"
+else
+  echo "Error: missing variable GL_REPO" 1>&2
+  exit 1
+fi
+
+if [ -n "$GIT_DIR" ]; then
+  export GIT_DIR=`readlink -e "$GIT_DIR"`
+else
   export GIT_DIR="$HOME/repositories/$repo_name.git"
-  webserver_ips="$SSH_ORIGINAL_COMMAND"
 fi
 
-if [ -z "$webserver_ips" ]; then
-  webserver_ips=`"$dir/get-cluster-webserver-ips"`
-  if [ $? -ne 0 ]; then
-    echo "Error: unable to get IPs of webservers" 1>&2
-    exit 1
-  fi
+metadata_dir="$HOME/.devpanel/metadata"
+if [ ! -d "$GIT_DIR" ]; then
+  echo "Error: unable to find git dir '$GIT_DIR'" 1>&2
+  exit 1
+elif [ ! -d "$metadata_dir" ]; then
+  echo "Error: unable to find metadata dir '$metadata_dir'" 1>&2
+  exit 1
+fi
+
+vhost=`get_metadata_value "$metadata_dir" "config:param:aws_vhost:repo:$repo_name" 2>/dev/null`
+if [ -z "$vhost" ]; then
+  echo "Error: unable to get vhost from git metadata" 1>&2
+  exit 1
+fi
+
+remote_docroot_dir="/var/www/html/$vhost"
+
+webserver_ips=`"$dir/get-cluster-webserver-ips"`
+if [ $? -ne 0 ]; then
+echo "Error: unable to get IPs of webservers" 1>&2
+exit 1
 fi
 
 tmp_checkout_dir=`mktemp -d`
@@ -49,6 +68,7 @@ git -c core.bare=false checkout -f
 for ip in "$webserver_ips"; do
   rsync -a ./ "root@$ip:$remote_docroot_dir"
 
-  ssh root@"$ip" chown -R www-data:www-data "$remote_docroot_dir" \
-    \; /opt/webenabled/paas-provisioner/aws/update-drupal-settings
+  ssh root@"$ip" \
+    chown -R www-data:www-data "$remote_docroot_dir" \; \
+    /opt/webenabled/paas-provisioner/aws/update-drupal-settings "$vhost"
 done

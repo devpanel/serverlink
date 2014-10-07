@@ -83,9 +83,9 @@ fi
 umask 022
 mkdir -p /opt/webenabled/etc
 
-tar -xf "$tmp_tar" -C /opt/webenabled
+tar --no-same-owner -xf "$tmp_tar" -C /opt/webenabled
 
-mv -f "$tmp_info" "/opt/webenabled/etc/aws-cluster.ini"
+mv -f "$tmp_info" "/opt/webenabled/etc/aws-rds--my_cnf.ini"
 
 sed -i -e "/^[[:space:]]*DirectoryIndex/ a \\
 \t<Directory /var/www/html/>\\

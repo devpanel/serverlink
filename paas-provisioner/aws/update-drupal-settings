@@ -1,6 +1,7 @@
 #!/bin/bash
 
-settings_file="/var/www/html/sites/default/settings.php"
+vhost="$1"
+settings_file="/var/www/html/$vhost/sites/default/settings.php"
 
 if [ ! -f "$settings_file" ]; then
   exit 0
@@ -12,7 +13,7 @@ base_dir=`readlink -e "$curr_dir/../.."`
 
 source "$base_dir/lib/functions"
 
-ini_file="$base_dir/etc/aws-cluster.ini"
+ini_file="$base_dir/etc/aws-rds-vhost-$vhost.ini"
 
 rds_db=`ini_section_get_key_value "$ini_file" client database`
 rds_host=`ini_section_get_key_value "$ini_file" client host`

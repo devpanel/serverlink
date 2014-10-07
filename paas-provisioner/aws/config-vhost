@@ -1,0 +1,29 @@
+#!/bin/bash
+
+usage() {
+  echo "Usage: `basename "$0"` <vhost> <domain_list>"
+  exit 1
+}
+
+# main
+[ $# -lt 2 ] && usage
+
+self_bin=`readlink -e "$0"`
+curr_dir=`dirname "$self_bin"`
+we_base_dir=`readlink -e "$curr_dir/../.."`
+
+lib_file="$we_base_dir/lib/functions"
+if ! source "$lib_file"; then
+  echo "Error: unable to source file '$lib_file'" 1>&2
+  exit 1
+fi
+
+vhost="$1"
+domain_list="$2"
+
+IFS="," read -a domain_list_ar <<< "$domain_list"
+
+"$we_base_dir/libexec/replace-token" "$curr_dir/vhost.tmpl" "/etc/apache2/sites-enabled/$vhost.conf" \
+  "vhost=$vhost" "domain_list=${domain_list_ar[*]}"
+
+apache2ctl graceful
