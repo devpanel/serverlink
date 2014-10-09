@@ -293,7 +293,7 @@ dir=`dirname "$0"`
 vhost="$1"
 user="w_$vhost"
 
-"$dir/check-vhost-name" config "$vhost" || error
+"$dir/check-vhost-name" name-only "$vhost" || error
 
 we_base_dir=`readlink -e "$dir/.."`
 
@@ -324,7 +324,7 @@ fi
 trap 'ex=$?; rm -f "$tmp_new_vhost_file"; rm -f "$vhost_bkp_file"; exit $ex;' \
  EXIT INT TERM QUIT
 
-if ! cat "$virtwww_file" > "$vhost_bkp_file"; then
+if [ -f "$virtwww_file" ] && ! cat "$virtwww_file" > "$vhost_bkp_file"; then
   error "unable to write a copy of '$virtwww_file' into '$vhost_bkp_file'"
 fi
 
@@ -861,7 +861,7 @@ fi
 
 if ! "$apachectl" configtest; then
   echo Syntax validation failed, reverting the changes
-  if ! cat "$vhost_bkp_file" >"$virtwww_file"; then
+  if [ -f "$virtwww_file" ] && ! cat "$vhost_bkp_file" >"$virtwww_file"; then
     error "unable to copy back the contents from $vhost_bkp_file"\
 " to '$virtwww_file'"
   fi
