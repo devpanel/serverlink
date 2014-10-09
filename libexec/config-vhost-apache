@@ -321,8 +321,8 @@ vhost_bkp_file=`mktemp "$virtwww_file.bkp.XXXXXXXXXXXXXXX"`
 if [ $? -ne 0 ]; then
   error "unable to create a temporary backup file"
 fi
-trap 'ex=$?; rm -f "$tmp_new_vhost_file"; rm -f "$vhost_bkp_file"; exit $ex;' \
- EXIT INT TERM QUIT
+trap 'exit 1' INT TERM QUIT
+trap 'rm -f "$tmp_new_vhost_file"; rm -f "$vhost_bkp_file";' EXIT
 
 if [ -f "$virtwww_file" ] && ! cat "$virtwww_file" > "$vhost_bkp_file"; then
   error "unable to write a copy of '$virtwww_file' into '$vhost_bkp_file'"
