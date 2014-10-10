@@ -134,13 +134,10 @@ if [ "${0:0:1}" != "/" ]; then
   error "please call this script with the full path"
 fi
 
-dir=`dirname "$0"`
-dir=`readlink -e "$dir"`
-if [ ! -d "$dir" ]; then
-  error "couldn't determine current dir"
-fi
+self_bin=`readlink -e "$0"`
+dir=`dirname "$self_bin"`
 
-we_dir=`dirname "$dir"`
+we_dir=`readlink -e "$dir/.."`
 
 lib_file="$we_dir/lib/functions"
 if ! source "$lib_file"; then
@@ -167,10 +164,10 @@ do
       ;;
   esac
 done
-shift `expr $OPTIND - 1`
+[ $OPTIND -gt 1 ] && shift `expr $OPTIND - 1`
 
 vhost="$1"
-if ! "$dir/check-vhost-name" archive "$vhost"; then
+if ! "$dir/check-vhost-name" name-only "$vhost"; then
   error "vhost argument is in an invalid format"
 fi
 user="w_$vhost"
@@ -186,6 +183,23 @@ if [ $? -ne 0 ]; then
   error "unable to get base domain name for apache virtual hosts"
 fi
 
+lib_file="$we_dir/lib/functions"
+vars_file="$we_dir/lib/variables"
+
+for inc_file in "$lib_file" "$vars_file"; do
+  if ! source "$inc_file"; then
+    error "unable to source file '$inc_file'"
+  fi
+done
+
+if get_metadata_value "$config_dir" "$DEVPANEL_VHOST_LOCK_FLAG" &>/dev/null; then
+  error "vhost $vhost is locked. Can't work on a locked vhost."
+fi
+
+# second check-vhost-name validation, to validate homedir, etc
+if ! "$dir/check-vhost-name" archive "$vhost"; then
+  exit 1
+fi
 mode=""
 vhost_base="$config_dir/apache_vhost:0"
 base_host_link="$vhost_base:_:ServerName"

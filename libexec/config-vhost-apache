@@ -298,9 +298,13 @@ user="w_$vhost"
 we_base_dir=`readlink -e "$dir/.."`
 
 lib_file="$we_base_dir/lib/functions"
-if ! source "$lib_file"; then
-  error "unable to source lib file '$lib_file'"
-fi
+vars_file="$we_base_dir/lib/variables"
+
+for inc_file in "$lib_file" "$vars_file"; do
+  if ! source "$inc_file"; then
+    error "unable to source file '$inc_file'"
+  fi
+done
 
 assign_deref_os_fs_path_ex_or_exit apachectl "$we_base_dir" pathnames/sbin/apachectl
 assign_deref_os_fs_path_ex_or_exit virtwww_dir "$we_base_dir" pathnames/etc/apache_vhosts
@@ -310,6 +314,10 @@ virtwww_file="$virtwww_dir/$user.conf"
 virtwww_file_old="$virtwww_file.old"
 config_dir="$we_base_dir/config/vhosts/$vhost"
 apache_svc_config_dir="$we_base_dir/config/packages/apache_vhost"
+
+if get_metadata_value "$config_dir" "$DEVPANEL_VHOST_LOCK_FLAG" &>/dev/null; then
+  error "vhost $vhost is locked. Can't work on a locked vhost."
+fi
 
 tmp_new_vhost_file=`mktemp "$virtwww_file.XXXXXXXXXXXXXXX"`
 if [ $? -ne 0 ]; then

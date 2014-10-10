@@ -7,7 +7,7 @@ run()
 }
 
 locked_crontab=~/.crontab.locked
-run crontab - <"$locked_crontab" || exit 1
+run crontab "$locked_crontab" || exit 1
 if ! [ -s "$locked_crontab" ]
 then
   echo "removing empty crontab"
