@@ -2,9 +2,10 @@
 
 echo -ne "Content-type: application/tar\n\n"
 
-curr_dir=`dirname "$0"`
+self_bin=`readlink -e "$0"`
+curr_dir=`dirname "$self_bin"`
 real_dir=`readlink -e "$curr_dir/../../../.."`
 
 cd "$real_dir"
 
-tar -cf - lib/functions paas-provisioner/aws/
+tar -cf - lib/functions libexec/ paas-provisioner/aws/

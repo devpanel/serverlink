@@ -1,5 +1,13 @@
 #!/bin/bash
 
+usage() {
+  echo "Usage: `basename "$0"` <vhost>"
+  exit 1
+}
+
+# main
+[ -z "$1" ] && usage
+
 vhost="$1"
 settings_file="/var/www/html/$vhost/sites/default/settings.php"
 

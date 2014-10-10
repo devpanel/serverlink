@@ -35,8 +35,6 @@ get_www_contents() {
 # main
 #[ $# -lt 1 ] && usage
 
-curr_dir=`basename "$0"`
-
 #trap - HUP CHLD
 
 deploy_srv_addr="@@__DEPLOYMENT_HOSTNAME__@@"
@@ -47,11 +45,13 @@ echo "Started running: `date`"
 cluster_info_url="http://$deploy_srv_addr/cgi/get-aws-cluster-info"
 web_tar_url="http://$deploy_srv_addr/cgi/get-aws-cluster-webserver-tar"
 rsync_starter_url="http://$deploy_srv_addr/cgi/aws-cluster-rsync-starter"
+get_vhosts_url="http://$deploy_srv_addr/cgi/aws-get-list-of-vhosts"
 
 tmp_info=`mktemp`
 tmp_tar=`mktemp`
+tmp_vhosts=`mktemp`
 
-trap 'rm -f "$tmp_info"; rm -f "$tmp_tar"; echo "Exited script: `date`"' EXIT
+trap 'rm -f "$tmp_info"; rm -f "$tmp_tar"; rm -f "$tmp_vhosts"; echo "Exited script: `date`"' EXIT
 
 unset got_cluster_info successful
 for i in {1..1500}; do
@@ -87,12 +87,21 @@ tar --no-same-owner -xf "$tmp_tar" -C /opt/webenabled
 
 mv -f "$tmp_info" "/opt/webenabled/etc/aws-rds--my_cnf.ini"
 
-sed -i -e "/^[[:space:]]*DirectoryIndex/ a \\
-\t<Directory /var/www/html/>\\
-\t\tAllowOverride All\\
-\t</Directory>
-" /etc/apache2/sites-enabled/000-default.conf
+for i in 1 2 3; do
+  get_www_contents "$tmp_vhosts" "$get_vhosts_url" text/plain
+  if [ $? -eq 0 ]; then
+    break
+  fi
+  sleep 60
+done
 
-apache2ctl graceful
+if [ ! -s "$tmp_vhosts" ]; then
+  echo "Error: unable to get list of vhosts" 1>&2
+  exit 1
+fi
+
+while read vhost domain_list; do
+  /opt/webenabled/paas-provisioner/aws/config-vhost "$vhost" "$domain_list"
+done < "$tmp_vhosts"
 
 curl --max-time 10 --retry 3 -s -o /dev/null "$rsync_starter_url"
