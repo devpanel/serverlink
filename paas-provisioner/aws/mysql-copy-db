@@ -92,6 +92,8 @@ fi
 if [ -n "$site_name" ]; then
   echo "client.database = $target_db_name" | \
   "$we_base_dir/bin/update-ini-file" "$my_cnf_file"
+
+  "$curr_dir/update-drupal-settings" "$site_name"
 fi
 
 exit 0
