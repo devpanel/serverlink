@@ -100,8 +100,9 @@ if [ ! -s "$tmp_vhosts" ]; then
   exit 1
 fi
 
+export DEBIAN_FRONTEND='noninteractive'
 apt-get update
-apt-get install libconfig-tiny-perl
+apt-get -y install libconfig-tiny-perl
 
 while read vhost domain_list; do
   /opt/webenabled/paas-provisioner/aws/config-vhost "$vhost" "$domain_list"
