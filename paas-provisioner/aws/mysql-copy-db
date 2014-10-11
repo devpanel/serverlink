@@ -88,3 +88,10 @@ mysql --defaults-file="$my_cnf_file" -D "$target_db_name" < "$dump_file"
 if [ $? -ne 0 ]; then
   error "unable to import dump file"
 fi
+
+if [ -n "$site_name" ]; then
+  echo "client.database = $target_db_name" | \
+  "$we_base_dir/bin/update-ini-file" "$my_cnf_file"
+fi
+
+exit 0

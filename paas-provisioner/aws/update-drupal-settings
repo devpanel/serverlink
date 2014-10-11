@@ -21,7 +21,7 @@ base_dir=`readlink -e "$curr_dir/../.."`
 
 source "$base_dir/lib/functions"
 
-ini_file="$base_dir/etc/aws-rds-vhost-$vhost.ini"
+ini_file="$base_dir/etc/aws-rds--my_cnf-$vhost.ini"
 
 rds_db=`ini_section_get_key_value "$ini_file" client database`
 rds_host=`ini_section_get_key_value "$ini_file" client host`
