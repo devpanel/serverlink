@@ -49,7 +49,9 @@ template_my_cnf="$we_base_dir/etc/aws-rds--my_cnf.ini"
 if [ -z "$my_cnf_file" -a -z "$site_name" ]; then
   my_cnf_file=${my_cnf_file:-"$template_my_cnf"}
 elif [ -z "$my_cnf_file" -a -n "$site_name" ]; then
-  my_cnf_file=${my_cnf_file:-"$we_base_dir/etc/aws-rds--my_cnf-$site_name.ini"}
+  target_my_cnf="$we_base_dir/etc/aws-rds--my_cnf-${site_name}.ini"
+  cp -f "$template_my_cnf" "$target_my_cnf"
+  my_cnf_file="$target_my_cnf"
 fi
 
 if [ -z "$my_cnf_file" ]; then
