@@ -47,11 +47,6 @@ b_user="b_$vhost"
 
 (echo "$vhost"|egrep -q '^[-_a-z0-9]{1,6}$')||error "invalid vhost name '$vhost'"
 
-vhost_meta_dir="$devpanel_dir/config/vhosts/$vhost"
-if [ ! -d "$vhost_meta_dir" ]; then
-  error "missing vhost config dir '$vhost_meta_dir'"
-fi
-
 assign_deref_os_fs_path_ex_or_exit apache_config_dir "$devpanel_dir" \
   "pathnames/etc/apache_vhosts"
 
