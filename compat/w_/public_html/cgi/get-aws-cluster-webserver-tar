@@ -8,4 +8,4 @@ real_dir=`readlink -e "$curr_dir/../../../.."`
 
 cd "$real_dir"
 
-tar -cf - lib/functions libexec/ paas-provisioner/aws/
+tar -cf - bin/ lib/functions libexec/ paas-provisioner/aws/
