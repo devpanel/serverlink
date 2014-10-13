@@ -51,6 +51,7 @@ assign_deref_os_fs_path_ex_or_exit apache_config_dir "$devpanel_dir" \
   "pathnames/etc/apache_vhosts"
 
 apache_config="$apache_config_dir/$w_user.conf"
+vhost_meta_dir="$devpanel_dir/config/vhosts/$vhost" # needed by locked() function
 
 if [ "$mode" == "name-only" ]; then
   exit 0
