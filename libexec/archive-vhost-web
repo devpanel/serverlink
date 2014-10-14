@@ -123,7 +123,7 @@ fi
 
 echo "Archiving crontab to $archive_crontab"
 if crontab_contents=`run_su crontab -l` 2>&1; then
-  echo "$crontab_contents" | sed '/^#/{1d;2d;3d}' |run tee "$archive_crontab"
+  echo "$crontab_contents" | run tee "$archive_crontab"
   if [ $? -ne 0 ]; then
     echo "Error: unable to archive crontab contents" 1>&2
     exit 1
