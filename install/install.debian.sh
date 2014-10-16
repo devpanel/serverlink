@@ -83,5 +83,10 @@ debian_post_users_n_groups() {
 }
 
 debian_post_software_install() {
+  if [ -n "$dp_server_hostname" ]; then
+    echo "$dp_server_hostname" >/etc/hostname
+    hostname "$dp_server_hostname"
+  fi
+
   return 0
 }

@@ -93,6 +93,11 @@ centos_post_software_install() {
   #  sleep 3
   # fi
 
+  if [ -n "$dp_server_hostname" ]; then
+    echo "$dp_server_hostname" >/etc/hostname
+    hostname "$dp_server_hostname"
+  fi
+
   return 0
 }
 
