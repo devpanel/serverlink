@@ -2,7 +2,18 @@
 
 drupal_get_users()
 {
-  sql_query_result "select name from users where name <> ''"
+  local version=""
+
+  version=`drupal_detect_version "$database"`
+  if [ $? -ne 0 -o -z "$version" ]; then
+    error 'unable to detect drupal version'
+  fi
+
+  if [ "$version" == 6 -o "$version" == 7 ]; then
+    sql_query_result "select name from users where name <> ''"
+  elif [ "$version" == 8 ]; then
+    sql_query_result "select name from users_field_data where name <> ''"
+  fi
 }
 
 drupal_genpass()
@@ -32,25 +43,69 @@ drupal_set_password()
   local user="$1" encrypted_password="$2"
   local token salt
 
-  sql_query "update users set pass = '$encrypted_password' where name = '$user';"
+  local version=""
+
+  version=`drupal_detect_version "$database"`
+  if [ $? -ne 0 -o -z "$version" ]; then
+    error 'unable to detect drupal version'
+  fi
+
+  if [ "$version" == 6 -o "$version" == 7 ]; then
+    sql_query "update users set pass = '$encrypted_password' where name = '$user';"
+  elif [ "$version" == 8 ]; then
+    sql_query "update users_field_data set pass = '$encrypted_password' where name = '$user';"
+  fi
 }
 
 drupal_set_email()
 {
   local user="$1" email="$2"
-  sql_query "update users set mail = '$email' where name = '$user';"
+
+  local version=""
+
+  version=`drupal_detect_version "$database"`
+  if [ $? -ne 0 -o -z "$version" ]; then
+    error 'unable to detect drupal version'
+  fi
+
+  if [ "$version" == 6 -o "$version" == 7 ]; then
+    sql_query "update users set mail = '$email' where name = '$user';"
+  elif [ "$version" == 8 ]; then
+    sql_query "update users_field_data set mail = '$email' where name = '$user';"
+  fi
+
 }
 
 
 drupal_get_email()
 {
   local user="$1"
-  sql_query_result "select mail from users where name = '$user';"
+  local version=""
+
+  version=`drupal_detect_version "$database"`
+  if [ $? -ne 0 -o -z "$version" ]; then
+    error 'unable to detect drupal version'
+  fi
+
+  if [ "$version" == 6 -o "$version" == 7 ]; then
+    sql_query_result "select mail from users where name = '$user';"
+  elif [ "$version" == 8 ]; then
+    sql_query_result "select mail from users_field_data where name = '$user';"
+  fi
 }
 
 drupal_get_admin_user()
 {
-  sql_query_result "select name from users where uid = 1"
+  version=`drupal_detect_version "$database"`
+  if [ $? -ne 0 -o -z "$version" ]; then
+    error 'unable to detect drupal version'
+  fi
+
+  if [ "$version" == 6 -o "$version" == 7 ]; then
+    sql_query_result "select name from users where uid = 1"
+  elif [ "$version" == 8 ]; then
+    sql_query_result "select name from users_field_data where uid = 1"
+  fi
 }
 
 drupal_set_drupal6_sitename()
@@ -109,6 +164,9 @@ bb
 
 drupal_update_php_config()
 {
+  # this function is not used anymore
+  # it's here just for reference...
+  # check the functions: drupal_update_php_config_6, drupal_update_php_config_7, drupal_update_php_config_8
   local drupal_base_url_none_sed_script="s|^[[:space:]]*\\\$base_url[[:space:]]*=[[:space:]]*'[^']*';||"
 
   local driver
@@ -331,6 +389,16 @@ drupal_update_civicrm_config() {
   database="$db_orig" # restore the default value back because sql_query_result uses it
 }
 
+drupal_reset_admin_time_6_or_7() {
+  # reset the admin creation time
+  sql_query "UPDATE users SET created = `date +%s` WHERE uid = 1"
+}
+
+drupal_reset_admin_time_8() {
+  sql_query "UPDATE users_field_data SET created = `date +%s` WHERE uid = 1"
+}
+
+
 drupal_detect_version() {
   local db="$1"
   local version=""
@@ -350,7 +418,8 @@ drupal_detect_version() {
 
     if [ $? -eq 0 -a -n "$version" ]; then
       version=${version#s:[0-9]:\"}
-      version=${version%\"\;}
+      version=${version#i:} # in case it's integer i:NNN;
+      version=${version//[\"\;]/}
       echo "${version:0:1}"
       return 0
     fi
@@ -389,16 +458,24 @@ drupal_custom()
   else
     echo "Updating settings.php"
 
-    drupal_update_php_config_$version
+    "drupal_update_php_config_$version"
+
+    if [ -n "$initial_deployment" ]; then
+      if [ "$version" == 6 -o "$version" == 7 ]; then
+        drupal_reset_admin_time_6_or_7
+      else
+        "drupal_reset_admin_time_$version"
+      fi
+    fi
 
     if [ "$version" == 6 -o "$version" == 7 ]; then
       drupal_set_tmp_6_or_7
       drupal_set_cron_key_6_or_7
-      ( cd "$home/public_html/$vhost" && "$home/bin/drush/drush" cc all )
+      ( cd "$home/public_html/$vhost" && drush cc all )
     else
-      drupal_set_tmp_$version
-      drupal_set_cron_key_$version
-      ( cd "$home/public_html/$vhost" && "$home/bin/drush/drush" cache-rebuild )
+      "drupal_set_tmp_$version"
+      "drupal_set_cron_key_$version"
+      ( cd "$home/public_html/$vhost" && drush cache-rebuild )
     fi
 
     aws_cdn_endpoint=`deref_os_prop "$we_base_dir" aws_cdn_endpoint 2>/dev/null`
