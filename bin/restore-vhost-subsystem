@@ -31,6 +31,7 @@ usage() {
   -O name=value   -- set the name and value of a variable
      Accepted variables:
         use_my_cnf (=1) - read mysql credentials from ~/.my.cnf
+
 "
 
   [ -n "$msg" ] && echo $msg
@@ -428,7 +429,7 @@ while getopts 'pPMm:s:O:iInF' OPTOPT; do
     F) initial_deployment=1 ;;
     O)
       # the logic below reads name=value strings passed to the -O option
-      accepted_opt_names=('use_my_cnf')
+      accepted_opt_names=('use_my_cnf' 'site_title' )
       prev_char=""
       name_value=""
       declare -i n_pos=0

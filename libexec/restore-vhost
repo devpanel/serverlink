@@ -39,6 +39,7 @@ Usage: restore-vhost [ OPTIONS ] VHOST ARCHIVE_LABEL
     -F                initial restore. Indicates to the
                       restore-vhost-subsystem that this is the initial 
                       deployment of the app
+    -O name=value     subsystem values
 
   VHOST is the 6 characters of after w_ of the linux username to be used
   ARCHIVE_LABEL can be any of: .tgz file, a directory, or a http/https/ftp url of a .tgz file
@@ -65,7 +66,7 @@ opt_i=0 opt_p=0
 try_archive_in_user_home=0
 create_vhost=1
 
-while getopts "NHPpinFS:" OPTOPT
+while getopts "NHPpinFS:O:" OPTOPT
 do
   case "$OPTOPT" in
     P) options="$options${options+ }-P";;
@@ -88,6 +89,9 @@ do
     F)
       initial_deployment=1
       subsystem_options="$subsystem_options${subsystem_options+ }$OPTOPT"
+      ;;
+    O)
+      subsystem_options="$subsystem_options${subsystem_options+ }-O "`printf '%q' "$OPTARG"`""
       ;;
     *) exit 1;
   esac
