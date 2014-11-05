@@ -19,6 +19,8 @@ elif [ -f "$home_2_drush" -a -x "$home_2_drush" ]; then
   hash -p "$home_2_drush" drush
 elif ! hash drush &>/dev/null && [ -x "$devpanel_drush" ]; then
   hash -p "$devpanel_drush" drush
+elif hash drush &>/dev/null && [ "`hash -t drush`" == $0 ]; then
+  hash -p "$devpanel_drush" drush
 fi
 
 drush "$@"
