@@ -131,6 +131,8 @@ drupal_set_drupal7_sitename()
   then
     if [ -n "$site_title" ]; then
       site_title_esc="$site_title"
+      site_title_esc=${site_title_esc#s:*:\"}
+      site_title_esc=${site_title_esc%\"}
       site_title_esc="${site_title_esc//\'/\\\'}"
       site_title_esc="${site_title_esc//\"/\\\"}"
       update_site_name_sql="UPDATE variable SET value = 's:%s:\"%s\"' WHERE name = 'site_name';"
