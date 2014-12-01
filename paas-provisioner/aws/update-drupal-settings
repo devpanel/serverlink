@@ -41,11 +41,11 @@ sed -i -e "
 site_title="`mysql --defaults-file="$ini_file" -BN -D "$rds_db" -e "select value from variable where name='site_name'"`"
 if [ -n "$site_title" ] && ! [[ "$site_title" =~ Cluster ]]; then
   site_title_esc="$site_title"
-  site_title_esc="${site_title_new#s:*:\"}"
-  site_title_esc="${site_title_new%\"}"
-  site_title_esc="$site_title_new - Cluster"
+  site_title_esc="${site_title_esc#s:*:\"}"
+  site_title_esc="${site_title_esc%\"}"
+  site_title_esc="$site_title_esc - Cluster"
 
-  sql_upd_site_title="`printf "UPDATE variable SET value = 's:%s:\"%s\"' WHERE name = 'site_name';" ${#site_title_esc} "$site_title_esc";`"
+  sql_upd_site_title="`printf "UPDATE variable SET value = 's:%s:\\\"%s\\\"' WHERE name = 'site_name';" ${#site_title_esc} "$site_title_esc";`"
   mysql --defaults-file="$ini_file" -BN -D "$rds_db" \
     -e "$sql_upd_site_title"
 fi
