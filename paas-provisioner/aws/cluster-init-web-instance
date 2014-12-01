@@ -80,6 +80,10 @@ if [ -z "$successful" ]; then
   exit 1
 fi
 
+export DEBIAN_FRONTEND='noninteractive'
+apt-get -qq update
+apt-get -y install libconfig-tiny-perl
+
 umask 022
 mkdir -p /opt/webenabled/etc
 
@@ -99,10 +103,6 @@ if [ ! -s "$tmp_vhosts" ]; then
   echo "Error: unable to get list of vhosts" 1>&2
   exit 1
 fi
-
-export DEBIAN_FRONTEND='noninteractive'
-apt-get update
-apt-get -y install libconfig-tiny-perl
 
 while read vhost domain_list; do
   /opt/webenabled/paas-provisioner/aws/config-vhost "$vhost" "$domain_list"
