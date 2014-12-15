@@ -306,6 +306,11 @@ for inc_file in "$lib_file" "$vars_file"; do
   fi
 done
 
+user_home=$(eval echo -n \~"$user")
+if [ $? -ne 0 -o -z "$user_home" ]; then
+  error "unable to get home directory of user '$user'"
+fi
+
 assign_deref_os_fs_path_ex_or_exit apachectl "$we_base_dir" pathnames/sbin/apachectl
 assign_deref_os_fs_path_ex_or_exit virtwww_dir "$we_base_dir" pathnames/etc/apache_vhosts
 assign_deref_os_prop_or_exit websites_basedir "$we_base_dir" apache_virtwww_homedir
@@ -841,6 +846,7 @@ for this_vhost_prefix in "$vhost_prefix_f:"[0-9] "$vhost_prefix_f:"[0-9][0-9]; d
   sed_line+="s/@@__VHOST__@@/`escape_sed "$vhost"`/g;"
   sed_line+="s/@@__VHOST_INTERNAL_NAME__@@/`escape_sed "$vhost_name"`/g;"
   sed_line+="s/@@__VHOST_NUMBER__@@/$vhn/g;"
+  sed_line+="s/@@__VHOST_USER_HOME__@@/`escape_sed "$user_home"`/g;"
   sed_line+="s/@@__TEMPLATE_FILE__@@/`escape_sed "$template_file"`/g;"
   sed_line+="s/@@__TEMPLATE_FILE_BASENAME__@@/`escape_sed "$vhost_template"`/g;"
 
