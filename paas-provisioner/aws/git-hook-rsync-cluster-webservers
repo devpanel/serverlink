@@ -6,6 +6,7 @@ usage() {
 
 # main
 
+unset repo_name web_server_ip webserver_ips
 umask 022
 
 self=`readlink -e "${BASH_SOURCE[0]}"`
@@ -20,6 +21,15 @@ fi
 
 if [ -n "$GL_REPO" ]; then
   repo_name="$GL_REPO"
+elif [ -n "$SSH_ORIGINAL_COMMAND" ]; then
+  read tmp_repo_name web_server_ip <<< "$SSH_ORIGINAL_COMMAND"
+  if [ -z "$tmp_repo_name" -o -z "$web_server_ip" ]; then
+    echo "Usage: `basename $0` <repo_name> <webserver_ip>" 1>&2
+    exit 1
+  fi
+
+  repo_name=$(basename "$tmp_repo_name")
+  webserver_ips="$web_server_ip"
 else
   echo "Error: missing variable GL_REPO" 1>&2
   exit 1
@@ -48,10 +58,12 @@ fi
 
 remote_docroot_dir="/var/www/html/$vhost"
 
-webserver_ips=`"$dir/get-cluster-webserver-ips"`
-if [ $? -ne 0 ]; then
-echo "Error: unable to get IPs of webservers" 1>&2
-exit 1
+if [ -z "$webserver_ips" ]; then
+  webserver_ips=`"$dir/get-cluster-webserver-ips"`
+  if [ $? -ne 0 ]; then
+    echo "Error: unable to get IPs of webservers" 1>&2
+    exit 1
+  fi
 fi
 
 tmp_checkout_dir=`mktemp -d`
