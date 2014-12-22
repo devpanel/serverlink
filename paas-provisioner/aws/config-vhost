@@ -1,12 +1,34 @@
 #!/bin/bash
 
 usage() {
-  echo "Usage: `basename "$0"` <vhost> <domain_list>"
+  echo "Usage: `basename "$0"` [ options ] <vhost> <domain_list>
+
+  Options:
+    -d            create vhost directory and chmod 700 (to avoid the ELB to
+                  add it to the web pool before having the files)
+
+"
   exit 1
 }
 
 # main
 [ $# -lt 2 ] && usage
+
+unset create_dir
+getopt_flags='d'
+
+while getopts $getopt_flags OPTN; do
+  case $OPTN in
+    d)
+      create_dir=1
+      ;;
+    *)
+      usage
+      ;;
+  esac
+done
+[ $OPTIND -gt 1 ] && shift $(( $OPTIND - 1 ))
+[ -z "$1" -o -z "$2" ] && usage
 
 self_bin=`readlink -e "$0"`
 curr_dir=`dirname "$self_bin"`
@@ -20,10 +42,17 @@ fi
 
 vhost="$1"
 domain_list="$2"
+vhost_dir="/var/www/html/$(basename "$vhost")"
 
 IFS="," read -a domain_list_ar <<< "$domain_list"
 
 "$we_base_dir/libexec/replace-token" "$curr_dir/vhost.tmpl" "/etc/apache2/sites-enabled/$vhost.conf" \
   "vhost=$vhost" "domain_list=${domain_list_ar[*]}"
+
+if [ -n "$create_dir" -a ! -d "$vhost_dir" ]; then
+  mkdir -m 700 "$vhost_dir"
+elif [ -n "$create_dir" -a -d "$vhost_dir" ]; then
+  chmod 700 "$vhost_dir"
+fi
 
 apache2ctl graceful
