@@ -83,4 +83,9 @@ for ip in "$webserver_ips"; do
   ssh root@"$ip" \
     chown -R www-data:www-data "$remote_docroot_dir" \; \
     /opt/webenabled/paas-provisioner/aws/update-drupal-settings "$vhost"
+
+  # start apache if it's not running
+  # when the server boots Apache is not started for the ELB not to include
+  # it in the web server pool when the content is not yet at the server
+  ssh root@"$ip" service apache2 status '||' service apache2 start
 done
