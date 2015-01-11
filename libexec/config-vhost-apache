@@ -324,6 +324,15 @@ if get_metadata_value "$config_dir" "$DEVPANEL_VHOST_LOCK_FLAG" &>/dev/null; the
   error "vhost $vhost is locked. Can't work on a locked vhost."
 fi
 
+unset is_htpasswd_locked
+if get_metadata_value "$config_dir" "$DEVPANEL_VHOST_HTPASSWD_LOCK_FLAG" &>/dev/null; then
+  if ! htpasswd_tmpl_name=`deref_os_prop "$we_base_dir" names/apache_htpasswd_template`; then
+    error "couldn't get htpasswd template name"
+  fi
+
+  is_htpasswd_locked=1
+fi
+
 tmp_new_vhost_file=`mktemp "$virtwww_file.XXXXXXXXXXXXXXX"`
 if [ $? -ne 0 ]; then
   error "unable to create temporary file"
@@ -668,7 +677,7 @@ for this_vhost_prefix in "$vhost_prefix_f:"[0-9] "$vhost_prefix_f:"[0-9][0-9]; d
 
     while read tmp_var_entry; do
       tmp_var_basename=`basename "$tmp_var_entry"`
-      tmp_var_name=${tmp_var_basename#*:var:}
+      tmp_var_name=${tmp_var_basename#var:}
 
       tmp_link=`get_vhost_data_link "$we_base_dir" "$vhost" "$vhost_name" \
                                     "$tmpl_name" var "$tmp_var_name"`
@@ -691,7 +700,7 @@ for this_vhost_prefix in "$vhost_prefix_f:"[0-9] "$vhost_prefix_f:"[0-9][0-9]; d
 
       while read tmp_var_entry; do
         tmp_var_basename=`basename "$tmp_var_entry"`
-        tmp_var_name=${tmp_var_basename#*:var:}
+        tmp_var_name=${tmp_var_basename#var:}
 
         tmp_link=`get_vhost_data_link "$we_base_dir" "$vhost" "$vhost_name" \
                                       "$tmpl_name" var "$tmp_var_name"`
@@ -778,6 +787,26 @@ for this_vhost_prefix in "$vhost_prefix_f:"[0-9] "$vhost_prefix_f:"[0-9][0-9]; d
     sys_include_str+="  # // end of system defined template include: $tmpl_file"$'\n\n'
   done
 
+  # special include lines for the htpasswd lock template
+  #
+  # NOTE:
+  # all these redundant lines below could be avoided if in the loop above
+  # were used the template names, instead of the links
+  if [ "$is_htpasswd_locked" -a "$vhost_name" != "devpanel_tools" ]; then
+    tmpl_file=`get_template_include_file "$we_base_dir" "$htpasswd_tmpl_name"`
+    if [ $? -ne 0 ]; then
+      error "unable to find htpasswd template name '$htpasswd_tmpl_name'"
+    fi
+
+    if ! tmp_str=`cat "$tmpl_file"`; then
+      error "unable to include template file '$tmpl_file' for htpasswd template '$htpasswd_tmpl_name'"
+    fi
+
+    sys_include_str+="  # system defined template include: $tmpl_file"$'\n'
+    sys_include_str+="$tmp_str"$'\n'
+    sys_include_str+="  # // end of system defined template include: $tmpl_file"$'\n\n'
+  fi
+
   if [ -n "$sys_include_str" ]; then
     sys_include_str_escaped=`escape_sed "$sys_include_str"`
     sed_include_str+="s/^[[:space:]]*#[[:space:]]*@@__SYSTEM_INCLUDES__@@/$sys_include_str_escaped/g;"
@@ -824,7 +853,7 @@ for this_vhost_prefix in "$vhost_prefix_f:"[0-9] "$vhost_prefix_f:"[0-9][0-9]; d
   # variables
   for var_link in ${vhost_var_links_ar[@]} ${vhost_rpl_var_links_ar[@]}; do
     var_basename=`basename "$var_link"`
-    var_name=${var_basename##*:var:}
+    var_name=${var_basename##var:}
     var_value=`readlink "$var_link"`
 
     var_name_escaped=`escape_sed "${var_name^^}"`

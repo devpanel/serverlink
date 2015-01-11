@@ -10,6 +10,9 @@ usage() {
                 operation is already ongoing on the directory and it already 
                 acquired the lock)
 
+    -q          quiet, don't print non-critical status msgs
+
+
   This script sets or deletes metadata links on the specified directory. It
   receives data from STDIN in the following format:
 
@@ -65,12 +68,16 @@ if ! source "$lib_file"; then
   exit 1
 fi
 
+unset quiet
 do_lock=1
-getopt_flags='n'
+getopt_flags='nq'
 while getopts $getopt_flags OPTN; do
   case $OPTN in
     n)
       unset do_lock
+      ;;
+    q)
+      quiet=1
       ;;
     *)
       usage
@@ -91,7 +98,7 @@ elif [ "$metadata_dir" == "/" ]; then
 fi
 
 if [ -n "$do_lock" ]; then
-  lock_path "$metadata_dir" || exit 1
+  lock_path "$metadata_dir" >/dev/null || exit 1
   trap 'exit 1' INT HUP TERM QUIT
   trap 'unlock_path "$metadata_dir"' EXIT
 fi
@@ -113,7 +120,7 @@ if [ ! -d "$tmp_local_metadata_dir" ] && ! mkdir "$tmp_local_metadata_dir"; then
   error "unable to create dir $tmp_local_metadata_dir"
 fi
 
-echo "Reading from STDIN..." 1>&2
+[ -z "$quiet" ] && echo "Reading from STDIN..." 1>&2
 
 TMOUT=60 # timeout for the read below
          # if you find this annoying it's because you're trying to do
