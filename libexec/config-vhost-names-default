@@ -11,14 +11,40 @@ This script sets the default domain name for Apache virtualhosts."
 
 [ $# -eq 0 -o -z "$1" ] && usage
 
-dir=`dirname "${BASH_SOURCE[0]}"`
+self_bin=`readlink -e "$0"`
+
+dir=`dirname "$self_bin"`
 
 we_dir=`readlink -e "$dir/.."`
+post_update_dir="$we_dir/compat/apache_include/post-update-hostname"
 
 domain="$1"
 domain_link="$we_dir/config/key_value/local/apache_virtwww_domain"
 
-if ! ln -sf "$domain" "$domain_link"; then
-  echo "Error: unable to set default name for apache vhosts" 1>&2
-  exit 1
+if [ -L "$domain_link" ]; then
+  old_domain=`readlink "$domain_link"`
 fi
+
+ln -sf "$domain" "$domain_link"
+status=$?
+
+if [ $status -eq 0 ]; then
+  # after changing hostname, run scripts from apps that are dependant on
+  # hostname
+  for post_run_script in "$post_update_dir/"*; do
+    [ "$post_run_script" == "$post_update_dir/*" ] && break # empty dir
+
+    if [ -f "$post_run_script" -a -x "$post_run_script" ]; then
+      "$post_run_script" "$domain" "$old_domain"
+      script_status=$?
+      if [ $script_status -ne 0 ]; then
+        echo "Warning: post update script $post_run_script returned $script_status" 1>&2
+        sleep 1
+      fi
+    fi
+  done
+else
+  echo "Error: unable to set default name for apache vhosts" 1>&2
+fi
+
+exit $status
