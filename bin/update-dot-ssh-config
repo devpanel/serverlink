@@ -1,7 +1,7 @@
 #!/bin/bash
 
 usage() {
-  echo "Usage: `basename "$0"` <file> <action> <host_spec> [ param=value ]
+  echo "Usage: `basename "$0"` <file> <action> <host_spec> <param=value> [param2=value2] [...]
 
   Accepted actions: add_section, remove_section
 
