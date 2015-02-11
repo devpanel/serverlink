@@ -897,3 +897,33 @@ get_metadata_value() {
     return 1
   fi
 }
+
+date_placeholders() {
+  local template_str="$1"
+  local ref_date="${2:-now}"
+
+  if [ -n "$ref_date" ] && ! [[ "$ref_date" =~ ^[A-Za-z0-9\ -]+$ ]]; then
+    echo "$FUNCNAME(): invalid ref_date" 1>&2
+    return 1
+  fi
+
+  local fmt_str='+%d %b %m %Y %H %M'
+
+  local day month monthn year hour minute
+
+  IFS=" " read day month monthn year hour minute \
+    <<< $(date -d "$ref_date" "$fmt_str")
+
+  local date_str
+
+  date_str="$template_str"
+  date_str=${date_str//@day@/"$day"}
+  date_str=${date_str//@month@/"$month"}
+  date_str=${date_str//@monthn@/"$monthn"}
+  date_str=${date_str//@year@/"$year"}
+  date_str=${date_str//@hour@/"$hour"}
+  date_str=${date_str//@minute@/"$minute"}
+
+  printf '%s' "$date_str"
+}
+

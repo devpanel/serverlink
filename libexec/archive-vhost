@@ -2,11 +2,6 @@
 
 # Options:
 # -P -- save shadow entry
-# -u -- place the archive in ~w_VHOST/gen/archive
-
-
-exec 3>&1
-exec 1>&2
 
 error()
 {
@@ -14,30 +9,32 @@ error()
   exit 1
 }
 
-archive_vhost_web_options=""
-check_archive_pathname_options=""
-opt_u=0
+usage() {
+  local prog=$(basename "$0")
 
-while getopts "Pu" OPTOPT
-do
-  case "$OPTOPT" in
-    P) archive_vhost_web_options="${archive_vhost_web_options+ }-P";;
-    u) opt_u=1;;
-    *) exit 1;
-  esac
-done
-shift `expr $OPTIND - 1`
+  echo "Usage: $prog [options] <vhost> [archive_name]
 
-dir=`dirname "$0"`
-vhost="$1"
-archive_dir="$2"
-tar_output_file=""
-user_db="b_$vhost"
-user_web="w_$vhost"
-action=archive
-[ o`basename $0` = o"remove-vhost" ] && action=remove
-KEEP_TMPDIR=0
-[ $action = remove ] && KEEP_TMPDIR=1
+  Options:
+    -P        save shadow entry
+    -d        debug mode: prints more verbose debug msgs, and doesn't remove
+              the temporary directory on exit
+
+  This command creates an archive of the current state of a vhost, saving
+  Apache files and MySQL databases into a tar ball.
+"
+  exit 1
+}
+
+cleanup()
+{
+  unlock_path "$vhost_archive_dir"
+
+  if [ -z "$debug" -a -n "$tmp_archive_dir" -a -d "$tmp_archive_dir" ]; then
+    rm_rf_safer "$tmp_archive_dir"
+  elif [ -n "$debug" ]; then
+    echo "Kept temporary directory at $tmp_archive_dir" 1>&2
+  fi
+}
 
 run()
 {
@@ -45,76 +42,194 @@ run()
   "$@"
 }
 
-usage()
-{
-  echo "Usage: $0 VHOST ARCHIVE_LABEL" >&2
-  exit 1
-}
+# main
 
-$dir/check-vhost-name archive "$vhost" || usage
-home="`eval \"echo ~$user_web\"`" || error
-[ -d "$home" ] || error "Home dir $home does not exist"
+[ $# -eq 0 -o -z "$1" ] && usage
 
-tar_output_file="$archive_dir"
+exec 3>&1
+exec 1>&2
 
-if [ $opt_u = 1 ]
-then
-  check_archive_pathname_options="${check_archive_pathname_options+ }-u$vhost"
-  [ o"`dirname \"$archive_dir\"`" = o"." ] || error "basename without path must be specified with the -u option"
-  [ o"`basename \"$archive_dir\"`" = o"$archive_dir" ] || error "basename without path must be specified with the -u option"
-  case "$archive_dir" in
-  *.tgz);;
-  *) error "$archive_dir: only .tgz is allowed with the -u option"
+archive_vhost_web_options=""
+check_archive_pathname_options=""
+debug=""
+
+while getopts "Pud" OPTOPT
+do
+  case "$OPTOPT" in
+    P) archive_vhost_web_options="${archive_vhost_web_options+ }-P";;
+    u) : ;; # removed, kept here meanwhile all references are not removed
+    d) debug=1 ;;
+    *) exit 1;
   esac
-  archive_dir="$home/public_html/gen/archive/$archive_dir"
+done
+[ $OPTIND -gt 1 ] && shift `expr $OPTIND - 1`
+
+[ $# -eq 0 -o -z "$1" ] && usage
+
+self_bin=$(readlink -e "$0")
+dir=`dirname "$self_bin"`
+sys_dir=$(readlink -e "$dir/..")
+
+lib_file="$sys_dir/lib/functions"
+if ! source "$lib_file"; then
+  echo "Error: unable to load lib file '$lib_file'" 1>&2
+  exit 1
 fi
 
-if [ o"$archive_dir" != o"-" ]; then  $dir/check-archive-pathname $check_archive_pathname_options archive "$archive_dir" || error; fi
+vhost="$1"
+archive_to="$2"
 
+user_db="b_$vhost"
+user_web="w_$vhost"
 
-TMPDIR=""
+$dir/check-vhost-name archive "$vhost" || usage
+home="`eval echo -n \~$user_web`"
+[ -d "$home" ] || error "Home dir $home does not exist"
 
-cleanup()
-{
-  if [ -n "$TMPDIR" ] && [ -d "$TMPDIR" ]
-  then
-    if [ $KEEP_TMPDIR = 0 ]
-    then
-      echo "Removing temporary archive $TMPDIR" >&2
-      rm -rf "$TMPDIR"
-    fi
+assign_deref_os_prop_or_exit sys_data_dir "$sys_dir" data_dir
+sys_data_dir=$(readlink -e "$sys_data_dir")
+if [ $? -ne 0 ]; then
+  if   [ ! -e "$sys_data_dir" ]; then
+    error "missing system data directory $sys_data_dir"
+  elif [ ! -d "$sys_data_dir" ]; then
+    error "path '$sys_data_dir' is not a directory."
+  else
+    error "unknown error on path $sys_data_dir"
   fi
-}
+fi
 
-TMPDIR=`$dir/archive-mktemp archive-vhost` || exit 1
-trap 'cleanup' HUP INT QUIT ILL TRAP ABRT BUS FPE KILL SEGV PIPE STOP ALRM TERM EXIT
-archive_dir="$TMPDIR"
+assign_deref_os_prop_or_exit archive_template_str "$sys_dir" \
+  vhost_archive_template_str
 
+sys_archive_dir="$sys_data_dir/vhost_archives"
 
-echo Processing web...
-run mkdir -p "$archive_dir" || exit 1
-run $0-web $archive_vhost_web_options "$vhost" "$archive_dir/web" || exit 1
+# create sys_archive_dir if it doesn't exist
+if [ $? -ne 0 -o -z "$sys_archive_dir" ]; then
+  mkdir -m 711 "$sys_archive_dir"
+  if [ $? -ne 0 ]; then
+    error "unable to create archive directory '$sys_archive_dir'"
+  fi
+fi
+vhost_archive_dir="$sys_archive_dir/$vhost"
+
+if [ -n "$archive_to" ]; then
+  if [ "${archive_to:0:1}" == "/" ]; then
+    tmp_full_path="$archive_to"
+  else
+    tmp_full_path="$vhost_archive_dir/$archive_to"
+  fi
+
+  tmp_to_file=$(readlink -m "$tmp_full_path")
+  vhost_archive_dir_len=${#vhost_archive_dir}
+
+  # compare the full path name of $tmp_to_file with $sys_archive_dir
+  if [ ${#tmp_to_file} -le $vhost_archive_dir_len -o \
+    "${tmp_to_file:0:$vhost_archive_dir_len}" != "$vhost_archive_dir" ]; then
+    error "the file needs to created inside $vhost_archive_dir. Please don't\
+ use a path with the filename".
+  fi
+
+  archive_filename=$(basename "$archive_to")
+else
+  # archive name was not passed on cmdline, use the full template
+  archive_filename="$archive_template_str"
+fi
+
+# do some last transformations to the archive_filename
+archive_filename=${archive_filename//@archive_template_str@/"$archive_template_str"}
+archive_filename=${archive_filename//@vhost@/"$vhost"}
+archive_filename=$(date_placeholders "$archive_filename")
+[ $? -ne 0 ] && exit 1
+
+target_file="$vhost_archive_dir/$archive_filename"
+if ! [[ "$target_file" =~ \.[Tt][Gg][Zz]$ ]]; then
+  target_file+=".tgz"
+fi
+
+if [ -e "$target_file" -o -L "$target_file" ]; then
+  error "file '$target_file' already exists."
+fi
+
+# create vhost_archive_dir if it doesn't exist
+if [ ! -d "$vhost_archive_dir" ]; then
+  mkdir -m 2750 "$vhost_archive_dir"
+  if [ $? -ne 0 ]; then
+    error "unable to create directory '$vhost_archive_dir'"
+  fi
+  echo "Created directory '$vhost_archive_dir'..."
+fi
+
+# lock $vhost_archive_dir not to have other concurring backups
+# at the same time
+if ! lock_path "$vhost_archive_dir" >/dev/null; then
+  error "unable to lock directory $vhost_archive_dir"\
+\ "probably there's an ongoing backup running."
+fi
+trap 'cleanup' HUP INT QUIT ILL TRAP ABRT BUS FPE KILL SEGV \
+  PIPE STOP ALRM TERM EXIT
+
+# in case group ownership is different, chgrp vhost_archive_dir to $user_web
+group_name=$(stat -c %G "$vhost_archive_dir")
+if [ "$group_name" != "$user_web" ]; then
+  chgrp "$user_web" "$vhost_archive_dir"
+  if [ $? -ne 0 ]; then
+    error "unable to chgrp archive dir $vhost_archive_dir to $user_web"
+  fi
+  echo "Chgrp'd directory '$vhost_archive_dir' to $user_web..."
+fi
+
+tmp_archive_dir=`mktemp -d "$vhost_archive_dir/archive_vhost.tmp.XXXXXX"`
+if [ $? -ne 0 ]; then
+  error "unable to create temporary directory for archiving."
+fi
+
+tmp_target_file=$(mktemp "$tmp_archive_dir/$archive_filename.XXXXXX")
+if [ $? -ne 0 ]; then
+  error "unable to create temporary file"
+fi
+
+echo "Archiving web files..."
+${debug:+run} "$0-web" $archive_vhost_web_options "$vhost" "$tmp_archive_dir/web"
+if [ $? -ne 0 ]; then
+  error "unable to archive web files (temp dir $tmp_archive_dir/web)"
+fi
+
 if ! `id -u "$user_db" 2>/dev/null >/dev/null`
 then
   echo "Skipping db (no such user $user_db)"
 else
-  echo Processing db...
-  run $0-db "$vhost" "$archive_dir/db"
-fi
-
-echo "Making the archive readable to $user_web"
-run chmod -R g+rX  "$archive_dir"
-#run chgrp -R "$user_web" "$archive_dir"
-run chgrp -R "weadmin" "$archive_dir"
-
-
-if [ -n "$TMPDIR" ] && [ -d "$TMPDIR" ]
-then
-  exec >&3
-  tar -C "$TMPDIR" -zcpf - . | "$dir/archive-vhost-store" $check_archive_pathname_options "$tar_output_file" || error
-  if [ $KEEP_TMPDIR = 0 ]
-  then
-    echo "Removing temporary archive $TMPDIR" >&2
-    rm -rf "$TMPDIR"
+  echo "Archiving MySQL databases..."
+  ${debug:+run} "$0-db" "$vhost" "$tmp_archive_dir/db"
+  if [ $? -ne 0 ]; then
+    error "unable to archive db files (temp dir $tmp_archive_dir/db)"
   fi
 fi
+
+exec >&3
+
+echo "Starting final tar ball archiving..."
+base_tmp_target_file=$(basename "$tmp_target_file")
+${debug:+run} tar -C "$tmp_archive_dir" --exclude="$base_tmp_target_file" \
+  -zScpf "$tmp_target_file" .
+if [ $? -ne 0 ]; then
+  error "unable to create archive file $tmp_target_file"
+fi
+
+# now move the tmp file to the target location
+# don't overwrite in case the target file exists
+if ! ${debug:+run} mv -n "$tmp_target_file" "$target_file"; then
+  error "unable to move '$tmp_target_file' to '$target_file'"
+fi
+
+if ! ${debug:+run} chgrp "$user_web" "$target_file"; then
+  echo "Warning: unable to chgrp archive file to group $user_web" 1>&2
+  sleep 2
+fi
+
+if ! ${debug:+run} chmod 0640 "$target_file"; then
+  echo "Warning: unable to chmod 640 archive file $target_file" 1>&2
+  sleep 2
+fi
+
+echo
+echo "Successfully saved archive file to '$target_file'"

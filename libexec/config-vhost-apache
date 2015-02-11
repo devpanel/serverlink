@@ -4,7 +4,10 @@ error() { echo "ERROR${@+: }$@" >&2; exit 1; }
 usage() {
   local prog=`basename "$0"`
   echo "
-  Usage: $prog <vhost>
+  Usage: $prog [options] <vhost>
+
+  Options:
+    -D        disable the specified vhost
 
   This script generates apache mod_macro configuration files.
 "
@@ -284,11 +287,34 @@ in_array() {
   return 1
 }
 
+cleanup() {
+
+  [ -n "$tmp_new_vhost_file" ] && rm -f -- "$tmp_new_vhost_file"
+  [ -n "$vhost_bkp_file" ] && rm -f -- "$vhost_bkp_file"
+
+  unlock_path "$virtwww_dir"
+}
+
 # main
 
 [ $# -eq 0 -o -z "$1" ] && usage
 
 dir=`dirname "$0"`
+
+getopt_flags='D'
+while getopts $getopt_flags OPTN; do
+  case $OPTN in
+    D)
+      disable_vhost=1
+      ;;
+    *)
+      exit 1
+      ;;
+  esac
+done
+[ $OPTIND -gt 1 ] && shift $(( $OPTIND - 1 ))
+
+[ $# -eq 0 -o -z "$1" ] && usage # yes, again
 
 vhost="$1"
 user="w_$vhost"
@@ -315,10 +341,47 @@ assign_deref_os_fs_path_ex_or_exit apachectl "$we_base_dir" pathnames/sbin/apach
 assign_deref_os_fs_path_ex_or_exit virtwww_dir "$we_base_dir" pathnames/etc/apache_vhosts
 assign_deref_os_prop_or_exit websites_basedir "$we_base_dir" apache_virtwww_homedir
 
+if [ -f "$apachectl" -a -x "$apachectl" ]; then
+  hash -p "$apachectl" apachectl
+else
+  error "problem with $apachectl, doing nothing."
+fi
+
+if ! lock_path "$virtwww_dir" >/dev/null; then
+  error "Apache configuration is locked. There should have"\
+ "another process running."
+fi
+trap 'exit 1' HUP INT QUIT ILL TRAP ABRT BUS FPE KILL SEGV \
+              PIPE STOP ALRM TERM
+trap 'cleanup' EXIT
+
+if ! apachectl configtest &>/dev/null; then
+  error "Apache configuration is broken. Please check it."
+fi
+
 virtwww_file="$virtwww_dir/$user.conf"
 virtwww_file_old="$virtwww_file.old"
 config_dir="$we_base_dir/config/vhosts/$vhost"
 apache_svc_config_dir="$we_base_dir/config/packages/apache_vhost"
+
+if [ -n "$disable_vhost" ]; then
+  if [ -f "$virtwww_file" ]; then
+    mv -f "$virtwww_file" "$virtwww_file.removed"
+    if [ $? -eq 0 ]; then
+      apachectl graceful
+      if [ $? -eq 0 ]; then
+        echo "Successfully disabled vhost $vhost"
+        exit 0
+      else
+        error "apache configuration is broken. Failed to disable."
+      fi
+    else
+      error "unable to move out $virtwww_file"
+    fi
+  else
+    error "Error: didn't file virtwww file $virtwww_file. Aborted."
+  fi
+fi
 
 if get_metadata_value "$config_dir" "$DEVPANEL_VHOST_LOCK_FLAG" &>/dev/null; then
   error "vhost $vhost is locked. Can't work on a locked vhost."
@@ -337,14 +400,11 @@ tmp_new_vhost_file=`mktemp "$virtwww_file.XXXXXXXXXXXXXXX"`
 if [ $? -ne 0 ]; then
   error "unable to create temporary file"
 fi
-trap 'ex=$?; rm -f "$tmp_new_vhost_file"; exit $ex;' EXIT INT TERM QUIT
 
 vhost_bkp_file=`mktemp "$virtwww_file.bkp.XXXXXXXXXXXXXXX"`
 if [ $? -ne 0 ]; then
   error "unable to create a temporary backup file"
 fi
-trap 'exit 1' INT TERM QUIT
-trap 'rm -f "$tmp_new_vhost_file"; rm -f "$vhost_bkp_file";' EXIT
 
 if [ -f "$virtwww_file" ] && ! cat "$virtwww_file" > "$vhost_bkp_file"; then
   error "unable to write a copy of '$virtwww_file' into '$vhost_bkp_file'"

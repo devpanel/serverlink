@@ -24,13 +24,16 @@ run_su()
 
 self_bin=`readlink -e "$0"`
 dir=`dirname "$self_bin"`
+sys_dir=$(readlink -e "$dir/..")
+
 vhost="$1"
 archive_dir="$2"
 user="w_$vhost"
 home="`eval \"echo ~$user\"`"
 date=`date  +'%Y%m%d'`
 archive_file="$archive_dir/$user.tgz"
-conf=`readlink -e "$dir/../config/os/pathnames/etc/apache_vhosts/$user.conf"`
+conf=`readlink -m "$sys_dir/config/os/pathnames/etc/apache_vhosts/$user.conf"` # -m because it might have been removed
+conf_removed="$conf.removed"
 archive_shadow="$archive_dir/$user.shadow"
 archive_conf="$archive_dir/apache_$vhost.conf"
 logs_dir=`readlink -e "$dir/../config/os/pathnames/var/log/apache_vhosts/$user"`
@@ -102,9 +105,15 @@ if ! run tar --exclude ./public_html/gen/archive --exclude ./logs \
   exit 1
 fi
 
+if [ ! -f "$conf" -a -f "$conf_removed" ]; then
+  virtwww_file="$conf_removed"
+else
+  virtwww_file="$conf"
+fi
+
 echo "Copying apache config to $archive_conf"
-if ! cp "$conf" "$archive_conf"; then
-  echo "Error: unable to copy apache file '$conf' to '$archive_conf'" 1>&2
+if ! cp "$virtwww_file" "$archive_conf"; then
+  echo "Error: unable to copy apache file '$virtwww_file' to '$archive_conf'" 1>&2
   exit 1
 fi
 

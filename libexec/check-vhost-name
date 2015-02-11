@@ -64,7 +64,7 @@ else
   [ -d "$home" ] || error "home dir $home must exist"
   owner=`stat --format %U "$home"` || error
   [ o"$owner" = o"$w_user" ] || error "$home must be owned by $w_user"
-  [ $mode != unlock -a ! -r "$apache_config" ] && error "$apache_config must exist"
+  [ $mode != unlock -a $mode != archive -a ! -r "$apache_config" ] && error "$apache_config must exist"
   [ $mode = lock -o $mode = config ] && locked && error "$vhost must not be locked"
   [ $mode = unlock ] && ! locked && error "$home must be locked"
   # it's ok to archive both locked and unlocked vhosts

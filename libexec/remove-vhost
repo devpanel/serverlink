@@ -2,7 +2,6 @@
 
 # Options:
 # -P -- save shadow entry
-# -u -- place the archive in ~w_VHOST/gen/archive
 
 
 exec 3>&1
@@ -14,30 +13,15 @@ error()
   exit 1
 }
 
-archive_vhost_web_options=""
-check_archive_pathname_options=""
-opt_u=0
+usage() {
+  local prog=$(basename "$0")
 
-while getopts "Pu" OPTOPT
-do
-  case "$OPTOPT" in
-    P) archive_vhost_web_options="${archive_vhost_web_options+ }-P";;
-    u) opt_u=1;;
-    *) exit 1;
-  esac
-done
-shift `expr $OPTIND - 1`
+  echo "Usage: $prog <vhost> [archive_name]
 
-dir=`dirname "$0"`
-vhost="$1"
-archive_dir="$2"
-tar_output_file=""
-user_db="b_$vhost"
-user_web="w_$vhost"
-action=archive
-[ o`basename $0` = o"remove-vhost" ] && action=remove
-KEEP_TMPDIR=0
-[ $action = remove ] && KEEP_TMPDIR=1
+  This script removes the specified vhost from the system.
+"
+  exit 1
+}
 
 run()
 {
@@ -45,76 +29,101 @@ run()
   "$@"
 }
 
-usage()
-{
-  echo "Usage: $0 VHOST ARCHIVE_LABEL" >&2
-  exit 1
-}
+revert_disable_vhost() {
+  echo "Re-enabling vhost..."
 
-$dir/check-vhost-name archive "$vhost" || usage
-home="`eval \"echo ~$user_web\"`" || error
-[ -d "$home" ] || error "Home dir $home does not exist"
-
-tar_output_file="$archive_dir"
-
-if [ $opt_u = 1 ]
-then
-  check_archive_pathname_options="${check_archive_pathname_options+ }-u$vhost"
-  [ o"`dirname \"$archive_dir\"`" = o"." ] || error "basename without path must be specified with the -u option"
-  [ o"`basename \"$archive_dir\"`" = o"$archive_dir" ] || error "basename without path must be specified with the -u option"
-  case "$archive_dir" in
-  *.tgz);;
-  *) error "$archive_dir: only .tgz is allowed with the -u option"
-  esac
-  archive_dir="$home/public_html/gen/archive/$archive_dir"
-fi
-
-if [ o"$archive_dir" != o"-" ]; then  $dir/check-archive-pathname $check_archive_pathname_options archive "$archive_dir" || error; fi
-
-
-TMPDIR=""
-
-cleanup()
-{
-  if [ -n "$TMPDIR" ] && [ -d "$TMPDIR" ]
-  then
-    if [ $KEEP_TMPDIR = 0 ]
-    then
-      echo "Removing temporary archive $TMPDIR" >&2
-      rm -rf "$TMPDIR"
-    fi
+  "$dir/config-vhost-apache" "$vhost"
+  if [ $? -eq 0 ]; then
+    echo "Successfully re-enabled vhost $vhost"
   fi
 }
 
-TMPDIR=`$dir/archive-mktemp archive-vhost` || exit 1
-trap 'cleanup' HUP INT QUIT ILL TRAP ABRT BUS FPE KILL SEGV PIPE STOP ALRM TERM EXIT
-archive_dir="$TMPDIR"
+# main
+archive_vhost_web_options=""
+check_archive_pathname_options=""
 
+while getopts "Pu" OPTOPT
+do
+  case "$OPTOPT" in
+    P) archive_vhost_web_options="${archive_vhost_web_options+ }-P";;
+    u) : ;; # option removed, left here until we update all references to it
+    *) exit 1;
+  esac
+done
+[ $OPTIND -gt 1 ] && shift `expr $OPTIND - 1`
 
-echo Processing web...
-run mkdir -p "$archive_dir" || exit 1
-run $0-web $archive_vhost_web_options "$vhost" "$archive_dir/web" || exit 1
+self_bin=$(readlink -e "$0")
+dir=`dirname "$self_bin"`
+sys_dir=$(readlink -e "$dir/..")
+
+vhost="$1"
+archive_to="$2"
+[ -z "$archive_to" ] && archive_to="removed--@archive_template_str@"
+
+user_db="b_$vhost"
+user_web="w_$vhost"
+
+"$dir/check-vhost-name" archive "$vhost" || exit 1
+
+lib_file="$sys_dir/lib/functions"
+if ! source "$lib_file"; then
+  echo "Error: unable to source lib file $lib_file" 1>&2
+  exit 1
+fi
+
+vhost_config_dir="$sys_dir/config/vhosts/$vhost"
+apache_base_log_dir=$(deref_os_fs_path "$sys_dir" pathnames/var/log/apache_vhosts)
+[ -n "$apache_base_log_dir" ] && apache_log_dir="$apache_base_log_dir/$user_web"
+
+"$dir/config-vhost-apache" -D "$vhost" || exit 1
+trap 'revert_disable_vhost' EXIT
+
+"$dir/archive-vhost" "$vhost" "$archive_to"
+[ $? -ne 0 ] && exit 1
+trap - EXIT # at this point revert_* doesn't make sense anymore
+
+# Removing database related stuff
 if ! `id -u "$user_db" 2>/dev/null >/dev/null`
 then
   echo "Skipping db (no such user $user_db)"
 else
-  echo Processing db...
-  run $0-db "$vhost" "$archive_dir/db"
-fi
+  echo Removing database related things...
 
-echo "Making the archive readable to $user_web"
-run chmod -R g+rX  "$archive_dir"
-#run chgrp -R "$user_web" "$archive_dir"
-run chgrp -R "weadmin" "$archive_dir"
+  dbmgr_dir="$sys_dir/config/os/pathnames/opt/dbmgr"
+  file1="$dbmgr_dir/config/db-daemons.conf"
+  file2="$dbmgr_dir/config/db-shadow.conf"
 
+  echo "Commenting out the entries in db-daemons.conf and db-shadow.conf:"
+  run sed -i.old "s/^$user_db:/#&/" "$file1"
+  #grep "$user" $file1 | sed 's/^/  /'
+  run sed -i.old "s/^$user_db:/#&/" "$file2"
 
-if [ -n "$TMPDIR" ] && [ -d "$TMPDIR" ]
-then
-  exec >&3
-  tar -C "$TMPDIR" -zcpf - . | "$dir/archive-vhost-store" $check_archive_pathname_options "$tar_output_file" || error
-  if [ $KEEP_TMPDIR = 0 ]
-  then
-    echo "Removing temporary archive $TMPDIR" >&2
-    rm -rf "$TMPDIR"
+  "$dir/remove-user" "$user_db"
+
+  if [ $? -ne 0 ]; then
+    error "unable to remove database"
   fi
 fi
+
+# Removing web related stuff
+echo "Removing web things..."
+
+if [ -n "$apache_log_dir" -a -d "$apache_log_dir" ]; then
+  echo "Removing apache log files"
+  run rm_rf_safer "$apache_log_dir"
+fi
+
+echo "Removing webenabled config dir"
+run rm_rf_safer "$vhost_config_dir"
+
+echo "Removing cron for $user_web"
+run crontab -u "$user_web" -r
+
+echo "Removing the user $user_web"
+run "$dir/remove-user" "$user_web" || exit 1
+
+echo "Removing the group $user_web"
+run groupdel "$user_web" || true
+
+echo
+echo "Successfully removed vhost $vhost"
