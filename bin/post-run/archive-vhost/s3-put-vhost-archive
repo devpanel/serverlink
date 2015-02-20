@@ -1,0 +1,60 @@
+#!/bin/bash
+
+usage() {
+  local prog=$(basename "$0")
+  echo "Usage: $prog [ options ] <vhost> <archive_file>"
+  exit 1
+}
+
+s3_transform_addr() {
+  local template_str="$1"
+
+  local s3_addr
+
+  s3_addr="$template_str"
+  s3_addr=${s3_addr//@virtwww_domain@/"$virtwww_domain"}
+  s3_addr=${s3_addr//@vhost@/"$vhost"}
+  s3_addr=${s3_addr//@file_basename@/"$archive_file_base"}
+  s3_addr=${s3_addr//@platform_shortname@/"$platform"}
+
+  printf '%s' "$s3_addr"
+}
+
+# main
+[ $# -lt 2 ] && usage
+
+vhost="$1"
+archive_file_orig="$2"
+archive_file_base=$(basename "$archive_file_orig")
+
+self_bin=$(readlink -e "$0")
+self_bin_dir=$(dirname "$self_bin")
+sys_dir=$(readlink -e "$self_bin_dir/../../..")
+
+"$sys_dir/libexec/check-vhost-name" archive "$vhost" || exit 1
+
+lib_file="$sys_dir/lib/functions"
+if ! source "$lib_file"; then
+  echo "Error: unable to import functions from file $lib_file" 1>&2
+  exit 1
+fi
+
+s3cmd_cfg="$HOME/.s3cfg.$vhost"
+
+vhost_conf_dir="$sys_dir/config/vhosts/$vhost"
+if ! get_metadata_value "$vhost_conf_dir" config.upload_archives_to_s3 &>/dev/null; then
+  echo "Warning: vhost '$vhost' is not configured for S3 uploads" 1>&2
+  exit 0
+fi
+
+assign_deref_os_prop_or_exit platform "$sys_dir" platform_shortname
+
+assign_deref_os_prop_or_exit s3_baseaddr_tmpl "$sys_dir" \
+  vhost_archives_s3_baseaddr
+
+assign_deref_os_prop_or_exit virtwww_domain "$sys_dir" \
+  apache_virtwww_domain
+
+s3_dest_bucket=$(s3_transform_addr "$s3_baseaddr_tmpl")
+
+s3cmd --config="$s3cmd_cfg" --no-progress put "$archive_file_orig" "$s3_dest_bucket"

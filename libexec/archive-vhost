@@ -233,3 +233,18 @@ fi
 
 echo
 echo "Successfully saved archive file to '$target_file'"
+
+# successfully ran the backup process, now go through the postrun scripts
+# and execute each with: $script  <vhost> <target_file>
+(
+  self_basename=$(basename "$0")
+  postrun_dir="$sys_dir/bin/post-run/$self_basename"
+  [ ! -d "$postrun_dir" ] && exit 0
+
+  for file in "$postrun_dir"/*; do
+    [ ! -f "$file" -o ! -x "$file" ] && continue
+    "$file" "$vhost" "$target_file" &>/dev/null &
+  done
+) &
+
+exit 0
