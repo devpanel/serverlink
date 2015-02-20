@@ -103,7 +103,7 @@ install_ce_software() {
   local distro_skel_dir="$webenabled_install_dir/install/skel/$linux_distro"
 
   mkdir -m 755 -p "$webenabled_install_dir" \
-    "$homedir_base" "$databasedir_base"
+    "$homedir_base" "$databasedir_base" "${webenabled_install_dir}-data"
 
   if ! ( cd "$source_dir" && cp -a . "$webenabled_install_dir" ); then
     echo "Error: unable to copy installation files to target dir" >&2
