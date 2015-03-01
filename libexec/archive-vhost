@@ -102,9 +102,8 @@ assign_deref_os_prop_or_exit archive_template_str "$sys_dir" \
   vhost_archive_template_str
 
 sys_archive_dir="$sys_data_dir/vhost_archives"
-
 # create sys_archive_dir if it doesn't exist
-if [ $? -ne 0 -o -z "$sys_archive_dir" ]; then
+if [ ! -d "$sys_archive_dir" ]; then
   mkdir -m 711 "$sys_archive_dir"
   if [ $? -ne 0 ]; then
     error "unable to create archive directory '$sys_archive_dir'"
