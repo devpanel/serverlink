@@ -9,68 +9,109 @@ centos_pre_run() {
 }
 
 centos_install_distro_packages() {
-  local install_dir="$1"
-  local distro_version="${2:-0}"
-
-  local phpver=""
-  #centos-5: getting php 5.2 or later
-  #
-  #  Source:
-  #    http://centos.org/modules/newbb/viewtopic.php?topic_id=16648&forum=38
-  #
-  #      Updated info on this. php 5.2 is now available from the testing
-  #      repository for CentOS-5. Please see
-  #         http://wiki.centos.org/AdditionalResources/Repositories 
-  #      for details on how to use this repository
-  #
-  #
-  #  Enabling the testing repo
-  #
-  #      /etc/install_package.repos.d/CentOS-Testing.repo
-  #        - download it from http://dev.centos.org/centos/5/CentOS-Testing.repo
-  #        - change 'enabled' to 1
-  #wget -O /etc/yum.repos.d/CentOS-Testing.repo http://dev.centos.org/centos/5/CentOS-Testing.repo
-  #sed -i 's/^enabled=0$/enabled=1/' /etc/yum.repos.d/CentOS-Testing.repo
-  #if ! rpm -ql epel-release-5-4.noarch >/dev/null 2>&1
-  #then
-  #  rpm -Uvh 'http://download.fedora.redhat.com/pub/epel/5/i386/epel-release-5-4.noarch.rpm'
-  #fi
-  #
-  #
-  #
-  #fedora 12/centos-5.4
+  local source_dir="$1"
+  local install_dir="$2"
+  local distro_version="${3:-0}"
 
   echo Checking for crontab availability
-  if crontab -l >/dev/null 2>&1
-  then
-    echo Already there
-  else
-    if [ $? = 127 ]
-    then
-      echo Not found, installing vixie-cron
-      yum -y install vixie-cron
-    else 
-      echo Already there
-    fi
+  if ! hash crontab &>/dev/null; then
+    yum -y install vixie-cron
   fi 
 
-  yum -y install curl make mysql mysql-server
+  yum -y install curl
 
-  if [ "${distro_version:0:1}" == "5" ]; then
-    phpver=53
+
+  # Install Epel and Remi repositories so that we have more up to date
+  # packages, specially for PHP and MySQL, than the ones available on CentOS
+  # 
+  # EPEL: https://fedoraproject.org/wiki/EPEL
+  # Remi: http://rpms.famillecollet.com/
+
+  local epel_url=$(deref_os_prop "$source_dir" names/epel_pkg_url )
+  if [ $? -ne 0 -o -z "$epel_url" ]; then
+    echo "$FUNCNAME(): error, missing epel_pkg_url" 1>&2
+    return 1
   fi
 
-  yum -y install php$phpver
-    # tested with:
-    #   5.3.1-1.fc12 (Fedora)
-    #   5.1.6-24.el5_4.5 (CentOS); phpmyadmin will not work!
-    #   5.2.10-1.el5.centos (CentOS) from CentOS-Testing.repo; required for phpmyadmin
+  local remi_url=$(deref_os_prop "$source_dir" names/remi_pkg_url )
+  if [ $? -ne 0 -o -z "$remi_url" ]; then
+    echo "$FUNCNAME(): error, missing remi_pkg_url" 1>&2
+    return 1
+  fi
 
+  local tmp_pkg_file=$(mktemp)
 
-  for module in dba gd ldap mysql pdo xml xmlrpc process soap mbstring; do
-    yum -y install php$phpver-$module
+  local installed_epel=""
+  local installed_remi=""
+
+  local i=0
+  for i in 1 2 3; do
+    echo "Installing EPEL repository, attempt $i..."
+    curl -so "$tmp_pkg_file" -L --retry 3 --retry-delay 15 "$epel_url"
+    if [ $? -eq 0 ]; then
+      rpm -Uvh "$tmp_pkg_file"
+      if [ $? -eq 0 ]; then
+        installed_epel=1
+        break
+      else
+        echo "Failed attempt $i of installing EPEL..." 1>&2
+      fi
+    fi
+    sleep 15
   done
 
+  rm -f "$tmp_pkg_file"
+  if [ -z "$installed_epel" ]; then
+    echo "$FUNCNAME(): error, unable to install EPEL repository" 1>&2
+    return 1
+  fi
+
+
+  tmp_pkg_file=$(mktemp)
+
+  i=0
+  for i in 1 2 3; do
+    echo "Installing Remi repository, attempt $i..."
+    curl -so "$tmp_pkg_file" -L --retry 3 --retry-delay 15 "$remi_url"
+    if [ $? -eq 0 ]; then
+      rpm -Uvh "$tmp_pkg_file"
+      if [ $? -eq 0 ]; then
+        installed_remi=1
+        break
+      else
+        echo "Failed attempt $i of installing Remi..." 1>&2
+      fi
+    fi
+    sleep 15
+  done
+
+  rm -f "$tmp_pkg_file"
+  if [ -z "$installed_remi" ]; then
+    echo "$FUNCNAME(): error, unable to install Remi repository" 1>&2
+    return 1
+  fi
+
+  { 
+    echo "remi.enabled=1"; 
+    echo "remi-php55.enabled=1"; 
+  } | "$source_dir/bin/update-ini-file" /etc/yum.repos.d/remi.repo
+
+  # end of external repository installation
+
+  # install some of the most critical packages
+  for pkg in php make mysql mysql-server; do
+    yum -y install "$pkg"
+    if [ $? -ne 0 ]; then
+      echo "$FUNCNAME(): failed to install package $pkg" 1>&2
+      return 1
+    fi
+  done
+
+  for module in dba gd ldap mysql pdo xml xmlrpc process soap mbstring; do
+    yum -y install php-$module
+  done
+
+  # Install perl modules needed by devPanel software
   yum -y install perl perl-devel perl-Time-HiRes make php-pear git \
     perl-Digest-HMAC perl-Digest-SHA perl-CGI mod_ssl perl-Crypt-SSLeay \
     perl-CGI-Session

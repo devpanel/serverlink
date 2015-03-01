@@ -7,7 +7,8 @@ debian_pre_run() {
 }
 
 debian_install_distro_packages() {
-  local install_dir="$1"
+  local source_dir="$1"
+  local install_dir="$2"
 
   export DEBIAN_FRONTEND='noninteractive'
 

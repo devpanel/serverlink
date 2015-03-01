@@ -35,8 +35,9 @@ ubuntu_pre_run() {
 }
 
 ubuntu_install_distro_packages() {
-  local install_dir="$1"
-  local ubuntu_version="${2:-0}"
+  local source_dir="$1"
+  local install_dir="$2"
+  local ubuntu_version="${3:-0}"
 
   export DEBIAN_FRONTEND='noninteractive'
 

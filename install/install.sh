@@ -118,9 +118,6 @@ install_ce_software() {
     fi
   fi
 
-  # links shortcut to linux distribution specific files
-  ln -snf os.$linux_distro "$webenabled_install_dir"/config/os
-
   ln -snf "$webenabled_install_dir"/compat/w_ "$homedir_base"/w_
   chown -R w_:"$_apache_exec_group" "$webenabled_install_dir"/compat/w_
 
@@ -450,7 +447,7 @@ There seems to be a problem in this installation package."
   exit 1
 else
   # link the source dir /os/ link to be used by function set_variables
-  if ! ln -sf "$source_config_dir" "$source_config_shortcut"; then
+  if ! ln -sf $(basename "$source_config_dir") "$source_config_shortcut"; then
     error "unable to link source config shortcut $source_config_shortcut"
   fi
 fi
@@ -486,8 +483,11 @@ for func in set_variables pre_run; do
 done
 
 if type -t "${linux_distro}_install_distro_packages" >/dev/null; then
-  "${linux_distro}_install_distro_packages" "$webenabled_install_dir" \
-    "$webenabled_distro_version"
+  "${linux_distro}_install_distro_packages" "$install_source_dir" \
+    "$webenabled_install_dir" "$webenabled_distro_version"
+  if [ $? -ne 0 ]; then
+    error "failed to install required packages"
+  fi
 fi
 
 add_custom_users_n_groups "$install_source_dir" "$webenabled_install_dir"
