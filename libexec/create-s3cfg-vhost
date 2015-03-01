@@ -1,0 +1,22 @@
+#!/bin/bash
+
+usage() {
+  local prog=$(basename "$0")
+  echo "Usage: $prog <vhost>"
+  exit 1
+}
+
+# main
+[ $# -eq 0 -o -z "$1" ] && usage
+
+vhost="$1"
+
+self_bin=$(readlink -e "$0")
+self_bin_dir=$(dirname "$self_bin")
+sys_dir=$(readlink -e "$self_bin_dir/..")
+
+"$sys_dir/libexec/check-vhost-name" archive "$vhost" || exit 1
+
+s3cfg_file="$HOME/.s3cfg.$vhost"
+
+"$sys_dir/bin/update-ini-file" -c "$s3cfg_file"
