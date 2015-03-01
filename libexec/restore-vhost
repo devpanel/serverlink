@@ -100,17 +100,18 @@ done
 
 [ $# -lt 2 ] && usage
 
-dir=`dirname "$0"`
-dir_bin="$dir/../bin"
-we_base_dir=`readlink -e "$dir/.."`
-
 vhost="$1"
+archive_label="$2"
+
+self_bin=$(readlink -e "$0")
+dir=`dirname "$self_bin"`
+we_base_dir=`readlink -e "$dir/.."`
+dir_bin="$we_base_dir/bin"
 
 config_dir="$we_base_dir/config/vhosts/$vhost"
 user_web="w_$vhost"
-home="`eval \"echo ~$user_web\"`" || error
+home="`eval \"echo ~$user_web\"`" || error "unable to get \$HOME of user $user_web"
 user_db="b_$vhost"
-archive_label="$2"
 vhost_config_dir=.webenabled/private
 shift
 shift
@@ -120,6 +121,13 @@ if [ $create_vhost -eq 1 ]; then
 elif [ $create_vhost -eq 0 ] && ! user_info=$(getent passwd "$user_web" 2>/dev/null); then
   error "user '$user_web' must exist"
 fi
+
+aux_lib_file="$we_base_dir/lib/functions"
+if ! source "$aux_lib_file"; then
+  error "unable to load auxiliary functions from $aux_lib_file"
+fi
+
+assign_deref_os_prop_or_exit sys_datadir "$we_base_dir" data_dir
 
 password="";
 if [ $opt_i = 1 ]
@@ -137,7 +145,6 @@ elif [ ${#archive_label}  -gt 10 -a "${archive_label:0:7}" == "http://" \
      -o ${#archive_label} -gt 10 -a "${archive_label:0:8}" == "https://" \
      -o ${#archive_label} -gt 10 -a "${archive_label:0:6}" == "ftp://" ]; then
 
-  . "$dir/../lib/functions" || error "unable to load download utility functions"
   download_archive=1
 elif [ ! -e "$archive_label" -a $create_vhost -eq 0 \
   -a $try_archive_in_user_home -eq 1 \
@@ -145,9 +152,16 @@ elif [ ! -e "$archive_label" -a $create_vhost -eq 0 \
   -a "${archive_label:0:3}" != "../" ]; then
 
   user_home_dir=$(echo "$user_info" | cut -d: -f 6)
-  test_archive="$user_home_dir/public_html/gen/archive/$archive_label"
-  if [ -f "$test_archive" ]; then
-    archive_file="$test_archive"
+  base_label=$(basename "$archive_label")
+  path_in_home="$user_home_dir/public_html/gen/archive/$base_label"
+  path_in_sysdir="$sys_datadir/vhost_archives/$vhost/$base_label"
+
+  if [ -f "$path_in_sysdir" ]; then
+    archive_file="$path_in_sysdir"
+  elif [ -f "$path_in_home" ]; then
+    archive_file="$path_in_home"
+  else
+    error "unable to find file '$archive_label' in common locations"
   fi
 elif [ -f "$archive_label" ]; then
   archive_file="$archive_label"

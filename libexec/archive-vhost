@@ -18,6 +18,8 @@ usage() {
     -P        save shadow entry
     -d        debug mode: prints more verbose debug msgs, and doesn't remove
               the temporary directory on exit
+    -u        write the file on public_html/gen/archive, writable by the user
+              (used by internal operations, like clone)
 
   This command creates an archive of the current state of a vhost, saving
   Apache files and MySQL databases into a tar ball.
@@ -52,12 +54,13 @@ exec 1>&2
 archive_vhost_web_options=""
 check_archive_pathname_options=""
 debug=""
+in_user_path=""
 
 while getopts "Pud" OPTOPT
 do
   case "$OPTOPT" in
     P) archive_vhost_web_options="${archive_vhost_web_options+ }-P";;
-    u) : ;; # removed, kept here meanwhile all references are not removed
+    u) in_user_path=1 ;;
     d) debug=1 ;;
     *) exit 1;
   esac
@@ -109,7 +112,24 @@ if [ ! -d "$sys_archive_dir" ]; then
     error "unable to create archive directory '$sys_archive_dir'"
   fi
 fi
-vhost_archive_dir="$sys_archive_dir/$vhost"
+
+# as this script runs as root, work on a write protected directory to avoid
+# tmp race conditions
+upper_tmp_dir="$sys_archive_dir/tmp"
+if [ ! -d "$upper_tmp_dir" ]; then
+  mkdir -m 710 "$upper_tmp_dir"
+  if [ $? -ne 0 ]; then
+    error "unable to create directory $upper_tmp_dir"
+  fi
+fi
+
+archive_dir_in_user="$home/public_html/gen/archive"
+archive_dir_in_sys="$sys_archive_dir/$vhost"
+if [ -n "$in_user_path" ]; then
+  vhost_archive_dir="$archive_dir_in_user"
+else
+  vhost_archive_dir="$archive_dir_in_sys"
+fi
 
 if [ -n "$archive_to" ]; then
   if [ "${archive_to:0:1}" == "/" ]; then
@@ -140,13 +160,30 @@ archive_filename=${archive_filename//@vhost@/"$vhost"}
 archive_filename=$(date_placeholders "$archive_filename")
 [ $? -ne 0 ] && exit 1
 
-target_file="$vhost_archive_dir/$archive_filename"
-if ! [[ "$target_file" =~ \.[Tt][Gg][Zz]$ ]]; then
-  target_file+=".tgz"
+if [[ "$archive_filename" != *.[Tt][Gg][Zz] ]]; then
+  archive_filename+=".tgz"
 fi
 
+target_file="$vhost_archive_dir/$archive_filename"
+
+# test whether the target file already exists
 if [ -e "$target_file" -o -L "$target_file" ]; then
   error "file '$target_file' already exists."
+else
+  # test if a file with the same name already exists at $archive_dir_in_user or
+  # $archive_dir_in_sys and refuse to create if a file with the same name exists on
+  # either place
+  test_in_user="$archive_dir_in_user/$archive_filename"
+  test_in_sys="$archive_dir_in_sys/$archive_filename"
+  if [ -n "$in_user_path" ]; then
+    if [ -e "$test_in_sys" -o -L "$test_in_sys" ]; then
+      error "file with the same name already exists at $test_in_sys. Please choose a different name."
+    fi
+  else
+    if [ -e "$test_in_user" -o -L "$test_in_user" ]; then
+      error "file with the same name already exists at $test_in_user. Please choose a different name"
+    fi
+  fi
 fi
 
 # create vhost_archive_dir if it doesn't exist
@@ -156,6 +193,9 @@ if [ ! -d "$vhost_archive_dir" ]; then
     error "unable to create directory '$vhost_archive_dir'"
   fi
   echo "Created directory '$vhost_archive_dir'..."
+  if [ -n "$in_user_path" ]; then
+    chown "$user_web" "$vhost_archive_dir"
+  fi
 fi
 
 # lock $vhost_archive_dir not to have other concurring backups
@@ -177,9 +217,22 @@ if [ "$group_name" != "$user_web" ]; then
   echo "Chgrp'd directory '$vhost_archive_dir' to $user_web..."
 fi
 
-tmp_archive_dir=`mktemp -d "$vhost_archive_dir/archive_vhost.tmp.XXXXXX"`
+tmp_archive_dir=`mktemp -d "$upper_tmp_dir/${vhost}__archive_vhost.tmp.XXXXXX"`
 if [ $? -ne 0 ]; then
   error "unable to create temporary directory for archiving."
+fi
+
+# make the temporary directory readable by the web user
+# in debug mode it's useful if the archiving failed the user can inspect as
+# non-root
+if chgrp "$user_web" "$tmp_archive_dir"; then
+  if ! chmod 2750 "$tmp_archive_dir"; then
+    echo "Warning: unable to chmod 2750 temp dir '$tmp_archive_dir'" 1>&2
+    sleep 2
+  fi
+else
+  echo "Warning: unable to chgrp temp dir '$tmp_archive_dir' to $user_web" 1>&2
+  sleep 2
 fi
 
 tmp_target_file=$(mktemp "$tmp_archive_dir/$archive_filename.XXXXXX")
@@ -214,20 +267,30 @@ if [ $? -ne 0 ]; then
   error "unable to create archive file $tmp_target_file"
 fi
 
+# before moving the archive file to it's final destination, do any
+# permission adjustment needed
+if [ -n "$in_user_path" ]; then
+  chown "$user_web":"$user_web" "$tmp_target_file"
+  if [ $? -ne 0 ]; then
+    echo "Warning: unable to chown temp file to user $user_web" 1>&2
+    sleep 2
+  fi
+fi
+
+if [ -z "$in_user_path" ] && ! ${debug:+run} chgrp "$user_web" "$tmp_target_file"; then
+  echo "Warning: unable to chgrp temp file to group $user_web" 1>&2
+  sleep 2
+fi
+
+if [ -z "$in_user_path" ] && ! ${debug:+run} chmod 0640 "$tmp_target_file"; then
+  echo "Warning: unable to chmod 640 temp file $tmp_target_file" 1>&2
+  sleep 2
+fi
+
 # now move the tmp file to the target location
 # don't overwrite in case the target file exists
 if ! ${debug:+run} mv -n "$tmp_target_file" "$target_file"; then
   error "unable to move '$tmp_target_file' to '$target_file'"
-fi
-
-if ! ${debug:+run} chgrp "$user_web" "$target_file"; then
-  echo "Warning: unable to chgrp archive file to group $user_web" 1>&2
-  sleep 2
-fi
-
-if ! ${debug:+run} chmod 0640 "$target_file"; then
-  echo "Warning: unable to chmod 640 archive file $target_file" 1>&2
-  sleep 2
 fi
 
 echo

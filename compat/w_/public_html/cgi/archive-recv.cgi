@@ -143,10 +143,8 @@ if($clone_type eq 'recv_passive' && !defined($validate) &&
 }
 
 my $token_file = sprintf('%s/%s.%s.%s', $token_dir, $vhost, $clone_type, $token);
-#my $target_archive = sprintf('%s/public_html/gen/archive/%s.%s.%s.tgz', 
-#                                $home_dir, $vhost, $clone_type, $token);
-my $target_archive = sprintf('/opt/webenabled-data/vhost_archives/%s/%s.%s.%s.tgz', 
-                             $vhost, $vhost, $clone_type, $token);
+my $target_archive = sprintf('%s/public_html/gen/archive/%s.%s.%s.tgz', 
+                                $home_dir, $vhost, $clone_type, $token);
 
 my $data_to_check = sprintf('token=%s&timestamp=%s', $token, $timestamp);
 
