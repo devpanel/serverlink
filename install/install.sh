@@ -220,7 +220,73 @@ add_custom_users_n_groups() {
 }
 
 post_software_install() {
+  local linux_distro="$1"
+  local source_dir="$2"
+  local target_dir="$3"
+
   local status
+
+  local custom_conf_d="$target_dir/install/utils"
+  # choose the additional  my.cnf file for MySQL
+  local mysql_version=$(get_mysql_version)
+  if [ $? -eq 0 ]; then
+    local mysql_ver_reduced=${mysql_version%.*}
+    local my_cnf_src=""
+    local my_cnf_src_dir="$custom_conf_d/my.cnf.d"
+    local my_cnf_src_full="$my_cnf_src_dir/$mysql_version--my.cnf"
+    local my_cnf_src_short="$my_cnf_src_dir/$mysql_ver_reduced--my.cnf"
+
+    if [ -f "$my_cnf_src_full" ]; then
+      my_cnf_src="$my_cnf_src_full"
+    elif [ -f "$my_cnf_src_short" ]; then
+      my_cnf_src="$my_cnf_src_short"
+    fi
+
+    if [ -n "$my_cnf_src" -a -f "$my_cnf_src" ]; then
+      local my_cnf_dir
+      my_cnf_dir=$(deref_os_prop "$target_dir" pathnames/etc/mysql_conf_d)
+      if [ $? -eq 0 -a -d $my_cnf_dir ]; then
+        local my_cnf_lnk="$my_cnf_dir/devpanel.cnf"
+        ln -s "$my_cnf_src" "$my_cnf_lnk"
+
+        # special lines for OpenVZ
+        local openvz_cnf=""
+        local openvz_cnf_full_ver="$my_cnf_src_dir/$mysql_version--openvz.cnf"
+        local openvz_cnf_reduced_ver="$my_cnf_src_dir/$mysql_ver_reduced--openvz.cnf"
+        if [ -f "$openvz_cnf_full_ver" ]; then
+          openvz_cnf="$openvz_cnf_full_ver"
+        elif [ -f "$openvz_cnf_reduced_ver" ]; then
+          openvz_cnf="$openvz_cnf_reduced_ver"
+        fi
+
+        if [ -d /proc/vz -a -n "$openvz_cnf" -a -f "$openvz_cnf" ]; then
+          ln -s "$openvz_cnf" "$my_cnf_dir"
+        fi
+      fi
+    fi
+  else
+    sleep 3; # show the warning from the function
+  fi
+
+  local php_version=$(get_php_version)
+  if [ $? -eq 0 ]; then
+    local php_ver_reduced=${php_version%.*}
+    local php_ini_src=""
+    local php_ini_src_dir="$custom_conf_d/php.ini.d"
+    local php_ini_src_full="$php_ini_src_dir/$php_version--php.ini"
+    local php_ini_src_short="$php_ini_src_dir/$php_ver_reduced--php.ini"
+
+    if [ -f "$php_ini_src_full" ]; then
+      php_ini_src="$php_ini_src_full"
+    elif [ -f "$php_ini_src_short" ]; then
+      php_ini_src="$php_ini_src_short"
+    fi
+    
+    local php_ini_d=$(deref_os_prop "$target_dir" pathnames/etc/php_ini_d)
+    if [ -n "$php_ini_src" -a -d "$php_ini_d" -a -f "$php_ini_src" ]; then
+      ln -s "$php_ini_src" "$php_ini_d/99-devpanel.ini"
+    fi
+  fi
 
   # if the installation is not run from bootstrap then update devpanel.conf
   # when running from bootstrap, the values have already been filled

@@ -927,3 +927,42 @@ date_placeholders() {
   printf '%s' "$date_str"
 }
 
+get_mysql_version() {
+  if ! hash mysql &>/dev/null; then
+    echo "$FUNCNAME(): missing mysql command" 1>&2
+    return 1
+  fi
+
+  local tmp_str
+  tmp_str=$(mysql -V 2>/dev/null | egrep -o 'Distrib [0-9]\.[0-9]+(\.[0-9]+)?')
+  if [ $? -ne 0 -o -z "$tmp_str" ]; then
+    echo "$FUNCNAME(): unable to get mysql version from mysql command" 1>&2
+    return 1
+  fi
+
+  local junk version_str
+  IFS=" " read junk version_str <<< "$tmp_str"
+
+  echo -n "$version_str"
+}
+
+get_php_version() {
+  if hash php-config &>/dev/null; then
+    php-config --version
+    return $?
+  elif hash php &>/dev/null; then
+    local tmp_str=$(php -v | egrep -o 'PHP [0-9]\.[0-9]+\.[0-9]+')
+    if [ $? -ne 0 -o -z "$tmp_str" ]; then
+      echo "$FUNCNAME(): unable to get version string from php command" 1>&2
+      return 1
+    fi
+    local junk ver_str 
+    IFS=" " read junk ver_str <<< "$tmp_str"
+
+    echo -n "$ver_str"
+    return 0
+  fi
+
+  echo "$FUNCNAME(): php doesn't seem to be installed" 1>&2
+  return 1
+}
