@@ -1,0 +1,5 @@
+  <IfModule mod_fcgid.c>
+    FcgidMaxRequestLen 2147483648
+    FcgidIdleTimeout 180
+    FcgidIOTimeout 180
+  </IfModule>
