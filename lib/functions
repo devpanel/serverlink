@@ -620,11 +620,12 @@ deref_contents_or_exit() {
   local path="$1"
 
   deref_contents "$path"
-  if [ $? -ne 0 ]; then
+  if [ $? -eq 0 ]; then
+    return 0
+  else
     echo "Error: unable to de-reference path '$path'" 1>&2
     exit 1
   fi
-
 }
 
 assign_deref_contents_or_exit() {
@@ -687,8 +688,6 @@ deref_os_prop() {
   fi
 
   deref_contents "$key_path" || return 1
-
-  echo -n "$resolved"
 }
 
 deref_os_prop_or_exit() {
