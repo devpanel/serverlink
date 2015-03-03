@@ -1,18 +1,24 @@
 #!/bin/bash
-
+########################
+# IMPORTANT REMINDER:
+# this script should be posix compliant, so no bash exclusive syntax
+#
+# Other notes:
+#
+# * $0 is not the script path when run from su, so don't use it
 #######
 # PATH
 #
 # add custom directories to PATH
-self_bin=`readlink -e "${BASH_SOURCE[0]}"`
-curr_dir=`dirname "$self_bin"`
-bin_path=`readlink -e "$curr_dir/../../../bin/.path"`
-bin_path_status=$?
-
-if [ $bin_path_status -eq 0 ] && ! [[ "$PATH" =~ :?$bin_path:? ]]; then
-  PATH="$bin_path:$PATH"
+source_file="/etc/default/devpanel"
+if [ -z "$DEVPANEL_HOME" ] && [ -f "$source_file" ]; then
+  . "$source_file"
 fi
 
+if [ -n "$DEVPANEL_HOME" ] && ! echo "$PATH" | egrep -q ":?$DEVPANEL_HOME:?"; then
+  DEVPANEL_PATH="${DEVPANEL_PATH:-$DEVPANEL_HOME/bin/.path}"
+  PATH="$DEVPANEL_PATH:$PATH"
+fi
 
 ########
 # Drush
