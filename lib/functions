@@ -898,6 +898,22 @@ get_metadata_value() {
   fi
 }
 
+get_apache_metadata_value() {
+  local system_dir="$1"
+  local key="$2"
+
+  local apache_config_dir="$system_dir/config/vhosts"
+
+  local vhost_conf_dir="$apache_config_dir/${USER#w_}"
+
+  if [ ! -d "$vhost_conf_dir" ]; then
+    echo "$FUNCNAME(): missing vhost conf dir $vhost_conf_dir" 1>&2
+    return 1
+  fi
+
+  get_metadata_value "$vhost_conf_dir" "$key"
+}
+
 date_placeholders() {
   local template_str="$1"
   local ref_date="${2:-now}"
@@ -965,4 +981,9 @@ get_php_version() {
 
   echo "$FUNCNAME(): php doesn't seem to be installed" 1>&2
   return 1
+}
+
+run_verbose() {
+    echo "Running command: $@"
+    "$@"
 }
