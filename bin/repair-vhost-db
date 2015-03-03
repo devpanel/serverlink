@@ -41,3 +41,10 @@ fi
 echo "Running a repair on database $db_name..."
 sleep 2
 run_verbose mysqlcheck -r "$db_name"
+exit_code=$?
+if [ $exit_code -eq 0 ]; then
+  echo
+  echo "Successfully finished repair of database $db_name"
+fi
+
+exit $exit_code
