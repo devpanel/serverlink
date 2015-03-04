@@ -986,3 +986,15 @@ run_verbose() {
     echo "Running command: $@"
     "$@"
 }
+
+is_valid_mysql_db_or_table_name() {
+  local str="$1"
+
+  [ -z "$str" ] && return 1
+
+  if [[ "$str" =~ ^[A-Za-z0-9_]+$ ]]; then
+    return 0
+  else
+    return 1
+  fi
+}
