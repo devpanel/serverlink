@@ -1,4 +1,3 @@
-NameVirtualHost *:@@__PARAM_PORT__@@
 <VirtualHost @@__PARAM_IP__@@:@@__PARAM_PORT__@@>
   #  @@__PARAMS__@@
   #  @@__SYSTEM_INCLUDES__@@

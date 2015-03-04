@@ -144,7 +144,7 @@ metadata_op+="set $vhost_prefix:_:replicate devpanel_main"$'\n'
 metadata_op+="set $vhost_prefix:_:template $ssl_template_basename"$'\n'
 
 if [ -n "$ca_bundle_file" ]; then
-  metadata_op+="set $vhost_prefix:param:SSLCACertificateFile $ca_bundle_link"$'\n'
+  metadata_op+="set $vhost_prefix:param:2:SSLCACertificateFile $ca_bundle_link"$'\n'
 fi
 
 echo "$metadata_op" | "$curr_dir/apache-metadata-handler" "$vhost"
