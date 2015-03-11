@@ -48,8 +48,9 @@ shift
 $dir/check-vhost-name archive "$source" || usage
 $dir/check-vhost-name restore "$target" || usage
 
+source_home=$(eval echo -n \~"$source")
 TMP_FILE="tmp_archive_$source-$(date +%b-%d-%Y--%H-%M).tgz"
-TMP_FILE_FP="$HOME/public_html/gen/archive/$TMP_FILE"
+TMP_FILE_FP="$source_home/public_html/gen/archive/$TMP_FILE"
 
 echo "Cloning stage 1: archive $source to $TMP_FILE"
 if ! $dir/archive-vhost -u "$source" "$TMP_FILE"
