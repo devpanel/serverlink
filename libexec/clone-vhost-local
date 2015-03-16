@@ -48,7 +48,7 @@ shift
 $dir/check-vhost-name archive "$source" || usage
 $dir/check-vhost-name restore "$target" || usage
 
-source_home=$(eval echo -n \~"$source")
+source_home=$(eval echo -n \~"w_$source")
 TMP_FILE="tmp_archive_$source-$(date +%b-%d-%Y--%H-%M).tgz"
 TMP_FILE_FP="$source_home/public_html/gen/archive/$TMP_FILE"
 
