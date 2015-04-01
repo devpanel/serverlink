@@ -329,6 +329,9 @@ set +e
 echo 'Host *
   UserKnownHostsFile /dev/null
   StrictHostKeyChecking no' >~/.ssh/config
+
+$we_base/bin/gen-vhost-ssh-priv-key -o
+
 " -s /bin/bash "$ACCOUNT_NAME"
 if [ "$?" -eq 0 ]; then
     echo 'done'
