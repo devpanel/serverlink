@@ -33,6 +33,143 @@ This command converts the tables of the database to engine $type
   exit 1
 }
 
+usage_mysql_overwrite_db() {
+  local prog=$(basename "$0")
+  local type=${prog##*-}
+
+  echo "Usage: $prog <db_name> <sql_file>
+
+  Overwrite the current site database with contents from the sql file.
+
+  db_name: can be set to '-' to guess the database name.
+  sql_file: can be set to '-' to read from STDIN
+
+  Both db_name and sql_file are required parameters.
+"
+  exit 1
+}
+
+usage_mysql_dump_split_db() {
+  local prog=$(basename "$0")
+  local type=${prog##*-}
+
+  echo "Usage: $prog <db_name> <target_file>
+
+  Dumps database to the specified target file, splitting database schema and
+  data into separate files inside the specified target_file with format
+  .tar.gz.
+"
+  exit 1
+}
+
+usage_test_split_dump() {
+  local prog=$(basename "$0")
+  local type=${prog##*-}
+
+  echo "Usage: $prog <dump_file>
+
+  Tests whether the dump file was successfully created.
+"
+  exit 1
+}
+
+usage_mysql_import_split_dump() {
+  local prog=$(basename "$0")
+  local type=${prog##*-}
+
+  echo "Usage: $prog [options] <db_name> <dump_file>
+
+  Options:
+    -o          overwrite the database if it already exists
+
+  Imports the database from the dump file into the specified database name.
+"
+  exit 1
+}
+
+usage_dump_db_schema() {
+  local prog=$(basename "$0")
+
+  echo "Usage: $prog <db_name>
+
+  Dumps the schema of the specified database.
+"
+  exit 1
+}
+
+mysql_test_split_dump() {
+  local dump_source="$1"
+  local dump_type="" dump_file="" dump_dir="" tmp_dump_dir=""
+
+  if [ -f "$dump_source" ]; then
+    dump_type="file"
+    dump_file="$dump_source"
+  elif [ -d "$dump_source" ]; then
+    dump_type="dir"
+    dump_dir="$dump_source"
+  else
+    echo "$FUNCNAME(): unable to find file $dump_file" 1>&2
+    return 1
+  fi
+
+  if [ "$dump_type" == "file" ]; then
+    tmp_dump_dir=$(mktemp -d)
+    if [ $? -ne 0 ]; then
+      echo "$FUNCNAME(): unable to create temporary directory" 1>&2
+      return 1
+    fi
+
+    dump_dir="$tmp_dump_dir"
+    tar -zxf "$dump_file" -C "$dump_dir"
+    if [ $? -ne 0 ]; then
+      echo "$FUNCNAME(): unable to extract dump file" 1>&2
+      return 1
+    fi
+  fi
+
+  local schema_file="$dump_dir/schema.sql"
+  local data_file="$dump_dir/data.sql"
+
+  if [ ! -f "$schema_file" ]; then
+    echo "$FUNCNAME(): missing schema file on the dump" 1>&2
+    return 1
+  elif [ ! -f "$data_file" ]; then
+    echo "$FUNCNAME(): missing data file on the dump" 1>&2
+    return 1
+  fi
+
+  local tmp_db_name="test_$(wedp_gen_random_str 7)"
+  mysql -BN -e "CREATE DATABASE $tmp_db_name;"
+  if [ $? -ne 0 ]; then
+    echo "$FUNCNAME(): unable to create temporary database $tmp_db_name"
+    return 1
+  fi
+
+  mysql -BN -D "$tmp_db_name" < "$schema_file"
+  if [ $? -ne 0 ]; then
+    echo "$FUNCNAME(): unable to import db schema" 1>&2
+    return 1
+  fi
+
+  if ! convert_database_engine "$tmp_db_name" BLACKHOLE >/dev/null; then
+    echo "$FUNCNAME(): unable to convert database to blackhole format" 1>&2
+    return 1
+  fi
+
+  if ! mysql -BN -D "$tmp_db_name" < "$data_file"; then
+    echo "$FUNCNAME(): unable to import data into db $tmp_db_name" 1>&2
+    return 1
+  fi
+
+  if ! mysql -BN -e "DROP DATABASE $tmp_db_name;"; then
+    echo "$FUNCNAME(): Warning, unable to remove temporary database $tmp_db_name" 1>&2
+  fi
+
+  [ -n "$tmp_dump_dir" ] && rm_rf_safer "$tmp_dump_dir"
+
+  return 0
+}
+
 is_valid_mysql_name() {
   local name="$1"
   local name_type="$2"
@@ -63,6 +200,11 @@ convert_database_engine() {
 
   is_valid_mysql_name "$db_name" database  || return 1
   is_valid_mysql_name "$new_engine" engine || return 1
+
+  if ! is_mysql_engine_supported "$new_engine"; then
+    echo "$FUNCNAME(): engine '$new_engine' not supported" 1>&2
+    return 1
+  fi
 
   local schema_db="information_schema"
   local sql_select="SELECT * FROM ENGINES WHERE ENGINE = '$new_engine';"
@@ -146,6 +288,11 @@ convert_database_engine() {
   return $ret_code
 }
 
+cleanup_import_split_db() {
+  [ -f "$tmp_dump_file" ] && rm -f "$tmp_dump_file"
+  [ -d "$tmp_dump_dir" ] && rm_rf_safer "$tmp_dump_dir"
+}
+
 guess_database_name() {
   db_name=$(get_apache_metadata_value "$sys_dir" 'app:0:_:db_name')
   if [ $? -eq 0 -a -n "$db_name" ]; then
@@ -155,6 +302,12 @@ guess_database_name() {
     echo "$FUNCNAME(): unable to determine web site main database" 1>&2
     return 1
   fi
+}
+
+does_db_exist() {
+  local db_name="$1"
+
+  mysql -D "$db_name" -e 'SELECT "whatever";' &>/dev/null
 }
 
 if ! hash mysqlcheck &>/dev/null; then
@@ -230,6 +383,186 @@ case "$operation" in
     msg="please don't run this command directly. Check on this directory "
     msg+="for the scripts that link to this file."
     error "$msg"
+    ;;
+  mysql-dump-db-schema)
+    [ $# -eq 0 -o -z "$1" ] && usage_dump_db_schema
+    db_name="$1"
+
+    if ! does_db_exist "$db_name"; then
+      error "database '$db_name' doesn't seem to exist"
+    fi
+
+    mysqldump --no-data "$db_name"
+    ;;
+  mysql-import-split-dump)
+    [ $# -eq 0 ] && usage_mysql_import_split_dump
+
+    getopt_flags='o'
+    unset overwrite_db db_exists
+    while getopts $getopt_flags OPTN; do
+      case "$OPTN" in
+        o)
+          overwrite_db=1
+          ;;
+        *)
+          exit 1
+          ;;
+      esac
+    done
+    [ $OPTIND -gt 1 ] && shift $(( $OPTIND - 1 ))
+
+    [ -z "$1" -o -z "$2" ] && usage_mysql_import_split_dump
+
+    if [ "$1" == "-" ]; then
+      db_name=$(guess_database_name)
+      if [ $? -ne 0 ]; then
+        error "unable to guess database name"
+      fi
+    else
+      db_name="$1"
+    fi
+
+    if does_db_exist "$db_name"; then
+      db_exists=1
+    fi
+
+    if [ -z "$overwrite_db" -a -n "$db_exists" ]; then
+      error "database '$db_name' already exists, won't overwrite."
+    fi
+
+    trap 'cleanup_import_split_db' EXIT
+    dump_file="$2"
+    if [ "$dump_file" == "-" ]; then
+      tmp_dump_file=$(mktemp)
+      if [ $? -ne 0 ]; then
+        error "unable to create temporary file"
+      fi
+      dump_file="$tmp_dump_file"
+
+      cat >"$dump_file"
+      if [ $? -ne 0 ]; then
+        error "unable to save STDIN to temporary file"
+      elif [ ! -s "$dump_file" ]; then
+        error "received dump file is empty"
+      fi
+    else
+      if [ ! -f "$dump_file" ]; then
+        error "unable to find file '$dump_file'"
+      fi
+    fi
+
+    tmp_dump_dir=$(mktemp -d)
+    if [ $? -ne 0 ]; then
+      error "unable to create temporary directory"
+    fi
+
+    if ! tar -zxf "$dump_file" -C "$tmp_dump_dir"; then
+      error "unable to extract dump file $dump_file"
+    fi
+    
+    if ! mysql_test_split_dump "$tmp_dump_dir"; then
+      error "received a malformed dump file"
+    fi
+
+    if [ -n "$overwrite_db" -a -n "$db_exists" ]; then
+      if mysql -BN -e "DROP DATABASE $db_name;"; then
+        unset db_exists
+      else
+        error "unable to drop existing database $db_name"
+      fi
+    elif [ -z "$db_exists" ]; then
+      :
+    elif [ -z "$overwrite_db" -a -n "$db_exists" ]; then
+      error "database '$db_name' already exists, won't overwrite."
+    else
+      error "unknown condition on validating db existance"
+    fi
+
+    if [ -z "$db_exists" ]; then
+      if ! mysql -BN -e "CREATE DATABASE $db_name;"; then
+        error "unable to create database $db_name"
+      fi
+    fi
+
+    if ! mysql -BN -D "$db_name" < "$tmp_dump_dir/schema.sql"; then
+      error "unable to import database schema into db $db_name"
+    fi
+
+    if ! mysql -BN -D "$db_name" < "$tmp_dump_dir/data.sql"; then
+      error "unable to import database data into db $db_name"
+    fi
+
+    echo "Successfully imported database $db_name"
+    exit_code=0
+    ;;
+  mysql-dump-split-db-tar-gz)
+    [ $# -lt 2 -o -z "$1" -o -z "$2" ] && usage_mysql_dump_split_db
+    db_name="$1"
+    target_file="$2"
+
+    if [ "$db_name" == "-" ]; then
+      db_name=$(guess_database_name)
+      if [ $? -ne 0 ]; then
+        error "unable to guess database name"
+      fi
+    fi
+
+    if ! does_db_exist "$db_name"; then
+      error "database '$db_name' doesn't seem to exist."
+    fi
+
+    if [ -e "$target_file" ]; then
+      error "target file '$target_file' already exists"
+    fi
+
+    tmp_target_file=$(mktemp "$target_file.XXXXXX")
+    if [ $? -ne 0 ]; then
+      error "unable to create temporary target file"
+    fi
+
+    tmp_db_dir=$(mktemp -d)
+    if [ $? -ne 0 -o -z "$tmp_db_dir" ]; then
+      error "unable to create temporary directory"
+    else
+      trap '[ -d "$tmp_db_dir" ] && rm_rf_safer "$tmp_db_dir"' EXIT
+    fi
+
+    tmp_schema_file="$tmp_db_dir/schema.sql"
+    tmp_data_file="$tmp_db_dir/data.sql"
+
+    mysqldump --no-data "$db_name" >"$tmp_schema_file"
+    if [ $? -ne 0 ]; then
+      error "unable to dump schema from database"
+    fi
+
+    mysqldump --no-create-db --no-create-info "$db_name" >"$tmp_data_file"
+    if [ $? -ne 0 ]; then
+      error "unable to dump data from database"
+    fi
+
+    tar -zcf "$tmp_target_file" -C "$tmp_db_dir" .
+    if [ $? -ne 0 ]; then
+      error "unable to create tar.gz file on $tmp_target_file"
+    fi
+
+    if ! mv -n "$tmp_target_file" "$target_file"; then
+      error "unable to move file '$tmp_target_file' to '$target_file'"
+    fi
+
+    echo "Successfully dumped database schema and data to file $target_file"
+    exit_code=0
+    ;;
+  mysql-test-split-dump-db-tar-gz)
+    [ -z "$1" ] && usage_test_split_dump
+
+    dump_file="$1"
+
+    if mysql_test_split_dump "$dump_file"; then
+      echo "Successfully validated dump from schema $dump_file"
+      exit_code=0
+    else
+      exit_code=1
+    fi
     ;;
   *)
     exit_code=1
