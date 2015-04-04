@@ -1,0 +1,37 @@
+#!/bin/bash
+
+usage() {
+  echo "Usage: $(basename "$0") -i
+
+  Edit crontab of the current user by receiving input from STDIN and setting
+  it as the contents of crontab.
+"
+  exit 1
+}
+
+# main
+[ $# -eq 0 -o "$1" != "-i" ] && usage
+
+self_bin=$(readlink -e "$0")
+self_dir=$(dirname "$0")
+sys_dir=$(readlink -e "$self_dir/..")
+lib_file="$sys_dir/lib/functions"
+
+if ! source "$lib_file"; then
+  echo "Error: unable to source lib file $lib_file" 1>&2
+  exit 1
+fi
+
+lock_file="$HOME"
+if ! lock_path "$lock_file" >/dev/null; then
+  error "unable to lock path $lock_file"
+fi
+trap 'unlock_path "$lock_file"' EXIT
+
+crontab -
+if [ $? -eq 0 ]; then
+  echo "Successfully updated crontab for user $USER"
+  exit 0
+else
+  error "failed to update crontab for user $USER"
+fi
