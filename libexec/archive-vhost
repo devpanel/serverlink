@@ -104,6 +104,14 @@ fi
 assign_deref_os_prop_or_exit archive_template_str "$sys_dir" \
   vhost_archive_template_str
 
+assign_deref_os_prop_or_exit apache_group "$sys_dir" \
+  names/apache.group
+
+unset webenabled_backwards
+if deref_os_prop "$sys_dir" webenabled_backwards &>/dev/null; then
+  webenabled_backwards=1
+fi
+
 sys_archive_dir="$sys_data_dir/vhost_archives"
 # create sys_archive_dir if it doesn't exist
 if [ ! -d "$sys_archive_dir" ]; then
@@ -267,12 +275,24 @@ if [ $? -ne 0 ]; then
   error "unable to create archive file $tmp_target_file"
 fi
 
+if [ -n "$webenabled_backwards" ]; then
+  archive_file_mode='640'
+else
+  archive_file_mode='640'
+fi
+
 # before moving the archive file to it's final destination, do any
 # permission adjustment needed
 if [ -n "$in_user_path" ]; then
-  chown "$user_web":"$user_web" "$tmp_target_file"
+  chown "$user_web":"$apache_group" "$tmp_target_file"
   if [ $? -ne 0 ]; then
-    echo "Warning: unable to chown temp file to user $user_web" 1>&2
+    echo "Warning: unable to chown temp file to user $apache_group" 1>&2
+    sleep 2
+  fi
+
+  chmod $archive_file_mode "$tmp_target_file"
+  if [ $? -ne 0 ]; then
+    echo "Warning: unable to chmod $archive_file_mode temp file to user $user_web" 1>&2
     sleep 2
   fi
 fi
@@ -283,7 +303,7 @@ if [ -z "$in_user_path" ] && ! ${debug:+run} chgrp "$user_web" "$tmp_target_file
 fi
 
 if [ -z "$in_user_path" ] && ! ${debug:+run} chmod 0640 "$tmp_target_file"; then
-  echo "Warning: unable to chmod 640 temp file $tmp_target_file" 1>&2
+  echo "Warning: unable to chmod 0640 temp file $tmp_target_file" 1>&2
   sleep 2
 fi
 
@@ -295,6 +315,30 @@ fi
 
 echo
 echo "Successfully saved archive file to '$target_file'"
+
+if [ -n "$webenabled_backwards" ]; then
+  echo "Calculating md5sum for the file..."
+  md5_output=$(nice -19 md5sum "$target_file")
+  echo "Calculating sha1sum for the file..."
+  sha1_output=$(nice -19 sha1sum "$target_file")
+
+  if [ -n "$md5_output" ]; then
+    md5_str=${md5_output%% *}
+    md5_file="${target_file%.*}.md5"
+
+    su -l -s /bin/bash -c "umask 027; cd "$vhost_archive_dir" && \
+      echo "$md5_str" >"$md5_file"" "$user_web"
+    [ $? -eq 0 ] && chown "$user_web":"$apache_group" "$md5_file"
+  fi
+
+  if [ -n "$sha1_output" ]; then
+    sha1_str=${sha1_output%% *}
+    sha1_file="${target_file%.*}.sha1"
+    su -l -s /bin/bash -c "umask 027; cd "$vhost_archive_dir" && \
+      echo "$sha1_str" >"$sha1_file"" "$user_web"
+    [ $? -eq 0 ] && chown "$user_web":"$apache_group" "$sha1_file"
+  fi
+fi
 
 # successfully ran the backup process, now go through the postrun scripts
 # and execute each with: $script  <vhost> <target_file>
