@@ -224,6 +224,130 @@ download_file() {
   return $status
 }
 
+get_url_from_cache() {
+  local url="$1"
+  local retries=${3:-3}
+  local wait_before_retry=${4:-5}
+
+  local cache_dir=""
+  if [ -n "$DEVPANEL_HOME" ]; then
+    cache_dir="$DEVPANEL_HOME/var/seedapps_cache"
+  else
+    return 1
+  fi
+
+  local md5_txt=$(echo -n "$url" | md5sum | cut -d' ' -f 1)
+
+  local cache_link="$cache_dir/$md5_txt:etag"
+  if [ ! -L "$cache_link" ]; then
+    return 1
+  fi
+
+  local tmp_headers_f=$(mktemp)
+  if [ $? -ne 0 ]; then
+    echo "$FUNCNAME(): unable to create temporary file" 1>&2
+    return 1
+  fi
+
+  local resp_raw=""
+  resp_raw=$(curl -w "%{http_code}"  -s -I \
+    --retry $retries --retry-delay $wait_before_retry \
+    -D "$tmp_headers_f" -o /dev/null "$url")
+  local curl_st=$?
+
+  code=${resp_raw%%*|}
+  if [ $curl_st -ne 0 -o "$code" != "200"  ]; then
+    rm -f -- "$tmp_headers_f"
+    return 1
+  fi
+
+  local etag_raw=$(egrep -i ^ETAG: "$tmp_headers_f")
+  if [ $? -ne 0 ]; then
+    rm -f -- "$tmp_headers_f"
+    return 1
+  fi
+  local etag_txt="${etag_raw#*: }"
+  etag_txt=${etag_txt//[^a-f0-9-]/}
+
+  rm -f -- "$tmp_headers_f"
+
+  local etag_cached=$(readlink "$cache_link")
+  if [ $? -ne 0 ]; then
+    return 1
+  fi
+
+  if [ "$etag_txt" != "$etag_cached" ]; then
+    return 1
+  fi
+
+  local cached_file="${cache_link%:etag}"
+  if [ -s "$cached_file" ]; then
+    echo -n "$cached_file"
+    return 0
+  else
+    return 1
+  fi
+}
+
+download_url_n_cache() {
+  local url="$1"
+  local temp_file="$2"
+  local retries=${3:-3}
+  local wait_before_retry=${4:-5}
+
+  local tmp_headers_f=$(mktemp)
+  if [ $? -ne 0 ]; then
+    echo "$FUNCNAME(): unable to create temp file" 1>&2
+    return 1
+  fi
+
+  local code="" error_msg="" resp_raw=""
+
+  resp_raw=$(curl -w "%{http_code}"  -sL --retry $retries --retry-delay $wait_before_retry \
+          -D "$tmp_headers_f" -o "$temp_file" "$url")
+  local curl_st=$?
+
+  code=${resp_raw%%*|}
+  if [ $curl_st -ne 0 -o "$code" != "200"  ]; then
+    rm -f -- "$tmp_headers_f"
+    echo "$FUNCNAME(): failed to retrieve url $url" 1>&2
+    return 1
+  fi
+
+  local etag_raw=$(egrep -i ^ETag: "$tmp_headers_f")
+  if [ $? -ne 0 ]; then
+    return 0 # won't cache, but it's fine, the file is downloaded
+  fi
+
+  local etag=${etag_raw#*: }
+  if [ -z "$etag" ]; then
+    return 0 # won't cache, but it's fine, the file is downloaded
+  fi
+  etag=${etag//[^a-f0-9-]/}
+
+  local cache_dir="" mydir="" myfile=""
+  if [ -n "$DEVPANEL_HOME" ]; then
+    cache_dir="$DEVPANEL_HOME/var/seedapps_cache"
+  else
+    return 0
+  fi 
+
+  local md5_str=$(echo -n "$url" | md5sum | cut -d' ' -f 1)
+
+  if [ -d "$cache_dir" ]; then
+    local cache_file="$cache_dir/$md5_str:etag"
+    ln -sf "$etag" "$cache_file"
+    if [ $? -eq 0 ]; then
+      local dest_file="${cache_file%:etag}"
+
+      # the line below does the actual caching
+      cp -f "$temp_file" "$dest_file"
+    fi
+  fi
+
+  return 0
+}
+
 ini_section_get_key_value() {
   local file="$1"
   local section=`escape_sed "$2"`

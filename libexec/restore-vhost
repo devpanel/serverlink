@@ -107,6 +107,7 @@ self_bin=$(readlink -e "$0")
 dir=`dirname "$self_bin"`
 we_base_dir=`readlink -e "$dir/.."`
 dir_bin="$we_base_dir/bin"
+export DEVPANEL_HOME="$we_base_dir"
 
 config_dir="$we_base_dir/config/vhosts/$vhost"
 user_web="w_$vhost"
@@ -145,7 +146,13 @@ elif [ ${#archive_label}  -gt 10 -a "${archive_label:0:7}" == "http://" \
      -o ${#archive_label} -gt 10 -a "${archive_label:0:8}" == "https://" \
      -o ${#archive_label} -gt 10 -a "${archive_label:0:6}" == "ftp://" ]; then
 
-  download_archive=1
+  file_in_cache=$(get_url_from_cache "$archive_label")
+  if [ $? -eq 0 ]; then
+    echo "Found application in cache, re-using from file $file_in_cache..."
+    archive_file="$file_in_cache"
+  else
+    download_archive=1
+  fi
 elif [ ! -e "$archive_label" -a $create_vhost -eq 0 \
   -a $try_archive_in_user_home -eq 1 \
   -a "${archive_label:0:1}" != "/" -a "${archive_label:0:2}" != "./" \
@@ -187,7 +194,9 @@ if [ -n "$download_archive" ]; then
   if [ $? -ne 0 ]; then
     error "unable to create temporary file to store the download"
   fi
-  download_file "$archive_label" "$tmp_down" 3 3
+
+  echo "Trying to download app from URL $archive_label ..."
+  download_url_n_cache "$archive_label" "$tmp_down"
   if [ $? -eq 0 ]; then
     archive_file="$tmp_down" 
   else
