@@ -2,18 +2,22 @@
 # Options:
 #   -i  pass mysql passwd via stdin
 #   -c# pass ~b_USER/.my.cnf via fd #
+#   -S engine  sets a specific default storage engine for tables
 
-self=$(readlink -e $0)
+self=$(readlink -e "$0")
 DBMGR_BINDIR="${self%/*}"
+sys_dir=$(readlink -e "$DBMGR_BINDIR/../../../..")
 DB_HOME_BASE="/home/clients/databases"
 
 opt_i=""
 opt_c=""
-while getopts "ic:" OPTOPT
+storage_engine=""
+while getopts "ic:S:" OPTOPT
 do
   case "$OPTOPT" in
     i) opt_i='-db-password-stdin';;
     c) opt_c="$OPTARG";;
+    S) storage_engine="$OPTARG" ;;
     *) exit 1;;
   esac
 done
@@ -68,6 +72,20 @@ then
 	echo "Error creating .my.cnf"
 	exit 6
   fi
+fi
+
+# check if the app requires a special mysql storage engine
+# and set ~/.my.cnf accordingly, before starting mysqld
+if [ -n "$storage_engine" ]; then
+  ini_str="mysqld.default_storage_engine=$storage_engine"$'\n'
+  if [ "$storage_engine" == "innodb" ]; then
+    ini_str+="mysqld.innodb=on"$'\n'
+  fi
+
+  ini_str_double_escaped=$(printf '%q' "$ini_str")
+  su -l -s /bin/bash \
+    -c "echo $ini_str_double_escaped | $sys_dir/bin/update-ini-file -c ~/.my.cnf" \
+    "$USER"
 fi
 
 "$DBMGR_BINDIR"daemon-start -t "$TYPE" -u "$USER" -d "$DATA_DIR" $ADDON #&>/dev/null
