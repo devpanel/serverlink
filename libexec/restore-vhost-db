@@ -4,7 +4,9 @@
 #   -S sync (don't create a database instance, just restore the dbs)
 #   -H
 
-dir=`dirname "$0"`
+self_bin=$(readlink -e "$0")
+dir=$(dirname "$self_bin")
+sys_dir=$(readlink -e "$dir/..")
 
 sync=0
 search_in_users_home=0
@@ -75,6 +77,7 @@ elif [ -f "$archive_label" ]; then
   archive_dir="$tmp_extract/db"
 fi
 
+metadata_dir=$(readlink -m "$archive_dir/../metadata")
 archive_my_cnf="$archive_dir/b_.my.cnf"
 date=`date  +'%Y%m%d'`
 
@@ -88,12 +91,24 @@ fi
 # WARNING!!! createdb will not work properly if $HOME/.my.cnf exists!!!
 export HOME=/
 
-if [ $create_db_instance -eq 1 -a -s "$archive_my_cnf" ]
-then
-  $dir/../config/os/pathnames/opt/dbmgr/current/bin/createdb -c3 $options "$user" 3<"$archive_my_cnf" || exit 1
-elif [ $create_db_instance -eq 1 ] && \
-  ! $dir/../config/os/pathnames/opt/dbmgr/current/bin/createdb $options "$user"; then
-  error "unable to create database instance"
+if [ $create_db_instance -eq 1 ]; then
+
+  # check if the app requires a special mysql storage engine
+  # to set ~/.my.cnf accordingly
+  unset storage_engine
+  st_engine_link="$metadata_dir/config.mysql_storage_engine"
+  if [ -L "$st_engine_link" ]; then
+    storage_engine=$(readlink "$st_engine_link")
+    storage_engine_double_esc=$(printf '%q' "$storage_engine")
+    options+=" -S $storage_engine_double_esc"
+  fi
+
+  # do the actual mysql instance creation
+  if [ -s "$archive_my_cnf" ]; then
+    "$sys_dir/config/os/pathnames/opt/dbmgr/current/bin/createdb"  -c3 $options "$user" 3<"$archive_my_cnf" || exit 1
+  elif ! "$sys_dir/config/os/pathnames/opt/dbmgr/current/bin/createdb" $options "$user"; then
+    error "unable to create database instance"
+  fi
 fi
 
 home="`eval \"echo ~$user\"`"
