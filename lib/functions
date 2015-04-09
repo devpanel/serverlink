@@ -1122,3 +1122,24 @@ is_valid_mysql_db_or_table_name() {
     return 1
   fi
 }
+
+is_mysql_engine_supported() {
+  local engine="$1"
+
+  local sql_tmpl='SELECT * FROM ENGINES WHERE ENGINE = "%s" 
+                  AND SUPPORT IN("YES", "DEFAULT");'
+
+  sql_line=$(printf "$sql_tmpl" "$engine")
+
+  local output=""
+  output=$(mysql -BN -D information_schema -e "$sql_line")
+  if [ $? -ne 0 ]; then
+    return 1
+  fi
+
+  if [ -n "$output" ]; then
+    return 0
+  else
+    return 1
+  fi
+}
