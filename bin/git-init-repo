@@ -1,18 +1,22 @@
 #!/bin/bash
 
 usage() {
-  echo "Usage: `basename "$0"` [ options ] <name>
+  echo "Usage: `basename "$0"` [ options ] [name]
   
   Options
     -d <target_dir>              the target directory where to clone
-    -I                           initialize repository with a commit
+    -I                           add a first commit to the repository
     -r remote_name=remote_addr   sets the remote name and address
                                  (this flag can be used multiple times)
     -c key=value                 options to be saved by git config.
                                  This option can be used multiple times
+    -n                           create a non-bare repository
+    -P                           create a non-bare repository on the
+                                 public_html directory of the vhost
 
+  Creates a bare git repository on the specified target directory.
 
-  <name> is just a friendly short name when the -d option is not used
+  [name] is just a friendly short name when the -d option is not used
 "
   exit 1
 }
@@ -27,8 +31,9 @@ if [ $EUID -eq 0 ]; then
   exit 1
 fi
 
-getopt_flags='d:r:c:I'
-unset initialize target_dir
+getopt_flags='d:r:c:IPn'
+is_bare=1
+unset GIT_DIR initial_commit target_dir
 declare -a remotes_ar=()
 declare -a configs_ar=()
 while getopts $getopt_flags OPTNAME; do
@@ -37,7 +42,7 @@ while getopts $getopt_flags OPTNAME; do
       target_dir="$OPTARG"
       ;;
     I)
-      initialize=1
+      initial_commit=1
       ;;
     r)
       if echo "$OPTARG" | egrep -q '^[A-Za-z0-9._-]+=.+'; then
@@ -55,6 +60,13 @@ while getopts $getopt_flags OPTNAME; do
         exit 1
       fi
       ;;
+    P)
+      target_dir="$HOME/public_html/${USER#w_}"
+      unset is_bare
+      ;;
+    n)
+      unset is_bare
+      ;;
     *)
       exit 1
       ;;
@@ -62,33 +74,53 @@ while getopts $getopt_flags OPTNAME; do
 done
 [ $OPTIND -gt 1 ] && shift $(( $OPTIND - 1 ))
 
-name="$1"
-[ -z "$name" ] && usage
-
-if [ -z "$target_dir" ]; then
+if [ -z "$target_dir" -a -z "$1" ]; then
+  usage
+elif [ -z "$target_dir" -a -n "$1" ]; then
+  name=$(basename "$1")
   target_dir="$HOME/repositories/$name.git"
-elif [ "${target_dir:0:1}" != "/" ]; then
+elif [ -n "$target_dir" -a "${target_dir:0:1}" != "/" ]; then
   target_dir="$HOME/$target_dir"
 fi
 
-git init --bare "$target_dir"
+if [ -n "$is_bare" ]; then
+  dot_git_dir="$target_dir"
+else
+  dot_git_dir="$target_dir/.git"
+
+  if ! cd "$target_dir"; then
+    echo "Error: unable to cd into $target_dir" 1>&2
+    exit 1
+  fi
+fi
+
+git init ${is_bare:+--bare "$target_dir"}
 if [ $? -ne 0 ]; then
   echo "Error: unable to initiliaze a git repo on dir '$target_dir'" 1>&2
   exit 1
 fi
 
-GIT_DIR="$target_dir"
-if [ -n "$initialize" ]; then
-  work_dir=`mktemp -d`
-  if [ $? -ne 0 ]; then
-    echo "Error: unable to create temporary directory" 1>&2
-    exit 1
-  fi
-  trap 'ex=$? ; rm -rf "$work_dir"; trap - EXIT INT HUP TERM; exit $ex' EXIT INT HUP TERM
+if [ -n "$initial_commit" ]; then
+  if [ -n "$is_bare" ]; then
+    tmp_work_dir=`mktemp -d`
+    if [ $? -ne 0 ]; then
+      echo "Error: unable to create temporary directory" 1>&2
+      exit 1
+    fi
+    work_dir="$tmp_work_dir"
+    trap 'rm -rf "$tmp_work_dir"' EXIT
 
-  git clone -l "file://$target_dir" "$work_dir"
-  if [ $? -ne 0 ]; then
-    echo "Error: unable to clone from '$target_dir'" 1>&2
+    git clone -l "file://$target_dir" "$work_dir"
+    if [ $? -ne 0 ]; then
+      echo "Error: unable to clone from '$target_dir'" 1>&2
+      exit 1
+    fi
+  else
+    work_dir="$target_dir"
+  fi
+
+  if ! cd "$work_dir"; then
+    echo "Error: unable to chdir to $work_dir" 1>&2
     exit 1
   fi
 
@@ -99,7 +131,7 @@ if [ -n "$initialize" ]; then
     author_email="support@devpanel.com"
   fi
 
-  GIT_DIR="$GIT_DIR" git -c "user.name=$author_name" \
+  git -c "user.name=$author_name" \
     -c "user.email=$author_email" commit --allow-empty \
     -m "Repository initiliazed using DevPanel"
 
@@ -108,28 +140,31 @@ if [ -n "$initialize" ]; then
     exit 1
   fi
 
-  GIT_DIR="$GIT_DIR" git push origin master
-  if [ $? -ne 0 ]; then
-    echo "Error: unable to push the initial commit back to the repository" 1>&2
-    exit 1
+  if [ -n "$is_bare" ]; then
+    git push origin master
+    if [ $? -ne 0 ]; then
+      echo "Error: unable to push the initial commit back to the repository" 1>&2
+      exit 1
+    fi
   fi
 fi
 
+if ! cd "$target_dir"; then
+  echo "Error: unable to chdir to $target_dir" 1>&2
+  exit 1
+fi
+ 
 for remote_str in ${remotes_ar[@]}; do
   # split the name=value string
   remote_name=${remote_str%%=*}
   remote_addr=${remote_str#*=}
 
-  # if it was initialized earlier, and there's a new origin, then remove the
-  # previous origin before attempting to add the new one
-  if [ -n "$initialize" -a "$remote_name" == "origin" ]; then
-    origin_path="$GIT_DIR/refs/remotes/origin/"
-    if [ -e "$origin_path" ]; then
-      GIT_DIR="$GIT_DIR" git remote remove origin
-    fi
+  origin_path="$dot_git_dir/refs/remotes/origin/"
+  if [ -e "$origin_path" ]; then
+    git remote remove origin
   fi
 
-  GIT_DIR="$GIT_DIR" git remote add "$remote_name" "$remote_addr"
+  git remote add "$remote_name" "$remote_addr"
 done
 
 for config_str in ${configs_ar[@]}; do
@@ -137,7 +172,7 @@ for config_str in ${configs_ar[@]}; do
   config_key=${config_str%%=*}
   config_vle=${config_str#*=}
 
-  GIT_DIR="$GIT_DIR" git config "$config_key" "$config_vle"
+  git config "$config_key" "$config_vle"
 done
 
 exit 0
