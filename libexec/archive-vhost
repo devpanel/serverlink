@@ -29,7 +29,7 @@ usage() {
 
 cleanup()
 {
-  unlock_path "$vhost_archive_dir"
+  unlock_path "$archive_lock"
 
   if [ -z "$debug" -a -n "$tmp_archive_dir" -a -d "$tmp_archive_dir" ]; then
     rm_rf_safer "$tmp_archive_dir"
@@ -47,9 +47,6 @@ run()
 # main
 
 [ $# -eq 0 -o -z "$1" ] && usage
-
-exec 3>&1
-exec 1>&2
 
 archive_vhost_web_options=""
 check_archive_pathname_options=""
@@ -89,6 +86,19 @@ $dir/check-vhost-name archive "$vhost" || usage
 home="`eval echo -n \~$user_web`"
 [ -d "$home" ] || error "Home dir $home does not exist"
 
+# lock $vhost_archive_dir not to have other concurring backups
+# at the same time
+archive_lock="$sys_dir/config/vhosts/$vhost/.archive"
+touch "$archive_lock"
+if ! lock_path "$archive_lock" >/dev/null; then
+  error "unable to lock directory $vhost_archive_dir"\
+\ "probably there's an ongoing backup running."
+fi
+
+trap 'exit 1 ' HUP INT QUIT ILL TRAP ABRT BUS FPE KILL SEGV \
+  PIPE STOP ALRM TERM
+trap 'cleanup' EXIT
+
 assign_deref_os_prop_or_exit sys_data_dir "$sys_dir" data_dir
 sys_data_dir=$(readlink -e "$sys_data_dir")
 if [ $? -ne 0 ]; then
@@ -107,7 +117,7 @@ assign_deref_os_prop_or_exit archive_template_str "$sys_dir" \
 assign_deref_os_prop_or_exit apache_group "$sys_dir" \
   names/apache.group
 
-unset webenabled_backwards
+unset to_stdout webenabled_backwards
 if deref_os_prop "$sys_dir" webenabled_backwards &>/dev/null; then
   webenabled_backwards=1
 fi
@@ -139,7 +149,14 @@ else
   vhost_archive_dir="$archive_dir_in_sys"
 fi
 
-if [ -n "$archive_to" ]; then
+if [ -n "$archive_to" -a "$archive_to" == "-" ]; then
+  to_stdout=1  # destination is STDOUT
+else # destination is a file
+  if [ -z "$archive_to" ]; then
+    # archive name was not passed on cmdline, use the full template
+    archive_to="$archive_template_str"
+  fi
+
   if [ "${archive_to:0:1}" == "/" ]; then
     tmp_full_path="$archive_to"
   else
@@ -157,27 +174,24 @@ if [ -n "$archive_to" ]; then
   fi
 
   archive_filename=$(basename "$archive_to")
-else
-  # archive name was not passed on cmdline, use the full template
-  archive_filename="$archive_template_str"
-fi
 
-# do some last transformations to the archive_filename
-archive_filename=${archive_filename//@archive_template_str@/"$archive_template_str"}
-archive_filename=${archive_filename//@vhost@/"$vhost"}
-archive_filename=$(date_placeholders "$archive_filename")
-[ $? -ne 0 ] && exit 1
+  # do some last transformations to the archive_filename
+  archive_filename=${archive_filename//@archive_template_str@/"$archive_template_str"}
+  archive_filename=${archive_filename//@vhost@/"$vhost"}
+  archive_filename=$(date_placeholders "$archive_filename")
+  [ $? -ne 0 ] && exit 1
 
-if [[ "$archive_filename" != *.[Tt][Gg][Zz] ]]; then
-  archive_filename+=".tgz"
-fi
+  if [[ "$archive_filename" != *.[Tt][Gg][Zz] ]]; then
+    archive_filename+=".tgz"
+  fi
 
-target_file="$vhost_archive_dir/$archive_filename"
+  target_file="$vhost_archive_dir/$archive_filename"
 
-# test whether the target file already exists
-if [ -e "$target_file" -o -L "$target_file" ]; then
-  error "file '$target_file' already exists."
-else
+  # test whether the target file already exists
+  if [ -e "$target_file" -o -L "$target_file" ]; then
+    error "file '$target_file' already exists."
+  fi
+
   # test if a file with the same name already exists at $archive_dir_in_user or
   # $archive_dir_in_sys and refuse to create if a file with the same name exists on
   # either place
@@ -192,37 +206,28 @@ else
       error "file with the same name already exists at $test_in_user. Please choose a different name"
     fi
   fi
-fi
 
-# create vhost_archive_dir if it doesn't exist
-if [ ! -d "$vhost_archive_dir" ]; then
-  mkdir -m 2750 "$vhost_archive_dir"
-  if [ $? -ne 0 ]; then
-    error "unable to create directory '$vhost_archive_dir'"
+  # create vhost_archive_dir if it doesn't exist
+  if [ ! -d "$vhost_archive_dir" ]; then
+    mkdir -m 2750 "$vhost_archive_dir"
+    if [ $? -ne 0 ]; then
+      error "unable to create directory '$vhost_archive_dir'"
+    fi
+    echo "Created directory '$vhost_archive_dir'..."
+    if [ -n "$in_user_path" ]; then
+      chown "$user_web" "$vhost_archive_dir"
+    fi
   fi
-  echo "Created directory '$vhost_archive_dir'..."
-  if [ -n "$in_user_path" ]; then
-    chown "$user_web" "$vhost_archive_dir"
-  fi
-fi
 
-# lock $vhost_archive_dir not to have other concurring backups
-# at the same time
-if ! lock_path "$vhost_archive_dir" >/dev/null; then
-  error "unable to lock directory $vhost_archive_dir"\
-\ "probably there's an ongoing backup running."
-fi
-trap 'cleanup' HUP INT QUIT ILL TRAP ABRT BUS FPE KILL SEGV \
-  PIPE STOP ALRM TERM EXIT
-
-# in case group ownership is different, chgrp vhost_archive_dir to $user_web
-group_name=$(stat -c %G "$vhost_archive_dir")
-if [ "$group_name" != "$user_web" ]; then
-  chgrp "$user_web" "$vhost_archive_dir"
-  if [ $? -ne 0 ]; then
-    error "unable to chgrp archive dir $vhost_archive_dir to $user_web"
+  # in case group ownership is different, chgrp vhost_archive_dir to $user_web
+  group_name=$(stat -c %G "$vhost_archive_dir")
+  if [ "$group_name" != "$user_web" ]; then
+    chgrp "$user_web" "$vhost_archive_dir"
+    if [ $? -ne 0 ]; then
+      error "unable to chgrp archive dir $vhost_archive_dir to $user_web"
+    fi
+    echo "Chgrp'd directory '$vhost_archive_dir' to $user_web..."
   fi
-  echo "Chgrp'd directory '$vhost_archive_dir' to $user_web..."
 fi
 
 tmp_archive_dir=`mktemp -d "$upper_tmp_dir/${vhost}__archive_vhost.tmp.XXXXXX"`
@@ -243,13 +248,17 @@ else
   sleep 2
 fi
 
-tmp_target_file=$(mktemp "$tmp_archive_dir/$archive_filename.XXXXXX")
-if [ $? -ne 0 ]; then
-  error "unable to create temporary file"
+if [ -n "$to_stdout" ]; then
+  tmp_target_file="-"
+else
+  tmp_target_file=$(mktemp "$tmp_archive_dir/$archive_filename.XXXXXX")
+  if [ $? -ne 0 ]; then
+    error "unable to create temporary file"
+  fi
 fi
 
-echo "Archiving web files..."
-${debug:+run} "$0-web" $archive_vhost_web_options "$vhost" "$tmp_archive_dir/web"
+echo "Archiving web files..." 1>&2
+${debug:+run} "$0-web" $archive_vhost_web_options "$vhost" "$tmp_archive_dir/web" 1>&2
 if [ $? -ne 0 ]; then
   error "unable to archive web files (temp dir $tmp_archive_dir/web)"
 fi
@@ -258,21 +267,25 @@ if ! `id -u "$user_db" 2>/dev/null >/dev/null`
 then
   echo "Skipping db (no such user $user_db)"
 else
-  echo "Archiving MySQL databases..."
-  ${debug:+run} "$0-db" "$vhost" "$tmp_archive_dir/db"
+  echo "Archiving MySQL databases..." 1>&2
+  ${debug:+run} "$0-db" "$vhost" "$tmp_archive_dir/db" 1>&2
   if [ $? -ne 0 ]; then
     error "unable to archive db files (temp dir $tmp_archive_dir/db)"
   fi
 fi
 
-exec >&3
-
-echo "Starting final tar ball archiving..."
+echo "Starting final tar ball archiving..." 1>&2
 base_tmp_target_file=$(basename "$tmp_target_file")
-${debug:+run} tar -C "$tmp_archive_dir" --exclude="$base_tmp_target_file" \
+tar -C "$tmp_archive_dir" --exclude="$base_tmp_target_file" \
   -zScpf "$tmp_target_file" .
 if [ $? -ne 0 ]; then
   error "unable to create archive file $tmp_target_file"
+fi
+
+if [ -n "$to_stdout" ]; then
+  # destination is stdout, file has been already sent to stdout
+  # nothing else is needed
+  exit 0
 fi
 
 if [ -n "$webenabled_backwards" ]; then
