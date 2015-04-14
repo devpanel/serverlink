@@ -610,8 +610,9 @@ if [ -n "$opt_P" -o -n "$opt_p" ]; then
 
     if [ -n "$opt_p" ]; then
       admin_pw=$(echo "$passwd_contents" |cut -d: -f 2)
+      admin_pw_esc=$(escape_sed "$admin_pw")
       if [ -f "$passwd_file" ]; then
-        echo "s/^$admin_user:.\+$/$admin_user:$admin_pw/" \
+        echo "s/^$admin_user:.\+$/$admin_user:$admin_pw_esc/" \
         | run_ised "$passwd_file" || \
         error "unable to change admin password in password file $passwd_file"
       else
