@@ -631,14 +631,17 @@ if [ -n "$opt_P" -o -n "$opt_p" ]; then
 fi # end of password changing
 
 # -n: update settings.ini
-${subsystem}_custom # run the seed's API customization function
-if [ $? -ne 0 ]; then
-  error "Cannot perform $subsystem-specific cusmomizations"
+if [ -n "$opt_n" ]; then
+  ${subsystem}_custom # run the seed's API customization function
+  if [ $? -ne 0 ]; then
+    error "Cannot perform $subsystem-specific cusmomizations"
+  fi
+
+  # Update php.ini to point to new vhost home
+  echo "
+           s/\/w_[[:alnum:]]\{2,6\}/w_${vhost}/g
+  " | run_ised "$home/.php/php.ini" || \
+    error "unable to edit $home/.php/php.ini"
 fi
 
-# Update php.ini to point to new vhost home
-echo "
-         s/\/w_[[:alnum:]]\{2,6\}/w_${vhost}/g
-" | run_ised "$home/.php/php.ini" || \
-  error "unable to edit $home/.php/php.ini"
-
+exit 0
