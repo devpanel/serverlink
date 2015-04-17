@@ -6,3 +6,5 @@ wait_timeout = 300
 default-storage-engine = MyISAM
 default_tmp_storage_engine = MyISAM
 max_allowed_packet = 16M
+innodb = off
+performance_schema = off
