@@ -270,23 +270,6 @@ get_list_of_items() {
   fi
 }
 
-in_array() {
-  local value="$1"
-  shift
-
-  local v
-
-  [ -z "$@" ] && return 1 # empty list
-
-  for v in "$@"; do
-    if [ "$v" == "$value" ]; then
-      return 0
-    fi
-  done
-
-  return 1
-}
-
 cleanup() {
 
   [ -n "$tmp_new_vhost_file" ] && rm -f -- "$tmp_new_vhost_file"
