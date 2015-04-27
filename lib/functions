@@ -149,6 +149,23 @@ escape_sed() {
   echo -n "$escaped"
 }
 
+in_array() {
+  local value="$1"
+  shift
+
+  local v
+
+  [ -z "$@" ] && return 1 # empty list
+
+  for v in "$@"; do
+    if [ "$v" == "$value" ]; then
+      return 0
+    fi
+  done
+
+  return 1
+}
+
 # the function below is a candidate to be removed as it's much better to use
 # variable ${BASH_SOURCE[0]}, though not removing it now because not sure if
 # it's being used by other scripts
