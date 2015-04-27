@@ -1,5 +1,7 @@
 #!/bin/bash
 
+declare -a just_handled_ar
+
 usage() {
   echo "Usage: `basename "$0"`"
 
@@ -210,6 +212,13 @@ if [ $? -ne 0 -o -z "$linux_distro" ]; then
   error "unable to detect the linux distribution of this server"
 fi
 
+distro_version=$(wedp_auto_detect_distro_version)
+if [ $? -ne 0 ]; then
+  error "unable to detection version of current distro"
+fi
+
+distro_major=${distro_version%%.*}
+
 linux_arch=$(uname -m)
 if [ $? -ne 0 -o -z "$linux_arch" ]; then
   error "unable to detect the machine architecture"
@@ -225,12 +234,19 @@ while read update_line; do
 
   unset v_installed v_needs_update
 
-  IFS="$sep" read package latest_version distro distro_version arch flags <<< "$update_line"
+  IFS="$sep" read package latest_version pkg_distro pkg_distro_version arch flags <<< "$update_line"
   pkg_url=`assemble_pkg_url "$packages_url" "$package" "$latest_version" \
-    "$distro" "$distro_version" "$arch"`
+    "$pkg_distro" "$pkg_distro_version" "$arch"`
+
+  # this avoids a package from being installed or updated more than once
+  # when there are multiple rules (e.g. a package with specific distro versions and
+  # versions without a distro specification)
+  if in_array "$package" ${just_handled_ar[*]}; then
+    continue
+  fi
  
   # skip if the package is for a specific distro that not the current one
-  if [ "$distro" != "-" -a "$distro" != "$linux_distro" ]; then
+  if [ "$pkg_distro" != "-" -a "$pkg_distro" != "$linux_distro" ]; then
     continue
   fi
 
@@ -239,9 +255,18 @@ while read update_line; do
     continue
   fi
 
+  # skip if the package is specific for a distro version not equal to the
+  # current one
+  if [ "$pkg_distro_version" != "-" \
+    -a "$pkg_distro_version" != "$distro_version" \
+    -a "$pkg_distro_version" != "$distro_major" ]; then
+
+    continue
+  fi
+
   pkg_file="$tmp_dir/"
   pkg_file+=`assemble_pkg_filename "$package" "$latest_version" \
-    "$distro" "$distro_version" "$arch"`
+    "$pkg_distro" "$pkg_distro_version" "$arch"`
 
   if is_installed "$package" "$latest_version" "$system_dir"; then
     v_installed=1
@@ -261,8 +286,10 @@ while read update_line; do
 
   if [ -z "$v_installed" -o -n "$v_needs_update" ]; then
     echo "Downloading $package $latest_version from $pkg_url..." 1>&2
+    just_handled_ar+=( "$package" )
     if ! download_file "$pkg_url" "$pkg_file"; then
       echo "Warning: failed download for package '$package' version '$latest_version' from URL '$pkg_url'" 1>&2
+      n_failed_update+=1
       continue
     fi
   fi
@@ -275,6 +302,7 @@ while read update_line; do
     else
       n_failed_install+=1
     fi
+    just_handled_ar+=( "$package" )
   elif [ -n "$v_needs_update" ]; then
     echo "Updating $package version $latest_version..."
     devpanel_update_pkg "$package" "$latest_version" "$pkg_file" "$system_dir"
@@ -283,6 +311,7 @@ while read update_line; do
     else
       n_failed_update=1
     fi
+    just_handled_ar+=( "$package" )
   fi
 done < "$updates_file"
 
