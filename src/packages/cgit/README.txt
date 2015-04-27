@@ -6,6 +6,7 @@ Steps to compile and package cgit into a devPanel package:
 
 CentOS:
 # yum -y install openssl-devel zlib-devel
+# yum -y install gcc gcc-c++
 
 # make get-git
 # mkdir temp-install
