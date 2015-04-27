@@ -172,6 +172,9 @@ install_ce_software() {
 
   ln -s "$_apache_logs_dir" "$_apache_base_dir/webenabled-logs"
 
+  ln -s "$webenabled_install_dir/compat/apache_include/global-includes" \
+    "$_apache_base_dir/devpanel-global"
+
   ln -s "$webenabled_install_dir/compat/apache_include/virtwww" \
     "$_apache_base_dir/devpanel-virtwww"
 
