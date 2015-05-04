@@ -42,6 +42,7 @@ drupal_set_password()
 { 
   local user="$1" encrypted_password="$2"
   local token salt
+  local status
 
   local version=""
 
@@ -54,6 +55,15 @@ drupal_set_password()
     sql_query "update users set pass = '$encrypted_password' where name = '$user';"
   elif [ "$version" == 8 ]; then
     sql_query "update users_field_data set pass = '$encrypted_password' where name = '$user';"
+    status=$?
+
+    # with Drupal 8 beta4, just updating the password in the database wasn't
+    # enough. It required one more login with the old password before the
+    # new password worked. But running cache-rebuild made it apply 
+    # immediately (tested, May 2015)
+    drush cache-rebuild
+
+    return $status
   fi
 }
 
