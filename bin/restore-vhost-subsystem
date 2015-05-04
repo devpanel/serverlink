@@ -404,6 +404,12 @@ cleanup_env_vars
 curr_dir="`dirname "${BASH_SOURCE[0]}"`"
 we_base_dir=`readlink -e "$curr_dir/.."`
 
+self_path_dir="$we_base_dir/bin/.path"
+if [[ "$PATH" != *"$self_path_dir"* ]]; then
+  # for when running on a non-login shell
+  PATH="$self_path_dir:$PATH"
+fi
+
 lib_file="`readlink -e "$curr_dir/../lib/functions"`"
 if [ $? -ne 0 ]; then
   error "unable to find auxiliary library file. Should have been at ../lib/functions from this script directory"
