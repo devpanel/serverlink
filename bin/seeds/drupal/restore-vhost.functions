@@ -61,7 +61,7 @@ drupal_set_password()
     # enough. It required one more login with the old password before the
     # new password worked. But running cache-rebuild made it apply 
     # immediately (tested, May 2015)
-    drush cache-rebuild
+    ( cd "$home/public_html/$vhost" && drush cache-rebuild )
 
     return $status
   fi
