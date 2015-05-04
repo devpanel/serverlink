@@ -1,5 +1,5 @@
   <Directory @@__PARAM_DOCUMENTROOT__@@>
-      AllowOverride FileInfo Indexes Limit Options
+      AllowOverride AuthConfig FileInfo Indexes Limit Options
       AuthUserFile "@@__VHOST_USER_HOME__@@/.htpasswd"
       AuthType Basic
       AuthBasicProvider file
