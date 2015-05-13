@@ -1,7 +1,5 @@
 #!/bin/bash
 
-dir=`dirname "$0"`
-
 usage() {
   echo "Usage: `basename "$0"` [ options ] <vhost> <archive_dir>
 
@@ -61,7 +59,7 @@ create_file()
 # main
 [ $# -lt 2 ] && usage
 
-unset dont_lock_tables use_existing_dir
+unset dont_lock_tables use_existing_dir lock_cmd_arg
 getopt_flags='ne'
 while getopts $getopt_flags OPTN; do
   case $OPTN in
@@ -70,6 +68,10 @@ while getopts $getopt_flags OPTN; do
       ;;
     e)
       use_existing_dir=1
+      ;;
+    L)
+      unset dont_lock_tables
+      lock_cmd_arg=1
       ;;
     *)
       exit 1
@@ -84,11 +86,22 @@ if [ -z "$vhost" -o -z "$archive_dir" ]; then
   usage
 fi
 
+self_bin=$(readlink -e "$0")
+dir=`dirname "$self_bin"`
+sys_dir=$(readlink -e "$dir/..")
+
+lib_file="$sys_dir/lib/functions"
+if ! source "$lib_file"; then
+  echo "Error: unable to load lib file $lib_file" 1>&2
+  exit 1
+fi
+
 archive_list="$archive_dir/databases"
 archive_my_cnf="$archive_dir/b_.my.cnf"
 user="b_$vhost"
 home="`eval \"echo ~$user\"`"
 date=`date  +'%Y%m%d'`
+vhost_config_dir="$sys_dir/config/vhost/$vhost"
 
 if ! `id -u "$user" 2>/dev/null >/dev/null`
 then
@@ -145,12 +158,15 @@ else
   echo Not found
 fi
 
+if [ -z "$lock_cmd_arg" ] && get_metadata_value "$vhost_config_dir" config.mysql.skip_lock_tables &>/dev/null; then
+  dont_lock_tables=1
+fi
 
 for database in $list
 do
   archive_file="$archive_dir/$database.sql"
   echo "Archiving $database to $archive_file"
-  if ! run2 $dir/dbmgr-mysql-as-root "$user" mysqldump --extended-insert=false ${dont_lock_tables:+--skip-lockdb} "$database" 2>&1 >"$archive_file" ||
+  if ! run2 $dir/dbmgr-mysql-as-root "$user" mysqldump --extended-insert=false ${dont_lock_tables:+--skip-lock-tables} "$database" 2>&1 >"$archive_file" ||
      ! run gzip "$archive_file"
   then
     echo "Aborting" >&2
