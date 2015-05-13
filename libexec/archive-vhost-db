@@ -101,7 +101,7 @@ archive_my_cnf="$archive_dir/b_.my.cnf"
 user="b_$vhost"
 home="`eval \"echo ~$user\"`"
 date=`date  +'%Y%m%d'`
-vhost_config_dir="$sys_dir/config/vhost/$vhost"
+vhost_config_dir="$sys_dir/config/vhosts/$vhost"
 
 if ! `id -u "$user" 2>/dev/null >/dev/null`
 then
