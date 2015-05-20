@@ -2,13 +2,13 @@
 umask 022
 
 usage() {
-  local prog=`basename "$0"`
   echo "
-Usage: $prog -y [ options ] <install_dir>
+Usage: $0 -y [ options ]
 
   Options:
+    -y          yes, you really want to uninstall everything
     -d          enable debug, print every command executed
-    -T          don't stop taskd
+    -T          running through taskd
 
   This script removes all DevPanel software and related data. You'll lose
   data if you run this script!
@@ -22,80 +22,31 @@ Usage: $prog -y [ options ] <install_dir>
   exit 1
 }
 
-set_global_variables() {
-  local source_dir="$1"
-  local target_dir="$2"
-  local distro="$3"
+kill_using_path() {
+  local path="$1"
+  local n_max_tries=${2:-3}
 
-  # initialize global variables used throughout this script
-
-  local we_config_dir="$source_dir/config"
-
-  # main config file to be used by DevPanel
-  dp_config_file="$target_dir/etc/devpanel.conf"
-
-  _apache_logs_dir=$(wedp_resolve_link "$we_config_dir/os.$distro/pathnames/var/log/apache_logs_dir")
-  if [ $? -ne 0  -o -z "$_apache_logs_dir" ]; then
-    echo "unable to set global variable _apache_logs_dir" 1>&2
-    return 1
+  if ! fuser -s "$path"; then
+    return 0
   fi
 
-   _apache_vhost_logs_dir=$(wedp_resolve_link "$we_config_dir/os.$distro/pathnames/var/log/apache_vhosts")
-  if [ $? -ne 0  -o -z "$_apache_vhost_logs_dir" ]; then
-    echo "unable to set global variable _apache_vhost_logs_dir" 1>&2
-    return 1
-  fi
-  
-  _apache_base_dir=$(wedp_resolve_link "$we_config_dir/os.$distro/pathnames/etc/apache_base_dir")
-  if [ $? -ne 0  -o -z "$_apache_base_dir" ]; then
-    echo "unable to set global variable _apache_base_dir" 1>&2
-    return 1
-  fi
+  # try to kill the process with SIGTERM $n_max_tries
+  local -i i=0
+  while [ $i -le $n_max_tries ]; do
+    i+=1
+    fuser -k -TERM "$path"
+    sleep 3
+    if ! fuser -s "$path"; then
+      return 0
+    fi
+  done
 
-  _apache_includes_dir=$(wedp_resolve_link "$we_config_dir/os.$distro/pathnames/etc/apache_includes_dir")
-  if [ $? -ne 0  -o -z "$_apache_includes_dir" ]; then
-    echo "unable to set global variable _apache_includes_dir" 1>&2
-    return 1
-  fi
+  # returned without a successful kill, let's kill -9 then
+  fuser -k "$path"
+}
 
-  _apache_vhosts=$(wedp_resolve_link "$we_config_dir/os.$distro/pathnames/etc/apache_vhosts")
-  if [ $? -ne 0  -o -z "$_apache_vhosts" ]; then
-    echo "unable to set global variable _apache_vhosts" 1>&2
-    return 1
-  fi
-
-  _apache_vhosts_removed=$(wedp_resolve_link "$we_config_dir/os.$distro/pathnames/etc/apache_vhosts_removed")
-  if [ $? -ne 0  -o -z "$_apache_vhosts_removed" ]; then
-    echo "unable to set global variable _apache_vhosts_removed" 1>&2
-    return 1
-  fi
-
-  _apache_user=`head -1 "$we_config_dir/os.$distro/names/apache.user"`
-  if [ $? -ne 0 -o -z "$_apache_user" ]; then
-    echo "unable to resolve apache user" 1>&2
-    return 1
-  fi
-
-
-  _apache_group=`head -1 "$we_config_dir/os.$distro/names/apache.group"`
-  if [ $? -ne 0 ]; then
-    echo "unable to resolve apache group" 1>&2
-    return 1
-  fi
-
-  _apache_exec_group=`head -1 "$we_config_dir/os.$distro/names/apache-exec.group"`
-  if [ $? -ne 0 ]; then
-    echo "unable to resolve apache exec group" 1>&2
-    return 1
-  fi
-
-  _apache_main_config_file=`readlink "$we_config_dir/os.$distro/pathnames/etc/apache_main_config_file"`
-  if [ $? -ne 0 -o -z "$_apache_main_config_file" ]; then
-    echo "unable to resolve apache_main_config_file" 1>&2
-    return 1
-  fi
-
-  return 0
+cleanup() {
+  unlock_path "$uninstall_base_dir"
 }
 
 # main
@@ -113,7 +64,7 @@ if [ $EUID -ne 0 ]; then
   exit 1
 fi
 
-unset confirmed dont_stop_taskd
+unset confirmed through_taskd
 getopt_flags='ydT'
 while getopts $getopt_flags OPTN; do
   case "$OPTN" in
@@ -124,43 +75,37 @@ while getopts $getopt_flags OPTN; do
       set -x
       ;;
     T)
-      dont_stop_taskd=1
+      through_taskd=1
       ;;
     *)
       exit 1
       ;;
   esac
 done
-shift $(( $OPTIND - 1 ))
+[ $OPTIND -gt 1 ] && shift $(( $OPTIND - 1 ))
 
 if [ -z "$confirmed" ]; then
   echo "Error: please use option -y to confirm that you really want to uninstall the software and lose data" 1>&2
   exit 1
 fi
 
-install_dir="$1"
-if [[ "$install_dir" =~ ^/*$ ]]; then
+self_bin=$(readlink -e "$0")
+self_dir="${self_bin%/*}"
+install_dir=$(readlink -e "$self_dir/..")
+
+if [ "$install_dir" == / ]; then
   echo "Error: install_dir can't be /" 1>&2
   exit 1
 fi
-
-if [ ! -e "$install_dir" ]; then
-  echo "Error: path '$install_dir' doesn't exist" 1>&2
-  exit 1
-fi
-
-if [ ! -d "$install_dir" ]; then
-  echo "Error: path '$install_dir' is not a directory" 1>&2
-  exit 1
-fi
-
-# cd / to avoid being on the same path of a dir being removed
-cd /
 
 lib_file="$install_dir/lib/functions"
 if ! source "$lib_file"; then
   echo "Error. Unable to load auxiliary functions from file " 1>&2
   exit 1
+fi
+
+if [ "${PWD##$install_dir}" != "$PWD" ]; then
+  error "this shell is currently on the install dir. Please cd / before continuing."
 fi
 
 linux_distro=$(wedp_auto_detect_distro)
@@ -169,37 +114,57 @@ if [ $status -ne 0 ]; then
   error "unable to detect the system distribution"
 fi
 
+assign_deref_os_prop_or_exit data_dir "$install_dir" data_dir
+
+assign_deref_os_prop_or_exit vhosts_home_dir "$install_dir" \
+  apache_virtwww_homedir
+
+assign_deref_os_prop_or_exit mysqls_dir "$install_dir" \
+  mysql_instances_homedir
+
+assign_deref_os_prop_or_exit apache_vhost_logs_dir "$install_dir" \
+  pathnames/var/log/apache_vhosts
+
+assign_deref_os_prop_or_exit apache_base_dir "$install_dir" \
+  pathnames/etc/apache_base_dir
+
+assign_deref_os_prop_or_exit apache_includes_dir "$install_dir" \
+  pathnames/etc/apache_includes_dir
+
+uninstall_base_dir="$data_dir/.previous_installs"
+if [ ! -d "$uninstall_base_dir" ] && ! mkdir -m 700 "$uninstall_base_dir"; then
+  error "unable to create archive directory $uninstall_base_dir"
+fi
+
+if ! lock_path "$uninstall_base_dir" >/dev/null; then
+  error "unable to lock path $uninstall_base_dir"
+fi
+trap 'cleanup' EXIT
+
+uninstall_archive_dir="$uninstall_base_dir/$(date +%b-%d-%Y--%Hh%Mm-%Z)"
+if ! mkdir -m 700 "$uninstall_archive_dir"; then
+  error "unable to create directory $uninstall_archive_dir"
+fi
+
+db_stale_dir="$uninstall_archive_dir/db_stale"
+vhost_stale_dir="$uninstall_archive_dir/www_stale"
+
+for asdf_dir in "$db_stale_dir" "$vhost_stale_dir"; do
+  if ! mkdir "$asdf_dir"; then
+    error "unable to create directory $asdf_dir"
+  fi
+done
+
+# MacOSX as a provisioner has it's own removal logic
 if [ "$linux_distro" == "macosx" ]; then
   exec "$script_dir/uninstall.$linux_distro.sh" -y "$install_dir"
 fi
 
-if [ -z "$dont_stop_taskd" ]; then # missing -T
-  "$install_dir/libexec/system-services" devpanel-taskd stop
-fi
-
-if [ -d "/etc/init.d" ]; then
-  rm -f /etc/init.d/devpanel-*
-fi
-
-if [ -d "/etc/init.d" ]; then
-  rm -f /etc/init/devpanel-*
-fi
-
+# Linux removal logic
 apache_ctl="$install_dir/config/os/pathnames/sbin/apachectl"
 
-[ -e "$apache_ctl" ] && "$apachectl" stop
-
-rm -f "$_apache_base_dir"/webenabled*
-rm -f "$_apache_base_dir"/devpanel*
-
-rm -f "$_apache_includes_dir"/webenabled*
-rm -f "$_apache_includes_dir"/devpanel*
-
-if [ -n "$_apache_vhost_logs_dir" ] && \
-  ! [[ "$_apache_vhost_logs_dir" =~ ^/*$ ]]; then
-
-  find "$_apache_vhost_logs_dir"/* -exec rm -rf {} \;
-fi
+# Stop apache before anything else
+[ -x "$apache_ctl" ] && "$apache_ctl" stop
 
 # remove databases and vhosts
 while read passwd_line; do
@@ -208,27 +173,42 @@ while read passwd_line; do
   if [ ${#user} -gt 2 -a "${user:0:2}" == "w_" ]; then
     vhost=${user#w_}
 
-    # if there's a matching db in db-daemons, then ...
-    if db_line=`egrep "^b_$vhost:" "$install_dir/compat/dbmgr/config/db-daemons.conf"`; then
-      if getent passwd "b_$vhost" &>/dev/null; then
-        # b_et:mysql:5.1.41-gm2:/home/clients/databases/b_et/mysql:127.0.0.1:4018:::
-        IFS=":" read db_user db_type db_ver db_dir db_host db_port remaining <<< "$db_line"
-        if fuser "$db_port/tcp" &>/dev/null; then
-          "$install_dir/libexec/remove-vhost" "$vhost" - >/dev/null
-          if [ $? -ne 0 ]; then
-            "$install_dir/libexec/remove-user" "b_$vhost"
-            "$install_dir/libexec/remove-user" "w_$vhost"
-          fi
-        else
-          "$install_dir/libexec/remove-user" "b_$vhost"
-          "$install_dir/libexec/remove-user" "w_$vhost"
-        fi
+    archive_file="$uninstall_archive_dir/@archive_template_str@"
+
+    # first try the usual removal
+    if "$install_dir/libexec/remove-vhost" -U "$vhost" "$archive_file" >/dev/null; then
+      echo "Successfully archived and removed vhost $vhost" 1>&2
+      removal_st=$?
+      continue # successfully removed, go to the next
+    fi
+
+    # usual removal failed, let's deal with it
+
+    # first move the web files
+    if [ -d "$home" ]; then
+      kill_using_path "$home"
+      mv -v -f "$home" "$vhost_stale_dir"
+    fi
+
+    if getent passwd "$user" &>/dev/null; then
+      "$install_dir/libexec/remove-user" "$user"
+    fi
+
+    # now move the stale database dir, if any
+    if getent passwd "b_$vhost" &>/dev/null; then
+      db_dir=$(eval echo \~"b_$vhost")
+
+      if [ -d "$db_dir" ]; then
+        kill_using_path "$db_dir"
+        mv -v -f "$db_dir" "$db_stale_dir"
       fi
-    else # no matching db, just remove the w_ user
-      userdel -r "$user"
+
+      "$install_dir/libexec/remove-user" "$b_vhost"
     fi
   fi
 done < <(getent passwd | egrep ^w_)
+
+[ -d "$apache_vhost_logs_dir" ] && rm_rf_safer "$apache_vhost_logs_dir"
 
 # remove database users in case it didn't have the w_user companion on
 # previous loop
@@ -237,22 +217,33 @@ while read passwd_line; do
   userdel -r "$user"
 done < <(getent passwd | egrep ^b_)
 
-if [ -d /home/clients/databases ]; then
-  rm -rf /home/clients/databases/*
+# return null expansions when /path/name* doesn't expand to anything
+shopt -s nullglob
 
-  for D in /home/clients/databases/*; do
-    fuser -k "$D/mysql" 
-  done
-fi
+# remove anything stale from vhosts directory
+for v_path in "$vhosts_home_dir"/*; do
+  [ ! -d "$v_path" ] && continue
 
-if [ -d /home/clients/websites ]; then 
-  rm -rf /home/clients/websites/*
+  kill_using_path "$v_path"
 
-  for D in /home/clients/websites/*; do
-    fuser -k "$D"
-  done
-fi
+  if [ "${v_path##*/}" == "w_" ]; then
+    rm -rf "$v_path" # for the w_ directory we just remove it,
+                     # as it doesn't contain personal data
+  else
+    mv -v -f "$v_path" "$vhost_stale_dir"
+  fi
 
+done
+
+# remove anything stale from databases directory
+for v_path in "$mysqls_dir"/*; do
+  [ ! -d "$v_path" ] && continue
+
+  kill_using_path "$v_path"
+  mv -v -f "$v_path" "$db_stale_dir"
+done
+
+# vagrant specific code
 vagrant_dir=~devpanel/vagrant
 if [ -d "$vagrant_dir" ]; then
   for D in "$vagrant_dir"/*; do
@@ -263,23 +254,63 @@ if [ -d "$vagrant_dir" ]; then
   done
 fi
 
-for u in git w_ devpanel; do
+if getent passwd git &>/dev/null; then
+  git_home_dir=$(eval echo \~git)
+
+  [ -d "$git_home_dir" ] && mv -v -f "$git_home_dir" "$uninstall_archive_dir"
+fi
+
+for u in git w_; do
   if getent passwd "$u" &>/dev/null; then
     userdel -r "$u"
   fi
 done
 
-for g in virtwww weadmin w_ devpanel; do
+for g in virtwww weadmin w_; do
   if getent group "$g" &>/dev/null; then
     groupdel "$g"
   fi
 done
 
-rm -rf "$install_dir"
-
-if [ -z "$dont_stop_taskd" ]; then # missing -T
-  [ -d /var/log/webenabled ] && rm -rf /var/log/webenabled
-fi
-
 echo
 echo "Successfully removed devPanel software"
+
+(
+  # run in a background taskd, just for the case it's running from inside
+  # taskd for it to be successfully reported, before taskd is killed
+
+  if [ -n "$through_taskd" ]; then
+    sleep 70 # wait for taskd to report this task as successful
+  fi
+
+  # now stop taskd
+  "$install_dir/libexec/system-services" devpanel-taskd stop
+
+  # remove the remaining system paths (not removed before because it needs taskd
+  # to report the execution status
+  for path_dir in /etc/init.d /etc/init /etc/profile.d \
+    "$apache_base_dir" "$apache_includes_dir"; do
+
+    rm -f "$path_dir/devpanel"*
+    rm -f "$path_dir/webenabled"*
+  done
+
+  "$install_dir/libexec/remove-user" devpanel
+
+  if getent group devpanel &>/dev/null; then
+    groupdel devpanel
+  fi
+
+  if [ -d "$data_dir/vhost_archives" ]; then
+    mv -f "$data_dir/vhost_archives" "$uninstall_archive_dir"
+  fi
+
+  rm_rf_safer "$install_dir"
+
+  [ -d /var/log/webenabled ] && rm -rf /var/log/webenabled
+
+ : &
+) &
+
+echo "Successfully uninstalled devPanel software. Backup made on $uninstall_archive_dir"
+exit 0

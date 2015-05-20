@@ -42,11 +42,12 @@ revert_disable_vhost() {
 archive_vhost_web_options=""
 check_archive_pathname_options=""
 
-while getopts "Pu" OPTOPT
+while getopts "PuU" OPTOPT
 do
   case "$OPTOPT" in
     P) archive_vhost_web_options="${archive_vhost_web_options+ }-P";;
     u) : ;; # option removed, left here until we update all references to it
+    U) archive_vhost_web_options="${archive_vhost_web_options+ }-U" ;;
     *) exit 1;
   esac
 done
@@ -78,8 +79,12 @@ apache_base_log_dir=$(deref_os_fs_path "$sys_dir" pathnames/var/log/apache_vhost
 "$dir/config-vhost-apache" -D "$vhost" || exit 1
 trap 'revert_disable_vhost' EXIT
 
-"$dir/archive-vhost" "$vhost" "$archive_to"
-[ $? -ne 0 ] && exit 1
+# if $archive_to not equal "-" then archive it before removing
+if [ -n "$archive_to" -a "$archive_to" != "-" ]; then
+  "$dir/archive-vhost" $archive_vhost_web_options "$vhost" "$archive_to"
+  [ $? -ne 0 ] && exit 1
+fi
+
 trap - EXIT # at this point revert_* doesn't make sense anymore
 
 # Removing database related stuff

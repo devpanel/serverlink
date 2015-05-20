@@ -30,6 +30,7 @@ usage() {
 cleanup()
 {
   unlock_path "$archive_lock"
+  rm -f -- "$archive_lock"
 
   if [ -z "$debug" -a -n "$tmp_archive_dir" -a -d "$tmp_archive_dir" ]; then
     rm_rf_safer "$tmp_archive_dir"
@@ -52,13 +53,15 @@ archive_vhost_web_options=""
 check_archive_pathname_options=""
 debug=""
 in_user_path=""
+uninstall=""
 
-while getopts "Pud" OPTOPT
+while getopts "PudU" OPTOPT
 do
   case "$OPTOPT" in
     P) archive_vhost_web_options="${archive_vhost_web_options+ }-P";;
     u) in_user_path=1 ;;
     d) debug=1 ;;
+    U) uninstall=1 ;   ;;
     *) exit 1;
   esac
 done
@@ -122,7 +125,13 @@ if deref_os_prop "$sys_dir" webenabled_backwards &>/dev/null; then
   webenabled_backwards=1
 fi
 
-sys_archive_dir="$sys_data_dir/vhost_archives"
+if [ -n "$uninstall" ]; then
+  # if this archiving is before uninstalling devPanel software
+  sys_archive_dir="$sys_data_dir/.previous_installs"
+else
+  sys_archive_dir="$sys_data_dir/vhost_archives"
+fi
+
 # create sys_archive_dir if it doesn't exist
 if [ ! -d "$sys_archive_dir" ]; then
   mkdir -m 711 "$sys_archive_dir"
@@ -141,14 +150,6 @@ if [ ! -d "$upper_tmp_dir" ]; then
   fi
 fi
 
-archive_dir_in_user="$home/public_html/gen/archive"
-archive_dir_in_sys="$sys_archive_dir/$vhost"
-if [ -n "$in_user_path" ]; then
-  vhost_archive_dir="$archive_dir_in_user"
-else
-  vhost_archive_dir="$archive_dir_in_sys"
-fi
-
 if [ -n "$archive_to" -a "$archive_to" == "-" ]; then
   to_stdout=1  # destination is STDOUT
 else # destination is a file
@@ -157,23 +158,33 @@ else # destination is a file
     archive_to="$archive_template_str"
   fi
 
-  if [ "${archive_to:0:1}" == "/" ]; then
-    tmp_full_path="$archive_to"
+  archive_dir_in_user="$home/public_html/gen/archive"
+  archive_dir_in_sys="$sys_archive_dir/$vhost"
+  if [ -n "$in_user_path" ]; then
+    vhost_archive_dir="$archive_dir_in_user"
   else
-    tmp_full_path="$vhost_archive_dir/$archive_to"
+    vhost_archive_dir="$archive_dir_in_sys"
   fi
 
-  tmp_to_file=$(readlink -m "$tmp_full_path")
-  vhost_archive_dir_len=${#vhost_archive_dir}
-
-  # compare the full path name of $tmp_to_file with $sys_archive_dir
-  if [ ${#tmp_to_file} -le $vhost_archive_dir_len -o \
-    "${tmp_to_file:0:$vhost_archive_dir_len}" != "$vhost_archive_dir" ]; then
-    error "the file needs to created inside $vhost_archive_dir. Please don't\
- use a path with the filename".
+  if [ "${archive_to:0:1}" == "/" ]; then
+    tmp_full_path=$(readlink -m "$archive_to")
+  else
+    tmp_full_path=$(readlink -m "$vhost_archive_dir/$archive_to")
   fi
 
-  archive_filename=$(basename "$archive_to")
+  if [ -n "$uninstall" -a "${tmp_full_path#$sys_archive_dir}" == "$tmp_full_path" ]; then
+    error "the file needs to created inside $sys_archive_dir."
+  elif [ -z "$uninstall" -a "${tmp_full_path#$vhost_archive_dir}" == "$tmp_full_path" ]; then
+    error "the file needs to created inside $vhost_archive_dir."
+  fi
+
+  if [ -d "$tmp_full_path" ]; then
+    # if the whole filename is actually a directory,
+    # then append the default filename
+    tmp_full_path+="/@archive_template_str@"
+  fi
+
+  archive_filename=$(basename "$tmp_full_path")
 
   # do some last transformations to the archive_filename
   archive_filename=${archive_filename//@archive_template_str@/"$archive_template_str"}
@@ -185,7 +196,8 @@ else # destination is a file
     archive_filename+=".tgz"
   fi
 
-  target_file="$vhost_archive_dir/$archive_filename"
+  target_dir=${tmp_full_path%/*}
+  target_file="$target_dir/$archive_filename"
 
   # test whether the target file already exists
   if [ -e "$target_file" -o -L "$target_file" ]; then
