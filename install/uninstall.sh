@@ -203,7 +203,7 @@ while read passwd_line; do
         mv -v -f "$db_dir" "$db_stale_dir"
       fi
 
-      "$install_dir/libexec/remove-user" "$b_vhost"
+      "$install_dir/libexec/remove-user" "b_$vhost"
     fi
   fi
 done < <(getent passwd | egrep ^w_)
