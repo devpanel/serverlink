@@ -131,6 +131,9 @@ assign_deref_os_prop_or_exit apache_base_dir "$install_dir" \
 assign_deref_os_prop_or_exit apache_includes_dir "$install_dir" \
   pathnames/etc/apache_includes_dir
 
+mysql_inc_dir=$(deref_os_fs_path_ex "$install_dir" pathnames/etc/mysql_conf_d)
+php_inc_dir=$(deref_os_fs_path_ex "$install_dir" pathnames/etc/php_ini_d)
+
 uninstall_base_dir="$data_dir/.previous_installs"
 if [ ! -d "$uninstall_base_dir" ] && ! mkdir -m 700 "$uninstall_base_dir"; then
   error "unable to create archive directory $uninstall_base_dir"
@@ -241,6 +244,12 @@ for v_path in "$mysqls_dir"/*; do
 
   kill_using_path "$v_path"
   mv -v -f "$v_path" "$db_stale_dir"
+done
+
+for inc_dir in mysql_inc_dir php_inc_dir; do
+  if [ -n "${!inc_dir}" ]; then
+    rm -f -- "$inc_dir/*devpanel*"
+  fi
 done
 
 # vagrant specific code
