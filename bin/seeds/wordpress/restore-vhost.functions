@@ -78,7 +78,7 @@ wordpress_set_upload_path()
 
 wordpress_disable_canonical_redirects()
 {
-  echo "Activating diable-redirects plugin"
+  echo "Activating disable-redirects plugin"
   sql_query "update wp_options set option_value='a:1:{i:0;s:31:\"disable-canonical-redirects.php\";}' where option_name='active_plugins'" || return 1
   echo "Updating siteurl and home option values"
   sql_query "update wp_options set option_value='/' where option_name='siteurl'" || return 1
