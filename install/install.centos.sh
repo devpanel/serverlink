@@ -44,23 +44,28 @@ centos_install_distro_packages() {
   local installed_epel=""
   local installed_remi=""
 
-  local i=0
-  for i in 1 2 3; do
-    echo "Installing EPEL repository, attempt $i..."
-    curl -so "$tmp_pkg_file" -L --retry 3 --retry-delay 15 "$epel_url"
-    if [ $? -eq 0 ]; then
-      rpm -Uvh "$tmp_pkg_file"
+  if rpm -qa | egrep -q ^epel-release; then
+    installed_epel=1
+  else
+    local i=0
+    for i in 1 2 3; do
+      echo "Installing EPEL repository, attempt $i..."
+      curl -so "$tmp_pkg_file" -L --retry 3 --retry-delay 15 "$epel_url"
       if [ $? -eq 0 ]; then
-        installed_epel=1
-        break
-      else
-        echo "Failed attempt $i of installing EPEL..." 1>&2
+        rpm -Uvh "$tmp_pkg_file"
+        if [ $? -eq 0 ]; then
+          installed_epel=1
+          break
+        else
+          echo "Failed attempt $i of installing EPEL..." 1>&2
+        fi
       fi
-    fi
-    sleep 15
-  done
+      sleep 15
+    done
 
-  rm -f "$tmp_pkg_file"
+    rm -f "$tmp_pkg_file"
+  fi
+
   if [ -z "$installed_epel" ]; then
     echo "$FUNCNAME(): error, unable to install EPEL repository" 1>&2
     return 1
@@ -69,23 +74,28 @@ centos_install_distro_packages() {
 
   tmp_pkg_file=$(mktemp)
 
-  i=0
-  for i in 1 2 3; do
-    echo "Installing Remi repository, attempt $i..."
-    curl -so "$tmp_pkg_file" -L --retry 3 --retry-delay 15 "$remi_url"
-    if [ $? -eq 0 ]; then
-      rpm -Uvh "$tmp_pkg_file"
+  if rpm -qa | egrep -q ^remi-release; then
+    installed_remi=1
+  else
+    i=0
+    for i in 1 2 3; do
+      echo "Installing Remi repository, attempt $i..."
+      curl -so "$tmp_pkg_file" -L --retry 3 --retry-delay 15 "$remi_url"
       if [ $? -eq 0 ]; then
-        installed_remi=1
-        break
-      else
-        echo "Failed attempt $i of installing Remi..." 1>&2
+        rpm -Uvh "$tmp_pkg_file"
+        if [ $? -eq 0 ]; then
+          installed_remi=1
+          break
+        else
+          echo "Failed attempt $i of installing Remi..." 1>&2
+        fi
       fi
-    fi
-    sleep 15
-  done
+      sleep 15
+    done
 
-  rm -f "$tmp_pkg_file"
+    rm -f "$tmp_pkg_file"
+  fi
+
   if [ -z "$installed_remi" ]; then
     echo "$FUNCNAME(): error, unable to install Remi repository" 1>&2
     return 1
