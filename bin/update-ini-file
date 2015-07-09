@@ -7,7 +7,7 @@ use File::Basename;
 BEGIN {
   use Cwd (qw( abs_path ));
   my $local_perl5_lib = abs_path(dirname(__FILE__) . '/../lib/perl5/');
-  if(length($local_perl5_lib) > 0 && -d $local_perl5_lib || -l $local_perl5_lib) {
+  if(defined($local_perl5_lib) && (-d $local_perl5_lib || -l $local_perl5_lib)) {
     unshift(@INC, $local_perl5_lib);
   }
 }
