@@ -25,6 +25,57 @@ cleanup() {
   [ -L "$lock_file" ] && rm -f "$lock_file"
 }
 
+get_distro_name() {
+  local distro_raw=$(lsb_release -i)
+  local distro=${distro_raw##*:}
+  # distro=${distro// /} # why this doesn't work?
+  distro=${distro//[^a-zA-Z]/}
+  distro_lc=${distro,,}
+
+  if [ -n "$distro_lc" ]; then
+    echo "$distro_lc"
+    return 0
+  else
+    echo "$FUNCNAME(): unable to get linux distro name" 1>&2
+    return 1
+  fi
+}
+
+install_pre_reqs() {
+  local distro=$(get_distro_name)
+  local st=$?
+  [ $st -ne 0 ] && return $st
+
+  if [ "$distro" == "centos" ]; then
+    yum -y install openssl-devel zlib-devel gcc gcc-c++
+    return $?
+  elif [ "$distro" == "debian" ]; then
+    apt-get update && apt-get -y install gcc g++ make libssl-dev zlib1g-dev
+    return $?
+  elif [ "$distro" == "ubuntu" ]; then
+    apt-get update && apt-get -y install gcc g++ make libssl-dev zlib1g-dev
+    return $?
+  else
+    echo "$FUNCNAME(): unknown linux distro" 1>&2
+    return 1
+  fi
+}
+
+install_lsb_release() {
+  # install lsb_release to more precisely detect distro
+  if hash apt-get &>/dev/null; then
+    export DEBIAN_FRONTEND='noninteractive'
+    apt-get -y install lsb-release
+    return $?
+  elif hash yum &>/dev/null; then
+    yum -y install redhat-lsb-core
+    return $?
+  else
+    echo "$FUNCNAME(): don't know how to install" 1>&2
+    return 1
+  fi
+}
+
 # main
 
 [ $# -lt 2 -o -z "$1" -o -z "$2" ] && usage
@@ -54,6 +105,15 @@ if ! ln -s /dev/null "$lock_file"; then
   error "unable to create lock file. Is there another compilation running?"
 fi
 trap 'cleanup' EXIT
+
+# DO: install lsb-release
+if ! hash lsb_release &>/dev/null && ! install_lsb_release; then
+  error "failed to install lsb-release, it's required to properly detect the linux distribution"
+fi
+
+if ! install_pre_reqs; then
+  error "unable to install compilation pre-requisite packages"
+fi
 
 if ! make clean; then
   error "failed to make clean"
