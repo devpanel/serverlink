@@ -1,0 +1,24 @@
+#!/bin/bash
+
+# this script tries to select the 'best' wp-cli (wpcli) version
+# available to be run
+
+self_bin=`readlink -e "$0"`
+curr_dir=`dirname "$self_bin"`
+devpanel_dir=`readlink -e "$curr_dir/../.."`
+
+home_wpcli="$HOME/bin/wpcli"
+devpanel_wpcli="$devpanel_dir/bin/packages/wpcli/wp-cli.phar"
+
+# first check for wpcli on the user directory
+# if not found, and there isn't another wpcli in PATH, fallback to
+#  ...the wp-cli version shipped with devPanel
+if [ -f "$home_wpcli" -a -x "$home_wpcli" ]; then
+  hash -p "$home_wpcli" wpcli
+elif ! hash wpcli &>/dev/null && [ -x "$devpanel_wpcli" ]; then
+  hash -p "$devpanel_wpcli" wpcli
+elif hash wpcli &>/dev/null && [ "`hash -t wpcli`" == $0 ]; then
+  hash -p "$devpanel_wpcli" wpcli
+fi
+
+wpcli "$@"

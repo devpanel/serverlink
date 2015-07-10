@@ -1,0 +1,18 @@
+#!/bin/bash -
+
+self_bin=`readlink -e "$0"`
+curr_dir=`dirname "$self_bin"`
+base_dir=`readlink -e "$curr_dir/../../.."`
+
+vhost_dir="$HOME/public_html/${USER#w_}"
+
+if ! cd "$vhost_dir"; then
+  echo "Error: unable to chdir to '$vhost_dir'" 1>&2
+  exit 1
+fi
+
+# Download (or upgrade) wp-cli.phar from the developers' distribution URL.
+curl -O https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar
+# Install it for the current site's user.
+mv -f wp-cli.phar "$HOME/bin/wpcli"
+chmod 755 "$HOME/bin/wpcli"
