@@ -247,20 +247,15 @@ get_list_of_items() {
   #        config/packages/apache_vhost/<param>
 
   local items_str="" tmp_str
-  tmp_str=`ls "$config_dir/$this_vhost_prefix:$p_prefix"* 2>/dev/null`
-  [ $? -eq 0 ] && items_str+="$tmp_str"
+  for tmp_str in "$config_dir/$this_vhost_prefix:$p_prefix"* \
+                 "$local_tmpl_dir/$p_prefix"* \
+                 "$local_params_dir/$p_prefix"* \
+                 "$apache_svc_tmpl_dir/$p_prefix"* \
+                 "$apache_svc_dir/$p_prefix"*; do
+     [ ! -L "$tmp_str" ] && continue
 
-  tmp_str+=`ls "$local_tmpl_dir/$p_prefix"* 2>/dev/null`
-  [ $? -eq 0 ] && items_str+="$tmp_str"
-
-  tmp_str+=`ls "$local_params_dir/$p_prefix"* 2>/dev/null`
-  [ $? -eq 0 ] && items_str+="$tmp_str"
-
-  tmp_str+=`ls "$apache_svc_tmpl_dir/$p_prefix"* 2>/dev/null`
-  [ $? -eq 0 ] && items_str+="$tmp_str"
-
-  tmp_str+=`ls "$apache_svc_dir/$p_prefix"* 2>/dev/null`
-  [ $? -eq 0 ] && items_str+="$tmp_str"
+     items_str+="$tmp_str"$'\n'
+  done
 
   if [ -n "$items_str" ]; then
     echo -n "$items_str"
@@ -308,6 +303,8 @@ we_base_dir=`readlink -e "$dir/.."`
 
 lib_file="$we_base_dir/lib/functions"
 vars_file="$we_base_dir/lib/variables"
+
+shopt -s nullglob
 
 for inc_file in "$lib_file" "$vars_file"; do
   if ! source "$inc_file"; then
