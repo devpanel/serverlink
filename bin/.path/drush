@@ -11,7 +11,7 @@ home_2_drush="$HOME/.drush/drush/drush"
 devpanel_drush="$devpanel_dir/bin/packages/drush/drush"
 
 # first check for drush on the user directory
-# if not found, and there isn't another dursh in PATH, fallback to
+# if not found, and there isn't another drush in PATH, fallback to
 #  ...the drush version shipped with devPanel
 if [ -f "$home_1_drush" -a -x "$home_1_drush" ]; then
   hash -p "$home_1_drush" drush
