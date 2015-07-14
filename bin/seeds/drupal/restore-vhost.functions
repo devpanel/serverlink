@@ -92,7 +92,6 @@ drupal_set_email()
 
 }
 
-
 drupal_get_email()
 {
   local user="$1"
@@ -124,41 +123,16 @@ drupal_get_admin_user()
   fi
 }
 
-drupal_set_drupal6_sitename()
+drupal_set_drupal_6_or_7_sitename()
 {
-  local old_fqdn
-  if old_fqdn=`sql_query_result "select * from variable where name='site_name'"` &&
-     [ -n "$old_fqdn" ]
-  then
-    echo Found, changing site_name to $fqdn
-    sql_query "update variable set value=concat('s:', length('$fqdn'), ':\"', '$fqdn', '\"') where name='site_name'" || error
-    echo "Changing site_mail to admin's email $email"
-    sql_query "update variable set value=concat('s:', length('$email'), ':\"', '$email', '\"') where name='site_mail'" || error
-  else
-    echo Not found
-  fi
-}
 
-drupal_set_drupal7_sitename()
-{
-  local old_fqdn
-  if old_fqdn=`sql_query_result "select * from variable where name='site_name'"` &&
-     [ -n "$old_fqdn" ]
-  then
-    if [ -n "$site_title" ]; then
-      site_title_esc="$site_title"
-      site_title_esc=${site_title_esc#s:*:\"}
-      site_title_esc=${site_title_esc%\"}
-      site_title_esc="${site_title_esc//\'/\\\'}"
-      site_title_esc="${site_title_esc//\"/\\\"}"
-      update_site_name_sql="UPDATE variable SET value = 's:%s:\"%s\"' WHERE name = 'site_name';"
-      sql_query "`printf "$update_site_name_sql" ${#site_title_esc} "$site_title_esc"`"
-    else
-      echo Found, changing site_name to $fqdn
-      sql_query "update variable set value=concat('s:', length('$fqdn'), ':\"', '$fqdn', '\"') where name='site_name'" || error
-    fi
+  if [ -n "$site_title" ]; then
+    site_title_esc=$(escape_quotes "$site_title")
+    update_site_name_sql="UPDATE variable SET value = 's:%s:\"%s\"' WHERE name = 'site_name';"
+    sql_query "`printf "$update_site_name_sql" ${#site_title} "$site_title_esc"`"
   else
-    echo Not found
+    echo Found, changing site_name to $fqdn
+    sql_query "update variable set value=concat('s:', length('$fqdn'), ':\"', '$fqdn', '\"') where name='site_name'"
   fi
 }
 
@@ -462,12 +436,6 @@ drupal_custom()
       echo 'Clearing table sessions (ignore errors)'
       sql_clear_table sessions
 
-      if [ "$version" == 6 ]; then
-        echo 'Checking for drupal6 variables (ignore errors)'
-        drupal_set_drupal6_sitename
-      elif [ "$version" == 7 ]; then
-        drupal_set_drupal7_sitename
-      fi
     fi
   else
     echo "Updating settings.php"
@@ -477,6 +445,7 @@ drupal_custom()
     if [ -n "$initial_deployment" ]; then
       if [ "$version" == 6 -o "$version" == 7 ]; then
         drupal_reset_admin_time_6_or_7
+        drupal_set_drupal_6_or_7_sitename
       else
         "drupal_reset_admin_time_$version"
       fi
@@ -500,6 +469,5 @@ drupal_custom()
     if [ -f "$civic_crm_conf" ]; then
       drupal_update_civicrm_config
     fi
-
   fi
 }

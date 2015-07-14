@@ -1161,3 +1161,15 @@ is_mysql_engine_supported() {
     return 1
   fi
 }
+
+escape_quotes() {
+  local orig="$1"
+  local new="$orig"
+
+  new=${new//\\/\\\\}
+  new=${new//\'/\\\'}
+  new=${new//\"/\\\"}
+
+  printf '%s' "$new"
+}
+
