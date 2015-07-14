@@ -61,7 +61,7 @@ cleanup()
 # main
 
 options=""
-subsystem_options=""
+subsystem_options="-F"
 opt_i=0 opt_p=0
 try_archive_in_user_home=0
 create_vhost=1
