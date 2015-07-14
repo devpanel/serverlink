@@ -88,7 +88,7 @@ do
       ;;
     F)
       initial_deployment=1
-      subsystem_options="$subsystem_options${subsystem_options+ }$OPTOPT"
+      subsystem_options="$subsystem_options${subsystem_options+ }-$OPTOPT"
       ;;
     O)
       subsystem_options="$subsystem_options${subsystem_options+ }-O "`printf '%q' "$OPTARG"`""
