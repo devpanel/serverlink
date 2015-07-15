@@ -43,32 +43,52 @@ wordpress_set_sitename()
    sql_query "update wp_options set option_value='http://$fqdn' where option_name='home'" || return 1
 }
 
+wordpress_update_define_line() {
+  # update lines containing: define('key', 'value');  with the new values
+  local key="$1"
+  local value="$2"
+
+  local key_esc=$(escape_sed "$key")
+  local value_esc=$(escape_sed "$value")
+
+  local sed_str="s/define([[:space:]]*['\"]$key_esc['\"][[:space:]]*,[[:space:]]*['\"][^'\"]\+['\"][[:space:]]*)[[:space:]]*\;/define('$key_esc', '$value_esc')\;/g;"
+
+  printf '%s' "$sed_str"
+}
+
 wordpress_update_php_config()
 {
-  keys=`lftp -c 'set cmd:at-exit;set xfer:max-redirections 16; \
-  cat "http://api.wordpress.org/secret-key/1.1";'`
-  keys=`echo $keys | sed 's#[/&$\]#*#ig'`
 
-  if [ -n "$keys" ]; then
-    auth_key=$(echo $keys | sed 's#); define#);\n define#ig' | sed -n '1p')
-    secure_auth_key=$(echo $keys | sed 's#); define#);\n define#ig' | sed -n '2p')
-    logged_in_key=$(echo $keys | sed 's#); define#);\n define#ig' | sed -n '3 p')
-    nonce_key=$(echo $keys | sed 's#); define#);\n define#ig' | sed -n '4p')
+  local sed_str="" key="" value=""
+  if [ -n "$initial_deployment" ]; then
+    local AUTH_KEY=$(wedp_gen_random_str 64)
+    local SECURE_AUTH_KEY=$(wedp_gen_random_str 64)
+    local LOGGED_IN_KEY=$(wedp_gen_random_str 64)
+    local NONCE_KEY=$(wedp_gen_random_str 64)
+    local AUTH_SALT=$(wedp_gen_random_str 64)
+    local SECURE_AUTH_SALT=$(wedp_gen_random_str 64)
+    local LOGGED_IN_SALT=$(wedp_gen_random_str 64)
+    local NONCE_SALT=$(wedp_gen_random_str 64)
 
-    echo "
-     s/^[[:space:]]*define[[:space:]]*([[:space:]]*'AUTH_KEY'.*$/$authkey/
-     s/^[[:space:]]*define[[:space:]]*([[:space:]]*'SECURE_AUTH_KEY'.*$/$secure_auth_key/
-     s/^[[:space:]]*define[[:space:]]*([[:space:]]*'LOGGED_IN_KEY'.*$/$logged_in_key/
-     s/^[[:space:]]*define[[:space:]]*([[:space:]]*'NONCE_KEY'.*$/$nonce_key/
-    " | run_ised "$home/public_html/$vhost/wp-config.php"
+    local key
+    for key in AUTH_KEY SECURE_AUTH_KEY LOGGED_IN_KEY NONCE_KEY \
+               AUTH_SALT SECURE_AUTH_SALT LOGGED_IN_SALT NONCE_SALT; do
+      value="${!key}"
+      sed_str+=$(wordpress_update_define_line "$key" "$value")
+    done
   fi
 
-  echo "
-     s/^[[:space:]]*define[[:space:]]*([[:space:]]*'DB_USER'.*/define('DB_USER', '$mysql_user');/
-     s/^[[:space:]]*define[[:space:]]*([[:space:]]*'DB_PASSWORD'.*/define('DB_PASSWORD', '$sedphpencoded_mysql_password');/
-     s/^[[:space:]]*define[[:space:]]*([[:space:]]*'DB_HOST'.*/define('DB_HOST', '$mysql_host:$mysql_port');/
-     s/^[[:space:]]*define[[:space:]]*([[:space:]]*'DB_NAME'.*/define('DB_NAME', '$hosting_database');/
-  " | run_ised "$home/public_html/$vhost/wp-config.php"
+  local DB_USER="$mysql_user"
+  local DB_PASSWORD="$mysql_password"
+  local DB_HOST="$mysql_host:$mysql_port"
+  local DB_NAME="$hosting_database"
+
+  for key in DB_USER DB_HOST DB_NAME DB_PASSWORD; do
+    value="${!key}"
+    sed_str+=$(wordpress_update_define_line "$key" "$value")
+  done
+
+  echo "$sed_str" | run_ised "$home/public_html/$vhost/wp-config.php"
 }
 
 wordpress_set_upload_path()
@@ -78,11 +98,9 @@ wordpress_set_upload_path()
 
 wordpress_disable_canonical_redirects()
 {
-  echo "Activating disable-redirects plugin"
-  sql_query "update wp_options set option_value='a:1:{i:0;s:31:\"disable-canonical-redirects.php\";}' where option_name='active_plugins'" || return 1
   echo "Updating siteurl and home option values"
-  sql_query "update wp_options set option_value='/' where option_name='siteurl'" || return 1
-  sql_query "update wp_options set option_value='/' where option_name='home'" || return 1
+  sql_query "update wp_options set option_value='/' where option_name='siteurl'"
+  sql_query "update wp_options set option_value='/' where option_name='home'"
 }
 
 
