@@ -24,6 +24,11 @@ wordpress_set_email() {
   local email="$2"
 
   sql_query "update wp_users set user_email = '$email' where user_login = '$user';"
+}
+
+wordpress_set_site_email() {
+  local email="$1"
+
   sql_query "update wp_options set option_value='$email' where option_name='admin_email'"
 }
 
@@ -37,10 +42,17 @@ wordpress_get_admin_user() {
   sql_query_result "select user_login from wp_users where user_login = 'admin'"
 }
 
+wordpress_set_urls()
+{
+  sql_query "update wp_options set option_value='http://$fqdn' where option_name='siteurl'"
+  sql_query "update wp_options set option_value='http://$fqdn' where option_name='home'"
+}
+
 wordpress_set_sitename()
 {
-   sql_query "update wp_options set option_value='http://$fqdn' where option_name='siteurl'" || return 1
-   sql_query "update wp_options set option_value='http://$fqdn' where option_name='home'" || return 1
+  local name="$1"
+  local name_esc=$(escape_quotes "$name")
+  sql_query "UPDATE wp_options SET option_value = '$name_esc' WHERE option_name = 'blogname';"
 }
 
 wordpress_update_define_line() {
@@ -96,28 +108,22 @@ wordpress_set_upload_path()
   sql_query "update wp_options set option_value = '$home/public_html/$vhost/wp-content/uploads' where option_name = 'upload_path'" || return 1
 }
 
-wordpress_disable_canonical_redirects()
-{
-  echo "Updating siteurl and home option values"
-  sql_query "update wp_options set option_value='/' where option_name='siteurl'"
-  sql_query "update wp_options set option_value='/' where option_name='home'"
-}
-
-
 wordpress_custom() {
-  if [ -z "$opt_n" ]; then
-    echo "Setting site URL"
-    wordpress_set_sitename || error "Cannot set sitename"
+  if [ -n "$initial_deployment" ]; then
+    wordpress_set_urls
+
+    if [ -n "$email" ]; then
+      wordpress_set_site_email "$email"
+    fi
+
+    if [ -n "$site_title" ]; then
+      wordpress_set_sitename "$site_title"
+    fi
+
+    echo "Setting upload path"
+    wordpress_set_upload_path
   fi
 
-  echo "Deactivating default port forwarding"
-  wordpress_disable_canonical_redirects || error "Can not disable canonical redirects"
-
   echo "Updating wp-config.php"
-  wordpress_update_php_config || error "Cannot update wp-config.php"
-
-  echo "Setting upload path"
-  wordpress_set_upload_path || error "Cannot set upload path"
+  wordpress_update_php_config
 }
-
-
