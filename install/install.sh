@@ -347,6 +347,9 @@ ServerName $dp_server_hostname
 
     "$webenabled_install_dir/bin/add-to-known-hosts" \
       -a "$dp_server_hostname" localhost
+
+    "$webenabled_install_dir/bin/update-dot-ssh-config" /etc/ssh/ssh_config \
+      add_section "*.$dp_server_hostname" "Hostname=$dp_server_hostname"
   else
     "$webenabled_install_dir/bin/add-to-known-hosts" localhost
   fi
