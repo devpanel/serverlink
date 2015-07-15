@@ -425,7 +425,7 @@ while getopts 'pPMm:s:O:iInF' OPTOPT; do
 
   case $OPTOPT in
     s) subsystem="$OPTARG";;
-    m) opt_m="$OPTARG";;
+    m) opt_m="$OPTARG"; email="$OPTARG";;
     i) opt_i=1;;
     I) opt_I=1;;
     M) opt_M=1;;
@@ -435,7 +435,7 @@ while getopts 'pPMm:s:O:iInF' OPTOPT; do
     F) initial_deployment=1 ;;
     O)
       # the logic below reads name=value strings passed to the -O option
-      accepted_opt_names=('use_my_cnf' 'site_title' )
+      accepted_opt_names=('use_my_cnf' 'site_title' 'email' )
       prev_char=""
       name_value=""
       declare -i n_pos=0
@@ -553,10 +553,10 @@ if [ "$opt_i" = 1 ]; then
     error "Cannot read admin password from stdin"
 fi
 
-# change the admin's e-mail (-m)
-if [ -n "$opt_m" ]; then
+# change the admin's e-mail (-m) or -O email=addr
+if [ -n "$opt_m" -o -n "$email" ]; then
   # call the set_email() function from the seed API
-  if ! ${subsystem}_set_email "$admin_user" "$opt_m"; then
+  if ! ${subsystem}_set_email "$admin_user" "$email"; then
     error "Could not change admin's email for subsystem '$subsystem'"
   fi
 fi
