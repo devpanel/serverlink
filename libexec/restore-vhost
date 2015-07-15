@@ -299,12 +299,19 @@ set app:0:_:db_user $mysql_user
 set app:0:_:db_password $mysql_password
 "
 
-for subsystem in drupal joomla wordpress magento projectpier mantis scratch omb elgg silverstripe limesurvey zencart redmine vanillaforums mediawiki pivotx opencart moodle
+shopt -s nullglob
+for tmp_sub_dir in "$we_base_dir/bin/seeds/"*
 do
-  if [ $opt_p = 0 ]
-  then
-    run_su rm -f $subsystem.passwd $vhost_config_dir/$subsystem.passwd || exit 1
+  seed_file="$tmp_sub_dir/restore-vhost.functions"
+  [ ! -d "$tmp_sub_dir" -o ! -e "$seed_file" ] && continue
+  subsystem="${tmp_sub_dir##*/}"
+
+  if [ $opt_p = 0 ]; then
+    old_passwd_file="$vhost_config_dir/$subsystem.passwd"
+    [ -f "$old_passwd_file" ] && \
+      run_su rm -f "$subsystem.passwd" "$old_passwd_file"
   fi
+
   if grep -q "^$subsystem\$" "$archive_dir/db/databases"
   then
     metadata_str+="set app:0:_:seed_app $subsystem"$'\n'
@@ -320,8 +327,6 @@ do
 
     echo "$metadata_str" | "$we_base_dir/libexec/apache-metadata-handler" "$vhost"
   fi
-
-
 done
 
 run_su 'restore_script="$HOME/etc/rc.webenabled.restore";
