@@ -29,6 +29,7 @@ Usage: $prog [ options ]
     -b                from bootstrap (don't update devpanel.conf and don't
                       restart taskd)
     -V version        Specify the version of the linux distro (optional)
+    -W                Webenabled v1.0 backwards compatibility
 
 "
 
@@ -438,9 +439,9 @@ fi
 trap 'ex=$?; rm -f "$lock_file" ; trap - EXIT INT HUP TERM; exit $ex' EXIT INT HUP TERM
 
 
-getopt_flags="I:L:V:H:U:K:u:A:hdRb"
+getopt_flags="I:L:V:H:U:K:u:A:hdRbW"
 
-unset from_bootstrap
+unset from_bootstrap we_v1_compat
 while getopts $getopt_flags OPTS; do
   case "$OPTS" in
     d)
@@ -475,6 +476,9 @@ while getopts $getopt_flags OPTS; do
       ;;
     b)
       from_bootstrap=1
+      ;;
+    W)
+      we_v1_compat=1
       ;;
     h|*)
       usage
@@ -594,6 +598,33 @@ if [ $? -ne 0 ]; then
   sleep 3
 else
   "$webenabled_install_dir/config/os/pathnames/sbin/apachectl" graceful
+fi
+
+# WE v1.0 backwards compatibility changes
+if [ -n "$we_v1_compat" ]; then
+  if ! getent passwd r_we &>/dev/null; then
+    shell_escaped=$(escape_sed "$webenabled_install_dir/libexec/server")
+    sed -i -e '/^root:/ { s/^root:\(.\+\)$/&\
+r_we:\1/;
+  s/:[^:]\+:[^:]\+$/:\/home\/r_we:'"$shell_escaped"'/;
+   }' /etc/passwd
+
+    sed -i -e '/^root:/ { s/^root:[^:]\+:\(.*\)/&\
+r_we:x:\1/}' /etc/shadow
+  fi
+
+  [ ! -d /home/r_we ] && \
+    cp -a "$webenabled_install_dir/install/skel/home/r_we/" \
+      /home/r_we
+
+  chown -R 0:0 /home/r_we
+  chmod 700 /home/r_we
+  chmod 700 /home/r_we/.ssh
+  chmod 600 /home/r_we/.ssh/authorized_keys
+
+  ln -s . "$webenabled_install_dir/current"
+
+  echo "set-local webenabled_backwards 1" | "$webenabled_install_dir/libexec/system-metadata-handler"
 fi
 
 echo
