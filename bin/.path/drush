@@ -23,4 +23,29 @@ elif hash drush &>/dev/null && [ "`hash -t drush`" == $0 ]; then
   hash -p "$devpanel_drush" drush
 fi
 
+php_home_bin="$HOME/bin/php-cgi"
+if [ -f "$php_home_bin" -a -x "$php_home_bin" ]; then
+  # if the user has a ~/bin/php-cgi link on $HOME
+  if [ -L "$php_home_bin" ]; then
+    real_php_bin=$(readlink -e "$php_home_bin")
+    real_php_dir="${real_php_bin%/*}"
+
+    # check if there's a php-cli and php respectively on the real PHP dir
+    # and use the first one found
+    php_cli="$real_php_dir/php-cli"
+    php_bin="$real_php_dir/php"
+    if [ -f "$php_cli" -a -x "$php_cli" ]; then
+      php_exec_bin="$php_cli"
+    elif [ -f "$php_bin" -a -x "$php_bin" ]; then
+      php_exec_bin="$php_bin"
+    fi
+  fi
+else
+  php_exec_bin="$php_home_bin"
+fi
+    
+if [ -n "$php_exec_bin" ]; then
+  export DRUSH_PHP="$php_exec_bin"
+fi
+
 drush "$@"
