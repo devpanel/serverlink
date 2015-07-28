@@ -39,9 +39,9 @@ if [ -f "$php_home_bin" -a -x "$php_home_bin" ]; then
     elif [ -f "$php_bin" -a -x "$php_bin" ]; then
       php_exec_bin="$php_bin"
     fi
+  else
+    php_exec_bin="$php_home_bin"
   fi
-else
-  php_exec_bin="$php_home_bin"
 fi
     
 if [ -n "$php_exec_bin" ]; then
