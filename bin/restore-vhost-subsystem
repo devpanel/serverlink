@@ -528,6 +528,14 @@ then
   error "Cannot get the primary name from $config_dir/names/default"
 fi
 
+# some of the scripts of the seed apps use relative paths, and some users
+# add lines to .bash_profile and .bashrc to chdir to the public_html by
+# default, and this can break some of the apps. So we chdir to $HOME to
+# avoid that.
+if ! cd "$HOME"; then
+  error "unable to chdir to $HOME"
+fi
+
 # connect to the database (credentials from ~/.my.cnf)
 echo "Looking for database '$database'"
 databases=`run_mysql -B -e "show databases;"` 2>&1
