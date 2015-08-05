@@ -22,6 +22,43 @@ run_su()
   su -s /bin/bash -l -c "$*" "$user_web"
 }
 
+get_param_from_db_output() {
+  # get param="value" from the output and extract only the value
+  local user="$1"
+  local param="$2"
+  local output="$3"
+
+  local tmp_out value
+  tmp_out="$(printf '%s' "$output" | \
+    egrep "^added: .+user=[\'\"]$user[\'\"]" | \
+    egrep -o -m 1 "$param=[\'\"][^\'\"]+[\'\"]")"
+
+  [ $? -ne 0 ] && return 1
+
+  value=${tmp_out#$param=[\'\"]}
+  value=${value%[\'\"]}
+
+  printf '%s' "$value"
+}
+
+detect_subsystem() {
+  local tmp_sub_dir seed_file subsystem
+
+  for tmp_sub_dir in "$we_base_dir/bin/seeds/"*
+  do
+    seed_file="$tmp_sub_dir/restore-vhost.functions"
+    [ ! -d "$tmp_sub_dir" -o ! -e "$seed_file" ] && continue
+    subsystem="${tmp_sub_dir##*/}"
+
+    if egrep -q "^$subsystem\$" "$archive_dir/db/databases"; then
+      echo "$subsystem"
+      return 0
+    fi
+  done
+
+  return 1
+}
+
 usage()
 {
   echo "
@@ -62,6 +99,7 @@ cleanup()
 
 options=""
 subsystem_options="-F"
+app_cmd_options=""
 opt_i=0 opt_p=0
 try_archive_in_user_home=0
 create_vhost=1
@@ -91,7 +129,7 @@ do
       subsystem_options="$subsystem_options${subsystem_options+ }-$OPTOPT"
       ;;
     O)
-      subsystem_options="$subsystem_options${subsystem_options+ }-O "`printf '%q' "$OPTARG"`""
+      app_cmd_options+=" -O "`printf '%q' "$OPTARG"`""
       ;;
     *) exit 1;
   esac
@@ -109,6 +147,7 @@ we_base_dir=`readlink -e "$dir/.."`
 dir_bin="$we_base_dir/bin"
 export DEVPANEL_HOME="$we_base_dir"
 
+metadata_bin="$DEVPANEL_HOME/libexec/apache-metadata-handler"
 config_dir="$we_base_dir/config/vhosts/$vhost"
 user_web="w_$vhost"
 home="`eval \"echo ~$user_web\"`" || error "unable to get \$HOME of user $user_web"
@@ -210,13 +249,24 @@ if [ -n "$archive_file" ]; then
   archive_dir="$TMPDIR"
 fi
 
+if [ "$create_vhost" -eq 1 ]; then
+  subsystem=$(detect_subsystem)
+  if [ $? -ne 0 ]; then
+    error "unable to detect subsystem for the application"
+  fi
+fi
+
 web_options="$options"
 if [ "$sync_type" == "all" -o "$sync_type" == "files" ]; then
   web_options="$web_options${web_options+ }-S"
 fi
 
-[ $create_vhost -eq 0 ] && 
+[ $create_vhost -eq 0 ] && \
     web_options="$web_options${web_options+ }-N"
+
+echo "Updating .mysql.passwd"
+run_su "mkdir -p -m 0711 .webenabled"
+run_su "mkdir -p -m 0711 $vhost_config_dir"
 
 
 echo Processing web...
@@ -246,50 +296,26 @@ fi
 
 echo "$output"
 [ $status = 0 ] || exit $status
-echo "Updating .mysql.passwd"
-run_su "mkdir -p -m 0711 .webenabled" || exit 1
-run_su "mkdir -p -m 0711 $vhost_config_dir" || exit 1
-output2=`echo "$output"|sed -n 's/^.*user='\''\([^'\'']\{1,\}\)'\'' password='\''\(.\{1,\}\)'\''.*/\1:\2/p'` || exit 1
-echo "$output"|sed -n 's/^.*user='\''\(w_[^'\'']\{1,\}\)'\'' password='\''\(.\{1,\}\)'\''.*/webenabled_private_mysql_password \1:\2/p' || exit 1
-output3=$(echo "$output"|sed -n 's/\\/\\\\/g;s/^.* host='\''\([^:'\'']\{1,\}\):\([0-9]\{1,\}\)'\'' user='\''\(w_[^'\'']\{1,\}\)'\'' password=\('\''.\{1,\}'\''\).*/[client]\
-host=\1\
-port=\2\
-user=\3\
-password=\4/p') || exit 1
-echo "$output2" | run_su "cat >$vhost_config_dir/.mysql.passwd" || exit 1
-run_su "ln -snf $vhost_config_dir/.mysql.passwd .mysql.passwd" || exit 1
-# we have already escaped \ as \\. now let's escape ' as \'
-echo "$output3" | sed '/^password='\''\(.*\)'\''/{
-s//\1/
-s/'\''/\\&/g
-s/.*/password='\''&'\''/
-}'|run_su "cat >$home/.my.cnf" || exit 1
+
+mysql_host_port=$(get_param_from_db_output "w_$vhost" host "$output")
+mysql_host=${mysql_host_port%:*}
+mysql_port=${mysql_host_port#*:}
+mysql_user=$(get_param_from_db_output "w_$vhost" user "$output")
+mysql_password=$(get_param_from_db_output "w_$vhost" password "$output")
+
+# write the ~/.my.cnf file
+{ printf 'client.host = %s\nclient.port = %s\nclient.user = %s\n' \
+    "$mysql_host" "$mysql_port" "$mysql_user" ;
+  printf 'client.password = %s\n' "$mysql_password";
+} | run_su "$we_base_dir/bin/update-ini-file" -c "~/.my.cnf"
+
+admin_password=$(get_param_from_db_output admin password "$output")
+echo "admin:$admin_password" | run_su "cat >$vhost_config_dir/.mysql.passwd"
+run_su "ln -snf $vhost_config_dir/.mysql.passwd .mysql.passwd"
+
+
 run_su $dir_bin/phpMyAdmin.fix -f
 run_su $dir_bin/vhost-archive.fix -f
-
-tmp_mysql_host=`echo -n "$output3" | egrep ^host=`
-tmp_mysql_host=${tmp_mysql_host#*=}
-tmp_mysql_host=${tmp_mysql_host#[\"\']}
-tmp_mysql_host=${tmp_mysql_host%[\"\']}
-mysql_host="$tmp_mysql_host"
-
-tmp_mysql_port=`echo -n "$output3" | egrep ^port=`
-tmp_mysql_port=${tmp_mysql_port#*=}
-tmp_mysql_port=${tmp_mysql_port#[\"\']}
-tmp_mysql_port=${tmp_mysql_port%[\"\']}
-mysql_port="$tmp_mysql_port"
-
-tmp_mysql_user=`echo -n "$output3" | egrep ^user=`
-tmp_mysql_user=${tmp_mysql_user#*=}
-tmp_mysql_user=${tmp_mysql_user#[\"\']}
-tmp_mysql_user=${tmp_mysql_user%[\"\']}
-mysql_user="$tmp_mysql_user"
-
-tmp_mysql_password=`echo -n "$output3" | egrep ^password=`
-tmp_mysql_password=${tmp_mysql_password#*=}
-tmp_mysql_password=${tmp_mysql_password#[\"\']}
-tmp_mysql_password=${tmp_mysql_password%[\"\']}
-mysql_password="$tmp_mysql_password"
 
 metadata_str="
 set app:_:default app:0
@@ -297,37 +323,17 @@ set app:0:_:db_host $mysql_host
 set app:0:_:db_port $mysql_port
 set app:0:_:db_user $mysql_user
 set app:0:_:db_password $mysql_password
+set app:0:_:seed_app $subsystem
+set app:0:_:db_name $subsystem
 "
 
-shopt -s nullglob
-for tmp_sub_dir in "$we_base_dir/bin/seeds/"*
-do
-  seed_file="$tmp_sub_dir/restore-vhost.functions"
-  [ ! -d "$tmp_sub_dir" -o ! -e "$seed_file" ] && continue
-  subsystem="${tmp_sub_dir##*/}"
+echo "$metadata_str" | "$metadata_bin" -q "$vhost"
 
-  if [ $opt_p = 0 ]; then
-    old_passwd_file="$vhost_config_dir/$subsystem.passwd"
-    [ -f "$old_passwd_file" ] && \
-      run_su rm -f "$subsystem.passwd" "$old_passwd_file"
-  fi
+if ! run_su "$dir_bin/restore-vhost-subsystem" \
+  $subsystem_options $app_cmd_options -n -s "$subsystem"; then
 
-  if grep -q "^$subsystem\$" "$archive_dir/db/databases"
-  then
-    metadata_str+="set app:0:_:seed_app $subsystem"$'\n'
-    metadata_str+="set app:0:_:db_name $subsystem"$'\n'
-
-    if ! run_su cd \~ \; $dir_bin/restore-vhost-subsystem \
-      $subsystem_options -n -s "$subsystem"; then
-
-      error "unable to update app configuration files"
-    fi
-
-    run_su cd \~ \; $dir_bin/restore-vhost-subsystem $subsystem_options -I -s "$subsystem" || exit 1
-
-    echo "$metadata_str" | "$we_base_dir/libexec/apache-metadata-handler" "$vhost"
-  fi
-done
+  error "unable to update app configuration files"
+fi
 
 run_su 'restore_script="$HOME/etc/rc.webenabled.restore";
         [ -f "$restore_script" -a -x "$restore_script"  ] && "$restore_script"'
