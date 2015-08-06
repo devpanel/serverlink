@@ -310,7 +310,11 @@ mysql_password=$(get_param_from_db_output "w_$vhost" password "$output")
 } | run_su "$we_base_dir/bin/update-ini-file" -c "~/.my.cnf"
 
 admin_password=$(get_param_from_db_output admin password "$output")
-echo "admin:$admin_password" | run_su "cat >$vhost_config_dir/.mysql.passwd"
+{
+  echo "admin:$admin_password";
+  echo "$mysql_user:$mysql_password";
+} | run_su "cat >$vhost_config_dir/.mysql.passwd"
+
 run_su "ln -snf $vhost_config_dir/.mysql.passwd .mysql.passwd"
 
 
