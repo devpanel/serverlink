@@ -249,11 +249,9 @@ if [ -n "$archive_file" ]; then
   archive_dir="$TMPDIR"
 fi
 
-if [ "$create_vhost" -eq 1 ]; then
-  subsystem=$(detect_subsystem)
-  if [ $? -ne 0 ]; then
-    error "unable to detect subsystem for the application"
-  fi
+subsystem=$(detect_subsystem)
+if [ $? -ne 0 ]; then
+  error "unable to detect subsystem for the application"
 fi
 
 web_options="$options"
