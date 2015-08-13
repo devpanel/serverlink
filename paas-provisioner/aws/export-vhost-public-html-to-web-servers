@@ -1,0 +1,86 @@
+#!/bin/bash
+
+usage() {
+  echo "Usage: `basename "$0"` <vhost> [IP1] ... [ IPN ]
+
+  Export the vhost public files to the web servers. If the IPs of the
+  web servers are not specified it gets the list from AWS.
+
+"
+  exit 1
+}
+
+# main
+
+[ $# -lt 1 -o -z "$1" ] && usage
+
+self=`readlink -e "$0"`
+if [ $? -ne 0 ]; then
+  echo "Error: unable to determine self path." 1>&2
+  exit 1
+fi
+
+dir=`dirname "$self"`
+we_base_dir=`readlink -e "$dir/../.."`
+
+lib_file="$we_base_dir/lib/functions"
+if ! source "$lib_file"; then
+  echo "Error: unable to source lib file '$lib_file'" 1>&2
+  exit 1
+fi
+
+vhost="${1##*/}"
+shift
+
+declare -a webserver_ips
+
+while [ -n "$1" ]; do
+  webserver_ips+=( "$1" )
+  shift
+done
+
+if [ ${#webserver_ips[@]} -eq 0 ]; then
+  tmp_ip_list=$(mktemp)
+  if [ $? -ne 0 ]; then
+    error "unable to create temporary file."
+  fi
+
+  "$dir/get-cluster-webserver-ips" > "$tmp_ip_list"
+  if [ $? -ne 0 ]; then
+    error "unable to get list of IPs"
+  fi
+
+  while read ip; do
+    [ -z "$ip" ] && continue
+
+    webserver_ips+=( "$ip" )
+  done < "$tmp_ip_list"
+fi
+
+if [ -z "${webserver_ips[*]}" ]; then
+  error "didn't find any web server"
+fi
+
+remote_docroot_dir="/var/www/html/$vhost"
+
+wuser_dir=$(eval echo -n \~"w_$vhost")
+
+public_html_dir="$wuser_dir/public_html/$vhost"
+if [ ! -d "$public_html_dir" ]; then
+  error "missing directory $public_html_dir"
+fi
+
+for ip in "${webserver_ips[@]}"; do
+  rsync -a "$public_html_dir/" "root@$ip:$remote_docroot_dir"
+
+  ssh root@"$ip" \
+    chown -R www-data:www-data "$remote_docroot_dir" \; \
+    /opt/webenabled/paas-provisioner/aws/update-drupal-settings "$vhost"
+
+  # start apache if it's not running
+  # when the server boots Apache is not started for the ELB not to include
+  # it in the web server pool when the content is not yet at the server
+  ssh root@"$ip" service apache2 status '||' service apache2 start
+done
+
+exit 0
