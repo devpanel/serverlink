@@ -144,7 +144,7 @@ escape_sed() {
   escaped=${escaped//\\\(/\(}
   escaped=${escaped//\\\)/\)}
   escaped=${escaped//\//\\/}
-  escaped=${escaped//\&/\\\&/}
+  escaped=${escaped//\&/\\\&}
   escaped=${escaped//$'\n'/\\n}
 
   echo -n "$escaped"
