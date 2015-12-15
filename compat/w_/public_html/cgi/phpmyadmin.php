@@ -43,6 +43,8 @@ if(!@stat($file_path)) {
 
 $_SERVER["PATH_INFO"] = $_SERVER["SCRIPT_NAME"];
 $_SERVER["SCRIPT_NAME"] = $file;
+
+set_include_path(sprintf("%s:%s", $file_dir, get_include_path()));
 chdir($file_dir);
 
 session_write_close(); // phpmyadmin is picky...it wants to open it's own session or returns error
