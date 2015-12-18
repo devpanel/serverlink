@@ -42,7 +42,7 @@ make install
 mkdir -p $dir$version/etc
 cp php.ini-production $dir$version/etc/php.ini
 touch $dir$version/bin/fcgiwrapper.sh
-echo "#! /bin/bash \nPHP_FCGI_MAX_REQUESTS=10000 \nexport PHP_FCGI_MAX_REQUESTS \nexec /opt/webenabled/bin/packages/php/$version/bin/php-cgi" > $dir$version/bin/fcgiwrapper.sh
+echo -e "#! /bin/bash \nPHP_FCGI_MAX_REQUESTS=10000 \nexport PHP_FCGI_MAX_REQUESTS \nexec /opt/webenabled/bin/packages/php/$version/bin/php-cgi" > $dir$version/bin/fcgiwrapper.sh
 
 chmod a+x $dir$version/bin/fcgiwrapper.sh
 
