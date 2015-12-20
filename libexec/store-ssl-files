@@ -3,7 +3,7 @@
 usage() {
   local prog=`basename "$0"`
 
-  echo "Usage: $prog <options> <vhost> <domain>
+  echo "Usage: $prog <options> <vhost>
   
   Options:
     -i          read certificates and key from STDIN 
@@ -12,9 +12,8 @@ usage() {
     -c <file>   read site certificate from file
     -k <file>   read secret key from file
     -N          skip reading the CA certificate chain
-    -b          backup existing files to random names
-                (if this parameter is not passed and one of the cert/key files 
-                exist, then the whole operation is aborted)
+    -o          overwrite existing configuration (if SSL is already
+                configured with the same certificates or key)
     -z          don't apply the new config to production, just store the
                 certs
     -q          print less informative messages
@@ -34,13 +33,13 @@ usage() {
   To run it manually, you'd use something like:
 
   # { echo --start CA; cat CA-cert.pem ; echo --end CA; cat Cert.crt; \\
-    cat Cert.key ; } | $prog -i vhost domain.com
+    cat Cert.key ; } | $prog -i vhost
 
 
   To run with files as input:
 
   # $prog -C CA_bundle_file.crt -c cert_file.crt -k key_file.key \\
-      myvhost mydomain.tld
+      myvhost
 
 "
   
@@ -159,18 +158,18 @@ backup_file() {
 
 # main
 
-unset skip_CA previous_buffer backup_existing quiet
+unset skip_CA previous_buffer overwrite_config quiet
 unset orig_ca_bundle_file orig_cert_file orig_key_file from_stdin
 
 apply_config=1
-getopt_flags='izNbC:c:k:'
+getopt_flags='izNoC:c:k:'
 while getopts $getopt_flags OPTN; do
   case "$OPTN" in
     N)
       skip_CA=1
       ;;
-    b)
-      backup_existing=1
+    o)
+      overwrite_config=1
       ;;
     C)
       orig_ca_bundle_file="$OPTARG"
@@ -197,11 +196,9 @@ while getopts $getopt_flags OPTN; do
 done
 shift $(( $OPTIND - 1 ))
 
-[ $# -lt 2 -o -z "$1" -o -z "$2" ] && usage
+[ $# -lt 1 -o -z "$1" ] && usage
 
 vhost="$1"
-domain="$2"
-ip_address=${3:-'*'}
 
 declare -r n_max_ca_certs=7
 declare -r start_ca_str='--start CA'
@@ -298,7 +295,7 @@ if [ -z "$skip_CA" ]; then
 fi
 
 if [ -n "$from_stdin" ]; then
-  echo "Reading PEM certificate for domain $domain..." 1>&2
+  echo "Reading PEM certificate..." 1>&2
   domain_cert=`read_pem_certificate_stdin`
   if [ $? -ne 0 ]; then
     error "failed to read domain certificate"
@@ -365,6 +362,16 @@ if [ "$cert_modulus" != "$key_modulus" ]; then
 "doesn't match key modulus ($key_modulus)"
 fi
 
+# get domain from certificate (just for file naming purposes)
+domain_str=`openssl x509 -noout -subject -in "$orig_cert_file" | \
+              egrep -o '[Cc][Nn]=[^/]+'`
+if [ $? -eq 0 -a -n "$domain_str" ]; then
+  domain_str=${domain_str#[Cc][Nn]=} # remove leading CN=
+  domain_str=${domain_str//\*./wildcard.} # replace *. with 'wildcard.'
+else
+  error "unable to get domain from certificate"
+fi
+
 # get the initial and end dates of the certificate
 # this way we organize the files by date, and keep older files
 initial_date_raw=`openssl x509 -noout -in "$orig_cert_file" -startdate`
@@ -389,20 +396,27 @@ if [ $? -ne 0 ]; then
   error "unable to convert end date to year"
 fi
 
+cert_serial=`openssl x509 -noout -in "$orig_cert_file" -serial`
+if [ $? -ne 0 -o -z "$cert_serial" ]; then
+  error "unable to get serial for certificate file $orig_cert_file"
+else
+  cert_serial=${cert_serial#serial=}
+fi
+
 valid_date="${initial_date_year}-${end_date_year}"
 
-target_ca_bundle_file="$ssl_cert_dir/CA-bundle--$domain--$valid_date.crt"
-target_cert_file="$ssl_cert_dir/$domain--$valid_date.crt"
-target_key_file="$ssl_key_dir/$domain--$valid_date.key"
+target_ca_bundle_file="$ssl_cert_dir/CA-bundle--$domain_str--$cert_serial--$valid_date.crt"
+target_cert_file="$ssl_cert_dir/$domain_str--$cert_serial--$valid_date.crt"
+target_key_file="$ssl_key_dir/$domain_str--$cert_serial--$valid_date.key"
 
 # all certificates and keys have have been validated so far
 
 # check if the directory structure for the SSL dir is set
 
-# if 'backup_existing' is set, then backup the files before proceeding
-if [ -n "$backup_existing" ]; then
+# if 'overwrite_config' is set, then backup the files before proceeding
+if [ -n "$overwrite_config" ]; then
   for F in "$target_ca_bundle_file" "$target_cert_file" "$target_key_file"; do
-    if [ -L "$F" -o -e "$F" ] && ! backup_file "$F"; then
+    if [ -f "$F" ] && ! backup_file "$F"; then
       exit 1 # the error msg is provided by backup_file function
     fi
   done
@@ -410,7 +424,7 @@ else
   unset already_exists
 
   if [ -z "$skip_CA" ]; then
-    if [ -e "$tst_file" ]; then
+    if [ -e "$target_ca_bundle_file" ]; then
       echo "Error: file '$target_ca_bundle_file' already exists" 1>&2
       already_exists=1
     fi
@@ -423,7 +437,9 @@ else
     fi
   done
 
-  [ -n "$already_exists" ] && exit 1
+  if [ -n "$already_exists" ]; then
+    error "won't overwrite existing files. Please add option -o to overwrite existing configuration."
+  fi
 fi
 
 if [ -z "$skip_CA" ]; then
