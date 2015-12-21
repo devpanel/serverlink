@@ -230,18 +230,23 @@ drupal_update_php_config_6()
 
 drupal_update_php_config_7() {
   local drupal_base_url_none_sed_script="s|^[[:space:]]*\\\$base_url[[:space:]]*=[[:space:]]*'[^']*';||"
+  local file
+  local config_dir="$home/public_html/$vhost/sites"
 
   local driver='\1'
 
-  /bin/echo "
+  for file in "$config_dir"/*/settings.php "$config_dir"/*/settings.local.php; do
+    [ ! -f "$file" ] && continue
+
+    /bin/echo "
          s/^[[:space:]]*'driver'[[:space:]]*=>[[:space:]]*'\\([^']*\\)'[[:space:]]*,/    'driver' => '$driver',/
          s/^[[:space:]]*'username'[[:space:]]*=>[[:space:]]*.*/    'username' => '$mysql_user',/
          s/^[[:space:]]*'password'[[:space:]]*=>[[:space:]]*.*/    'password' => '$sedphpencoded_mysql_password',/
          s/^[[:space:]]*'host'[[:space:]]*=>[[:space:]]*.*/    'host' => '$mysql_host',/
          s/^[[:space:]]*'port'[[:space:]]*=>[[:space:]]*.*/    'port' => '$mysql_port',/
          s/^[[:space:]]*'database'[[:space:]]*=>[[:space:]]*.*/    'database' => '$hosting_database',/
-  " | run_ised "$home/public_html/$vhost/sites/default/settings.php"
-
+    " | run_ised "$file"
+  done
 }
 
 drupal_update_php_config_8() {
