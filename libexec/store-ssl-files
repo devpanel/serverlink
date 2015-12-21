@@ -41,6 +41,7 @@ usage() {
   # $prog -C CA_bundle_file.crt -c cert_file.crt -k key_file.key \\
       myvhost
 
+  See also: apply-ssl-config
 "
   
   exit 1

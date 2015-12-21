@@ -9,6 +9,7 @@ usage() {
     -C <file>   CA certificate file
     -c <file>   site certificate file
     -k <file>   secret key file
+    -i ip_addr  specific address to bind the vhost to
 
   This script sets the CA certificate, site certificate and site private key
   to the specified vhost.
@@ -44,7 +45,8 @@ unset orig_ca_bundle_file orig_cert_file orig_key_file from_stdin
 
 [ $# -lt 2 ] && usage
 
-getopt_flags='C:c:k:'
+getopt_flags='C:c:k:i:'
+unset ca_bundle_file cert_file key_file ip_addr
 while getopts $getopt_flags OPTN; do
   case "$OPTN" in
     C)
@@ -55,6 +57,9 @@ while getopts $getopt_flags OPTN; do
       ;;
     k)
       key_file="$OPTARG"
+      ;;
+    i)
+      ip_addr="$OPTARG"
       ;;
     *)
       usage
@@ -142,6 +147,10 @@ metadata_op+="set $vhost_prefix $vhost_internal_name"$'\n'
 metadata_op+="set apache_vhost:_:name:$vhost_internal_name 3"$'\n'
 metadata_op+="set $vhost_prefix:_:replicate devpanel_main"$'\n'
 metadata_op+="set $vhost_prefix:_:template $ssl_template_basename"$'\n'
+
+if [ -n "$ip_addr" ]; then
+  metadata_op+="set $vhost_prefix:_:IP $ip_addr"$'\n'
+fi
 
 if [ -n "$ca_bundle_file" ]; then
   metadata_op+="set $vhost_prefix:param:2:SSLCACertificateFile $ca_bundle_link"$'\n'
