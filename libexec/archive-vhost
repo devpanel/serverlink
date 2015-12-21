@@ -351,17 +351,24 @@ if [ -n "$webenabled_backwards" ]; then
     md5_str=${md5_output%% *}
     md5_file="${target_file%.*}.md5"
 
+    touch "$md5_file"
+    chmod 0640 "$md5_file"
+    chown "$user_web":"$apache_group" "$md5_file"
+
     su -l -s /bin/bash -c "umask 027; cd "$vhost_archive_dir" && \
       echo "$md5_str" >"$md5_file"" "$user_web"
-    [ $? -eq 0 ] && chown "$user_web":"$apache_group" "$md5_file"
   fi
 
   if [ -n "$sha1_output" ]; then
     sha1_str=${sha1_output%% *}
     sha1_file="${target_file%.*}.sha1"
+
+    touch "$sha1_file"
+    chmod 0640 "$sha1_file"
+    chown "$user_web":"$apache_group" "$sha1_file"
+
     su -l -s /bin/bash -c "umask 027; cd "$vhost_archive_dir" && \
       echo "$sha1_str" >"$sha1_file"" "$user_web"
-    [ $? -eq 0 ] && chown "$user_web":"$apache_group" "$sha1_file"
   fi
 fi
 
