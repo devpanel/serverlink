@@ -101,9 +101,17 @@ centos_install_distro_packages() {
     return 1
   fi
 
+  # For CentOS 6.x the default PHP version is 5.3 that is very outdated.
+  #
+  # So we use the Remi repository to get a more up-to-date PHP version that
+  # is more current for the needs of current applications (as of early
+  # 2016). If the repository for the newest version is not explicitly
+  # enabled, CentOS will get the old PHP version.
+  #
+
   { 
     echo "remi.enabled=1"; 
-    echo "remi-php55.enabled=1"; 
+    echo "remi-php56.enabled=1"; 
   } | "$source_dir/bin/update-ini-file" /etc/yum.repos.d/remi.repo
 
   # end of external repository installation
@@ -117,9 +125,13 @@ centos_install_distro_packages() {
     fi
   done
 
-  for module in dba gd ldap mysql pdo xml xmlrpc process soap mbstring; do
-    yum -y install php-$module
-  done
+  local -a php_mods=( 
+                      php-dba php-gd php-ldap php-mysqlnd php-pdo \
+                      php-xml php-xmlrpc php-process php-soap     \
+                      php-mbstring
+  )
+
+  yum -y install ${php_mods[*]}
 
   # Install perl modules needed by devPanel software
   yum -y install perl perl-devel perl-Time-HiRes make php-pear git \
