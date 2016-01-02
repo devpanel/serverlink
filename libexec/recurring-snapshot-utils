@@ -376,7 +376,7 @@ case $op in
         continue
       else
         if [ -n "$verbose" ]; then
-          msg="Retention policy defines to keep $keep_n files for"
+          msg="Retention policy defines to keep $keep_n files for "
           msg+=" $frequency backups..."
           echo "$msg" 1>&2
         fi
