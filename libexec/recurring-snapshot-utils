@@ -304,17 +304,11 @@ case $op in
       freq_real_path="$vhost_archive_dir/$freq_link_contents"
 
       if [ -f "$freq_real_path" ]; then
-<<<<<<< HEAD
         if [ ! -L "$epoch_status_link" ]; then
           # try to fix missing epoch link
           if ! cp -P "$frequency_status_link" "$epoch_status_link"; then
             echo "Warning: failed to copy $frequency_status_link to $epoch_status_link" 1>&2
           fi
-=======
-        # try to fix missing epoch link
-        if ! cp -P "$frequency_status_link" "$epoch_status_link"; then
-          error "failed to copy $frequency_status_link to $epoch_status_link"
->>>>>>> enhanced recurring snapshot creation and removal
         fi
 
         if [ -z "$quiet" ]; then
@@ -343,12 +337,9 @@ case $op in
           error "unable to create epoch status link $epoch_status_link"
         fi
       fi
-<<<<<<< HEAD
     else
       # archive failed
       exit 1
-=======
->>>>>>> enhanced recurring snapshot creation and removal
     fi
 
     exit 0
