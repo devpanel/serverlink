@@ -1,4 +1,12 @@
 #!/bin/bash
+if [ -z "$DEVPANEL_HOME" ]; then
+  tmp_self=$(readlink -e "${BASH_SOURCE[0]}")
+  if [ $? -eq 0 ]; then
+    tmp_self_dir="${tmp_self%/*}"
+    DEVPANEL_HOME=$(readlink -e "$tmp_self_dir/..")
+  fi
+  unset tmp_self tmp_self_dir
+fi
 
 # avoid a warning on MacOS X because md5sum doesn't exist
 if [ -n "$OSTYPE" ] && [[ "$OSTYPE" =~ ^darwin ]] && hash md5 &>/dev/null; then
@@ -1064,22 +1072,40 @@ date_placeholders() {
     return 1
   fi
 
-  local fmt_str='+%d %b %m %Y %H %M'
+  # local fmt_str='+%d %b %m %Y %H %M'
+  local fmt_str='+%d %b %m %Y %H %M %W %w %s %j %a %x %X %Z %z'
 
-  local day month monthn year hour minute
+  # local day month monthn year hour minute
+  local day month_name month_number year hour minute \
+        week_year day_week epoch day_year day_name   \
+        locale_date locale_time timezone_abrev timezone_num
 
-  IFS=" " read day month monthn year hour minute \
-    <<< $(date -d "$ref_date" "$fmt_str")
+  IFS=" " read day month_name month_number year hour minute \
+               week_year day_week epoch day_year day_name   \
+               locale_date locale_time timezone_abrev timezone_num \
+            <<< $(date -d "$ref_date" "$fmt_str")
 
   local date_str
 
   date_str="$template_str"
   date_str=${date_str//@day@/"$day"}
-  date_str=${date_str//@month@/"$month"}
-  date_str=${date_str//@monthn@/"$monthn"}
+  date_str=${date_str//@month_name@/"$month_name"}
+  date_str=${date_str//@month_number@/"$monthn"}
   date_str=${date_str//@year@/"$year"}
   date_str=${date_str//@hour@/"$hour"}
   date_str=${date_str//@minute@/"$minute"}
+  date_str=${date_str//@week_year@/"$week_year"}
+  date_str=${date_str//@day_week@/"$day_week"}
+  date_str=${date_str//@epoch@/"$epoch"}
+  date_str=${date_str//@day_year@/"$day_year"}
+  date_str=${date_str//@day_name@/"$day_name"}
+  date_str=${date_str//@locale_date@/"$locale_date"}
+  date_str=${date_str//@locale_time@/"$locale_time"}
+  date_str=${date_str//@timezone_abrev@/"$timezone_abrev"}
+  date_str=${date_str//@timezone_num@/"$timezone_num"}
+
+  # auxiliary formats for breviety
+  date_str=${date_str//@aux_date_str@/$month_name-$day-$year}
 
   printf '%s' "$date_str"
 }
@@ -1173,3 +1199,62 @@ escape_quotes() {
   printf '%s' "$new"
 }
 
+get_list_of_vhosts() {
+  local vhost_config_dir="$DEVPANEL_HOME/config/vhosts"
+  local vhost vhost_dir
+  local -a vhosts_ar=()
+
+  if [ ! -d "$vhost_config_dir" ]; then
+    echo "$FUNCNAME(): missing config dir $vhost_config_dir" 1>&2
+    return 1
+  fi
+
+  for vhost_dir in "$vhost_config_dir/"*; do
+    [ ! -d "$vhost_dir" ] && continue
+    vhost=${vhost_dir##*/}
+    vhosts_ar+=( "$vhost" )
+  done
+
+  if [ ${#vhosts_ar[*]} -le 0 ]; then
+    return 0
+  else
+    echo "${vhosts_ar[@]}"
+  fi
+}
+
+translate_archive_placeholders() {
+  local orig="$1"
+  local final
+
+  # uses globals $sys_data_dir $vhost_data_dir $vhost $period
+  #              $archive_template_str
+
+  final="$orig"
+
+  [ -n "$archive_template_str" ] && \
+    final=${final//@archive_template_str@/$archive_template_str}
+
+  [ -n "$sys_data_dir" ]   && final=${final//@system_data_dir@/$sys_data_dir}
+
+  [ -n "$vhost_archive_dir" ] && \
+    final=${final//@vhost_archive_dir@/$vhost_archive_dir}
+
+  [ -n "$vhost" ]        && final=${final//@vhost@/$vhost}
+  [ -n "$frequency" ]    && final=${final//@frequency@/$frequency}
+
+  final=$(date_placeholders "$final") || return 1
+
+  echo "$final"
+}
+
+get_recurring_backup_property() {
+  local period="$1"
+  local unit="$2"
+  local vhost="$3"
+
+  local vhost_config_dir="$DEVPANEL_HOME/config/vhosts/$vhost"
+
+  local link="$vhost_config_dir/config:backup_snapshot:$period:$unit"
+
+  deref_contents "$link"
+}

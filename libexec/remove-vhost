@@ -73,6 +73,7 @@ if ! source "$lib_file"; then
 fi
 
 vhost_config_dir="$sys_dir/config/vhosts/$vhost"
+vhost_cache_dir="$sys_dir/var/cache/$vhost"
 apache_base_log_dir=$(deref_os_fs_path "$sys_dir" pathnames/var/log/apache_vhosts)
 [ -n "$apache_base_log_dir" ] && apache_log_dir="$apache_base_log_dir/$user_web"
 
@@ -120,6 +121,11 @@ fi
 
 echo "Removing webenabled config dir"
 run rm_rf_safer "$vhost_config_dir"
+
+if [ -d "$vhost_cache_dir" ]; then
+  echo "Removing cache dir $vhost_cache_dir"
+  run rm_rf_safer "$vhost_cache_dir"
+fi
 
 echo "Removing cron for $user_web"
 run crontab -u "$user_web" -r

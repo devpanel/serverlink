@@ -150,20 +150,27 @@ if [ ! -d "$upper_tmp_dir" ]; then
   fi
 fi
 
+# these variables need to be set in advance for
+#   translate_archive_placeholders()
+archive_dir_in_user="$home/public_html/gen/archive"
+archive_dir_in_sys="$sys_archive_dir/$vhost"
+if [ -n "$in_user_path" ]; then
+  vhost_archive_dir="$archive_dir_in_user"
+else
+  vhost_archive_dir="$archive_dir_in_sys"
+fi
+
 if [ -n "$archive_to" -a "$archive_to" == "-" ]; then
   to_stdout=1  # destination is STDOUT
 else # destination is a file
-  if [ -z "$archive_to" ]; then
+  if [ -n "$archive_to" ]; then
+    archive_to=$(translate_archive_placeholders "$archive_to")
+    if [ $? -ne 0 ]; then
+      error "unable to translate placeholders from input filename"
+    fi
+  else
     # archive name was not passed on cmdline, use the full template
     archive_to="$archive_template_str"
-  fi
-
-  archive_dir_in_user="$home/public_html/gen/archive"
-  archive_dir_in_sys="$sys_archive_dir/$vhost"
-  if [ -n "$in_user_path" ]; then
-    vhost_archive_dir="$archive_dir_in_user"
-  else
-    vhost_archive_dir="$archive_dir_in_sys"
   fi
 
   if [ "${archive_to:0:1}" == "/" ]; then
@@ -172,32 +179,26 @@ else # destination is a file
     tmp_full_path=$(readlink -m "$vhost_archive_dir/$archive_to")
   fi
 
-  if [ -n "$uninstall" -a "${tmp_full_path#$sys_archive_dir}" == "$tmp_full_path" ]; then
-    error "the file needs to created inside $sys_archive_dir."
-  elif [ -z "$uninstall" -a "${tmp_full_path#$vhost_archive_dir}" == "$tmp_full_path" ]; then
-    error "the file needs to created inside $vhost_archive_dir."
-  fi
-
   if [ -d "$tmp_full_path" ]; then
     # if the whole filename is actually a directory,
     # then append the default filename
     tmp_full_path+="/@archive_template_str@"
+    tmp_full_path=$(translate_archive_placeholders "$tmp_full_path")
+    [ $? -ne 0 ] && exit 1
   fi
-
   archive_filename=$(basename "$tmp_full_path")
-
-  # do some last transformations to the archive_filename
-  archive_filename=${archive_filename//@archive_template_str@/"$archive_template_str"}
-  archive_filename=${archive_filename//@vhost@/"$vhost"}
-  archive_filename=$(date_placeholders "$archive_filename")
-  [ $? -ne 0 ] && exit 1
-
   if [[ "$archive_filename" != *.[Tt][Gg][Zz] ]]; then
     archive_filename+=".tgz"
   fi
 
   target_dir=${tmp_full_path%/*}
   target_file="$target_dir/$archive_filename"
+
+  if [ -n "$uninstall" -a "${target_file#$sys_archive_dir}" == "$target_file" ]; then
+    error "the file needs to be created inside $sys_archive_dir."
+  elif [ -z "$uninstall" -a "${target_file#$vhost_archive_dir}" == "$target_file" ]; then
+    error "the file needs to be created inside $vhost_archive_dir."
+  fi
 
   # test whether the target file already exists
   if [ -e "$target_file" -o -L "$target_file" ]; then

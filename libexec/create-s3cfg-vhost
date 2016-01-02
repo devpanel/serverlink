@@ -2,12 +2,26 @@
 
 usage() {
   local prog=$(basename "$0")
-  echo "Usage: $prog <vhost>"
+  echo "Usage: $prog <vhost>
+
+  Configures the S3 credentials for the specified vhost.
+
+  Reads the S3 credentials from STDIN and writes to ~/.s3cfg.$vhost
+
+  The STDIN input is expected to be in the following format:
+
+default.access_key=asdadfasdf
+default.secret_key=qwertyqwerty
+
+"
+
   exit 1
 }
 
 # main
 [ $# -eq 0 -o -z "$1" ] && usage
+
+umask 077
 
 vhost="$1"
 
@@ -19,4 +33,6 @@ sys_dir=$(readlink -e "$self_bin_dir/..")
 
 s3cfg_file="$HOME/.s3cfg.$vhost"
 
+# for privacy reasons it reads only from STDIN
+#   (on shared servers it's a privacy leak to send the keys on command line)
 "$sys_dir/bin/update-ini-file" -c "$s3cfg_file"
