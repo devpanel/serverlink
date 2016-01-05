@@ -5,7 +5,7 @@
 usage(){
 echo "This script is used to check the error and access logs of the application within the user directory"
 echo ""
-echo "Usage: ./check-logs <user> <error/access>"
+echo "Usage: ./check-logs -l <error/access> -u <user>"
 echo "Example: ./check-logs -l error -u john"
 
 echo "Options: "
