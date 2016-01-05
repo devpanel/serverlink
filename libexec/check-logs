@@ -1,0 +1,89 @@
+#!/bin/bash
+
+# This script is used to check the error and access logs of the application within the user directory
+
+usage(){
+echo "This script is used to check the error and access logs of the application within the user directory"
+echo ""
+echo "Usage: ./check-logs <user> <error/access>"
+echo "Example: ./check-logs -l error -u john"
+
+echo "Options: "
+echo "    -h     Show this help message"
+echo "    -u     Select user"
+echo "    -l     Select log error/access"
+echo "    -s     Show logs available "
+echo "           Example: ./check-logs -s john"
+echo "    -f     Force fire read"
+echo "           Example: ./check-logs -f /path/to/file"
+}
+
+#This method will read the logs from the desired user
+
+readlog(){
+ERRLOGPATH=/var/log/apache2/virtwww/w_$VHOST/$VHOST-error_log
+ACCLOGPATH=/var/log/apache2/virtwww/w_$VHOST/$VHOST-access_log
+if [ "$READLOG" == "error" ]; then
+	cat "$ERRLOGPATH"
+
+elif [ "$READLOG" == "access" ];then
+	cat "$ACCLOGPATH"
+else 
+	echo "Error in the command, see the usage for more information"
+fi
+}
+
+
+# This method will read a specific given log (just the name of the file)
+readspecific(){
+
+FILETYPE=$(file $SPECLOG)
+
+if [ ! -f $SPECLOG ];then
+	echo "The file does not exist, see the usage for more information"
+	exit 1
+fi
+
+if [[ $FILETYPE =~ .*gzip.* ]];then
+	zcat $SPECLOG | tail -100
+
+elif [[ $FILETYPE =~ .*ASCII.* ]];then
+	cat $SPECLOG  | tail -100
+fi
+}
+
+# This method will show how many error and access logs are available to see
+showavaillogs(){
+ERRAVAIL=$(find /var/log/apache2/virtwww/w_$VHOST/ -name "$VHOST-error_log*")
+ACCAVAIL=$(find /var/log/apache2/virtwww/w_$VHOST/ -name "$VHOST-access_log*")
+
+echo -ne "[error logs]\n$ERRAVAIL\n\n[access logs]\n$ACCAVAIL\n"
+}
+
+
+# Parse Options
+
+while getopts ":l: :u: :s: :f:" opt ; do
+  case $opt in
+
+    l)
+        READLOG="$OPTARG"
+        ;;
+    u)
+        VHOST="$OPTARG"
+        readlog
+        ;;
+    f)
+	SPECLOG="$OPTARG"
+	readspecific
+	;;
+    s)	
+	VHOST="$OPTARG"
+	showavaillogs
+	;;
+
+    *)
+        usage
+        ;;
+  esac
+done

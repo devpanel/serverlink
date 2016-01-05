@@ -1,0 +1,66 @@
+#!/bin/bash
+
+# This script is made to enable and disable automatic system backups
+# Use this at your own risk
+
+# Keep in mind that some programs may break due to unexpected updates or changes in the libraries
+UPDATEPATH="/etc/cron.daily/automatic-updates"
+
+usage(){
+echo "
+This script is made to enable and disable automatic system backups
+Keep in mind that some programs may break due to unexpected updates or changes in the libraries
+Use this at your own risk
+Usage: 
+
+To turn on automatic updates  - ./automatic-updates on  
+
+To turn off automatic updates - ./automatic-updates off
+"
+}
+
+# Turn on Updates doing some validations for ubuntu and centos or rhel based distributions
+autoupdatesOn(){
+echo "
+#!/bin/bash
+
+# Validation for ubuntu
+if [ \$(grep -ci ubuntu /etc/issue) -ge 1 ] || [ \$(grep -ci ubuntu /etc/os-release) -ge 1 ];then
+        apt-get update -y; apt-get upgrade
+
+# Validation for Debian
+elif [ \$(grep -ci debian /etc/issue) -ge 1 ] || [ \$(grep -ci debian /etc/os-release) -ge 1 ];then
+	apt-get update -y; apt-get upgrade
+
+# Validation for rhel/cenOS
+elif [ \$(grep -ci rhel /etc/issue) -ge 1 ] || [ \$(grep -ci centos /etc/issue) -ge 1 ];then
+        yum update
+
+else
+	echo "Could not detect OS"
+	exit 1
+fi
+
+" > $UPDATEPATH
+chmod +x $UPDATEPATH
+echo "Automatic updates ON"
+}
+
+autoupdatesOff(){
+rm -f $UPDATEPATH
+echo "Automatic updates OFF"
+}
+
+case  $1  in
+	on)       
+		autoupdatesOn
+		;;
+	off)
+		autoupdatesOff
+		;;            
+	h|help)       
+		usage
+		;;
+	*)
+		usage              
+esac 
