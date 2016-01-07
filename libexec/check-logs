@@ -21,8 +21,8 @@ echo "           Example: ./check-logs -f /path/to/file"
 #This method will read the logs from the desired user
 
 readlog(){
-ERRLOGPATH=/var/log/apache2/virtwww/w_$VHOST/$VHOST-error_log
-ACCLOGPATH=/var/log/apache2/virtwww/w_$VHOST/$VHOST-access_log
+ERRLOGPATH=$virtwww_log_dir/w_$VHOST/$VHOST-error_log
+ACCLOGPATH=$virtwww_log_dir/w_$VHOST/$VHOST-access_log
 if [ "$READLOG" == "error" ]; then
 	cat "$ERRLOGPATH"
 
@@ -54,14 +54,31 @@ fi
 
 # This method will show how many error and access logs are available to see
 showavaillogs(){
-ERRAVAIL=$(find /var/log/apache2/virtwww/w_$VHOST/ -name "$VHOST-error_log*")
-ACCAVAIL=$(find /var/log/apache2/virtwww/w_$VHOST/ -name "$VHOST-access_log*")
+ERRAVAIL=$(find "$virtwww_log_dir/w_$VHOST/" -name "$VHOST-error_log*")
+ACCAVAIL=$(find "$virtwww_log_dir/w_$VHOST/" -name "$VHOST-access_log*")
 
 echo -ne "[error logs]\n$ERRAVAIL\n\n[access logs]\n$ACCAVAIL\n"
 }
 
 
 # Parse Options
+
+self_bin=$(readlink -e "$0")
+if [ $? -ne 0 ]; then
+  echo "Error: unable to get self executable path." 1>&2
+  exit 1
+fi
+self_dir=${self_bin%/*}
+sys_dir=${self_dir%/*}
+lib_file="$sys_dir/lib/functions"
+
+if ! source "$lib_file"; then
+  echo "Error: unable to load lib file '$lib_file'"
+  exit 1
+fi
+
+assign_deref_os_prop_or_exit virtwww_log_dir "$sys_dir" \
+  pathnames/var/log/apache_vhosts
 
 while getopts ":l: :u: :s: :f:" opt ; do
   case $opt in
