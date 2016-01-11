@@ -1,96 +1,67 @@
 #!/bin/bash
-
-# This script is made to enable and disable automatic system backups
-# Use this at your own risk
-
-# Keep in mind that some programs may break due to unexpected updates or changes in the libraries
-UPDATEPATH="/etc/cron.daily/automatic-updates"
-
 usage(){
+  local self=${0##*/}
+
 echo "
-This script is made to enable and disable automatic system backups
+Enables or disables running regular updates of Linux distribution packages.
+
 Keep in mind that some programs may break due to unexpected updates or changes in the libraries
-Use this at your own risk
-Usage: 
-To turn on automatic updates  - ./automatic-updates on  
-To turn off automatic updates - ./automatic-updates off
+Use this at your own risk.
+
+Usage: $self <on|off>
 "
+  exit 1
 }
 
 # Turn on Updates doing some validations for ubuntu and centos or rhel based distributions
 autoupdatesOn(){
-echo "
-#!/bin/bash
-
-AUTOMATICLOGS=\"/var/log/automatic-updates.log\"
-#function to detect OS
-devpanel_auto_detect_distro() {
-  local distro=\"\"
-
-  # can't use local -l below because of systems with bash 3
-  local lsb_distro_str=\"\" lsb_distro_raw=\"\"
-
-  if hash lsb_release &>/dev/null; then
-    lsb_distro_raw=`lsb_release -si 2>/dev/null`
-    lsb_distro_str=`\echo -n \"$lsb_distro_raw\" | tr A-Z a-z`
-  fi
-
-  if [ -n \"\$lsb_distro_str\" ]; then
-    distro=\"\$lsb_distro_str\"
-  elif [ -r /etc/debian_version ] && apt-cache show lsb-base | egrep -q '^Maintainer: .+debian\.org>'; then
-    distro=debian
-  elif [ -r /etc/debian_version ] && apt-cache show lsb-base | egrep -q '^Maintainer: .+ubuntu\.com>'; then
-    distro=ubuntu
-  elif hash rpm &>/dev/null && rpm -ql centos-release &>/dev/null; then
-    distro=centos
-  elif hash rpm &>/dev/null && rpm -ql redhat-release-server &>/dev/null; then
-    distro=redhat
-  elif hash rpm &>/dev/null && rpm -ql owl-hier >/dev/null 2>&1; then
-    distro=owl
-  elif [[ \"\$OSTYPE\" =~ ^darwin ]]; then
-    distro=macosx
-  fi
-
-  if [ -n \"\$distro\" ]; then
-    echo \"\$distro\"
+  echo "set automatic_distro_updates 1" | "$sys_dir/libexec/system-metadata-handler" -q
+  if [ $? -eq 0 ]; then
+    echo "Automatic updates ON"
     return 0
   else
+    echo "Error: unable to enabled auto updates" 1>&2
     return 1
   fi
 }
-# Call function to detect OS 
-DEVPANELOS=\$(devpanel_auto_detect_distro)
-# Add date to logfile
-echo \"###############################################\" >> \$AUTOMATICLOGS; date +%y-%m-%d >> \$AUTOMATICLOGS
-# Validation for ubuntu
-if [ \"\$DEVPANELOS\" == \"ubuntu\" ];then
-        apt-get update -y >> \$AUTOMATICLOGS; apt-get upgrade --assume-yes >> \$AUTOMATICLOGS
-# Validation for Debian
-elif [ \"\$DEVPANELOS\" == \"debian\" ];then
-        apt-get update -y >> \$AUTOMATICLOGS; apt-get upgrade --assume-yes >> \$AUTOMATICLOGS
-# Validation for rhel/cenOS
-elif [ \"\$DEVPANELOS\" == \"centos\" ] || [ \"\$DEVPANELOS\" == \"redhat\" ];then
-        yum update -y >> \$AUTOMATICLOGS
-else
-        echo \"Could not detect OS\"
-        exit 1
-fi
-" > $UPDATEPATH
-chmod +x $UPDATEPATH
-echo "Automatic updates ON"
-}
 
 autoupdatesOff(){
-rm -f $UPDATEPATH
-echo "Automatic updates OFF"
+  echo "rm automatic_distro_updates" | "$sys_dir/libexec/system-metadata-handler" -q
+  if [ $? -eq 0 ]; then
+    echo "Automatic updates OFF"
+    return 0
+  else
+    echo "Error: failed to disable auto updates" 1>&2
+    return 1
+  fi
 }
+
+# main
+
+[ -z "$1" ] && usage
+
+self_bin=$(readlink -e "$0")
+if [ $? -ne 0 ]; then
+  echo "Error: unable to detect self path" 1>&2
+  exit 1
+fi
+self_dir=${self_bin%/*}
+sys_dir=${self_dir%/*}
+lib_file="$sys_dir/lib/functions"
+
+if ! source "$lib_file"; then
+  echo "Error: unable to source file $lib_file"
+  exit 1
+fi
 
 case  $1  in
         on)       
                 autoupdatesOn
+                exit $?
                 ;;
         off)
                 autoupdatesOff
+                exit $?
                 ;;            
         h|help)       
                 usage

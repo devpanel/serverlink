@@ -9,5 +9,15 @@ self_dir=${self_bin%/*}
 
 # assuming self_dir = install/utils/crontab
 sys_dir=${self_dir%/*/*/*}
+lib_file="$sys_dir/lib/functions"
+
+if ! source "$lib_file"; then
+  echo "Error: unable to source file $lib_file"
+  exit 1
+fi
+
+if deref_os_prop "$sys_dir" automatic_distro_updates &>/dev/null; then
+  "$sys_dir/libexec/run-distro-updates" -Y
+fi
 
 /bin/true
