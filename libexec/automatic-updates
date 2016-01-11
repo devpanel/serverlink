@@ -12,9 +12,7 @@ This script is made to enable and disable automatic system backups
 Keep in mind that some programs may break due to unexpected updates or changes in the libraries
 Use this at your own risk
 Usage: 
-
 To turn on automatic updates  - ./automatic-updates on  
-
 To turn off automatic updates - ./automatic-updates off
 "
 }
@@ -23,25 +21,60 @@ To turn off automatic updates - ./automatic-updates off
 autoupdatesOn(){
 echo "
 #!/bin/bash
-# Add date to /var/log/automatic-updates.log
-echo \"###############################################\" >> /var/log/automatic-updates.log; date +%y-%m-%d >> /var/log/automatic-updates.log
+
+AUTOMATICLOGS=\"/var/log/automatic-updates.log\"
+#function to detect OS
+devpanel_auto_detect_distro() {
+  local distro=\"\"
+
+  # can't use local -l below because of systems with bash 3
+  local lsb_distro_str=\"\" lsb_distro_raw=\"\"
+
+  if hash lsb_release &>/dev/null; then
+    lsb_distro_raw=`lsb_release -si 2>/dev/null`
+    lsb_distro_str=`\echo -n \"$lsb_distro_raw\" | tr A-Z a-z`
+  fi
+
+  if [ -n \"\$lsb_distro_str\" ]; then
+    distro=\"\$lsb_distro_str\"
+  elif [ -r /etc/debian_version ] && apt-cache show lsb-base | egrep -q '^Maintainer: .+debian\.org>'; then
+    distro=debian
+  elif [ -r /etc/debian_version ] && apt-cache show lsb-base | egrep -q '^Maintainer: .+ubuntu\.com>'; then
+    distro=ubuntu
+  elif hash rpm &>/dev/null && rpm -ql centos-release &>/dev/null; then
+    distro=centos
+  elif hash rpm &>/dev/null && rpm -ql redhat-release-server &>/dev/null; then
+    distro=redhat
+  elif hash rpm &>/dev/null && rpm -ql owl-hier >/dev/null 2>&1; then
+    distro=owl
+  elif [[ \"\$OSTYPE\" =~ ^darwin ]]; then
+    distro=macosx
+  fi
+
+  if [ -n \"\$distro\" ]; then
+    echo \"\$distro\"
+    return 0
+  else
+    return 1
+  fi
+}
+# Call function to detect OS 
+DEVPANELOS=\$(devpanel_auto_detect_distro)
+# Add date to logfile
+echo \"###############################################\" >> \$AUTOMATICLOGS; date +%y-%m-%d >> \$AUTOMATICLOGS
 # Validation for ubuntu
-if [ \$(grep -ci ubuntu /etc/issue) -ge 1 ] || [ \$(grep -ci ubuntu /etc/os-release) -ge 1 ];then
-        apt-get update -y >> /var/log/automatic-updates.log; apt-get upgrade --assume-yes >> /var/log/automatic-updates.log
-
+if [ \"\$DEVPANELOS\" == \"ubuntu\" ];then
+        apt-get update -y >> \$AUTOMATICLOGS; apt-get upgrade --assume-yes >> \$AUTOMATICLOGS
 # Validation for Debian
-elif [ \$(grep -ci debian /etc/issue) -ge 1 ] || [ \$(grep -ci debian /etc/os-release) -ge 1 ];then
-	apt-get update -y >> /var/log/automatic-updates.log; apt-get upgrade --assume-yes >> /var/log/automatic-updates.log
-
+elif [ \"\$DEVPANELOS\" == \"debian\" ];then
+        apt-get update -y >> \$AUTOMATICLOGS; apt-get upgrade --assume-yes >> \$AUTOMATICLOGS
 # Validation for rhel/cenOS
-elif [ \$(grep -ci rhel /etc/issue) -ge 1 ] || [ \$(grep -ci centos /etc/issue) -ge 1 ];then
-        yum update -y >> /var/log/automatic-updates.log
-
+elif [ \"\$DEVPANELOS\" == \"centos\" ] || [ \"\$DEVPANELOS\" == \"redhat\" ];then
+        yum update -y >> \$AUTOMATICLOGS
 else
-	echo "Could not detect OS"
-	exit 1
+        echo \"Could not detect OS\"
+        exit 1
 fi
-
 " > $UPDATEPATH
 chmod +x $UPDATEPATH
 echo "Automatic updates ON"
@@ -53,15 +86,15 @@ echo "Automatic updates OFF"
 }
 
 case  $1  in
-	on)       
-		autoupdatesOn
-		;;
-	off)
-		autoupdatesOff
-		;;            
-	h|help)       
-		usage
-		;;
-	*)
-		usage              
-esac 
+        on)       
+                autoupdatesOn
+                ;;
+        off)
+                autoupdatesOff
+                ;;            
+        h|help)       
+                usage
+                ;;
+        *)
+                usage              
+esac
