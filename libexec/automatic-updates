@@ -26,15 +26,15 @@ echo "
 
 # Validation for ubuntu
 if [ \$(grep -ci ubuntu /etc/issue) -ge 1 ] || [ \$(grep -ci ubuntu /etc/os-release) -ge 1 ];then
-        apt-get update -y; apt-get upgrade
+        apt-get update -y; apt-get upgrade -y
 
 # Validation for Debian
 elif [ \$(grep -ci debian /etc/issue) -ge 1 ] || [ \$(grep -ci debian /etc/os-release) -ge 1 ];then
-	apt-get update -y; apt-get upgrade
+	apt-get update -y; apt-get upgrade -y
 
 # Validation for rhel/cenOS
 elif [ \$(grep -ci rhel /etc/issue) -ge 1 ] || [ \$(grep -ci centos /etc/issue) -ge 1 ];then
-        yum update
+        yum update -y
 
 else
 	echo "Could not detect OS"
