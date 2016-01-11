@@ -27,11 +27,11 @@ echo "
 echo "###############################################" >> /var/log/automatic-updates.log; date +%y-m-d >> /var/log/automatic-updates.log
 # Validation for ubuntu
 if [ \$(grep -ci ubuntu /etc/issue) -ge 1 ] || [ \$(grep -ci ubuntu /etc/os-release) -ge 1 ];then
-        apt-get update -y; apt-get upgrade --assume-yes >> /var/log/automatic-updates.log
+        apt-get update -y >> /var/log/automatic-updates.log; apt-get upgrade --assume-yes >> /var/log/automatic-updates.log
 
 # Validation for Debian
 elif [ \$(grep -ci debian /etc/issue) -ge 1 ] || [ \$(grep -ci debian /etc/os-release) -ge 1 ];then
-	apt-get update -y; apt-get upgrade --assume-yes >> /var/log/automatic-updates.log
+	apt-get update -y >> /var/log/automatic-updates.log; apt-get upgrade --assume-yes >> /var/log/automatic-updates.log
 
 # Validation for rhel/cenOS
 elif [ \$(grep -ci rhel /etc/issue) -ge 1 ] || [ \$(grep -ci centos /etc/issue) -ge 1 ];then
