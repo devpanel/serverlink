@@ -6,8 +6,12 @@ if [ $? -ne 0 ]; then
   exit 1
 fi
 self_dir=${self_bin%/*}
-sys_dir=${self_dir%/*}
 
+# assuming self_dir = install/utils/crontab
+sys_dir=${self_dir%/*/*/*}
+
+
+# recurring snapshots for vhosts
 "$sys_dir/libexec/create-recurring-snapshots-starter" -q -Y
 
 "$sys_dir/libexec/remove-old-snapshots-starter" -q -Y
