@@ -24,7 +24,7 @@ autoupdatesOn(){
 echo "
 #!/bin/bash
 # Add date to /var/log/automatic-updates.log
-echo \"###############################################\" >> /var/log/automatic-updates.log; date +%y-m-d >> /var/log/automatic-updates.log
+echo \"###############################################\" >> /var/log/automatic-updates.log; date +%y-%m-%d >> /var/log/automatic-updates.log
 # Validation for ubuntu
 if [ \$(grep -ci ubuntu /etc/issue) -ge 1 ] || [ \$(grep -ci ubuntu /etc/os-release) -ge 1 ];then
         apt-get update -y >> /var/log/automatic-updates.log; apt-get upgrade --assume-yes >> /var/log/automatic-updates.log
