@@ -1,0 +1,152 @@
+#!/bin/bash
+usage() {
+  local self=${0##*/}
+
+  echo "Usage: $self <op>
+
+       $self on                - enable  automatic distro updates for this host
+       $self off               - disable automatic distro updates for this host
+       $self run -Y            - run distro updates now
+       $self run-from-crontab  - helper to run from crontab (only runs the
+                                 actual updates when it's enabled)
+       $self help              - shows this help message
+
+"
+  exit 1
+}
+
+usage_on_off(){
+  local self=${0##*/}
+
+echo "
+Enables or disables running regular updates of Linux distribution packages.
+
+Keep in mind that some programs may break due to unexpected updates or changes in the libraries
+Use this at your own risk.
+
+Usage: $self <on|off>
+"
+  exit 1
+}
+
+usage_run(){
+  local self=${0##*/}
+
+echo "
+Executes updates provided by the Linux distribution.
+
+Keep in mind that some programs may break due to unexpected updates or changes in the libraries
+Use this at your own risk.
+
+Usage: $self run -Y
+"
+  exit 1
+}
+
+# Turn on Updates doing some validations for ubuntu and centos or rhel based distributions
+autoupdatesOn(){
+  echo "set automatic_distro_updates 1" | "$sys_dir/libexec/system-metadata-handler" -q
+  if [ $? -eq 0 ]; then
+    echo "Automatic updates ON"
+    return 0
+  else
+    echo "Error: unable to enabled auto updates" 1>&2
+    return 1
+  fi
+}
+
+autoupdatesOff(){
+  echo "rm automatic_distro_updates" | "$sys_dir/libexec/system-metadata-handler" -q
+  if [ $? -eq 0 ]; then
+    echo "Automatic updates OFF"
+    return 0
+  else
+    echo "Error: failed to disable auto updates" 1>&2
+    return 1
+  fi
+}
+
+# main
+
+[ -z "$1" ] && usage
+op="$1"
+shift
+
+self_bin=$(readlink -e "$0")
+if [ $? -ne 0 ]; then
+  echo "Error: unable to detect self path" 1>&2
+  exit 1
+fi
+self_dir=${self_bin%/*}
+sys_dir=${self_dir%/*}
+lib_file="$sys_dir/lib/functions"
+
+if ! source "$lib_file"; then
+  echo "Error: unable to source file $lib_file"
+  exit 1
+fi
+
+case  $op  in
+        on)       
+                autoupdatesOn
+                exit $?
+                ;;
+        off)
+                autoupdatesOff
+                exit $?
+                ;;            
+        h|help)       
+                usage
+                ;;
+        run)
+                unset confirmed
+                getopt_flags='Y'
+                while getopts $getopt_flags OPTN; do
+                  case $OPTN in
+                    Y)
+                      confirmed=1
+                      ;;
+                    *)
+                      usage_run
+                      ;;
+                  esac
+                done
+                [ $OPTIND -gt 1 ] && shift $(( $OPTIND - 1 ))
+
+                [ -z "$confirmed" ] && usage_run
+
+                AUTOMATICLOGS="/var/log/automatic-updates.log"
+                # Call function to detect OS 
+                DEVPANELOS=$(devpanel_auto_detect_distro)
+                if [ $? -ne 0 ]; then
+                  exit 1
+                fi
+
+                # Add date to logfile
+                echo "###############################################" >> $AUTOMATICLOGS; date +%y-%m-%d >> $AUTOMATICLOGS
+                # Validation for ubuntu
+                if [ "$DEVPANELOS" == "ubuntu" ];then
+                        apt-get update -y >> $AUTOMATICLOGS; apt-get upgrade --assume-yes >> $AUTOMATICLOGS
+                # Validation for Debian
+                elif [ "$DEVPANELOS" == "debian" ];then
+                        apt-get update -y >> \$AUTOMATICLOGS; apt-get upgrade --assume-yes >> $AUTOMATICLOGS
+                # Validation for rhel/cenOS
+                elif [ "$DEVPANELOS" == "centos" ] || [ "$DEVPANELOS" == "redhat" ];then
+                        yum update -y >> $AUTOMATICLOGS
+                else
+                        echo "Could not detect OS"
+                        exit 1
+                fi
+                ;;
+        run-from-crontab)
+                if deref_os_prop "$sys_dir" automatic_distro_updates &>/dev/null; then
+                  "$self_bin" run -Y
+                  exit $?
+                fi
+
+                exit 0
+                ;;
+        *)
+                usage 
+                ;;
+esac

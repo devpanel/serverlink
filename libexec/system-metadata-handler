@@ -22,12 +22,12 @@ if [ $EUID -ne 0 ]; then
   error "this command requires ROOT privileges to be run."
 fi
 
-getopt_flags='n'
+getopt_flags='nq'
 target_opts=''
 while getopts $getopt_flags OPTN; do
   case $OPTN in
-    n)
-      target_opts+='n'
+    [nq])
+      target_opts+=" -$OPTN"
       ;;
     *)
       usage
