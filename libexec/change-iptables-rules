@@ -5,19 +5,20 @@
 # You can only define the inbound connections on the file you give.
 # This is the format you have to use INSIDE the file
 #
-# iptables -A INPUT -p tcp --dport 22 -m state --state NEW,ESTABLISHED -j ACCEPT
-# iptables -A OUTPUT -p tcp --sport 22 -m state --state ESTABLISHED -j ACCEPT
+# iptables -A INPUT -p tcp --dport 22 -j ACCEPT
 #
-# The only variable you will need to change is the port, but you need to specify those 2 lines
+# The only variable you will need to change is the port, but you need to specify these line
 # You can have several lines per file
-# If you want to open port 80, you will need to add those 2 rules like these
+# If you want to open port 80, you will need to add these rule
 #
-# iptables -A INPUT -p tcp --dport 80 -m state --state NEW,ESTABLISHED -j ACCEPT
-# iptables -A OUTPUT -p tcp --sport 80 -m state --state ESTABLISHED -j ACCEPT
+# iptables -A INPUT -p tcp --dport 80 -j ACCEPT
 ######################################################################
 
 # Define variables for binaries
 
+#IPT="/sbin/iptables"
+#IPTS="/sbin/iptables-save"
+#IPTR="/sbin/iptables-restore"
 IPT=$(which iptables)
 IPTS=$(which iptables-save)
 IPTR=$(which iptables-restore)
@@ -44,18 +45,16 @@ exit 1
 # Extended usage method
 extusage(){
 echo " This script is used to change the iptables rules based on a file you give
- You can only define the inbound connections on the file you give.
- This is the format you have to use INSIDE the file
+You can only define the inbound connections on the file you give.
+This is the format you have to use INSIDE the file
 
- iptables -A INPUT -p tcp --dport 22 -m state --state NEW,ESTABLISHED -j ACCEPT
- iptables -A OUTPUT -p tcp --sport 22 -m state --state ESTABLISHED -j ACCEPT
+iptables -A INPUT -p tcp --dport 22 -j ACCEPT
 
- The only variable you will need to change is the port, but you need to specify those 2 lines
- You can have several lines per file
- If you want to open port 80, you will need to add those 2 rules like these
+The only variable you will need to change is the port, but you need to specify these line
+You can have several lines per file
+If you want to open port 80, you will need to add these rule
 
- iptables -A INPUT -p tcp --dport 80 -m state --state NEW,ESTABLISHED -j ACCEPT
- iptables -A OUTPUT -p tcp --sport 80 -m state --state ESTABLISHED -j ACCEPT
+iptables -A INPUT -p tcp --dport 80 -j ACCEPT
 "
 exit 1
 }
@@ -70,7 +69,6 @@ fi
 # Main method to import the rules from the given file
 importrules(){
 # Get SSH port
-#SSHPORT=$(cat /etc/ssh/sshd_config |grep Port|awk '{print $2}')
 RULESBACKUP=$(mktemp)
 
 if [ -z "$RULESFILE" ];then
@@ -88,9 +86,10 @@ fi
 # Flush rules and Change default action to DROP
 $IPT -t filter -F
 $IPT -t filter -X
-$IPT -P INPUT DROP
-$IPT -P FORWARD DROP
+$IPT -P INPUT ACCEPT
+$IPT -P FORWARD ACCEPT
 $IPT -P OUTPUT ACCEPT
+$IPT -I INPUT -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
 
 # Enable use of loopback interfaces
 $IPT -A INPUT -i lo -j ACCEPT
@@ -109,10 +108,23 @@ $IPT -I OUTPUT 1 -m state --state RELATED,ESTABLISHED -j ACCEPT
 iptables -A OUTPUT -p icmp --icmp-type echo-request -j ACCEPT
 iptables -A INPUT -p icmp --icmp-type echo-reply -j ACCEPT
 
-# Read rules from file given
+# Conditional to open SSH PORT
+SSHPORT=$(cat /etc/ssh/sshd_config |grep  ^Port |awk '{print $2}')
+re='^[0-9]+$'
+
+if [ -z "$SSHPORT" ];then
+        iptables -A INPUT -p tcp --dport 22 -j ACCEPT
+elif [[ $SSHPORT =~ $re ]];then
+        iptables -A INPUT -p tcp --dport $SSHPORT -j ACCEPT
+else
+true
+fi
+
+# Read rules from a given file
 while read line;  do $line; done < $RULESFILE
 $IPTS
 
+iptables -A INPUT -j DROP
 # Check the connection with the world, if it fails then the rules will be cleaned
 RESPONSE=$(curl -s --head -w %{http_code} http://controller.devpanel.com/ -o /dev/null)
 
