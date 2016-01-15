@@ -52,6 +52,7 @@ elif [ "$DEVPANELOS" == "centos" ] || [ "$DEVPANELOS" == "redhat" ];then
 
 else
   echo "unsupported OS"
+  exit 1
 fi
 }
 
@@ -67,6 +68,7 @@ elif [ "$DEVPANELOS" == "centos" ] || [ "$DEVPANELOS" == "redhat" ];then
 
 else
   echo "unsupported OS"
+  exit 1
 fi
 }
 
