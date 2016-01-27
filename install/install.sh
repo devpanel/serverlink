@@ -403,9 +403,9 @@ ServerName $dp_server_hostname
   "$webenabled_install_dir/compat/suexec/chcgi" w_ +7
   
   #Install Zabbix Agent
-  if [ -z "$we_v1_compat" ]; then
-    $webenabled_install_dir/install/install-zabbix on $dp_server_hostname
-  fi
+  #if [ -z "$we_v1_compat" ]; then
+  #  $webenabled_install_dir/install/install-zabbix on $dp_server_hostname
+  #fi
 }
 
 # main
