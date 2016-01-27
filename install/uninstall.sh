@@ -281,6 +281,9 @@ for g in virtwww weadmin w_; do
   fi
 done
 
+ # Uninstall Zabbix
+ $install_dir/install/install-zabbix off
+ 
 echo
 echo "Successfully removed devPanel software"
 
