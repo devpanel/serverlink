@@ -401,6 +401,11 @@ ServerName $dp_server_hostname
   "$webenabled_install_dir/libexec/update-packages" -y
 
   "$webenabled_install_dir/compat/suexec/chcgi" w_ +7
+  
+  #Install Zabbix Agent
+  if [ -z "$we_v1_compat" ]; then
+    $webenabled_install_dir/install/install-zabbix on
+  fi
 }
 
 # main
