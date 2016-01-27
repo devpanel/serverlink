@@ -36,7 +36,7 @@ if [ "$DEVPANELOS" == "ubuntu" ] || [ "$DEVPANELOS" == "debian" ];then
   sysv-rc-conf zabbix-agent on
   sed -i 's/Server=127.0.0.1/Server=monitoring.devpanel.com/' /etc/zabbix/zabbix_agentd.conf
   sed -i 's/ServerActive=127.0.0.1/ServerActive=monitoring.devpanel.com/' /etc/zabbix/zabbix_agentd.conf
-  HOSTNAME=`hostname` && sed -i "s/Hostname=Zabbix\ server/Hostname=$HOSTNAME/" /etc/zabbix/zabbix_agentd.conf
+  sed -i "s/Hostname=Zabbix\ server/Hostname=$2/" /etc/zabbix/zabbix_agentd.conf
   service zabbix-agent restart
 
 # Only run it if we can (ie. on RHEL/CentOS)
@@ -47,7 +47,7 @@ elif [ "$DEVPANELOS" == "centos" ] || [ "$DEVPANELOS" == "redhat" ];then
   chkconfig zabbix-agent on
   sed -i 's/Server=127.0.0.1/Server=monitoring.devpanel.com/' /etc/zabbix/zabbix_agentd.conf
   sed -i 's/ServerActive=127.0.0.1/ServerActive=monitoring.devpanel.com/' /etc/zabbix/zabbix_agentd.conf
-  HOSTNAME=`hostname` && sed -i "s/Hostname=Zabbix\ server/Hostname=$HOSTNAME/" /etc/zabbix/zabbix_agentd.conf
+  sed -i "s/Hostname=Zabbix\ server/Hostname=$2/" /etc/zabbix/zabbix_agentd.conf
   service zabbix-agent restart
 
 else
