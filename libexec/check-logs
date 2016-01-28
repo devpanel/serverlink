@@ -37,7 +37,8 @@ fi
 
 #Method to list all logs of all users
 checkavaillogs(){
-find $virtwww_log_dir/w_*/*_log*
+find $virtwww_log_dir/w_*/*_log* 2>/dev/null || echo "No logs Available"
+exit 1
 }
 
 # This method will read a specific given log (just the name of the file)
