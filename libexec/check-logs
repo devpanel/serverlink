@@ -15,7 +15,7 @@ echo "    -u     Select user"
 echo "    -l     Select current log error/access"
 echo "              Example: ./check-logs -l error -u john"
 echo "    -s     Show logs available "
-echo "           Example: ./check-logs -s john"
+echo "              Example: ./check-logs -s john"
 echo "    -f     Force fire read"
 echo "              Example: ./check-logs -f /path/to/file"
 }
