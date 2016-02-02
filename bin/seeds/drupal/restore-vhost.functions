@@ -254,70 +254,52 @@ drupal_update_php_config_8() {
   local public_dir="$home/public_html/$vhost"
   local main_config="$public_dir/sites/default/settings.php"
 
-  local -a old_paths
-  local -a new_paths
+  local sed_str=''
 
-  random_str=`wedp_gen_random_str 44`
+  if [ -n "$initial_deployment" ]; then
+    # rename the protected config dir
 
-  local p_dir
-  for p_dir in `sed -ne '/^\$config_directories\[/ {  s/.\+\(sites\/default\/files\/config_[A-Za-z0-9_-]\+\).\+/\1/; p; }' "$main_config" | sort | uniq`; do
-    old_paths+=("$p_dir")
-    new_paths+=("`dirname "$p_dir"`/config_`wedp_gen_random_str 44`")
-  done
+    random_str=`wedp_gen_random_str 44`
+    local p_dir old_p_dirname old_p_basename new_p_dir new_p_basename
+    for p_dir in "$public_dir/sites/default/files/config_"*; do
+      if [ ! -d "$p_dir" ]; then
+        continue
+      fi
 
-  sed -i -e \
-  "/^\$databases\['default'\]\['default'\][[:space:]]*=[[:space:]]*array[[:space:]]*([[:space:]]*$/,/^)\;$/ {
+      old_p_dirname=${p_dir%/*}
+      old_p_basename=${p_dir##*/}
+
+      new_p_basename="config_$random_str"
+      new_p_dir="$public_dir/sites/default/files/$new_p_basename"
+
+      mv -f "$p_dir" "$new_p_dir"
+      if [ $? -eq 0 ]; then
+        chmod 711 "$new_p_dir"
+        sed_str+="s/$(escape_sed $old_p_basename)/$(escape_sed $new_p_basename)/g;"
+      fi
+
+      break # do it only once, we assume that there's only one of such
+            # directory
+    done
+  fi
+
+  sed_str+="/^\$databases\['default'\]\['default'\][[:space:]]*=[[:space:]]*array[[:space:]]*([[:space:]]*$/,/^)\;$/ {
    s/^[[:space:]]*'username'[[:space:]]*=>[[:space:]]*.*/  'username' => '$mysql_user',/;
    s/^[[:space:]]*'password'[[:space:]]*=>[[:space:]]*.*/  'password' => '$sedphpencoded_mysql_password',/;
    s/^[[:space:]]*'host'[[:space:]]*=>[[:space:]]*.*/  'host' => '$mysql_host',/;
    s/^[[:space:]]*'port'[[:space:]]*=>[[:space:]]*.*/  'port' => '$mysql_port',/;
    s/^[[:space:]]*'database'[[:space:]]*=>[[:space:]]*.*/  'database' => '$hosting_database',/;
   }
-  " "$home/public_html/$vhost/sites/default/settings.php"
+  "
 
-  if [ ${#old_paths[@]} -gt 0 ]; then
-    local sed_dirs_exp='/^\$config_directories\[/ {';
-    local previous_dir new_dir
+  local conf_file
+  for conf_file in "$public_dir/sites"/*/settings.php \
+                   "$public_dir/sites"/*/settings.local.php; do
 
-    for (( i=0; i < ${#old_paths[@]}; i++ )); do
-      previous_dir="${old_paths[$i]}"
-      new_dir="${new_paths[$i]}"
-
-      if [ -d "$previous_dir" -a ! -e "$new_dir" ]; then
-        echo "Moving $previous_dir to $new_dir"
-        mv -f "$previous_dir" "$new_dir"
-
-        local site_vars
-        local new_site_yml
-        for site_vars in "$new_dir"/*; do
-          if [ ! -d "$site_vars" ]; then
-            continue
-          fi
-
-          new_site_yml="$site_vars/system.site.yml"
-          if [ -f "$new_site_yml" ]; then
-            echo "Setting site name to environment `basename "$site_vars"`"
-            sed -i -e "s/^name:.*/name: `escape_sed "$fqdn"`/;" \
-              "$new_site_yml"
-          fi
-        done
-
-        sed_dirs_exp+="
-          s/`escape_sed "$previous_dir"`/`escape_sed "$new_dir"`/g;
-        "
-      fi
-    done
-
-    sed_dirs_exp+=' }'
-
-    sed -i -e "$sed_dirs_exp" "$main_config"
-  fi
-  
-  # sed -i -e \
-  #  "/^\$config_directories\[/ {
-  #    s|\(sites/default/files/config_\)[A-Za-z0-9_-]\+\(/.\+\)|\1$random_str\2|;
-  #   }
-  #   " "$home/public_html/$vhost/sites/default/settings.php"
+    if [ -f "$conf_file" ]; then
+      sed -i -e "$sed_str" "$conf_file"
+    fi
+  done
 }
 
 drupal_set_tmp_6_or_7() {
