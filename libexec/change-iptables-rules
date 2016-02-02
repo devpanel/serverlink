@@ -105,26 +105,28 @@ $IPT -A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
 $IPT -I OUTPUT 1 -m state --state RELATED,ESTABLISHED -j ACCEPT
 
 # Accept PING from all sources
-iptables -A OUTPUT -p icmp --icmp-type echo-request -j ACCEPT
-iptables -A INPUT -p icmp --icmp-type echo-reply -j ACCEPT
+$IPT -A OUTPUT -p icmp --icmp-type echo-request -j ACCEPT
+$IPT -A INPUT -p icmp --icmp-type echo-reply -j ACCEPT
 
 # Conditional to open SSH PORT
 SSHPORT=$(cat /etc/ssh/sshd_config |grep  ^Port |awk '{print $2}')
 re='^[0-9]+$'
 
 if [ -z "$SSHPORT" ];then
-        iptables -A INPUT -p tcp --dport 22 -j ACCEPT
+        $IPT -A INPUT -p tcp --dport 22 -j ACCEPT
 elif [[ $SSHPORT =~ $re ]];then
-        iptables -A INPUT -p tcp --dport $SSHPORT -j ACCEPT
+        $IPT -A INPUT -p tcp --dport $SSHPORT -j ACCEPT
 else
 true
 fi
+# Open port for zabbix monitoring
+$IPT -A INPUT -p tcp --dport 10050 -j ACCEPT
 
 # Read rules from a given file
 while read line;  do $line; done < $RULESFILE
 $IPTS
 
-iptables -A INPUT -j DROP
+$IPT -A INPUT -j DROP
 # Check the connection with the world, if it fails then the rules will be cleaned
 RESPONSE=$(curl -s --head -w %{http_code} http://controller.devpanel.com/ -o /dev/null)
 
