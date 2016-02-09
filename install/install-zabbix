@@ -38,6 +38,13 @@ if [ "$DEVPANELOS" == "ubuntu" ] || [ "$DEVPANELOS" == "debian" ];then
   sed -i 's/Server=127.0.0.1/Server=monitoring.devpanel.com/' /etc/zabbix/zabbix_agentd.conf
   sed -i 's/ServerActive=127.0.0.1/ServerActive=monitoring.devpanel.com/' /etc/zabbix/zabbix_agentd.conf
   sed -i "s/Hostname=Zabbix\ server/Hostname=$ZabbixHostname/" /etc/zabbix/zabbix_agentd.conf
+# patch sudoers and avoid duplicates
+  if [ `grep -Fxq "zabbix ALL=NOPASSWD" /etc/sudoers` ]; then
+    echo "zabbix ALL=NOPASSWD: /opt/webenabled/sbin/check_mem_diskspace_usage.sh" >> /etc/sudoers
+  else
+    sed -i 's/^zabbix\ ALL=NOPASSWD.*//g' /etc/sudoers
+    echo "zabbix ALL=NOPASSWD: /opt/webenabled/sbin/check_mem_diskspace_usage.sh" >> /etc/sudoers
+  fi
   service zabbix-agent restart
 
 # Only run it if we can (ie. on RHEL/CentOS)
@@ -49,6 +56,13 @@ elif [ "$DEVPANELOS" == "centos" ] || [ "$DEVPANELOS" == "redhat" ];then
   sed -i 's/Server=127.0.0.1/Server=monitoring.devpanel.com/' /etc/zabbix/zabbix_agentd.conf
   sed -i 's/ServerActive=127.0.0.1/ServerActive=monitoring.devpanel.com/' /etc/zabbix/zabbix_agentd.conf
   sed -i "s/Hostname=Zabbix\ server/Hostname=$ZabbixHostname/" /etc/zabbix/zabbix_agentd.conf
+# patch sudoers and avoid duplicates
+  if [ `grep -Fxq "zabbix ALL=NOPASSWD" /etc/sudoers` ]; then
+    echo "zabbix ALL=NOPASSWD: /opt/webenabled/sbin/check_mem_diskspace_usage.sh" >> /etc/sudoers
+  else
+    sed -i 's/^zabbix\ ALL=NOPASSWD.*//g' /etc/sudoers
+    echo "zabbix ALL=NOPASSWD: /opt/webenabled/sbin/check_mem_diskspace_usage.sh" >> /etc/sudoers
+  fi
   service zabbix-agent restart
 
 else
