@@ -284,6 +284,8 @@ done
  # Uninstall Zabbix
  $install_dir/install/install-zabbix off
  
+$install_dir/libexec/change-iptables-rules -D
+
 echo
 echo "Successfully removed devPanel software"
 
