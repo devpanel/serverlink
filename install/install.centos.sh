@@ -116,8 +116,11 @@ centos_install_distro_packages() {
 
   # end of external repository installation
 
+  local -a install_pkgs=( httpd mod_fcgid php make mysql mysql-server \
+                          nano vim s3cmd \
+                        )
   # install some of the most critical packages
-  for pkg in httpd mod_fcgid php make mysql mysql-server; do
+  for pkg in ${install_pkgs[@]}; do
     yum -y install "$pkg"
     if [ $? -ne 0 ]; then
       echo "$FUNCNAME(): failed to install package $pkg" 1>&2

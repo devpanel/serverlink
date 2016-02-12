@@ -51,12 +51,17 @@ ubuntu_install_distro_packages() {
       apt-get -y install sysvinit
   fi
 
-  for i in \
-    curl apache2 libapache2-mod-macro apache2-suexec zlib1g libapache2-mod-fcgid \
-    mysql-server git subversion apache2-utils \
-    php5 php5-cli php-pear php5-gd php5-curl php5-mysql \
-    php5-cgi php5-mcrypt php5-sqlite libjson-xs-perl libcrypt-ssleay-perl libcgi-session-perl
-  do
+  local -a install_pkgs=( curl apache2 libapache2-mod-macro apache2-suexec \
+                          zlib1g libapache2-mod-fcgid mysql-server git
+                          apache2-utils php5 php5-cli php-pear php5-gd
+                          php5-curl php5-mysql php5-cgi php5-mcrypt
+                          php5-sqlite libjson-xs-perl libcrypt-ssleay-perl
+                          libcgi-session-perl \
+                          nano vim s3cmd
+                        )
+                          
+
+  for i in ${install_pkgs[@]}; do
     apt-get -y install $i
   done
 
