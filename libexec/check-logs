@@ -11,6 +11,7 @@ echo "Example: ./check-logs -l error -u john"
 echo "Options: "
 echo "    -h     Show this help message"
 echo "    -a     Show list of all available logs of all users"
+echo "    -S     check server logs"
 echo "    -u     Select user"
 echo "    -l     Select current log error/access"
 echo "              Example: ./check-logs -l error -u john"
@@ -20,8 +21,11 @@ echo "    -f     Force fire read"
 echo "              Example: ./check-logs -f /path/to/file"
 }
 
-#This method will read the logs from the desired user
+checkserverlogs(){
+find /var/log/ -maxdepth 1 -type f -name "*"
+}
 
+#This method will read the logs from the desired user
 readlog(){
 ERRLOGPATH=$virtwww_log_dir/w_$VHOST/$VHOST-error_log
 ACCLOGPATH=$virtwww_log_dir/w_$VHOST/$VHOST-access_log
@@ -89,7 +93,7 @@ assign_deref_os_prop_or_exit virtwww_log_dir "$sys_dir" \
 
 
 [ $# -eq 0 ] && usage
-while getopts ":l: :u: :s: :f: a" opt ; do
+while getopts ":l: :u: :s: :f: a S" opt ; do
   case $opt in
 
     l)
@@ -110,7 +114,9 @@ while getopts ":l: :u: :s: :f: a" opt ; do
         VHOST="$OPTARG"
         showavaillogs
         ;;
-
+    S)  
+        checkserverlogs
+        ;;
     *)
         usage
         ;;
