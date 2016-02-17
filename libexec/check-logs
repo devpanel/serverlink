@@ -65,15 +65,36 @@ fi
 
 # This method will show how many error and access logs are available to see
 showavaillogs(){
-ERRAVAIL=$(find "$virtwww_log_dir/w_$VHOST/" -name "$VHOST-error_log*")
-ACCAVAIL=$(find "$virtwww_log_dir/w_$VHOST/" -name "$VHOST-access_log*")
+ERRAVAIL=$(find "$virtwww_log_dir/w_$VHOST/" -name "$VHOST-error_log*" \
+            2>/dev/null)
+ACCAVAIL=$(find "$virtwww_log_dir/w_$VHOST/" -name "$VHOST-access_log*" \
+            2>/dev/null)
 
-echo -ne "[error logs]\n$ERRAVAIL\n\n[access logs]\n$ACCAVAIL\n"
+if [ -n "$ERRAVAIL" ]; then
+  if [ -n "$has_tty" ]; then
+    echo "[error logs]"
+  fi
+
+  echo "$ERRAVAIL"
+fi
+
+if [ -n "$ACCAVAIL" ]; then
+  if [ -n "$ERRAVAIL" ]; then
+    echo
+  fi
+
+  if [ -n "$has_tty" ]; then
+    echo "[access logs]"
+  fi
+
+  echo "$ACCAVAIL"
+fi
 }
 
 
 # Parse Options
 
+unset has_tty
 self_bin=$(readlink -e "$0")
 if [ $? -ne 0 ]; then
   echo "Error: unable to get self executable path." 1>&2
@@ -91,6 +112,9 @@ fi
 assign_deref_os_prop_or_exit virtwww_log_dir "$sys_dir" \
   pathnames/var/log/apache_vhosts
 
+if tty -s; then
+  has_tty=1
+fi
 
 [ $# -eq 0 ] && usage
 while getopts ":l: :u: :s: :f: a S" opt ; do
