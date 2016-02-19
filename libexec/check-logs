@@ -19,6 +19,8 @@ echo "    -s     Show logs available "
 echo "              Example: ./check-logs -s john"
 echo "    -f     Force fire read"
 echo "              Example: ./check-logs -f /path/to/file"
+echo
+exit 1
 }
 
 checkserverlogs(){
@@ -79,11 +81,11 @@ if [ -n "$ERRAVAIL" ]; then
 fi
 
 if [ -n "$ACCAVAIL" ]; then
-  if [ -n "$ERRAVAIL" ]; then
-    echo
-  fi
-
   if [ -n "$has_tty" ]; then
+    if [ -n "$ERRAVAIL" ]; then
+      echo
+    fi
+
     echo "[access logs]"
   fi
 
@@ -93,6 +95,8 @@ fi
 
 
 # Parse Options
+
+[ $# -eq 0 ] && usage
 
 unset has_tty
 self_bin=$(readlink -e "$0")
@@ -116,7 +120,6 @@ if tty -s; then
   has_tty=1
 fi
 
-[ $# -eq 0 ] && usage
 while getopts ":l: :u: :s: :f: a S" opt ; do
   case $opt in
 
