@@ -1,7 +1,7 @@
 #!/bin/bash
 
 usage() {
-  echo "Usage: $0 <user> <file> <out_fifo>
+  echo "Usage: $0 <user> <file> <out_fifo> [download_basename]
 
   This script gives temporary read access for a user to files that are not
   directly readable through the filesystem. It sends the file contents to a
@@ -31,6 +31,7 @@ fi
 
 user="$1"
 file="$2"
+download_basename="$3" # optional
 
 if ! getent passwd "$user" &>/dev/null; then
   exit 1
@@ -63,7 +64,9 @@ fi
 app="download-file"
 token=$(su -l -s /bin/bash \
         -c "$sys_dir/bin/create-perl-cgi-session -o -e +5m \
-        -P file=$file_basename -P devpanel_app=$app" "$user")
+        -P file=$file -P devpanel_app=$app" \
+       ${download_basename:+-P download_basename=$download_basename} \
+         "$user")
 
 if [ $? -ne 0 -o -z "$token" ]; then
   error "unable to create session for web app"

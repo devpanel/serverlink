@@ -92,10 +92,14 @@ if(!open(ARCHIVE_FD, $file_path)) {
   error_rsp("unable to open file $file_path");
 }
 
+my $public_filename = defined($session_obj->param('download_basename')) ?
+                              $session_obj->param('download_basename')  :
+                      basename($file_path);
+
 my %headers = (
   -type       => 'application/octet-stream',
   -expires    => 'now',
-  -attachment => basename($file_path),
+  -attachment => $public_filename,
   -charset    => 'utf-8', # just assume utf-8 for special characters
 );
 
