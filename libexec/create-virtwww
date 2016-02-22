@@ -157,10 +157,14 @@ ACCOUNT_NAME="w_$ACCOUNT_NAME"
 
 config_base_dir="$we_base/config/vhosts"
 config_dir="$config_base_dir/$vhost"
+vhost_cache_dir="$we_base/var/cache/vhost/$vhost"
 if [ ! -e "$config_base_dir" ] && \
   ! mkdir -m 755 "$config_base_dir"; then
   error "unable to create directory '$config_base_dir'"
 fi
+
+mkdir -m 2750 $vhost_cache_dir
+chown root:$ACCOUNT_NAME $vhost_cache_dir
 
 echo
 VHOST_MULTISITE=

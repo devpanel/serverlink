@@ -122,6 +122,10 @@ install_ce_software() {
   ln -snf "$webenabled_install_dir"/compat/w_ "$homedir_base"/w_
   chown -R w_:"$_apache_exec_group" "$webenabled_install_dir"/compat/w_
 
+  "$webenabled_install_dir/bin/template-tool" \
+    -o "$webenabled_install_dir/compat/apache_include/global-includes/admin-ctl.conf" \
+    "$webenabled_install_dir/compat/apache_include/admin-ctl.conf.template"
+
   if [ ! -e "$webenabled_install_dir/etc/devpanel.conf" ]; then
     cp -f "$source_dir/install/config/devpanel.conf.template" "$webenabled_install_dir/etc/devpanel.conf"
   fi
