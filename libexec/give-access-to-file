@@ -64,7 +64,7 @@ fi
 app="download-file"
 token=$(su -l -s /bin/bash \
         -c "$sys_dir/bin/create-perl-cgi-session -o -e +5m \
-        -P file=$file -P devpanel_app=$app \
+        -P file=$out_fifo -P devpanel_app=$app \
        ${download_basename:+-P download_basename=$download_basename}" \
          "$user")
 
