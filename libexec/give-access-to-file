@@ -31,7 +31,6 @@ fi
 
 user="$1"
 file="$2"
-download_basename="$3" # optional
 
 if ! getent passwd "$user" &>/dev/null; then
   exit 1
@@ -48,6 +47,8 @@ out_fifo="$3"
 out_fifo=${out_fifo//@user_home@/$user_home}
 
 out_fifo_esc=${out_fifo//\//-} # replace slashes(/) with dash(-)
+
+download_basename="${4##*/}" # optional
 
 assign_deref_os_prop_or_exit server_domain "$sys_dir" apache_virtwww_domain
 assign_deref_os_prop_or_exit admin_apps_base_url "$sys_dir" admin_apps_base_url
