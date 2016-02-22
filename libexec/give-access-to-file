@@ -54,6 +54,7 @@ assign_deref_os_prop_or_exit admin_apps_base_url "$sys_dir" admin_apps_base_url
 if [ ! -f "$file" ]; then
   error "file path is not a regular file: $file"
 fi
+file_basename=${file##*/}
 
 if [ -e "$out_fifo" ]; then
   error "named pipe $out_fifo is already created." 1>&2
@@ -62,7 +63,7 @@ fi
 app="download-file"
 token=$(su -l -s /bin/bash \
         -c "$sys_dir/bin/create-perl-cgi-session -o -e +5m \
-        -P file=$out_fifo -P devpanel_app=$app" "$user")
+        -P file=$file_basename -P devpanel_app=$app" "$user")
 
 if [ $? -ne 0 -o -z "$token" ]; then
   error "unable to create session for web app"
