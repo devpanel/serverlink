@@ -18,5 +18,5 @@ for username in ${ARRAY[*]}; do
   db_size=`du -s /home/clients/databases/b_${db}/|awk '{print $1}'`
   logs_size=$(du -s /home/clients/websites/$username/logs/ | awk '{print $1}')
 
-  echo "$username,$(((user_diskspace_usage + db_size) / 1024)),$((mem / 1024)),$procs,$((logs_size / 1024))"
+  echo "$username,$(((user_diskspace_usage + db_size) / 1024)),$((mem / 1024)),$procs,$((logs_size / 1024)),$((db_size / 1024))"
 done
