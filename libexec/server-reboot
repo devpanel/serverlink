@@ -7,4 +7,11 @@ usage() {
 
 [ $# -ne 1 -o "$1" != "Yes" ] && usage
 
-/sbin/shutdown -t 5 -r now
+( 
+  sleep 5 # sleep some seconds to give time for taskd 
+          # to report the exit status
+
+  shutdown -r now
+) &
+
+exit 0
