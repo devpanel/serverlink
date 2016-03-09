@@ -17,10 +17,13 @@ ubuntu_service_action() {
   local service="$1"
   local action="$2"
 
-  if [ -e "/etc/init.d/$service" ]; then
+  if hash status &>/dev/null && status "$service" &>/dev/null; then
+    $action $service
+  elif [ -e "/etc/init.d/$service" ]; then
     "/etc/init.d/$service" "$action"
   else
-    initctl "$action" "$service"
+    echo "$FUNCNAME(): don't know how to run '$action' on '$service'" 1>&2
+    return 1
   fi
 }
 
