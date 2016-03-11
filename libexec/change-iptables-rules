@@ -117,7 +117,9 @@ while IFS=/ read port proto;  do
     continue
   elif ! [[ "$port" =~ ^[0-9]+$ ]]; then
     error "invalid port format on line $line_n"
-  elif [ "${proto,,}" != "tcp" -a "${proto,,}" != "udp" ]; then
+  elif [ "${proto,,}" != "tcp" -a "${proto,,}" != "udp" -a \
+         "${proto,,}" != "icmp" ]; then
+
     error "invalid protocol on line $line_n"
   elif [ $port -ge 65536 ]; then
     error "port value must be lower than 65536 (line $line_n)"
@@ -207,8 +209,19 @@ for port_proto in ${port_proto_ar[*]}; do
   port=${port_proto%/*}
   proto=${port_proto#*/}
 
-  iptables -A INPUT -p "$proto" --dport "$port" -j ACCEPT
-  if [ $? -ne 0 ]; then
+  if [ "$proto" == "tcp" -o "$proto" == "udp" ]; then
+    iptables -A INPUT -p "$proto" --dport "$port" -j ACCEPT
+    st=$?
+  elif [ "$proto" == "icmp" ]; then
+    icmp_type="$port"
+    iptables -A INPUT -p "$proto" --icmp-type "$icmp_type" -j ACCEPT
+    st=$?
+  else
+    echo "Warning: unknown port/proto: $port_proto" 1>&2
+    continue
+  fi
+
+  if [ $st -ne 0 ]; then
     echo "Warning: failed to add $port_proto to the iptables rules" 1>&2
   fi
 done
