@@ -276,7 +276,7 @@ if [ -z "$skip_CA" ]; then
         error "invalid CA certificate on position $(( ${#ca_cert[@]} + 1 ))"
       fi
 
-      echo -n "$cert" >> "$tmp_ca_bundle_file"
+      echo "$cert" >> "$tmp_ca_bundle_file"
       if [ $? -ne 0 ]; then
         error "unable to write CA to temp file '$tmp_ca_bundle_file'"
       fi
