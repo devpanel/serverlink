@@ -6,7 +6,7 @@ usage() {
   echo "Usage: $prog <options> <vhost>
   
   Options:
-    -i          read certificates and key from STDIN 
+    -I          read certificates and key from STDIN 
                 (see the format explanation below)
     -C <file>   read CA certificate bundle from file
     -c <file>   read site certificate from file
@@ -17,12 +17,13 @@ usage() {
     -z          don't apply the new config to production, just store the
                 certs
     -q          print less informative messages
+    -i ip_addr  configure SSL on the specified IP address only
 
 
   This script receives in STDIN the SSL files (CA bundle, certificate, key) and
   stores on the appropriate system directory
 
-  When -i is used, the STDIN contents should be in this order and syntax:
+  When -I is used, the STDIN contents should be in this order and syntax:
 
   --start CA
   all CA certs PEM encoded
@@ -33,7 +34,7 @@ usage() {
   To run it manually, you'd use something like:
 
   # { echo --start CA; cat CA-cert.pem ; echo --end CA; cat Cert.crt; \\
-    cat Cert.key ; } | $prog -i vhost
+    cat Cert.key ; } | $prog -I vhost
 
 
   To run with files as input:
@@ -159,11 +160,11 @@ backup_file() {
 
 # main
 
-unset skip_CA previous_buffer overwrite_config quiet
+unset skip_CA previous_buffer overwrite_config quiet ip_address
 unset orig_ca_bundle_file orig_cert_file orig_key_file from_stdin
 
 apply_config=1
-getopt_flags='izNoC:c:k:'
+getopt_flags='IzNoC:c:k:i:'
 while getopts $getopt_flags OPTN; do
   case "$OPTN" in
     N)
@@ -181,11 +182,14 @@ while getopts $getopt_flags OPTN; do
     k)
       orig_key_file="$OPTARG"
       ;;
-    i)
+    I)
       from_stdin=1
       ;;
     q)
       quiet=1
+      ;;
+    i)
+      ip_address="$OPTARG"
       ;;
     z)
       unset apply_config
@@ -481,7 +485,9 @@ fi
 
 if [ -n "$apply_config" ]; then
   "$curr_dir/apply-ssl-config" -c "$target_cert_file" -k "$target_key_file" \
-    ${target_ca_bundle_file:+ -C "$target_ca_bundle_file"} "$vhost"
+    ${target_ca_bundle_file:+ -C "$target_ca_bundle_file"}                  \
+    ${ip_address:+-i "$ip_address"} "$vhost"
+
   exit $?
 fi
 
