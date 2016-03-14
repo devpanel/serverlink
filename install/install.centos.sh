@@ -137,7 +137,7 @@ centos_install_distro_packages() {
   yum -y install ${php_mods[*]}
 
   # Install perl modules needed by devPanel software
-  yum -y install perl perl-devel perl-Time-HiRes make php-pear git \
+  yum -y install perl perl-devel perl-core perl-Time-HiRes make php-pear git \
     perl-Digest-HMAC perl-Digest-SHA perl-CGI mod_ssl perl-Crypt-SSLeay \
     perl-CGI-Session
 
