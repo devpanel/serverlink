@@ -689,8 +689,19 @@ sub exec_child {
     $i++;
   }
 
+  # if the command has no arguments (i.e. a single string), then make it an
+  # array anyway
+  if(!ref($def->{cmd})) {
+    $def->{cmd} = [ $def->{cmd} ];
+  }
+
+  # the command path
   my @cmd = ($v{scripts_dir} . '/' . shift(@{ $def->{cmd} }));
-  push(@cmd, @{ $def->{cmd} });
+
+  # the command arguments
+  if($#{ $def->{cmd} } > -1) {
+    push(@cmd, @{ $def->{cmd} });
+  }
 
   $debug and 
     debug_log("Executing task $task_id, activity $activity_id, command: " .
