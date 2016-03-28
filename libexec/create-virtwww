@@ -328,7 +328,7 @@ fi
 chmod 0711 \"$VHOST_HOME/public_html\"
 test -h \"$VHOST_HOME/logs\" && rm \"$VHOST_HOME/logs\"
 ln -s \"$VIRTWWW_LOGDIR/$ACCOUNT_NAME\" \"$VHOST_HOME/logs\"
-set +e
+
 [ ! -d ~/.ssh ] && mkdir -m 700 ~/.ssh
 echo 'Host *
   UserKnownHostsFile /dev/null
@@ -336,6 +336,7 @@ echo 'Host *
 
 $we_base/bin/gen-vhost-ssh-priv-key -o
 
+mkdir -m 700 ~/.devpanel
 " -s /bin/bash "$ACCOUNT_NAME"
 if [ "$?" -eq 0 ]; then
     echo 'done'

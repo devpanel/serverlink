@@ -329,8 +329,16 @@ case $op in
     fi
 
     # no archive for the same frequency exists, go and archive it
+    vhost_user="w_$vhost"
+    vhost_dir=$(eval echo \~$vhost_user)
+    exclude_file="$vhost_dir/.devpanel/recurring-snapshot.exclude-$frequency"
+    if [ ! -f "$exclude_file" ]; then
+      unset exclude_file
+    fi
 
-    nice -n $niceness "$self_dir/archive-vhost" "$vhost" "$backup_str"
+    nice -n $niceness "$self_dir/archive-vhost" \
+      ${exclude_file:+-e $exclude_file} "$vhost" "$backup_str"
+
     if [ $? -eq 0 ]; then
       if ln -s "$backup_basename" "$frequency_status_link"; then
         if ! ln -s "$backup_basename" "$epoch_status_link"; then

@@ -20,6 +20,9 @@ usage() {
               the temporary directory on exit
     -u        write the file on public_html/gen/archive, writable by the user
               (used by internal operations, like clone)
+    -e file   file containing paths to be excluded from backup (with ./ as
+              the root of the \$HOME directory. This file is passed to tar
+              --exclude-from option)
 
   This command creates an archive of the current state of a vhost, saving
   Apache files and MySQL databases into a tar ball.
@@ -55,13 +58,16 @@ debug=""
 in_user_path=""
 uninstall=""
 
-while getopts "PudU" OPTOPT
+while getopts "PudUe:" OPTOPT
 do
   case "$OPTOPT" in
     P) archive_vhost_web_options="${archive_vhost_web_options+ }-P";;
     u) in_user_path=1 ;;
     d) debug=1 ;;
     U) uninstall=1 ;   ;;
+    e)
+      archive_vhost_web_options="${archive_vhost_web_options+ }-e $OPTARG"
+      ;;
     *) exit 1;
   esac
 done
