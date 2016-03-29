@@ -189,9 +189,10 @@ else # destination is a file
     # if the whole filename is actually a directory,
     # then append the default filename
     tmp_full_path+="/@archive_template_str@"
-    tmp_full_path=$(translate_archive_placeholders "$tmp_full_path")
-    [ $? -ne 0 ] && exit 1
   fi
+
+  tmp_full_path=$(translate_archive_placeholders "$tmp_full_path")
+  [ $? -ne 0 ] && exit 1
   archive_filename=$(basename "$tmp_full_path")
   if [[ "$archive_filename" != *.[Tt][Gg][Zz] ]]; then
     archive_filename+=".tgz"
