@@ -331,7 +331,7 @@ case $op in
     # no archive for the same frequency exists, go and archive it
     vhost_user="w_$vhost"
     vhost_dir=$(eval echo \~$vhost_user)
-    exclude_file="$vhost_dir/.devpanel/recurring-snapshot.exclude-$frequency"
+    exclude_file="$vhost_dir/.devpanel/recurring-snapshots.exclude-$frequency"
     if [ ! -f "$exclude_file" ]; then
       unset exclude_file
     fi
