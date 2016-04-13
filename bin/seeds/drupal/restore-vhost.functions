@@ -458,3 +458,7 @@ drupal_custom()
     fi
   fi
 }
+
+drupal_clear_cache() {
+  drush -r "$home/public_html/$vhost" cache-clear all
+}

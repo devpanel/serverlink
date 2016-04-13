@@ -26,6 +26,7 @@ usage() {
   -m ADDRESS      -- ACTION: change admin's email
   -M              -- ACTION: send new passwords to admin's address (requires -P)
   -n              -- ACTION: only update settings.php
+  -C              -- ACTION: clear the cache of the application
   -F              -- initial deployment - indicates the this is the first
                      time the app is being configured
   -O name=value   -- set the name and value of a variable
@@ -418,8 +419,9 @@ if ! source "$lib_file"; then
   error "unable to load the external library file '$lib_file'"
 fi
 
-while getopts 'pPMm:s:O:iInF' OPTOPT; do
-  if ! echo "$OPTOPT" | egrep -q '^(s|i|I)$';then
+unset clear_cache
+while getopts 'pPMm:s:O:iInFC' OPTOPT; do
+  if ! echo "$OPTOPT" | egrep -q '^(s|i|I|C)$';then
     action_opt=1
   fi
 
@@ -433,6 +435,7 @@ while getopts 'pPMm:s:O:iInF' OPTOPT; do
     p) opt_p=1;;
     n) opt_n=1;;
     F) initial_deployment=1 ;;
+    C) clear_cache=1 ;;
     O)
       # the logic below reads name=value strings passed to the -O option
       accepted_opt_names=('use_my_cnf' 'site_title' 'email' )
@@ -656,6 +659,14 @@ if [ -n "$opt_n" ]; then
            s/\/w_[[:alnum:]]\{2,6\}/w_${vhost}/g
   " | run_ised "$home/.php/php.ini" || \
     error "unable to edit $home/.php/php.ini"
+fi
+
+if [ -n "$clear_cache" ]; then
+  if ! type "${subsystem}_clear_cache" &>/dev/null; then
+    echo "Warning: don't know how to clear the cache of apps of type: $subsystem" 1>&2
+  else
+    ${subsystem}_clear_cache
+  fi
 fi
 
 exit 0
