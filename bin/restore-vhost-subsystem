@@ -21,7 +21,7 @@ usage() {
   -i              -- read admin's password from stdin
   -I              -- set admin's password identical to mysql normal user password
                      found in .mysql.passwd
-  -P              -- ACTION: reset all passwords (no ACTIONS at all defaults to -P)
+  -P              -- ACTION: reset all passwords
   -p              -- ACTION: only reset admin's password
   -m ADDRESS      -- ACTION: change admin's email
   -M              -- ACTION: send new passwords to admin's address (requires -P)
@@ -421,10 +421,6 @@ fi
 
 unset clear_cache
 while getopts 'pPMm:s:O:iInFC' OPTOPT; do
-  if ! echo "$OPTOPT" | egrep -q '^(s|i|I|C)$';then
-    action_opt=1
-  fi
-
   case $OPTOPT in
     s) subsystem="$OPTARG";;
     m) opt_m="$OPTARG"; email="$OPTARG";;
@@ -515,10 +511,6 @@ fi
 if ! load_subsystem_functions "$subsystem"; then
   error "unable to load helper functions for subsystem $subsystem"
 fi
-
- 
-# if all specific options are missing, then reset all passwords (-P)
-[ -z "$action_opt" ] && opt_P=1
 
 test_flags_logic    || error "Inconsistency in the cmdline flags"
 test_target_account || error "Problems in target user account"
