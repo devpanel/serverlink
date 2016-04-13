@@ -204,10 +204,10 @@ load_subsystem_functions() {
 }
 
 cleanup_env_vars() {
-  action_opt="";
   opt_m="" opt_M="" opt_p="" opt_P="" subsystem="" opt_i="" opt_I="" opt_n=""
   buffer=""  email=""
   use_my_cnf=""
+  initial_deployment="" clear_cache=""
 }
 
 generate_password() {
@@ -419,7 +419,6 @@ if ! source "$lib_file"; then
   error "unable to load the external library file '$lib_file'"
 fi
 
-unset clear_cache
 while getopts 'pPMm:s:O:iInFC' OPTOPT; do
   case $OPTOPT in
     s) subsystem="$OPTARG";;
