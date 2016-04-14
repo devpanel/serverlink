@@ -1411,3 +1411,189 @@ get_php_bin_for_version() {
     return 1
   fi
 }
+
+translate_dayname_to_number() {
+  local name="${1,,}"
+  local n
+
+  if [ -z "$name" ]; then
+    echo "$FUNCNAME(): missing name" 1>&2
+    return 1
+  fi
+
+  # could use a global associative array, not using for backwards
+  # compatibility with older bash versions
+
+  case $name in
+    sunday|sun)
+      n=0
+      ;;
+    monday|mon)
+      n=1
+      ;;
+    tuesday|tue)
+      n=2
+      ;;
+    wednesday|wed)
+      n=3
+      ;;
+    thursday|thu)
+      n=4
+      ;;
+    friday|fri)
+      n=5
+      ;;
+    saturday|sat)
+      n=6
+      ;;
+    *)
+      echo "$FUNCNAME(): unknown day" 1>&2
+      return 1
+      ;;
+  esac
+
+  echo "$n"
+}
+
+translate_daynumber_to_name() {
+  local number="$1"
+  local name
+
+  if [ -z "$number" ]; then
+    echo "$FUNCNAME(): missing parameter number" 1>&2
+    return 1
+  elif [[ "$number" == [0-6] ]]; then
+    : # ok
+  else
+    echo "$FUNCNAME(): invalid number, needs to be between 0 and 6" 1>&2
+    return 1
+  fi
+
+  # could use a global associative array, not using for backwards
+  # compatibility with older bash versions
+
+  case $number in
+    0)
+      name=sunday
+      ;;
+    1)
+      name=monday
+      ;;
+    2)
+      name=tuesday
+      ;;
+    3)
+      name=wednesday
+      ;;
+    4)
+      name=thursday
+      ;;
+    5)
+      name=friday
+      ;;
+    6)
+      name=saturday
+      ;;
+    *)
+      echo "$FUNCNAME(): don't know how to translate '$number' to name" 1>&2
+      return 1
+      ;;
+  esac
+
+  echo "$name"
+}
+
+generate_vhost_ini_str() {
+  local vhost="$1"
+
+  local ini_str=""
+  local db_name subsystem daily_snapshots_en weekly_snapshots_en monthly_snapshots_en
+  local daily_hour daily_retention weekly_hour weekly_retention monthly_hour monthly_retention
+  local weekly_day_raw weekly_day monthly_day_raw monthly_day
+  local htpasswd_en php_version table_prefix
+
+  local rec_snap_str="recurring_snapshots"
+
+  db_name=$(get_vhost_key_value app:0:_:db_name "$vhost" 2>/dev/null)
+  table_prefix=$(get_vhost_key_value app:0:_:table_prefix "$vhost" 2>/dev/null)
+  subsystem=$(get_vhost_key_value app:0:_:seed_app "$vhost" 2>/dev/null)
+  htpasswd_en=$(get_vhost_key_value flag:htpasswd_locked "$vhost" 2>/dev/null )
+  php_version=$(get_vhost_key_value app:0:_:php_version "$vhost" 2>/dev/null )
+
+  if [ -n "$db_name" ]; then
+    ini_str+="app.database_name = $db_name"$'\n'
+  fi
+
+  if [ -n "$table_prefix" ]; then
+    ini_str+="app.table_prefix = $table_prefix"$'\n'
+  fi
+
+  if [ -n "$subsystem" ]; then
+    ini_str+="app.subsystem = $subsystem"$'\n'
+  fi
+
+  if [ -n "$htpasswd_en" ]; then
+    ini_str+="vhost.htpasswd = yes"$'\n'
+  fi
+
+  if [ -n "$php_version" ]; then
+    ini_str+="php.version = $php_version"$'\n'
+  fi
+
+  daily_snapshots_en=$(get_vhost_key_value \
+                          config:backup_snapshot:daily:enabled "$vhost" \
+                          2>/dev/null )
+  weekly_snapshots_en=$(get_vhost_key_value \
+                          config:backup_snapshot:weekly:enabled "$vhost" \
+                          2>/dev/null )
+  monthly_snapshots_en=$(get_vhost_key_value \
+                          config:backup_snapshot:monthly:enabled "$vhost" \
+                          2>/dev/null )
+
+  if [ -n "$daily_snapshots_en" ]; then
+    daily_hour=$(get_vhost_key_value config:backup_snapshot:daily:hour \
+                  "$vhost" 2>/dev/null )
+    daily_retention=$(get_vhost_key_value config:backup_snapshot:daily:retention_unit \
+                      "$vhost" 2>/dev/null )
+
+    if [ -n "$daily_hour" -a -n "$daily_retention" ]; then
+      ini_str+="$rec_snap_str.daily_hour = $daily_hour"$'\n'
+      ini_str+="$rec_snap_str.daily_retention = $daily_retention"$'\n'
+    fi
+  fi
+
+  if [ -n "$weekly_snapshots_en" ]; then
+    weekly_hour=$(get_vhost_key_value config:backup_snapshot:weekly:hour \
+                  "$vhost" 2>/dev/null )
+    weekly_day_raw=$(get_vhost_key_value config:backup_snapshot:weekly:day \
+                  "$vhost" 2>/dev/null )
+    weekly_day=$(translate_daynumber_to_name "$weekly_day_raw" 2>/dev/null)
+
+    weekly_retention=$(get_vhost_key_value config:backup_snapshot:weekly:retention_unit \
+                        "$vhost" 2>/dev/null )
+
+    if [ -n "$weekly_day" -a -n "$weekly_hour" -a -n "$weekly_retention" ]; then
+      ini_str+="$rec_snap_str.weekly_day = $weekly_day"$'\n'
+      ini_str+="$rec_snap_str.weekly_hour = $weekly_hour"$'\n'
+      ini_str+="$rec_snap_str.weekly_retention = $weekly_retention"$'\n'
+    fi
+  fi
+
+  if [ -n "$monthly_snapshots_en" ]; then
+    monthly_hour=$(get_vhost_key_value config:backup_snapshot:monthly:hour \
+                    "$vhost" 2>/dev/null )
+    monthly_day_raw=$(get_vhost_key_value config:backup_snapshot:monthly:retention_unit \
+                    "$vhost" 2>/dev/null )
+    monthly_day=$(translate_daynumber_to_name "$monthly_day_raw" 2>/dev/null)
+    monthly_retention=$(get_vhost_key_value config:backup_snapshot:monthly:retention_unit \
+                         "$vhost" 2>/dev/null )
+
+    if [ -n "$monthly_day" -a -n "$monthly_hour" -a -n "$monthly_retention" ]; then
+      ini_str+="$rec_snap_str.monthly_day = $monthly_day"$'\n'
+      ini_str+="$rec_snap_str.monthly_hour = $monthly_hour"$'\n'
+      ini_str+="$rec_snap_str.monthly_retention = $monthly_retention"$'\n'
+    fi
+  fi
+
+  echo -n "$ini_str"
+}
