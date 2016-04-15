@@ -1411,3 +1411,19 @@ get_php_bin_for_version() {
     return 1
   fi
 }
+
+is_known_seedapp_subsystem() {
+  local name="${1##*/}"
+  if [ -z "$name" ]; then
+    echo "$FUNCNAME(): missing subsystem name" 1>&2
+    return 1
+  fi
+
+  local app_dir="$DEVPANEL_HOME/bin/seedapps/$name"
+
+  if [ -d "$app_dir" ]; then
+    return 0
+  else
+    return 1
+  fi
+}
