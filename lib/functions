@@ -1419,7 +1419,7 @@ is_known_seedapp_subsystem() {
     return 1
   fi
 
-  local app_dir="$DEVPANEL_HOME/bin/seedapps/$name"
+  local app_dir="$DEVPANEL_HOME/bin/seeds/$name"
 
   if [ -d "$app_dir" ]; then
     return 0
