@@ -163,9 +163,6 @@ if [ ! -e "$config_base_dir" ] && \
   error "unable to create directory '$config_base_dir'"
 fi
 
-mkdir -m 2750 $vhost_cache_dir
-chown root:$ACCOUNT_NAME $vhost_cache_dir
-
 echo
 VHOST_MULTISITE=
 echo -n 'Is the new vhost a multi-site one (y/N)?'
@@ -306,6 +303,9 @@ if [ -n "$VHOST_PHPMYADMIN" -a x"$DB_ACCOUNT_NAME" != x$(id -un "$DB_ACCOUNT_NAM
     fi
 fi
 fi # MYSQL_LOCAL
+
+mkdir -m 2750 $vhost_cache_dir
+chown root:$ACCOUNT_NAME $vhost_cache_dir
 
 VHOST_HOME="$WEBSITES_HOME/$ACCOUNT_NAME"
 echo -n '+ configuring home directory for virtual host ... '
