@@ -103,7 +103,13 @@ done
 [ -z "$1" ] && usage
 vhost="$1"
 
-if ! "$self_dir/check-vhost-name" restore "$vhost"; then
+if [ -n "$just_pack" ]; then
+  vhost_check="name-only"
+else
+  vhost_check=restore
+fi
+
+if ! "$self_dir/check-vhost-name" $vhost_check "$vhost"; then
   exit 1
 fi
 
