@@ -408,8 +408,12 @@ drupal_custom()
   local version=""
   local civic_crm_conf="$home/public_html/$vhost/sites/default/civicrm.settings.php"
 
-  run chmod 751 "$home/public_html/$vhost/sites/default"
-  run chmod 640 "$home/public_html/$vhost/sites/default/settings.php"
+  local settings_dir settings_file
+  settings_dir="$home/public_html/$vhost/sites/default"
+  settings_file="$home/public_html/$vhost/sites/default/settings.php"
+
+  [ -e "$settings_dir"  ] && run chmod 751 "$settings_dir"
+  [ -e "$settings_file" ] && run chmod 640 "$settings_file"
 
   version=`drupal_detect_version "$database"`
   if [ $? -ne 0 -o -z "$version" ]; then
