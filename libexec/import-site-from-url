@@ -28,8 +28,8 @@ usage() {
 
     Example usage:
     
-    # $cmd -f tar.gz:https://someurl.com/download/asdfasdfasdf \
-           -d zip:https://someurl.com/download/sql-file-whatever.zip \
+    # $cmd -f tar.gz:https://someurl.com/download/asdfasdfasdf \\
+           -d zip:https://someurl.com/download/sql-file-whatever.zip \\
            -s drupal d71
 "
   exit 1
