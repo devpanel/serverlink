@@ -125,7 +125,7 @@ fi
 
 case "$orig_archive_file" in
   *.[Tt][Aa][Rr].[Gg][Zz])
-    archive_file_type=tar_gz
+    archive_file_type=tar.gz
     ;;
   *.[Zz][Ii][Pp])
     archive_file_type=zip
@@ -176,7 +176,7 @@ for dir in "$app_dir_dist" "$db_dir_dist" "$pack_dir" "$public_html_dir"; do
   fi
 done
 
-if [ "$archive_file_type" == tar_gz ]; then
+if [ "$archive_file_type" == tar.gz ]; then
   tar --no-same-owner -zpSxf "$orig_archive_file" -C "$public_html_dir"
   st=$?
 elif [ "$archive_file_type" == zip ]; then
