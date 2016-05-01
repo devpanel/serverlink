@@ -127,3 +127,7 @@ wordpress_custom() {
   echo "Updating wp-config.php"
   wordpress_update_php_config
 }
+
+wordpress_clear_cache() {
+  wp --path="$home/public_html/$vhost" cache flush
+}

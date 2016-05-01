@@ -1,0 +1,15 @@
+libxml2
+libgd3
+libc-client2007e
+libmcrypt4
+libjpeg8
+libpng12-0
+libxft2
+libsasl2-2
+libsasl2-modules-ldap
+libldap-2.4
+libaspell15
+libxslt1.1
+libtidy-0.99
+libmemcached10
+libmagickwand5

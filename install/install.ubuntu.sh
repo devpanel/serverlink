@@ -57,7 +57,7 @@ ubuntu_install_distro_packages() {
                           php5-curl php5-mysql php5-cgi php5-mcrypt
                           php5-sqlite libjson-xs-perl libcrypt-ssleay-perl
                           libcgi-session-perl \
-                          nano vim s3cmd
+                          nano vim s3cmd unzip
                         )
                           
 

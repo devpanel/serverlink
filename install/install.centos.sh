@@ -117,7 +117,7 @@ centos_install_distro_packages() {
   # end of external repository installation
 
   local -a install_pkgs=( httpd mod_fcgid php make mysql mysql-server \
-                          nano vim s3cmd \
+                          nano vim s3cmd unzip \
                         )
   # install some of the most critical packages
   for pkg in ${install_pkgs[@]}; do

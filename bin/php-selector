@@ -1,0 +1,62 @@
+#!/bin/bash
+
+usage() {
+  echo "  This script is a helper to automatically select the best PHP
+  binaries for each vhost. Please use one of the auxiliary links that point
+  to this file to actually select what PHP utility to run.
+"
+  exit 1
+}
+
+self_bin=$(readlink -e "$0")
+if [ $? -ne 0 ]; then
+  echo "Error: unable to detect self path" 1>&2
+  exit 1
+fi
+
+self_dir=${self_bin%/*}
+sys_dir=${self_dir%/*}
+lib_file="$sys_dir/lib/functions"
+
+if ! source "$lib_file"; then
+  echo "Error: unable to source lib file '$lib_file'" 1>&2
+  exit 1
+fi
+
+self_basename="${0##*/}"
+php_base="$self_basename"
+
+if [ "${self_bin##*/}" == "$php_base" ]; then
+  usage
+fi
+
+php_version=$(get_php_version_for_vhost 2>/dev/null)
+
+if [ $? -eq 0 -a -n "$php_version" ]; then
+  php_bin=$(get_php_bin_for_version "$php_version" "$php_base" 2>/dev/null)
+  if [ $? -eq 0 ]; then
+    hash -p "$php_bin" "$php_base"
+  fi
+fi
+
+php_ini_dir="$HOME/.php"
+if [ -d "$php_ini_dir" ]; then
+  if [ -n "$PHP_INI_SCAN_DIR" ]; then
+    if [[ "$php_ini_dir" != *$php_ini_dir* ]]; then
+      export PHP_INI_SCAN_DIR+=":$php_ini_dir"
+    fi
+  else
+    export PHP_INI_SCAN_DIR="$php_ini_dir"
+  fi
+fi
+
+if ! hash "$php_base" &>/dev/null; then
+  if [ -n "$REQUEST_METHOD" ]; then
+    echo -e "Content-Type: text/plain\n"
+  fi
+
+  echo "Error: couldn't find executable for $php_base"
+  exit 1
+else
+  "$php_base" "$@"
+fi

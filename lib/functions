@@ -8,6 +8,8 @@ if [ -z "$DEVPANEL_HOME" ]; then
   unset tmp_self tmp_self_dir
 fi
 
+devpanel_php_dir=${devpanel_php_dir:-"$DEVPANEL_HOME/bin/packages/phpbrew/php"}
+
 # avoid a warning on MacOS X because md5sum doesn't exist
 if [ -n "$OSTYPE" ] && [[ "$OSTYPE" =~ ^darwin ]] && hash md5 &>/dev/null; then
   hash -p $(which md5) md5sum
@@ -1257,4 +1259,171 @@ get_recurring_backup_property() {
   local link="$vhost_config_dir/config:backup_snapshot:$period:$unit"
 
   deref_contents "$link"
+}
+
+get_vhost_key_value() {
+  local key="$1"
+  local vhost="$2"
+  local value=""
+
+  if [ -z "$vhost" ]; then
+    if [[ "$USER" == w_* ]]; then
+      vhost="${USER#w_}"
+    else
+      echo "$FUNCNAME(): missing vhost, please specify it" 1>&2
+      return 1
+    fi
+  fi
+
+  local key_link="$DEVPANEL_HOME/config/vhosts/$vhost/$key"
+
+  deref_contents "$key_link"
+}
+
+get_php_version_for_series() {
+  local series="$1"
+  local version
+  local php_version_regex='^[0-9]\.[0-9]\.[0-9]+$'
+
+  local php_dir="$DEVPANEL_HOME/bin/packages/phpbrew/php"
+  if [ ! -d "$php_dir" ]; then
+    echo "$FUNCNAME(): missing PHP base directory $php_dir" 1>&2
+    return 1
+  fi
+
+  # if has a link pointing to a specific version, then use it
+  local link_path="$php_dir/php-$series"
+  if [ -L "$link_path" ]; then
+    version=$(deref_contents "$link_path" 2>/dev/null)
+  else
+    # otherwise get the latest version for the serie by scanning
+    # the phpbrew directory
+    local l_dir
+    local local_dirs=( "$php_dir/php-$series."* )
+    local n_dirs=${#local_dirs[@]}
+
+    if [ ${#local_dirs[@]} -gt 1 ]; then
+      local -i last_n=$(( $n_dirs - 1 ))
+      l_dir=${local_dirs[$last_n]}
+    else
+      if [ $n_dirs -eq 1 -a "${local_dirs[0]}" == "$php_dir/php-$series.*" ]; then
+        echo "$FUNCNAME(): error, no version installed for series $series" 1>&2
+        return 1
+      else
+        l_dir=${local_dirs[0]}
+      fi
+    fi
+
+    if [ ! -d "$l_dir" ]; then
+      echo "$FUNCNAME(): target of '$l_dir' is not a directory" 1>&2
+      return 1
+    fi
+
+    version=${l_dir##*/php-}
+  fi
+
+
+  if [[ "$version" =~ $php_version_regex ]]; then
+    echo "$version"
+    return 0
+  else
+    echo "$FUNCNAME(): found invalid string '$version' as PHP version" 1>&2
+    return 1
+  fi
+}
+
+get_php_version_for_vhost() {
+  local vhost="$1"
+  local php_series php_version ver_str st
+
+  local php_series_regex='^[0-9]\.[0-9]$'
+  local php_version_regex='^[0-9]\.[0-9]\.[0-9][0-9]?$'
+
+  if [ -z "$vhost" -a -z "$USER" ]; then
+    USER=$(id -un)
+  fi
+
+  if [ -z "$vhost" -a "$EUID" != "0" -a "${#USER}" -gt 2 -a "${USER:0:2}" == w_ ]; then
+    vhost=${USER#w_}
+  elif [ -z "$vhost" ]; then
+    echo "$FUNCNAME(): missing vhost argument" 1>&2
+    return 1
+  fi
+
+  ver_str=$(get_vhost_key_value app:0:_:php_version "$vhost" 2>/dev/null)
+  if [ $? -ne 0 ]; then
+    echo "$FUNCNAME(): no specific version set for vhost $vhost" 1>&2
+    return 1
+  fi
+
+  if [[ "$ver_str" =~ $php_version_regex ]]; then
+    php_version=$ver_str
+    echo "$php_version"
+    return 0
+  elif [[ "$ver_str" =~ $php_series_regex ]]; then
+    php_version=$(get_php_version_for_series "$ver_str")
+    if [ $? -eq 0 ]; then
+      echo "$php_version"
+      return 0
+    fi
+  else
+    echo "$FUNCNAME(): unknown string found, $ver_str" 1>&2
+    return 1
+  fi
+}
+
+get_default_php_version_for_system() {
+  local php_dir version l_link
+  php_dir="$DEVPANEL_HOME/bin/packages/phpbrew/php"
+
+  if [ ! -d "$php_dir" ]; then
+    echo "$FUNCNAME(): missing PHP base directory $php_dir" 1>&2
+    return 1
+  fi
+
+  l_link="$php_dir/default"
+  version=$(deref_contents "$l_link" 2>/dev/null)
+  if [ $? -eq 0 ]; then
+    echo "$version"
+    return 0
+  else
+    echo "$FUNCNAME(): unable to get default version of PHP" 1>&2
+    return 1
+  fi
+}
+
+get_php_bin_for_version() {
+  local version="$1"
+  local bin_prefix=${2:-php-cgi}
+
+  local php_dir="$devpanel_php_dir/php-$version"
+  if [ ! -d "$php_dir" ]; then
+    echo "$FUNCNAME(): missing directory for PHP version $version" 1>&2
+    return 1
+  fi
+
+  local bin_file="$php_dir/bin/$bin_prefix"
+
+  if [ -f "$bin_file" -a -x "$bin_file" ]; then
+    echo "$bin_file"
+    return 0
+  else
+    return 1
+  fi
+}
+
+is_known_seedapp_subsystem() {
+  local name="${1##*/}"
+  if [ -z "$name" ]; then
+    echo "$FUNCNAME(): missing subsystem name" 1>&2
+    return 1
+  fi
+
+  local app_dir="$DEVPANEL_HOME/bin/seeds/$name"
+
+  if [ -d "$app_dir" ]; then
+    return 0
+  else
+    return 1
+  fi
 }

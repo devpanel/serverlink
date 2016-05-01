@@ -21,11 +21,12 @@ usage() {
   -i              -- read admin's password from stdin
   -I              -- set admin's password identical to mysql normal user password
                      found in .mysql.passwd
-  -P              -- ACTION: reset all passwords (no ACTIONS at all defaults to -P)
+  -P              -- ACTION: reset all passwords
   -p              -- ACTION: only reset admin's password
   -m ADDRESS      -- ACTION: change admin's email
   -M              -- ACTION: send new passwords to admin's address (requires -P)
   -n              -- ACTION: only update settings.php
+  -C              -- ACTION: clear the cache of the application
   -F              -- initial deployment - indicates the this is the first
                      time the app is being configured
   -O name=value   -- set the name and value of a variable
@@ -203,10 +204,10 @@ load_subsystem_functions() {
 }
 
 cleanup_env_vars() {
-  action_opt="";
   opt_m="" opt_M="" opt_p="" opt_P="" subsystem="" opt_i="" opt_I="" opt_n=""
   buffer=""  email=""
   use_my_cnf=""
+  initial_deployment="" clear_cache=""
 }
 
 generate_password() {
@@ -418,11 +419,7 @@ if ! source "$lib_file"; then
   error "unable to load the external library file '$lib_file'"
 fi
 
-while getopts 'pPMm:s:O:iInF' OPTOPT; do
-  if ! echo "$OPTOPT" | egrep -q '^(s|i|I)$';then
-    action_opt=1
-  fi
-
+while getopts 'pPMm:s:O:iInFC' OPTOPT; do
   case $OPTOPT in
     s) subsystem="$OPTARG";;
     m) opt_m="$OPTARG"; email="$OPTARG";;
@@ -433,6 +430,7 @@ while getopts 'pPMm:s:O:iInF' OPTOPT; do
     p) opt_p=1;;
     n) opt_n=1;;
     F) initial_deployment=1 ;;
+    C) clear_cache=1 ;;
     O)
       # the logic below reads name=value strings passed to the -O option
       accepted_opt_names=('use_my_cnf' 'site_title' 'email' )
@@ -512,10 +510,6 @@ fi
 if ! load_subsystem_functions "$subsystem"; then
   error "unable to load helper functions for subsystem $subsystem"
 fi
-
- 
-# if all specific options are missing, then reset all passwords (-P)
-[ -z "$action_opt" ] && opt_P=1
 
 test_flags_logic    || error "Inconsistency in the cmdline flags"
 test_target_account || error "Problems in target user account"
@@ -656,6 +650,14 @@ if [ -n "$opt_n" ]; then
            s/\/w_[[:alnum:]]\{2,6\}/w_${vhost}/g
   " | run_ised "$home/.php/php.ini" || \
     error "unable to edit $home/.php/php.ini"
+fi
+
+if [ -n "$clear_cache" ]; then
+  if ! type "${subsystem}_clear_cache" &>/dev/null; then
+    echo "Warning: don't know how to clear the cache of apps of type: $subsystem" 1>&2
+  else
+    ${subsystem}_clear_cache
+  fi
 fi
 
 exit 0

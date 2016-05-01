@@ -113,6 +113,9 @@ elif [ -f "$archive_label" ]; then
   archive_dir="$tmp_extract/web"
 fi
 
+# one directory up the archive dir (the root of the tarball)
+tarball_root_dir=$(readlink -e $archive_dir/..)
+
 archive_id="$archive_dir/id"
 if ! old_vhost=`head -1 "$archive_id"` || [ -z "$old_vhost" ]; then
   echo "Cannot read $archive_id" >&2
@@ -173,6 +176,14 @@ if [ $create_vhost -eq 1 ]; then
 
   run "$chcgi" "$user" +2
   run "$chcgi" "$user" +7
+fi
+
+ini_file="$tarball_root_dir/devpanel.ini"
+if [ -f "$ini_file" ]; then
+  php_ver=$(ini_section_get_key_value "$ini_file" php version)
+  if [ $? -eq 0 ]; then
+    "$dir/set-php-version-for-vhost" set "$vhost" "$php_ver"
+  fi
 fi
 
 if ! run_su tar -C "$home" \
