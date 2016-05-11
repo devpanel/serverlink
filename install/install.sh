@@ -230,6 +230,35 @@ post_software_install() {
 
   local status
 
+  if [ -n "$dp_server_hostname" ]; then
+    "$webenabled_install_dir/libexec/config-vhost-names-default" \
+      "$dp_server_hostname"
+
+    # add the hostname to the apache main file, in case it's not configured
+    # to avoid the warning when restarting Apache
+    if ! egrep -qs '^[[:space:]]*ServerName' "$_apache_main_config_file"; then
+      sed -i -e "0,/^#[[:space:]]*ServerName[[:space:]]\+[A-Za-z0-9:.-]\+$/ {
+      /^#[[:space:]]*ServerName[[:space:]]\+[A-Za-z0-9:.-]\+$/ {
+      a\
+ServerName $dp_server_hostname
+;
+      }  }" "$_apache_main_config_file"
+    fi
+
+    "$webenabled_install_dir/bin/add-to-known-hosts" \
+      -a "$dp_server_hostname" localhost
+
+    "$webenabled_install_dir/bin/update-dot-ssh-config" /etc/ssh/ssh_config \
+      add_section "*.$dp_server_hostname" "Hostname=$dp_server_hostname"
+
+    "$target_dir/bin/template-tool" \
+      -o "$target_dir/compat/apache_include/global-includes/admin-ctl.conf" \
+      "$target_dir/compat/apache_include/admin-ctl.conf.template"
+
+  else
+    "$webenabled_install_dir/bin/add-to-known-hosts" localhost
+  fi
+
   local custom_conf_d="$target_dir/install/utils"
   # choose the additional  my.cnf file for MySQL
   local mysql_version=$(get_mysql_version)
@@ -327,37 +356,6 @@ post_software_install() {
       echo -e "\n\nWarning: unable to set user api url\n\n"
       sleep 3
     fi
-  fi
-
-  # this one is not run on bootstrap, so we run it in normal install (don't
-  # check for bootstrap
-  if [ -n "$dp_server_hostname" ]; then
-    "$webenabled_install_dir/libexec/config-vhost-names-default" \
-      "$dp_server_hostname"
-
-    # add the hostname to the apache main file, in case it's not configured
-    # to avoid the warning when restarting Apache
-    if ! egrep -qs '^[[:space:]]*ServerName' "$_apache_main_config_file"; then
-      sed -i -e "0,/^#[[:space:]]*ServerName[[:space:]]\+[A-Za-z0-9:.-]\+$/ {
-      /^#[[:space:]]*ServerName[[:space:]]\+[A-Za-z0-9:.-]\+$/ {
-      a\
-ServerName $dp_server_hostname
-;
-      }  }" "$_apache_main_config_file"
-    fi
-
-    "$webenabled_install_dir/bin/add-to-known-hosts" \
-      -a "$dp_server_hostname" localhost
-
-    "$webenabled_install_dir/bin/update-dot-ssh-config" /etc/ssh/ssh_config \
-      add_section "*.$dp_server_hostname" "Hostname=$dp_server_hostname"
-
-    "$target_dir/bin/template-tool" \
-      -o "$target_dir/compat/apache_include/global-includes/admin-ctl.conf" \
-      "$target_dir/compat/apache_include/admin-ctl.conf.template"
-
-  else
-    "$webenabled_install_dir/bin/add-to-known-hosts" localhost
   fi
 
   if [ -n "$dp_auto_register" ]; then
