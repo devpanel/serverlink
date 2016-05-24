@@ -23,6 +23,7 @@ usage() {
     -e file   file containing paths to be excluded from backup (with ./ as
               the root of the \$HOME directory. This file is passed to tar
               --exclude-from option)
+    -C        don't do checksum calculations
 
   This command creates an archive of the current state of a vhost, saving
   Apache files and MySQL databases into a tar ball.
@@ -57,8 +58,9 @@ check_archive_pathname_options=""
 debug=""
 in_user_path=""
 uninstall=""
+no_checksum=""
 
-while getopts "PudUe:" OPTOPT
+while getopts "PudUCe:" OPTOPT
 do
   case "$OPTOPT" in
     P) archive_vhost_web_options="${archive_vhost_web_options+ }-P";;
@@ -67,6 +69,9 @@ do
     U) uninstall=1 ;   ;;
     e)
       archive_vhost_web_options="${archive_vhost_web_options+ }-e $OPTARG"
+      ;;
+    C)
+      no_checksum=1
       ;;
     *) exit 1;
   esac
@@ -349,7 +354,7 @@ fi
 echo
 echo "Successfully saved archive file to '$target_file'"
 
-if [ -n "$webenabled_backwards" ]; then
+if [ -n "$webenabled_backwards" -a -z "$no_checksum" ]; then
   echo "Calculating md5sum for the file..."
   md5_output=$(nice -19 md5sum "$target_file")
   echo "Calculating sha1sum for the file..."

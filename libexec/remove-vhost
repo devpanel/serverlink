@@ -82,7 +82,7 @@ trap 'revert_disable_vhost' EXIT
 
 # if $archive_to not equal "-" then archive it before removing
 if [ -n "$archive_to" -a "$archive_to" != "-" ]; then
-  "$dir/archive-vhost" $archive_vhost_web_options "$vhost" "$archive_to"
+  "$dir/archive-vhost" -C $archive_vhost_web_options "$vhost" "$archive_to"
   [ $? -ne 0 ] && exit 1
 fi
 
