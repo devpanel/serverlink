@@ -66,12 +66,12 @@ read_pem_certificate_stdin() {
   local line=""
   local read_cert=""
 
-  local -r start_cert_ptr='^-+BEGIN CERTIFICATE-+$'
-  local -r end_cert_ptr='^-+END CERTIFICATE-+$'
+  local -r start_cert_regex='^-+BEGIN ([^ ]+ )*CERTIFICATE-+$'
+  local -r end_cert_regex='^-+END ([^ ]+ )*CERTIFICATE-+$'
   local -i max_bytes=8192
 
   read line
-  if ! [[ "$line" =~ ^-+BEGIN\ CERTIFICATE-+$ ]]; then
+  if ! [[ "$line" =~ $start_cert_regex ]]; then
     echo "$FUNCNAME(): doesn't seem like a certificate (didn't receive the starting header)" 1>&2
     echo "$line" # send the line anyway
     return 1
@@ -80,7 +80,7 @@ read_pem_certificate_stdin() {
 
   while read line; do
     read_cert+="$line\n"
-    if [[ "$line" =~ ^-+END\ CERTIFICATE-+$ ]]; then
+    if [[ "$line" =~ $end_cert_regex ]]; then
       echo -n -e "$read_cert"
       return 0
     fi
@@ -99,12 +99,12 @@ read_pem_key_stdin() {
   local line=""
   local read_key=""
 
-  local -r start_key_str='^-+BEGIN RSA PRIVATE KEY-+$'
-  local -r end_key_str='^-+END RSA PRIVATE KEY-+$'
+  local -r start_key_regex='^-+BEGIN ([^ ]+ )*PRIVATE KEY-+$'
+  local -r end_key_regex='^-+END ([^ ]+ )*PRIVATE KEY-+$'
   local -i max_bytes=8192
 
   read line
-  if ! [[ "$line" =~ ^-+BEGIN\ RSA\ PRIVATE\ KEY-+$ ]]; then
+  if ! [[ "$line" =~ $start_key_regex ]]; then
     echo "$FUNCNAME(): doesn't seem like a key (didn't receive the starting header)" 1>&2
     echo "$line" # send the line anyway
     return 1
@@ -113,7 +113,7 @@ read_pem_key_stdin() {
 
   while read line; do
     read_key+="$line\n"
-    if [[ "$line" =~ ^-+END\ RSA\ PRIVATE\ KEY-+$ ]]; then
+    if [[ "$line" =~ $end_key_regex ]]; then
       echo -n -e "$read_key"
       return 0
     fi
