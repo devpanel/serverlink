@@ -103,9 +103,12 @@ install_ce_software() {
   local machine_type=$(uname -m)
   local distro_skel_dir="$webenabled_install_dir/install/skel/$linux_distro"
 
-  mkdir -m 755 -p "$webenabled_install_dir" \
-    "$homedir_base" "$databasedir_base" "${webenabled_install_dir}-data"
+  local data_dir="${webenabled_install_dir}-data"
+  local removed_vhosts_dir="$data_dir/removed_vhosts"
 
+  mkdir -m 755 -p "$webenabled_install_dir" \
+    "$homedir_base" "$databasedir_base" "$data_dir"
+  
   if ! ( cd "$source_dir" && cp -a . "$webenabled_install_dir" ); then
     echo "Error: unable to copy installation files to target dir" >&2
     return 1
@@ -125,6 +128,8 @@ install_ce_software() {
   if [ ! -e "$webenabled_install_dir/etc/devpanel.conf" ]; then
     cp -f "$source_dir/install/config/devpanel.conf.template" "$webenabled_install_dir/etc/devpanel.conf"
   fi
+
+  "$webenabled_install_dir/libexec/create-vhost-archive-dirs" "$data_dir"
 
   ssl_certs_dir=`readlink "$webenabled_install_dir"/config/os/pathnames/etc/ssl/certs`
   ssl_keys_dir=`readlink "$webenabled_install_dir"/config/os/pathnames/etc/ssl/keys`

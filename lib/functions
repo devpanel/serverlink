@@ -1229,7 +1229,7 @@ translate_archive_placeholders() {
   local final
 
   # uses globals $sys_data_dir $vhost_data_dir $vhost $period
-  #              $archive_template_str
+  #              $archive_template_str $removed_vhosts_dir
 
   final="$orig"
 
@@ -1240,6 +1240,9 @@ translate_archive_placeholders() {
 
   [ -n "$vhost_archive_dir" ] && \
     final=${final//@vhost_archive_dir@/$vhost_archive_dir}
+
+  [ -n "$removed_vhosts_dir" ] && \
+    final=${final//@removed_vhosts_dir@/$removed_vhosts_dir}
 
   [ -n "$vhost" ]        && final=${final//@vhost@/$vhost}
   [ -n "$frequency" ]    && final=${final//@frequency@/$frequency}

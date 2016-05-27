@@ -41,6 +41,7 @@ revert_disable_vhost() {
 # main
 archive_vhost_web_options=""
 check_archive_pathname_options=""
+webenabled_backwards=""
 
 while getopts "PuU" OPTOPT
 do
@@ -59,7 +60,13 @@ sys_dir=$(readlink -e "$dir/..")
 
 vhost="$1"
 archive_to="$2"
-[ -z "$archive_to" ] && archive_to="removed--@archive_template_str@"
+if [ -z "$archive_to" ]; then
+  archive_to="@removed_vhosts_dir@/@vhost@/@archive_template_str@"
+else
+  if [ "$archive_to" != "-" -a "${archive_to:0:1}" != @ -a "${archive_to:0:1}" != / ]; then
+    archive_to="@removed_vhosts_dir@/@vhost@/$archive_to"
+  fi
+fi
 
 user_db="b_$vhost"
 user_web="w_$vhost"
@@ -73,16 +80,32 @@ if ! source "$lib_file"; then
 fi
 
 vhost_config_dir="$sys_dir/config/vhosts/$vhost"
-vhost_cache_dir="$sys_dir/var/cache/$vhost"
+vhost_cache_dir="$sys_dir/var/cache/vhost/$vhost"
 apache_base_log_dir=$(deref_os_fs_path "$sys_dir" pathnames/var/log/apache_vhosts)
 [ -n "$apache_base_log_dir" ] && apache_log_dir="$apache_base_log_dir/$user_web"
+
+if deref_os_prop "$sys_dir" webenabled_backwards &>/dev/null; then
+  webenabled_backwards=1
+fi
 
 "$dir/config-vhost-apache" -D "$vhost" || exit 1
 trap 'revert_disable_vhost' EXIT
 
 # if $archive_to not equal "-" then archive it before removing
 if [ -n "$archive_to" -a "$archive_to" != "-" ]; then
-  "$dir/archive-vhost" -C $archive_vhost_web_options "$vhost" "$archive_to"
+  if [ -n "$webenabled_backwards" ]; then
+    old_data_dir="$sys_dir/data/"
+    old_data_dir_size=${#old_data_dir}
+    if [ ${#archive_to} -gt $old_data_dir_size ]; then
+      if [ ${archive_to:0:$old_data_dir_size} == "$old_data_dir" ]; then
+        # if $archive_to starts with /opt/webenabled/data then archive to
+        #   removed_vhosts/...
+        archive_to="@removed_vhosts_dir@/@vhost@/${archive_to:$old_data_dir_size}"
+      fi
+    fi
+  fi
+
+  "$dir/archive-vhost" -C -G $archive_vhost_web_options "$vhost" "$archive_to"
   [ $? -ne 0 ] && exit 1
 fi
 

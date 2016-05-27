@@ -24,6 +24,8 @@ usage() {
               the root of the \$HOME directory. This file is passed to tar
               --exclude-from option)
     -C        don't do checksum calculations
+    -G        skip vhost group ownership changes on directories (used when
+              removing a vhost)
 
   This command creates an archive of the current state of a vhost, saving
   Apache files and MySQL databases into a tar ball.
@@ -59,8 +61,11 @@ debug=""
 in_user_path=""
 uninstall=""
 no_checksum=""
+skip_group_changes=""
 
-while getopts "PudUCe:" OPTOPT
+umask 027
+
+while getopts "PudUGCe:" OPTOPT
 do
   case "$OPTOPT" in
     P) archive_vhost_web_options="${archive_vhost_web_options+ }-P";;
@@ -72,6 +77,9 @@ do
       ;;
     C)
       no_checksum=1
+      ;;
+    G)
+      skip_group_changes=1
       ;;
     *) exit 1;
   esac
@@ -151,9 +159,12 @@ if [ ! -d "$sys_archive_dir" ]; then
   fi
 fi
 
+removed_vhosts_dir="$sys_archive_dir/removed_vhosts"
+vhost_removed_dir="$removed_vhosts_dir/$vhost"
+
 # as this script runs as root, work on a write protected directory to avoid
 # tmp race conditions
-upper_tmp_dir="$sys_archive_dir/tmp"
+upper_tmp_dir="$sys_data_dir/tmp"
 if [ ! -d "$upper_tmp_dir" ]; then
   mkdir -m 710 "$upper_tmp_dir"
   if [ $? -ne 0 ]; then
@@ -206,10 +217,15 @@ else # destination is a file
   target_dir=${tmp_full_path%/*}
   target_file="$target_dir/$archive_filename"
 
-  if [ -n "$uninstall" -a "${target_file#$sys_archive_dir}" == "$target_file" ]; then
-    error "the file needs to be created inside $sys_archive_dir."
-  elif [ -z "$uninstall" -a "${target_file#$vhost_archive_dir}" == "$target_file" ]; then
-    error "the file needs to be created inside $vhost_archive_dir."
+  # validate the final target name
+  if [ -n "$uninstall" -a "${target_file#$sys_archive_dir}" != "$target_file" ]; then
+    : # ok, uninstall is happening and it's inside $sys_archive_dir
+  elif [ "${target_file#$vhost_archive_dir}" != "$target_file" ]; then
+    : # ok, it's inside $vhost_archive_dir
+  elif [ "${target_file#$vhost_removed_dir}" != "$target_file" ]; then
+    : # ok, it's inside $vhost_removed_dir
+  else
+    error "the file needs to be created inside $vhost_archive_dir or $vhost_removed_dir."
   fi
 
   # test whether the target file already exists
@@ -232,26 +248,35 @@ else # destination is a file
     fi
   fi
 
-  # create vhost_archive_dir if it doesn't exist
-  if [ ! -d "$vhost_archive_dir" ]; then
-    mkdir -m 2750 "$vhost_archive_dir"
-    if [ $? -ne 0 ]; then
-      error "unable to create directory '$vhost_archive_dir'"
+  # if the $target_file is inside $vhost_archive_dir
+  if [ "${target_dir#$vhost_archive_dir}" != "$target_dir" ]; then
+    if [ ! -d "$vhost_archive_dir" ]; then
+      # create vhost_archive_dir if it doesn't exist
+      mkdir -m 2750 "$vhost_archive_dir"
+      if [ $? -ne 0 ]; then
+        error "unable to create directory '$vhost_archive_dir'"
+      fi
+      echo "Created directory '$vhost_archive_dir'..."
+      if [ -n "$in_user_path" ]; then
+        chown "$user_web" "$vhost_archive_dir"
+      fi
     fi
-    echo "Created directory '$vhost_archive_dir'..."
-    if [ -n "$in_user_path" ]; then
-      chown "$user_web" "$vhost_archive_dir"
+
+    # in case group ownership is different, chgrp vhost_archive_dir to $user_web
+    group_name=$(stat -c %G "$vhost_archive_dir")
+    if [ -z "$skip_group_changes" -a "$group_name" != "$user_web" ]; then
+      chgrp "$user_web" "$vhost_archive_dir"
+      if [ $? -ne 0 ]; then
+        error "unable to chgrp archive dir $vhost_archive_dir to $user_web"
+      fi
+      echo "Chgrp'd directory '$vhost_archive_dir' to $user_web..."
     fi
   fi
 
-  # in case group ownership is different, chgrp vhost_archive_dir to $user_web
-  group_name=$(stat -c %G "$vhost_archive_dir")
-  if [ "$group_name" != "$user_web" ]; then
-    chgrp "$user_web" "$vhost_archive_dir"
-    if [ $? -ne 0 ]; then
-      error "unable to chgrp archive dir $vhost_archive_dir to $user_web"
+  if [ ! -d "$target_dir" ]; then
+    if ! mkdir -p -m 750 "$target_dir"; then
+      error "unable to create target directory $target_dir"
     fi
-    echo "Chgrp'd directory '$vhost_archive_dir' to $user_web..."
   fi
 fi
 
@@ -263,13 +288,15 @@ fi
 # make the temporary directory readable by the web user
 # in debug mode it's useful if the archiving failed the user can inspect as
 # non-root
-if chgrp "$user_web" "$tmp_archive_dir"; then
-  if ! chmod 2750 "$tmp_archive_dir"; then
-    echo "Warning: unable to chmod 2750 temp dir '$tmp_archive_dir'" 1>&2
+if [ -z "$skip_group_changes" ]; then
+  if ! chgrp "$user_web" "$tmp_archive_dir"; then
+    echo "Warning: unable to chgrp temp dir '$tmp_archive_dir' to $user_web" 1>&2
     sleep 2
   fi
-else
-  echo "Warning: unable to chgrp temp dir '$tmp_archive_dir' to $user_web" 1>&2
+fi
+
+if ! chmod 2750 "$tmp_archive_dir"; then
+  echo "Warning: unable to chmod 2750 temp dir '$tmp_archive_dir'" 1>&2
   sleep 2
 fi
 
@@ -335,7 +362,7 @@ if [ -n "$in_user_path" ]; then
   fi
 fi
 
-if [ -z "$in_user_path" ] && ! ${debug:+run} chgrp "$user_web" "$tmp_target_file"; then
+if [ -z "$in_user_path" -a -z "$skip_group_changes" ] && ! ${debug:+run} chgrp "$user_web" "$tmp_target_file"; then
   echo "Warning: unable to chgrp temp file to group $user_web" 1>&2
   sleep 2
 fi
@@ -355,9 +382,9 @@ echo
 echo "Successfully saved archive file to '$target_file'"
 
 if [ -n "$webenabled_backwards" -a -z "$no_checksum" ]; then
-  echo "Calculating md5sum for the file..."
+  echo "Calculating md5sum for the file..." 1>&2
   md5_output=$(nice -19 md5sum "$target_file")
-  echo "Calculating sha1sum for the file..."
+  echo "Calculating sha1sum for the file..." 1>&2
   sha1_output=$(nice -19 sha1sum "$target_file")
 
   if [ -n "$md5_output" ]; then
