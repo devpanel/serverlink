@@ -42,9 +42,11 @@ if [ "$DEVPANELOS" == "ubuntu" ] || [ "$DEVPANELOS" == "debian" ];then
 # patch sudoers and avoid duplicates
   if [ `grep -Fxq "zabbix ALL=NOPASSWD" /etc/sudoers` ]; then
     echo "zabbix ALL=NOPASSWD: /opt/webenabled/sbin/check_mem_diskspace_usage.sh" >> /etc/sudoers
+    echo "zabbix ALL=NOPASSWD: /opt/webenabled/sbin/check_apache2_logs.sh" >> /etc/sudoers
   else
     sed -i 's/^zabbix\ ALL=NOPASSWD.*//g' /etc/sudoers
     echo "zabbix ALL=NOPASSWD: /opt/webenabled/sbin/check_mem_diskspace_usage.sh" >> /etc/sudoers
+    echo "zabbix ALL=NOPASSWD: /opt/webenabled/sbin/check_apache2_logs.sh" >> /etc/sudoers
   fi
   service zabbix-agent restart
 
@@ -61,9 +63,11 @@ elif [ "$DEVPANELOS" == "centos" ] || [ "$DEVPANELOS" == "redhat" ];then
 # patch sudoers and avoid duplicates
   if [ `grep -Fxq "zabbix ALL=NOPASSWD" /etc/sudoers` ]; then
     echo "zabbix ALL=NOPASSWD: /opt/webenabled/sbin/check_mem_diskspace_usage.sh" >> /etc/sudoers
+    echo "zabbix ALL=NOPASSWD: /opt/webenabled/sbin/check_apache2_logs.sh" >> /etc/sudoers
   else
     sed -i 's/^zabbix\ ALL=NOPASSWD.*//g' /etc/sudoers
     echo "zabbix ALL=NOPASSWD: /opt/webenabled/sbin/check_mem_diskspace_usage.sh" >> /etc/sudoers
+    echo "zabbix ALL=NOPASSWD: /opt/webenabled/sbin/check_apache2_logs.sh" >> /etc/sudoers
   fi
   service zabbix-agent restart
 
