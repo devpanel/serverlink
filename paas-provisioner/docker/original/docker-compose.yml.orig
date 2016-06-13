@@ -1,0 +1,46 @@
+version: '2'
+services:
+  web:
+    container_name: wordpress-container1
+    hostname: t3st-web
+    domainname: some.domain
+    build:
+      context: .
+      dockerfile: Dockerfile-web
+      args:
+        USER: t3st
+        DOMAIN: some.domain
+        APP: wordpress
+        SEEDAPP_ARCHIVE: wordpress-v4.tgz
+    # ports:
+    #   - "80:80"
+    networks:
+      - legacy
+    volumes:
+      - ./data_volume:/data:ro
+      - ./web_volume:/home/clients
+    links:
+      - db
+    depends_on:
+      - db
+  db:
+    container_name: wordpress-db
+    hostname: t3st-db
+    domainname: some.domain
+    build:
+      context: .
+      dockerfile: Dockerfile-db
+      args:
+        USER: t3st
+        DOMAIN: some.domain
+        APP: wordpress
+        SEEDAPP_ARCHIVE: wordpress-v4.tgz
+    # ports:
+    #   - "4000:4000"
+    networks:
+      - legacy
+    volumes:
+      - ./data_volume:/data
+
+networks:
+  legacy:

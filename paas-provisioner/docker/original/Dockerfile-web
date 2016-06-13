@@ -1,0 +1,25 @@
+FROM devpanel_cache:v2
+EXPOSE 80
+
+ARG USER=$USER
+ARG APP=$APP
+ARG SEEDAPP_ARCHIVE=$SEEDAPP_ARCHIVE
+ARG DOMAIN=$DOMAIN
+
+# get seedapp
+#RUN mkdir /opt/webenabled/${APP} && cd /opt/webenabled/${APP} && wget https://www.webenabled.com/seedapps/${SEEDAPP_ARCHIVE} && tar zxvf ${SEEDAPP_ARCHIVE}
+
+# setup environment for the app
+RUN /opt/webenabled/libexec/config-vhost-names-default ${DOMAIN}
+RUN /opt/webenabled/libexec/restore-vhost -F ${USER} /opt/webenabled/${APP}
+RUN mv /etc/mysql/my.cnf /etc/mysql/my.cnf.orig
+
+# start services
+## copy configs from db
+RUN echo "cp -dpfR /data/* /home/clients/" > /tmp/patch_configs.start
+## patch configs to access db host
+RUN echo "if [ "${APP}" == "wordpress" ]; then sed -i 's/127.0.0.1:4000/db:4000/' /home/clients/websites/w_${USER}/public_html/${USER}/wp-config.php; fi" >> /tmp/patch_configs.start
+RUN echo "if [ "${APP}" == "drupal" ]; then sed -i 's/127.0.0.1/db/' /home/clients/websites/w_${USER}/public_html/${USER}/sites/default/settings.php; fi" >> /tmp/patch_configs.start
+RUN echo "configs patched. starting apache2 ..."
+# start apache2
+CMD bash /tmp/patch_configs.start && /usr/sbin/apache2ctl -D FOREGROUND

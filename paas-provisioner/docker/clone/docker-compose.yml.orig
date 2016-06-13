@@ -1,0 +1,31 @@
+version: '2'
+services:
+  web:
+    container_name: wordpress-container2
+    hostname: t3st
+    domainname: some.domain
+    build:
+      context: .
+      dockerfile: Dockerfile-cloned
+      args:
+        USER: t3st
+        DOMAIN: some.domain
+        APP: wordpress
+        SEEDAPP_ARCHIVE: wordpress-v4.tgz
+    # ports:
+    #   - "80:80"
+    networks:
+      - legacy
+    environment:
+      HOSTNAME: t3st.some.domain
+    volumes:
+      - ../web_volume:/data:ro
+    external_links:
+      - wordpress-db:db
+
+networks:
+  legacy:
+    external:
+      name: original_legacy
+volumes:
+    web:

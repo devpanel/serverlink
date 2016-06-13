@@ -1,0 +1,21 @@
+FROM devpanel_cache:v2
+EXPOSE 4000
+
+ARG USER=$USER
+ARG APP=$APP
+ARG SEEDAPP_ARCHIVE=$SEEDAPP_ARCHIVE
+ARG DOMAIN=$DOMAIN
+
+# get seedapp
+#RUN mkdir /opt/webenabled/${APP} && cd /opt/webenabled/${APP} && wget https://www.webenabled.com/seedapps/${SEEDAPP_ARCHIVE} && tar zxvf ${SEEDAPP_ARCHIVE}
+
+# setup environment for the app
+RUN /opt/webenabled/libexec/config-vhost-names-default ${DOMAIN}
+RUN /opt/webenabled/libexec/restore-vhost -F ${USER} /opt/webenabled/${APP}
+RUN mv /etc/mysql/my.cnf /etc/mysql/my.cnf.orig
+
+# start services
+## create script with variables before CMD, since after it will not be parsed
+RUN echo "mysqld --datadir=/home/clients/databases/b_${USER}/mysql --user=b_${USER} --port=4000 --socket=/home/clients/databases/b_${USER}/mysql/mysql.sock" > /tmp/mysql.start
+## copy configs from db and run mysql
+CMD cp -dpfR /home/clients/* /data/ && bash /tmp/mysql.start
