@@ -19,7 +19,7 @@ services:
     environment:
       HOSTNAME: t3st.some.domain
     volumes:
-      - ../web_volume:/data:ro
+      - ../original/web_volume:/data:ro
     external_links:
       - wordpress-db:db
 
