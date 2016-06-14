@@ -50,7 +50,7 @@ fi
 
 # check for devpanel_cache image
 if [ `docker images devpanel_cache|grep -c devpanel_cache` -eq 0 ]; then
-  cd cache && docker build -t devpanel_cache:v2 .
+  docker build -t devpanel_cache:v2 ./cache
 fi
 
 # $1 for app name and $2 for operation
