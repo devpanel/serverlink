@@ -1,10 +1,46 @@
 #!/bin/bash
-## Usage examples: 
-## ./vhostctl.sh wordpress start t3st.some.domain
-## ./vhostctl.sh wordpress clone t3st.some.domain
+
 
 # functions
-commandline_args=("$@")
+show_help()
+{
+  echo "Usage: ./vhostctl.sh [OPTIONS]
+
+Options:
+
+  -A, --application               Application name
+  -C, --operation                 Operation command
+  -D, --domain                    Domain name
+
+Usage examples:
+  ./vhostctl.sh -A=wordpress -C=start -D=t3st.some.domain
+  ./vhostctl.sh -A=wordpress -C=clone -D=t3st.some.domain
+"
+}
+
+# parse option arguments
+for i in "$@"
+do
+case $i in
+    -A=*|--application=*)
+    app="${i#*=}"
+    shift # past argument=value
+    ;;
+    -C=*|--operation=*)
+    operation="${i#*=}"
+    shift # past argument=value
+    ;;
+    -D=*|--domain=*)
+    domain="${i#*=}"
+    shift # past argument=value
+    ;;
+    *)
+    show_help
+            # unknown option
+    ;;
+esac
+done
+
 
 # define to use sudo or not
 if [ "$UID" -eq 0 ]; then
@@ -29,8 +65,6 @@ update_nginx_config()
     ${sudo} ${installation_tool} nginx
   fi
   # get ip address of web container
-  app="${commandline_args[0]}"
-  operation="${commandline_args[1]}"
   if [ "$operation" == "start" ]; then
     container_name="${app}-container1"
   elif [ "$operation" == "clone" ]; then
@@ -38,7 +72,6 @@ update_nginx_config()
   fi
   container_ip_address=`docker inspect -f '{{.Name}} - {{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' $(docker ps -aq)|grep "${container_name}"|awk -F" - " '{print $2}'`
   # create config
-  domain="${commandline_args[2]}"
   cat << EOF > /tmp/${domain}.conf
 server {
   listen       80;
@@ -56,16 +89,15 @@ EOF
 
 patch_definition_files_and_build()
 {
-  app="${commandline_args[0]}"
-  user=`echo "${commandline_args[2]}" | awk -F'[.]' '{print $1}'`
-  domain=`echo "${commandline_args[2]}" | awk -F"${user}." '{print $2}'`
+  user=`echo "${domain}" | awk -F'[.]' '{print $1}'`
+  domain_name=`echo "${domain}" | awk -F"${user}." '{print $2}'`
   cp docker-compose.yml.orig docker-compose.yml
   if [ "$app" == "wordpress" ]; then
     sed -i "s/t3st/${user}/" docker-compose.yml
-    sed -i "s/some.domain/${domain}/" docker-compose.yml
+    sed -i "s/some.domain/${domain_name}/" docker-compose.yml
   elif [ "$app" == "drupal" ]; then
     sed -i "s/t3st/${user}/" docker-compose.yml
-    sed -i "s/some.domain/${domain}/" docker-compose.yml
+    sed -i "s/some.domain/${domain_name}/" docker-compose.yml
     sed -i "s/wordpress-v4/${app}-v7/" docker-compose.yml
     sed -i "s/wordpress/${app}/" docker-compose.yml
   fi
@@ -91,15 +123,14 @@ if [ `docker images devpanel_cache|grep -c devpanel_cache` -eq 0 ]; then
   docker build -t devpanel_cache:v2 ./cache
 fi
 
-# $1 for app name and $2 for operation
-if [ "$1" -a "$2" == "start" -a "$3" ]; then
+# main logic
+if [ "$app" -a "$operation" == "start" -a "$domain" ]; then
   cd original
   patch_definition_files_and_build
-elif [ "$1" -a "$2" == "clone" -a "$3" ]; then
+elif [ "$app" -a "$operation" == "clone" -a "$domain" ]; then
   cd clone
   patch_definition_files_and_build
 else
-  echo "Usage: $0 app_name operation domain"
+  show_help
   exit 1
 fi
-
