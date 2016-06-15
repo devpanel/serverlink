@@ -1,0 +1,18 @@
+FROM devpanel_cache:v2
+EXPOSE 80
+
+ARG USER=$USER
+ARG APP=$APP
+ARG SEEDAPP_ARCHIVE=$SEEDAPP_ARCHIVE
+ARG DOMAIN=$DOMAIN
+
+# setup environment for the app
+RUN /opt/webenabled/libexec/config-vhost-names-default ${DOMAIN}
+RUN /opt/webenabled/libexec/restore-vhost -F ${USER} /opt/webenabled/${APP}
+RUN mv /etc/mysql/my.cnf /etc/mysql/my.cnf.orig
+
+# copy content&configs from original web container
+ADD ./patch_configs_and_start_apache /tmp/patch_configs_and_start_apache
+
+# start apache2
+CMD bash /tmp/patch_configs_and_start_apache

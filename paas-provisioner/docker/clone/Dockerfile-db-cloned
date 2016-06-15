@@ -1,0 +1,21 @@
+FROM devpanel_cache:v2
+EXPOSE 4000
+
+ARG USER=$USER
+ARG SRC_USER=$SRC_USER
+ARG SRC_DOMAIN=$SRC_DOMAIN
+ARG APP=$APP
+ARG SEEDAPP_ARCHIVE=$SEEDAPP_ARCHIVE
+ARG DOMAIN=$DOMAIN
+
+# setup environment for the app
+RUN /opt/webenabled/libexec/config-vhost-names-default ${DOMAIN}
+RUN /opt/webenabled/libexec/restore-vhost -F ${USER} /opt/webenabled/${APP}
+RUN mv /etc/mysql/my.cnf /etc/mysql/my.cnf.orig
+
+# start services
+## create script with variables before CMD, since after it will not be parsed
+RUN echo "mysqld --datadir=/home/clients/databases/b_${USER}/mysql --user=b_${USER} --port=4000 --socket=/home/clients/databases/b_${USER}/mysql/mysql.sock" > /tmp/mysql.start
+## copy configs from original db. copy original and current data to be used in web-container. run mysql.
+ADD ./mysql.deploy /tmp/mysql.deploy
+CMD bash /tmp/mysql.deploy && cp -dpfR /home/clients/* /data/ && bash /tmp/mysql.start

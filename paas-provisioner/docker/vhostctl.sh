@@ -8,13 +8,15 @@ show_help()
 
 Options:
 
-  -A, --application               Application name
-  -C, --operation                 Operation command
-  -D, --domain                    Domain name
+  -A, --application               Application name. Apps supported: Wordpress, Drupal.
+  -C, --operation                 Operation command. 'start' or 'clone'.
+  -SD, --source-domain            Source domain name. Used for 'clone' operation.
+  -DD, --destination-domain       Destination domain name. For 'clone' operation different domain name should be passed.
+  -M, --mode                      (in development) Mode. Can be used 'standard' to run inside EC2 or 'ecs' to be used in AWS ECS environment.
 
 Usage examples:
-  ./vhostctl.sh -A=wordpress -C=start -D=t3st.some.domain
-  ./vhostctl.sh -A=wordpress -C=clone -D=t3st.some.domain
+  ./vhostctl.sh -A=wordpress -C=start -DD=t3st.some.domain -M=standard
+  ./vhostctl.sh -A=wordpress -C=clone -SD=t3st.some.domain -DD=t4st.some.domain -M=standard
 "
 }
 
@@ -30,8 +32,16 @@ case $i in
     operation="${i#*=}"
     shift # past argument=value
     ;;
-    -D=*|--domain=*)
+    -SD=*|--source-domain=*)
+    source_domain="${i#*=}"
+    shift # past argument=value
+    ;;
+    -DD=*|--destination-domain=*)
     domain="${i#*=}"
+    shift # past argument=value
+    ;;
+    -M=*|--mode=*)
+    mode="${i#*=}"
     shift # past argument=value
     ;;
     *)
@@ -89,13 +99,19 @@ EOF
 
 patch_definition_files_and_build()
 {
+  source_user=`echo "${source_domain}" | awk -F'[.]' '{print $1}'`
+  source_domain_name=`echo "${source_domain}" | awk -F"${source_user}." '{print $2}'`
   user=`echo "${domain}" | awk -F'[.]' '{print $1}'`
   domain_name=`echo "${domain}" | awk -F"${user}." '{print $2}'`
-  cp docker-compose.yml.orig docker-compose.yml
+  cp -f docker-compose.yml.orig docker-compose.yml
   if [ "$app" == "wordpress" ]; then
+    sed -i "s/SRC_USER_VAR/${source_user}/" docker-compose.yml
+    sed -i "s/SRC_DOMAIN_VAR/${source_domain_name}/" docker-compose.yml
     sed -i "s/t3st/${user}/" docker-compose.yml
     sed -i "s/some.domain/${domain_name}/" docker-compose.yml
   elif [ "$app" == "drupal" ]; then
+    sed -i "s/SRC_USER_VAR/${source_user}/" docker-compose.yml
+    sed -i "s/SRC_DOMAIN_VAR/${source_domain_name}/" docker-compose.yml
     sed -i "s/t3st/${user}/" docker-compose.yml
     sed -i "s/some.domain/${domain_name}/" docker-compose.yml
     sed -i "s/wordpress-v4/${app}-v7/" docker-compose.yml

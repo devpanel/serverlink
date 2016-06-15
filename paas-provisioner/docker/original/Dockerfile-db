@@ -16,6 +16,6 @@ RUN mv /etc/mysql/my.cnf /etc/mysql/my.cnf.orig
 
 # start services
 ## create script with variables before CMD, since after it will not be parsed
-RUN echo "mysqld --datadir=/home/clients/databases/b_${USER}/mysql --user=b_${USER} --port=4000 --socket=/home/clients/databases/b_${USER}/mysql/mysql.sock" > /tmp/mysql.start
+ADD ./mysql.start /tmp/mysql.start
 ## copy configs from db and run mysql
 CMD cp -dpfR /home/clients/* /data/ && bash /tmp/mysql.start

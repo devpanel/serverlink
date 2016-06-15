@@ -6,26 +6,44 @@ services:
     domainname: some.domain
     build:
       context: .
-      dockerfile: Dockerfile-cloned
+      dockerfile: Dockerfile-web-cloned
       args:
         USER: t3st
         DOMAIN: some.domain
         APP: wordpress
         SEEDAPP_ARCHIVE: wordpress-v4.tgz
-    # ports:
-    #   - "80:80"
     networks:
       - legacy
     environment:
       HOSTNAME: t3st.some.domain
     volumes:
-      - ../original/web_volume:/data:ro
-    external_links:
-      - wordpress-db:db
+      - ./data_volume:/data:ro
+      - ../original/web_volume:/data_web_orig:ro
+    links:
+      - db
+    depends_on:
+      - db
+  db:
+    container_name: wordpress-db2
+    hostname: t3st-db
+    domainname: some.domain
+    build:
+      context: .
+      dockerfile: Dockerfile-db-cloned
+      args:
+        SRC_USER: SRC_USER_VAR
+        SRC_DOMAIN: SRC_DOMAIN_VAR
+        USER: t3st
+        DOMAIN: some.domain
+        APP: wordpress
+        SEEDAPP_ARCHIVE: wordpress-v4.tgz
+    networks:
+      - legacy
+    volumes:
+      - ./data_volume:/data
+      - ../original/data_volume:/data_orig:ro
 
 networks:
   legacy:
     external:
       name: original_legacy
-volumes:
-    web:
