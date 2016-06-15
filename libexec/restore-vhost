@@ -71,6 +71,7 @@ Usage: restore-vhost [ OPTIONS ] VHOST ARCHIVE_LABEL
     -i                pass mysql passwd via stdin
     -n                do not activate apache vhost (used for hosting_link)
     -S files|db|all   sync
+    -s subsystem      name of the subsystem
     -N                don't create a new vhost user
     -H                when syncing get the archive from the users vhost
     -F                initial restore. Indicates to the
@@ -104,7 +105,7 @@ opt_i=0 opt_p=0
 try_archive_in_user_home=0
 create_vhost=1
 
-while getopts "NHPpinFS:O:" OPTOPT
+while getopts "NHPpinFS:O:s:" OPTOPT
 do
   case "$OPTOPT" in
     P) options="$options${options+ }-P";;
@@ -130,6 +131,9 @@ do
       ;;
     O)
       app_cmd_options+=" -O "`printf '%q' "$OPTARG"`""
+      ;;
+    s)
+      subsystem="$OPTARG"
       ;;
     *) exit 1;
   esac
@@ -168,6 +172,12 @@ if ! source "$aux_lib_file"; then
 fi
 
 assign_deref_os_prop_or_exit sys_datadir "$we_base_dir" data_dir
+
+if [ -n "$subsystem" ]; then
+  if ! is_known_seedapp_subsystem "$subsystem"; then
+    error "unknown subsystem name specified"
+  fi
+fi
 
 password="";
 if [ $opt_i = 1 ]
@@ -249,9 +259,12 @@ if [ -n "$archive_file" ]; then
   archive_dir="$TMPDIR"
 fi
 
-subsystem=$(detect_subsystem)
-if [ $? -ne 0 ]; then
-  error "unable to detect subsystem for the application"
+if [ -z "$subsystem" ]; then
+  # subsystem was not specified, try to detect it from the extracted dir
+  subsystem=$(detect_subsystem)
+  if [ $? -ne 0 ]; then
+    error "unable to detect subsystem for the application"
+  fi
 fi
 
 web_options="$options"
