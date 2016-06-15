@@ -9,14 +9,18 @@ show_help()
 Options:
 
   -A, --application               Application name. Apps supported: Wordpress, Drupal.
-  -C, --operation                 Operation command. 'start' or 'clone'.
+  -C, --operation                 Operation command. 'start', 'clone', 'backup' and 'restore'.
   -SD, --source-domain            Source domain name. Used for 'clone' operation.
   -DD, --destination-domain       Destination domain name. For 'clone' operation different domain name should be passed.
+  -B, --backup-name               Backup name.
+  -R, --restore-name              Restore previously backed up name.
   -M, --mode                      (in development) Mode. Can be used 'standard' to run inside EC2 or 'ecs' to be used in AWS ECS environment.
 
 Usage examples:
-  ./vhostctl.sh -A=wordpress -C=start -DD=t3st.some.domain -M=standard
+  ./vhostctl.sh -A=wordpress -C=start -DD=t3st.some.domain
   ./vhostctl.sh -A=wordpress -C=clone -SD=t3st.some.domain -DD=t4st.some.domain -M=standard
+  ./vhostctl.sh -C=backup  -DD=t3st.some.domain -B=t3st_backup1
+  ./vhostctl.sh -C=restore -DD=t3st.some.domain -R=t3st_backup1
 "
 }
 
@@ -38,6 +42,14 @@ case $i in
     ;;
     -DD=*|--destination-domain=*)
     domain="${i#*=}"
+    shift # past argument=value
+    ;;
+    -B=*|--backup-name=*)
+    backup_name="${i#*=}"
+    shift # past argument=value
+    ;;
+    -R=*|--restore-name=*)
+    restore_name="${i#*=}"
     shift # past argument=value
     ;;
     -M=*|--mode=*)
@@ -76,9 +88,11 @@ update_nginx_config()
   fi
   # get ip address of web container
   if [ "$operation" == "start" ]; then
-    container_name="${app}-container1"
+    container_name="${domain}_${app}_web"
   elif [ "$operation" == "clone" ]; then
-    container_name="${app}-container2"
+    container_name="${domain}_${app}_web_clone"
+  elif [ "$operation" == "restore" ]; then
+    container_name=$CONTAINER_WEB_NAME
   fi
   container_ip_address=`docker inspect -f '{{.Name}} - {{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' $(docker ps -aq)|grep "${container_name}"|awk -F" - " '{print $2}'`
   # create config
@@ -104,16 +118,12 @@ patch_definition_files_and_build()
   user=`echo "${domain}" | awk -F'[.]' '{print $1}'`
   domain_name=`echo "${domain}" | awk -F"${user}." '{print $2}'`
   cp -f docker-compose.yml.orig docker-compose.yml
-  if [ "$app" == "wordpress" ]; then
-    sed -i "s/SRC_USER_VAR/${source_user}/" docker-compose.yml
-    sed -i "s/SRC_DOMAIN_VAR/${source_domain_name}/" docker-compose.yml
-    sed -i "s/t3st/${user}/" docker-compose.yml
-    sed -i "s/some.domain/${domain_name}/" docker-compose.yml
-  elif [ "$app" == "drupal" ]; then
-    sed -i "s/SRC_USER_VAR/${source_user}/" docker-compose.yml
-    sed -i "s/SRC_DOMAIN_VAR/${source_domain_name}/" docker-compose.yml
-    sed -i "s/t3st/${user}/" docker-compose.yml
-    sed -i "s/some.domain/${domain_name}/" docker-compose.yml
+  sed -i "s/CONTAINER_NAME_VAR/${domain}_${app}/" docker-compose.yml
+  sed -i "s/SRC_USER_VAR/${source_user}/" docker-compose.yml
+  sed -i "s/SRC_DOMAIN_VAR/${source_domain_name}/" docker-compose.yml
+  sed -i "s/t3st/${user}/" docker-compose.yml
+  sed -i "s/some.domain/${domain_name}/" docker-compose.yml
+  if [ "$app" == "drupal" ]; then
     sed -i "s/wordpress-v4/${app}-v7/" docker-compose.yml
     sed -i "s/wordpress/${app}/" docker-compose.yml
   fi
@@ -122,6 +132,13 @@ patch_definition_files_and_build()
   update_nginx_config
 }
 
+docker_get_ids_and_names_of_containers()
+{
+  CONTAINER_WEB_ID=`docker ps|grep "$domain"|grep web|awk '{print $1}'`
+  CONTAINER_DB_ID=`docker ps|grep "$domain"|grep db|awk '{print $1}'`
+  CONTAINER_WEB_NAME=`docker inspect -f '{{.Name}}' ${CONTAINER_WEB_ID}|awk -F'/' '{print $2}'`
+  CONTAINER_DB_NAME=`docker inspect -f '{{.Name}}' ${CONTAINER_DB_ID}|awk -F'/' '{print $2}'`
+}
 
 # check for Docker installation
 if [ ! -f /usr/bin/docker ]; then
@@ -143,9 +160,29 @@ fi
 if [ "$app" -a "$operation" == "start" -a "$domain" ]; then
   cd original
   patch_definition_files_and_build
-elif [ "$app" -a "$operation" == "clone" -a "$domain" ]; then
+elif [ "$app" -a "$operation" == "clone" -a "$source_domain" -a "$domain" ]; then
   cd clone
   patch_definition_files_and_build
+elif [ "$operation" == "backup" -a "$backup_name" -a "$domain" ]; then
+  # get ids of current containers
+  docker_get_ids_and_names_of_containers
+  # save current state of containers as images
+  docker commit ${CONTAINER_WEB_NAME} ${domain}_${backup_name}_bkp_web
+  docker commit ${CONTAINER_DB_NAME}  ${domain}_${backup_name}_bkp_db
+elif [ "$operation" == "restore" -a "$restore_name" -a "$domain" ]; then
+  # get ids of current containers
+  docker_get_ids_and_names_of_containers
+  # remove source containers to avoid name conflicts
+  docker rm -f ${CONTAINER_WEB_ID}
+  docker rm -f ${CONTAINER_DB_ID}
+  # get ids of images
+  IMAGE_WEB_NAME=`docker images|grep ${domain}_${restore_name}_bkp_web|awk '{print $1}'`
+  IMAGE_DB_NAME=`docker images|grep ${domain}_${restore_name}_bkp_db|awk '{print $1}'`
+  # start backed up containers
+  docker run -d --name=${CONTAINER_DB_NAME}  ${IMAGE_DB_NAME}
+  docker run -d --name=${CONTAINER_WEB_NAME} ${IMAGE_WEB_NAME}
+  # update nginx config with new IP of web container
+  update_nginx_config ${CONTAINER_WEB_NAME}
 else
   show_help
   exit 1

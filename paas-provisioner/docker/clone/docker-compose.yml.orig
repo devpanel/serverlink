@@ -1,7 +1,7 @@
 version: '2'
 services:
   web:
-    container_name: wordpress-container2
+    container_name: CONTAINER_NAME_VAR_web_clone
     hostname: t3st
     domainname: some.domain
     build:
@@ -24,7 +24,7 @@ services:
     depends_on:
       - db
   db:
-    container_name: wordpress-db2
+    container_name: CONTAINER_NAME_VAR_db_clone
     hostname: t3st-db
     domainname: some.domain
     build:

@@ -7,4 +7,7 @@ PASSWORD=`tail -1 /home/clients/websites/w_${USER}/.mysql.passwd|awk -F':' '{pri
 echo "$IP_ADDRESS:$PORT:$USER:$PASSWORD" > /data/databases/db_info
 
 # start mysqld
-mysqld --datadir=/home/clients/databases/b_${USER}/mysql --user=b_${USER} --port=4000 --socket=/home/clients/databases/b_${USER}/mysql/mysql.sock > /tmp/mysql.start
+if [ `ps aux|grep -v grep|grep -c mysqld` -gt 0 ]; then
+  killall mysqld
+fi
+mysqld --datadir=/home/clients/databases/b_${USER}/mysql --user=b_${USER} --port=4000 --socket=/home/clients/databases/b_${USER}/mysql/mysql.sock
