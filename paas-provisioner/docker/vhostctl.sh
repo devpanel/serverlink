@@ -9,16 +9,21 @@ show_help()
 Options:
 
   -A, --application               Application name. Apps supported: Wordpress, Drupal.
-  -C, --operation                 Operation command. 'start', 'clone', 'backup' and 'restore'.
+  -C, --operation                 Operation commands:
+                                    start - to build and start containers with the application
+                                    clone - to copy containers with new names and replace configuration with new URL
+                                    fullclone - to setup new containers from scratch and replicate existing data
+                                    backup - to save current state of existing containers
+                                    restore - to restore containers to previous state
   -SD, --source-domain            Source domain name. Used for 'clone' operation.
   -DD, --destination-domain       Destination domain name. For 'clone' operation different domain name should be passed.
   -B, --backup-name               Backup name.
   -R, --restore-name              Restore previously backed up name.
-  -M, --mode                      (in development) Mode. Can be used 'standard' to run inside EC2 or 'ecs' to be used in AWS ECS environment.
 
 Usage examples:
   ./vhostctl.sh -A=wordpress -C=start -DD=t3st.some.domain
-  ./vhostctl.sh -A=wordpress -C=clone -SD=t3st.some.domain -DD=t4st.some.domain -M=standard
+  ./vhostctl.sh -A=wordpress -C=fullclone -SD=t3st.some.domain -DD=t4st.some.domain
+  ./vhostctl.sh -A=wordpress -C=clone -SD=t3st.some.domain -DD=t4st.some.domain
   ./vhostctl.sh -C=backup  -DD=t3st.some.domain -B=t3st_backup1
   ./vhostctl.sh -C=restore -DD=t3st.some.domain -R=t3st_backup1
 "
@@ -50,10 +55,6 @@ case $i in
     ;;
     -R=*|--restore-name=*)
     restore_name="${i#*=}"
-    shift # past argument=value
-    ;;
-    -M=*|--mode=*)
-    mode="${i#*=}"
     shift # past argument=value
     ;;
     *)
@@ -90,6 +91,8 @@ update_nginx_config()
   if [ "$operation" == "start" ]; then
     container_name="${domain}_${app}_web"
   elif [ "$operation" == "clone" ]; then
+    container_name="${domain}_${app}_web"
+  elif [ "$operation" == "fullclone" ]; then
     container_name="${domain}_${app}_web_clone"
   elif [ "$operation" == "restore" ]; then
     container_name=$CONTAINER_WEB_NAME
@@ -134,8 +137,13 @@ patch_definition_files_and_build()
 
 docker_get_ids_and_names_of_containers()
 {
-  CONTAINER_WEB_ID=`docker ps|grep "$domain"|grep web|awk '{print $1}'`
-  CONTAINER_DB_ID=`docker ps|grep "$domain"|grep db|awk '{print $1}'`
+  CONTAINER_WEB_ID=`docker ps|grep ${domain}_${app}_web|awk '{print $1}'`
+  CONTAINER_DB_ID=`docker ps|grep ${domain}_${app}_db|awk '{print $1}'`
+  # useful for call from clone operation
+  if [ "$operation" == "clone" ]; then
+    CONTAINER_WEB_ID=`docker ps|grep ${source_domain}_${app}_web|awk '{print $1}'`
+    CONTAINER_DB_ID=`docker ps|grep ${source_domain}_${app}_db|awk '{print $1}'`
+  fi
   CONTAINER_WEB_NAME=`docker inspect -f '{{.Name}}' ${CONTAINER_WEB_ID}|awk -F'/' '{print $2}'`
   CONTAINER_DB_NAME=`docker inspect -f '{{.Name}}' ${CONTAINER_DB_ID}|awk -F'/' '{print $2}'`
 }
@@ -161,6 +169,59 @@ if [ "$app" -a "$operation" == "start" -a "$domain" ]; then
   cd original
   patch_definition_files_and_build
 elif [ "$app" -a "$operation" == "clone" -a "$source_domain" -a "$domain" ]; then
+  # parse variables
+  source_user=`echo "${source_domain}" | awk -F'[.]' '{print $1}'`
+  source_domain_name=`echo "${source_domain}" | awk -F"${source_user}." '{print $2}'`
+  user=`echo "${domain}" | awk -F'[.]' '{print $1}'`
+  domain_name=`echo "${domain}" | awk -F"${user}." '{print $2}'`
+  docker_get_ids_and_names_of_containers
+  # save current state of containers as images
+  docker commit ${CONTAINER_WEB_NAME} ${domain}_web
+  docker commit ${CONTAINER_DB_NAME}  ${domain}_db
+  # get ids of images
+  IMAGE_WEB_NAME=`docker images|grep ${domain}_web|awk '{print $1}'`
+  IMAGE_DB_NAME=`docker images|grep ${domain}_db|awk '{print $1}'`
+  # let container know that it was cloned
+  echo "CLONE=true" > ./clone_info
+  ${sudo} cp -f ./clone_info ./original/data_volume/databases/
+  # get current path and set it for mount point
+  data_volume_mount_path="$(pwd)/original/data_volume"
+  web_volume_mount_path="$(pwd)/original/web_volume"
+  # start cloned containers
+  docker run -v ${data_volume_mount_path}:/data -d --name=${domain}_${app}_db  ${IMAGE_DB_NAME}
+  docker run -v ${data_volume_mount_path}:/data:ro -v ${web_volume_mount_path}:/home/clients -d --name=${domain}_${app}_web ${IMAGE_WEB_NAME}
+  # get variables for db data replacement
+  DB_IP=`awk -F':' '{print $1}' ./original/data_volume/databases/db_info`
+  PORT=`awk -F':' '{print $2}' ./original/data_volume/databases/db_info`
+  PASSWORD=`awk -F':' '{print $4}' ./original/data_volume/databases/db_info`
+  USER=`awk -F':' '{print $3}' ./original/data_volume/databases/db_info`
+  DOMAIN=${source_domain_name}
+  DST_USER=${user}
+  DST_DOMAIN=${domain_name}
+  # replace db data with new URL
+  if [ "$app" == "wordpress" ]; then
+    docker exec -it ${CONTAINER_DB_ID} mysql ${app} -h localhost -P ${PORT} -u w_${USER} --password=${PASSWORD} --socket=/home/clients/databases/b_${USER}/mysql/mysql.sock -e \
+      "UPDATE wp_options SET option_value = replace(option_value, 'http://${USER}.${DOMAIN}', 'http://${DST_USER}.${DST_DOMAIN}');"
+    # check if it was replaced correctly
+    if [ `docker exec -it ${CONTAINER_DB_ID} mysql ${app} -h localhost -P ${PORT} -u w_${USER} --password=${PASSWORD} --socket=/home/clients/databases/b_${USER}/mysql/mysql.sock -e \
+      "select * from wp_options;"|grep -c ${DST_USER}` -eq 2 ]; then
+        echo "Cloned correctly."
+    else
+        echo "Error: URL was not replaced correctly."
+        exit 1
+    fi
+  else
+    echo "Error: Only Wordpress supported at the moment."
+    exit 1
+  fi
+  # update container's apache2 config with new URL
+  docker exec -it ${CONTAINER_WEB_ID} sed -i "s/${USER}.${DOMAIN}/${DST_USER}.${DST_DOMAIN}/" /opt/webenabled/compat/apache_include/virtwww/w_${USER}.conf
+  docker exec -it ${CONTAINER_WEB_ID} sed -i "s/${USER}-gen.${DOMAIN}/${DST_USER}-gen.${DST_DOMAIN}/" /opt/webenabled/compat/apache_include/virtwww/w_${USER}.conf
+  docker exec -it ${CONTAINER_WEB_ID} echo "${DB_IP} db" >> /etc/hosts
+  docker exec -it ${CONTAINER_WEB_ID} apache2ctl graceful
+  # update host's nginx config with new IP of cloned web container
+  update_nginx_config ${domain}_${app}_web
+elif [ "$app" -a "$operation" == "fullclone" -a "$source_domain" -a "$domain" ]; then
   cd clone
   patch_definition_files_and_build
 elif [ "$operation" == "backup" -a "$backup_name" -a "$domain" ]; then
