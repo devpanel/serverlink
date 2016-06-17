@@ -111,9 +111,7 @@ server {
 EOF
   ${sudo} mv /tmp/${domain}.conf /etc/nginx/sites-enabled/${domain}.conf
   # restart nginx instead reload to avoid error with not running instance
-  # ${sudo} service nginx restart
-  #!!
-  sudo killall nginx; sudo service nginx start
+  ${sudo} service nginx restart
 }
 
 patch_definition_files_and_build()
