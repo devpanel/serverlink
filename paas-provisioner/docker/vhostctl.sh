@@ -111,7 +111,9 @@ server {
 EOF
   ${sudo} mv /tmp/${domain}.conf /etc/nginx/sites-enabled/${domain}.conf
   # restart nginx instead reload to avoid error with not running instance
-  ${sudo} service nginx restart
+  # ${sudo} service nginx restart
+  #!!
+  sudo killall nginx; sudo service nginx start
 }
 
 patch_definition_files_and_build()
@@ -186,10 +188,12 @@ elif [ "$app" -a "$operation" == "clone" -a "$source_domain" -a "$domain" ]; the
   ${sudo} cp -f ./clone_info ./original/data_volume/databases/
   # get current path and set it for mount point
   data_volume_mount_path="$(pwd)/original/data_volume"
-  web_volume_mount_path="$(pwd)/original/web_volume"
   # start cloned containers
-  docker run -v ${data_volume_mount_path}:/data -d --name=${domain}_${app}_db  ${IMAGE_DB_NAME}
-  docker run -v ${data_volume_mount_path}:/data:ro -v ${web_volume_mount_path}:/home/clients -d --name=${domain}_${app}_web ${IMAGE_WEB_NAME}
+  docker run -v ${data_volume_mount_path}:/data    -d --name=${domain}_${app}_db  ${IMAGE_DB_NAME}
+  docker run -v ${data_volume_mount_path}:/data:ro -d --name=${domain}_${app}_web ${IMAGE_WEB_NAME}
+  # get destination containers ids
+  CONTAINER_WEB_ID=`docker ps|grep ${user}.${domain_name}_${app}_web|awk '{print $1}'`
+  CONTAINER_DB_ID=`docker ps|grep ${user}.${domain_name}_${app}_db|awk '{print $1}'`
   # get variables for db data replacement
   DB_IP=`awk -F':' '{print $1}' ./original/data_volume/databases/db_info`
   PORT=`awk -F':' '{print $2}' ./original/data_volume/databases/db_info`
@@ -200,14 +204,16 @@ elif [ "$app" -a "$operation" == "clone" -a "$source_domain" -a "$domain" ]; the
   DST_DOMAIN=${domain_name}
   # replace db data with new URL
   if [ "$app" == "wordpress" ]; then
+    # wait until mysql starts
+    while [ `docker exec -it ${CONTAINER_DB_ID} netstat -ltpn|grep -c ${PORT}` -eq 0 ]; do sleep 1; done
     docker exec -it ${CONTAINER_DB_ID} mysql ${app} -h localhost -P ${PORT} -u w_${USER} --password=${PASSWORD} --socket=/home/clients/databases/b_${USER}/mysql/mysql.sock -e \
       "UPDATE wp_options SET option_value = replace(option_value, 'http://${USER}.${DOMAIN}', 'http://${DST_USER}.${DST_DOMAIN}');"
     # check if it was replaced correctly
     if [ `docker exec -it ${CONTAINER_DB_ID} mysql ${app} -h localhost -P ${PORT} -u w_${USER} --password=${PASSWORD} --socket=/home/clients/databases/b_${USER}/mysql/mysql.sock -e \
       "select * from wp_options;"|grep -c ${DST_USER}` -eq 2 ]; then
-        echo "Cloned correctly."
+        echo "DB cloned correctly."
     else
-        echo "Error: URL was not replaced correctly."
+        echo "Error: URL was not replaced correctly in MySQL."
         exit 1
     fi
   else
@@ -217,8 +223,17 @@ elif [ "$app" -a "$operation" == "clone" -a "$source_domain" -a "$domain" ]; the
   # update container's apache2 config with new URL
   docker exec -it ${CONTAINER_WEB_ID} sed -i "s/${USER}.${DOMAIN}/${DST_USER}.${DST_DOMAIN}/" /opt/webenabled/compat/apache_include/virtwww/w_${USER}.conf
   docker exec -it ${CONTAINER_WEB_ID} sed -i "s/${USER}-gen.${DOMAIN}/${DST_USER}-gen.${DST_DOMAIN}/" /opt/webenabled/compat/apache_include/virtwww/w_${USER}.conf
-  docker exec -it ${CONTAINER_WEB_ID} echo "${DB_IP} db" >> /etc/hosts
-  docker exec -it ${CONTAINER_WEB_ID} apache2ctl graceful
+  docker exec -it ${CONTAINER_WEB_ID} /bin/sh -c "echo '${DB_IP} db' >> /etc/hosts"
+  if [ `docker exec -it ${CONTAINER_WEB_ID} grep db /etc/hosts|wc -l` -gt 0 -a `docker exec -it ${CONTAINER_WEB_ID} grep -c ${DST_USER} /opt/webenabled/compat/apache_include/virtwww/w_${USER}.conf|wc -l` -gt 0 ]; then
+    if [ `docker exec -it ${CONTAINER_WEB_ID} grep ServerName /etc/apache2/apache2.conf|wc -l` -eq 0 ]; then
+      docker exec -it ${CONTAINER_WEB_ID} /bin/sh -c "echo 'ServerName localhost' >> /etc/apache2/apache2.conf"
+    fi
+    docker exec -it ${CONTAINER_WEB_ID} apache2ctl graceful
+    echo "WEB cloned correctly."
+  else
+    echo "Error: Domain in Apache configuration was not replaced correctly."
+    exit 1
+  fi
   # update host's nginx config with new IP of cloned web container
   update_nginx_config ${domain}_${app}_web
 elif [ "$app" -a "$operation" == "fullclone" -a "$source_domain" -a "$domain" ]; then
