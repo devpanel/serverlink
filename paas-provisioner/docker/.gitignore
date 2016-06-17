@@ -1,0 +1,5 @@
+*~
+/original/*_volume/
+/clone/*_volume/
+/clone_info
+/test.sh

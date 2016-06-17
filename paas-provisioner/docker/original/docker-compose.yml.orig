@@ -1,46 +1,40 @@
 version: '2'
 services:
-  web:
+  SERVICE_NAME_VAR_web:
     container_name: CONTAINER_NAME_VAR_web
-    hostname: t3st-web
-    domainname: some.domain
+    hostname: USER_VAR-web
+    domainname: DOMAIN_VAR
     build:
       context: .
       dockerfile: Dockerfile-web
       args:
-        USER: t3st
-        DOMAIN: some.domain
+        USER: USER_VAR
+        DOMAIN: DOMAIN_VAR
         APP: wordpress
         SEEDAPP_ARCHIVE: wordpress-v4.tgz
-    # ports:
-    #   - "80:80"
     networks:
-      - legacy
+      - NETWORK_NAME_VAR_net
     volumes:
-      - ./data_volume:/data:ro
-      - ./web_volume:/home/clients
+      - ./CONTAINER_NAME_VAR_data_volume:/data:ro
+      - ./CONTAINER_NAME_VAR_web_volume:/home/clients
     links:
-      - db
-    depends_on:
-      - db
-  db:
+      - SERVICE_NAME_VAR_db:db
+  SERVICE_NAME_VAR_db:
     container_name: CONTAINER_NAME_VAR_db
-    hostname: t3st-db
-    domainname: some.domain
+    hostname: USER_VAR-db
+    domainname: DOMAIN_VAR
     build:
       context: .
       dockerfile: Dockerfile-db
       args:
-        USER: t3st
-        DOMAIN: some.domain
+        USER: USER_VAR
+        DOMAIN: DOMAIN_VAR
         APP: wordpress
         SEEDAPP_ARCHIVE: wordpress-v4.tgz
-    # ports:
-    #   - "4000:4000"
     networks:
-      - legacy
+      - NETWORK_NAME_VAR_net
     volumes:
-      - ./data_volume:/data
+      - ./CONTAINER_NAME_VAR_data_volume:/data
 
 networks:
-  legacy:
+  NETWORK_NAME_VAR_net:

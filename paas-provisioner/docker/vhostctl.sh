@@ -135,11 +135,13 @@ patch_definition_files_and_build()
   cp -f  "$template_file" "$compose_file"
 
   sed_str="\
+    s/SERVICE_NAME_VAR/${domain}_${app}/;
     s/CONTAINER_NAME_VAR/${domain}_${app}/;
+    s/NETWORK_NAME_VAR/${domain}_${app}/;
+    s/USER_VAR/${user}/;
+    s/DOMAIN_VAR/${domain_name}/;
     s/SRC_USER_VAR/${source_user}/;
-    s/SRC_DOMAIN_VAR/${source_domain_name}/;
-    s/t3st/${user}/;
-    s/some.domain/${domain_name}/;"
+    s/SRC_DOMAIN_VAR/${source_domain_name}/;"
 
   if [ "$app" == "drupal" ]; then
     sed_str+="s/wordpress-v4/${app}-v7/;"
@@ -198,22 +200,36 @@ elif [ "$app" -a "$operation" == "clone" -a "$source_domain" -a "$domain" ]; the
   # get ids of images
   IMAGE_WEB_NAME=`docker images|grep ${domain}_web|awk '{print $1}'`
   IMAGE_DB_NAME=`docker images|grep ${domain}_db|awk '{print $1}'`
+  # get current path and set it for mount point
+  data_volume_mount_path="$(pwd)/original/${domain}_${app}_data_volume"
+  web_volume_mount_path="$(pwd)/original/${domain}_${app}_web_volume"
+  # create shared volumes for cloned containers
+  mkdir -p ./original/${domain}_${app}_web_volume
+  mkdir -p ./original/${domain}_${app}_data_volume/databases
   # let container know that it was cloned
   echo "CLONE=true" > ./clone_info
-  ${sudo} cp -f ./clone_info ./original/data_volume/databases/
-  # get current path and set it for mount point
-  data_volume_mount_path="$(pwd)/original/data_volume"
+  ${sudo} cp -f ./clone_info ./original/${domain}_${app}_data_volume/databases/
+  ${sudo} cp -dpfR $(pwd)/original/${source_domain}_${app}_web_volume/* ${web_volume_mount_path}/
   # start cloned containers
   docker run -v ${data_volume_mount_path}:/data    -d --name=${domain}_${app}_db  ${IMAGE_DB_NAME}
-  docker run -v ${data_volume_mount_path}:/data:ro -d --name=${domain}_${app}_web ${IMAGE_WEB_NAME}
+  # wait for db container to start since web depends from it
+  while [ `docker ps|grep ${domain}_${app}_db|wc -l` -eq 0 ]; do
+    echo "DB container is not running. Waiting its start."
+    sleep 1
+  done
+  docker run -v ${data_volume_mount_path}:/data:ro -v ${web_volume_mount_path}:/home/clients -d --name=${domain}_${app}_web ${IMAGE_WEB_NAME}
+  while [ `docker ps|grep ${domain}_${app}_web|wc -l` -eq 0 ]; do
+    echo "WEB container is not running. Waiting its start."
+    sleep 1
+  done
   # get destination containers ids
   CONTAINER_WEB_ID=`docker ps|grep ${user}.${domain_name}_${app}_web|awk '{print $1}'`
   CONTAINER_DB_ID=`docker ps|grep ${user}.${domain_name}_${app}_db|awk '{print $1}'`
   # get variables for db data replacement
-  DB_IP=`awk -F':' '{print $1}' ./original/data_volume/databases/db_info`
-  PORT=`awk -F':' '{print $2}' ./original/data_volume/databases/db_info`
-  PASSWORD=`awk -F':' '{print $4}' ./original/data_volume/databases/db_info`
-  USER=`awk -F':' '{print $3}' ./original/data_volume/databases/db_info`
+  DB_IP=`awk -F':' '{print $1}' ./original/${domain}_${app}_data_volume/databases/db_info`
+  PORT=`awk -F':' '{print $2}' ./original/${domain}_${app}_data_volume/databases/db_info`
+  PASSWORD=`awk -F':' '{print $4}' ./original/${domain}_${app}_data_volume/databases/db_info`
+  USER=`awk -F':' '{print $3}' ./original/${domain}_${app}_data_volume/databases/db_info`
   DOMAIN=${source_domain_name}
   DST_USER=${user}
   DST_DOMAIN=${domain_name}
