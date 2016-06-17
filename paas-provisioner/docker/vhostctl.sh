@@ -29,6 +29,13 @@ Usage examples:
 "
 }
 
+self_bin=$(readlink -e "$0")
+if [ $? -ne 0 ]; then
+  echo "Error: unable to detect self path" 1>&2
+  exit 1
+fi
+self_dir=${self_bin%/*}
+
 # parse option arguments
 for i in "$@"
 do
@@ -120,18 +127,29 @@ patch_definition_files_and_build()
   source_domain_name=`echo "${source_domain}" | awk -F"${source_user}." '{print $2}'`
   user=`echo "${domain}" | awk -F'[.]' '{print $1}'`
   domain_name=`echo "${domain}" | awk -F"${user}." '{print $2}'`
-  cp -f docker-compose.yml.orig docker-compose.yml
-  sed -i "s/CONTAINER_NAME_VAR/${domain}_${app}/" docker-compose.yml
-  sed -i "s/SRC_USER_VAR/${source_user}/" docker-compose.yml
-  sed -i "s/SRC_DOMAIN_VAR/${source_domain_name}/" docker-compose.yml
-  sed -i "s/t3st/${user}/" docker-compose.yml
-  sed -i "s/some.domain/${domain_name}/" docker-compose.yml
+
+  local compose_file="$self_dir/original/docker-compose.yml"
+  local template_file="$compose_file.orig"
+  local sed_str=""
+
+  cp -f  "$template_file" "$compose_file"
+
+  sed_str="\
+    s/CONTAINER_NAME_VAR/${domain}_${app}/;
+    s/SRC_USER_VAR/${source_user}/;
+    s/SRC_DOMAIN_VAR/${source_domain_name}/;
+    s/t3st/${user}/;
+    s/some.domain/${domain_name}/;"
+
   if [ "$app" == "drupal" ]; then
-    sed -i "s/wordpress-v4/${app}-v7/" docker-compose.yml
-    sed -i "s/wordpress/${app}/" docker-compose.yml
+    sed_str+="s/wordpress-v4/${app}-v7/;"
+    sed_str+="s/wordpress/${app}/;"
   fi
-  /usr/local/bin/docker-compose up --build -d
-  rm -f docker-compose.yml
+
+  sed -i "$sed_str" "$compose_file"
+
+  /usr/local/bin/docker-compose -f "$compose_file" up --build -d
+  rm -f "$compose_file"
   update_nginx_config
 }
 
@@ -161,12 +179,11 @@ fi
 
 # check for devpanel_cache image
 if [ `docker images devpanel_cache|grep -c devpanel_cache` -eq 0 ]; then
-  docker build -t devpanel_cache:v2 ./cache
+  docker build -t devpanel_cache:v2 "$self_dir/cache"
 fi
 
 # main logic
 if [ "$app" -a "$operation" == "start" -a "$domain" ]; then
-  cd original
   patch_definition_files_and_build
 elif [ "$app" -a "$operation" == "clone" -a "$source_domain" -a "$domain" ]; then
   # parse variables
