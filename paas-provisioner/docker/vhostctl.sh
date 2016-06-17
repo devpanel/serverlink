@@ -201,15 +201,15 @@ elif [ "$app" -a "$operation" == "clone" -a "$source_domain" -a "$domain" ]; the
   IMAGE_WEB_NAME=`docker images|grep ${domain}_web|awk '{print $1}'`
   IMAGE_DB_NAME=`docker images|grep ${domain}_db|awk '{print $1}'`
   # get current path and set it for mount point
-  data_volume_mount_path="$(pwd)/original/${domain}_${app}_data_volume"
-  web_volume_mount_path="$(pwd)/original/${domain}_${app}_web_volume"
+  data_volume_mount_path="${self_dir}/original/${domain}_${app}_data_volume"
+  web_volume_mount_path="${self_dir}/original/${domain}_${app}_web_volume"
   # create shared volumes for cloned containers
-  mkdir -p ./original/${domain}_${app}_web_volume
-  mkdir -p ./original/${domain}_${app}_data_volume/databases
+  mkdir -p ${self_dir}/original/${domain}_${app}_web_volume
+  mkdir -p ${self_dir}/original/${domain}_${app}_data_volume/databases
   # let container know that it was cloned
-  echo "CLONE=true" > ./clone_info
-  ${sudo} cp -f ./clone_info ./original/${domain}_${app}_data_volume/databases/
-  ${sudo} cp -dpfR $(pwd)/original/${source_domain}_${app}_web_volume/* ${web_volume_mount_path}/
+  echo "CLONE=true" > ${self_dir}/clone_info
+  ${sudo} cp -f ${self_dir}/clone_info ${self_dir}/original/${domain}_${app}_data_volume/databases/
+  ${sudo} cp -dpfR ${self_dir}/original/${source_domain}_${app}_web_volume/* ${web_volume_mount_path}/
   # start cloned containers
   docker run -v ${data_volume_mount_path}:/data    -d --name=${domain}_${app}_db  ${IMAGE_DB_NAME}
   # wait for db container to start since web depends from it
@@ -226,10 +226,10 @@ elif [ "$app" -a "$operation" == "clone" -a "$source_domain" -a "$domain" ]; the
   CONTAINER_WEB_ID=`docker ps|grep ${user}.${domain_name}_${app}_web|awk '{print $1}'`
   CONTAINER_DB_ID=`docker ps|grep ${user}.${domain_name}_${app}_db|awk '{print $1}'`
   # get variables for db data replacement
-  DB_IP=`awk -F':' '{print $1}' ./original/${domain}_${app}_data_volume/databases/db_info`
-  PORT=`awk -F':' '{print $2}' ./original/${domain}_${app}_data_volume/databases/db_info`
-  PASSWORD=`awk -F':' '{print $4}' ./original/${domain}_${app}_data_volume/databases/db_info`
-  USER=`awk -F':' '{print $3}' ./original/${domain}_${app}_data_volume/databases/db_info`
+  DB_IP=`awk -F':' '{print $1}' ${self_dir}/original/${domain}_${app}_data_volume/databases/db_info`
+  PORT=`awk -F':' '{print $2}' ${self_dir}/original/${domain}_${app}_data_volume/databases/db_info`
+  PASSWORD=`awk -F':' '{print $4}' ${self_dir}/original/${domain}_${app}_data_volume/databases/db_info`
+  USER=`awk -F':' '{print $3}' ${self_dir}/original/${domain}_${app}_data_volume/databases/db_info`
   DOMAIN=${source_domain_name}
   DST_USER=${user}
   DST_DOMAIN=${domain_name}
