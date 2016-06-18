@@ -2,9 +2,14 @@
 
 # this script tries to select the 'best' drush version available to be run
 
+unset set_drush
+
 self_bin=`readlink -e "$0"`
 curr_dir=`dirname "$self_bin"`
 devpanel_dir=`readlink -e "$curr_dir/../.."`
+
+lib_file="$devpanel_dir/lib/functions"
+source "$lib_file" 2>/dev/null
 
 home_1_drush="$HOME/.drush/drush"
 home_2_drush="$HOME/.drush/drush/drush"
@@ -15,12 +20,32 @@ devpanel_drush="$devpanel_dir/bin/packages/drush/drush"
 #  ...the drush version shipped with devPanel
 if [ -f "$home_1_drush" -a -x "$home_1_drush" ]; then
   hash -p "$home_1_drush" drush
+  set_drush=1
 elif [ -f "$home_2_drush" -a -x "$home_2_drush" ]; then
   hash -p "$home_2_drush" drush
-elif ! hash drush &>/dev/null && [ -x "$devpanel_drush" ]; then
-  hash -p "$devpanel_drush" drush
-elif hash drush &>/dev/null && [ "`hash -t drush`" == $0 ]; then
-  hash -p "$devpanel_drush" drush
+  set_drush=1
+else
+  if [ $EUID -ne 0 ]; then
+    # check if there's a specific version of drush defined for this vhost
+    drush_version=$(get_vhost_key_value "app:0:_:drush_version" 2>/dev/null)
+    if [ $? -eq 0 ]; then
+      tmp_drush_bin="$devpanel_dir/bin/packages/drush-$drush_version/drush"
+      if [ -f "$tmp_drush_bin" -a -x "$tmp_drush_bin" ]; then
+        # if a specific version is defined and the binary is available, then
+        # use it
+        hash -p "$tmp_drush_bin" drush
+        set_drush=1
+      else
+        echo "Warning: drush version $drush_version specified but binary is missing" 1>&2
+      fi
+    fi
+  fi
+
+  if [ -z "$set_drush" -a -x "$devpanel_drush" ]; then
+    hash -p "$devpanel_drush" drush
+  elif [ -z "$set_drush" ] && hash drush &>/dev/null && [ "`hash -t drush`" == $0 ]; then
+    hash -p "$devpanel_drush" drush
+  fi
 fi
 
 php_home_bin="$HOME/bin/php-cgi"
