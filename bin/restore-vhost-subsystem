@@ -161,6 +161,10 @@ set_database_variables() {
   sedencoded_mysql_password="`sedencode \"$mysql_password\"`" || exit 1
   hosting_database="$WEBENABLED_HOSTING_LINK_MYSQL_DATABASE"
   [ -z "$hosting_database" ] && hosting_database=$database
+
+  # global auxiliary variables
+  mysql_url_with_pw="mysql://$mysql_user:$mysql_password@$mysql_host:$mysql_port/$database"
+  mysqli_url_with_pw="mysqli://$mysql_user:$mysql_password@$mysql_host:$mysql_port/$database"
 }
 
 sql_query()
@@ -208,6 +212,7 @@ cleanup_env_vars() {
   buffer=""  email=""
   use_my_cnf=""
   initial_deployment="" clear_cache=""
+  config_function="" git_db_type="" git_db_source=""
 }
 
 generate_password() {
@@ -433,7 +438,8 @@ while getopts 'pPMm:s:O:iInFC' OPTOPT; do
     C) clear_cache=1 ;;
     O)
       # the logic below reads name=value strings passed to the -O option
-      accepted_opt_names=('use_my_cnf' 'site_title' 'email' )
+      accepted_opt_names=('use_my_cnf' 'site_title' 'email' \
+                          'config_function' 'git_db_type' 'git_db_source' )
       prev_char=""
       name_value=""
       declare -i n_pos=0
@@ -530,22 +536,27 @@ if ! cd "$HOME"; then
   error "unable to chdir to $HOME"
 fi
 
-# connect to the database (credentials from ~/.my.cnf)
-echo "Looking for database '$database'"
-databases=`run_mysql -B -e "show databases;"` 2>&1
-if [ $? -ne 0 ]; then
-  error "Unable to retrieve database list from the mysql server"
-fi
+# auxiliary variable to be used by the templates
+public_html_dir="$HOME/public_html/$vhost"
 
-if ! echo "$databases"|egrep -q "^$database\$"
-then
-  error "couldn't find database '$database'"
-fi
+if [ -n "$opt_i" -o -n "$opt_M" -o -n "$opt_P" ]; then
+  # connect to the database (credentials from ~/.my.cnf)
+  echo "Looking for database '$database'"
+  databases=`run_mysql -B -e "show databases;"` 2>&1
+  if [ $? -ne 0 ]; then
+    error "Unable to retrieve database list from the mysql server"
+  fi
 
-# call seed's API to get the admin's user
-admin_user=`${subsystem}_get_admin_user`
-if [ $? -ne 0 ]; then
-  error "Unable to get admin username for vhost: $vhost, subsystem: $subsystem"
+  if ! echo "$databases"|egrep -q "^$database\$"
+  then
+    error "couldn't find database '$database'"
+  fi
+
+  # call seed's API to get the admin's user
+  admin_user=`${subsystem}_get_admin_user`
+  if [ $? -ne 0 ]; then
+    error "Unable to get admin username for vhost: $vhost, subsystem: $subsystem"
+  fi
 fi
 
 # if -i option provided, read password from stdin
@@ -640,7 +651,11 @@ fi # end of password changing
 
 # -n: update settings.ini
 if [ -n "$opt_n" ]; then
-  ${subsystem}_custom # run the seed's API customization function
+  if [ -z "$config_function" ]; then
+    config_function="custom"
+  fi
+
+  ${subsystem}_${config_function} # run the seed's API customization function
   if [ $? -ne 0 ]; then
     error "Cannot perform $subsystem-specific cusmomizations"
   fi
