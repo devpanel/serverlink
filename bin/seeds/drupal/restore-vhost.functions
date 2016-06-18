@@ -466,3 +466,15 @@ drupal_custom()
 drupal_clear_cache() {
   drush -r "$home/public_html/$vhost" cache-clear all
 }
+
+drupal_setup_from_git() {
+  # drush dl drupal --drupal-project-rename=${public_html_dir##*/} \
+  # --account-name=admin --account-pass=[useruser_pass] \
+  # --site-name="..."
+
+  composer global update
+
+  #if [ "$git_db_type" == "new" ]; then
+    drush -r "$public_html_dir" -y si standard --db-url="$mysql_url_with_pw" 
+  #fi
+}
