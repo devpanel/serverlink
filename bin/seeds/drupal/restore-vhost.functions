@@ -230,23 +230,57 @@ drupal_update_php_config_6()
 
 drupal_update_php_config_7() {
   local drupal_base_url_none_sed_script="s|^[[:space:]]*\\\$base_url[[:space:]]*=[[:space:]]*'[^']*';||"
-  local file
+  local file dir
   local config_dir="$home/public_html/$vhost/sites"
 
   local driver='\1'
+  local tmp_same_dir db_creds_str db_creds_str_new orig_settings
 
+  db_creds_str="\$databases['default']['default'] = array(
+  'driver'     => '@driver@',
+  'database'   => '@database_name@',
+  'username'   => '@db_username@',
+  'password'   => '@db_password@',
+  'host'       => '@db_host@',
+  'port'       => '@db_port@',
+  'prefix'     => '',
+  'collation'  => 'utf8_general_ci',
+);
+"
+
+  shopt -s nullglob
   for file in "$config_dir"/*/settings.php "$config_dir"/*/settings.local.php; do
-    [ ! -f "$file" ] && continue
-
-    /bin/echo "
+    if [ -f "$file" ]; then
+      /bin/echo "
          s/^[[:space:]]*'driver'[[:space:]]*=>[[:space:]]*'\\([^']*\\)'[[:space:]]*,/    'driver' => '$driver',/
          s/^[[:space:]]*'username'[[:space:]]*=>[[:space:]]*.*/    'username' => '$mysql_user',/
          s/^[[:space:]]*'password'[[:space:]]*=>[[:space:]]*.*/    'password' => '$sedphpencoded_mysql_password',/
          s/^[[:space:]]*'host'[[:space:]]*=>[[:space:]]*.*/    'host' => '$mysql_host',/
          s/^[[:space:]]*'port'[[:space:]]*=>[[:space:]]*.*/    'port' => '$mysql_port',/
          s/^[[:space:]]*'database'[[:space:]]*=>[[:space:]]*.*/    'database' => '$hosting_database',/
-    " | run_ised "$file"
+      " | run_ised "$file"
+    fi
   done
+
+  local def_settings="$config_dir/default/settings.php"
+  local orig_settings="$config_dir/default/default.settings.php"
+
+  if [ ! -e "$def_settings" ]; then
+    if [ -f "$orig_settings" ]; then
+      cp -f "$orig_settings" "$def_settings"
+    else
+      echo "<?php" >"$def_settings"
+    fi
+    
+    db_creds_str_new=${db_creds_str//@driver@/mysql}
+    db_creds_str_new=${db_creds_str_new//@db_username@/$mysql_user}
+    db_creds_str_new=${db_creds_str_new//@db_password@/$sedphpencoded_mysql_password}
+    db_creds_str_new=${db_creds_str_new//@db_host@/$mysql_host}
+    db_creds_str_new=${db_creds_str_new//@db_port@/$mysql_port}
+    db_creds_str_new=${db_creds_str_new//@database_name@/$hosting_database}
+
+    echo "$db_creds_str_new" >> "$def_settings"
+  fi
 }
 
 drupal_update_php_config_8() {
@@ -471,10 +505,11 @@ drupal_setup_from_git() {
   # drush dl drupal --drupal-project-rename=${public_html_dir##*/} \
   # --account-name=admin --account-pass=[useruser_pass] \
   # --site-name="..."
+  local install_profile=${install_profile:-standard}
 
-  composer global update
+  # composer global update
 
   #if [ "$git_db_type" == "new" ]; then
-    drush -r "$public_html_dir" -y si standard --db-url="$mysql_url_with_pw" 
+    drush -r "$public_html_dir" -y si "$install_profile" --db-url="$mysql_url_with_pw"
   #fi
 }

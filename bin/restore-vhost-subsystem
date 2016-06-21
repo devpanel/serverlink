@@ -439,6 +439,7 @@ while getopts 'pPMm:s:O:iInFC' OPTOPT; do
     O)
       # the logic below reads name=value strings passed to the -O option
       accepted_opt_names=('use_my_cnf' 'site_title' 'email' \
+                          'install_profile' \
                           'config_function' 'git_db_type' 'git_db_source' )
       prev_char=""
       name_value=""

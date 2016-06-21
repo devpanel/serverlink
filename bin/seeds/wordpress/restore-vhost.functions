@@ -131,3 +131,22 @@ wordpress_custom() {
 wordpress_clear_cache() {
   wp --path="$home/public_html/$vhost" cache flush
 }
+
+wordpress_setup_from_git() {
+  local title=${site_title:-"Wordpress"}
+  local admin_email=${email:-"devnull@webenabled.com"}
+  local password=$(generate_password) # also uses one from stdin if opt specified
+
+    wp-cli --path="$public_html_dir" core config --dbname="$database" \
+      --dbuser="$mysql_user" --dbpass="$mysql_password" \
+      --dbhost="$mysql_host:$mysql_port"
+
+  if [ -n "$initial_deployment" ]; then
+    wp-cli --path="$public_html_dir" core install --url="$fqdn" --title="$title" \
+      --admin_user=admin --admin_password="$password" \
+      --admin_email="$admin_email" --skip-email
+    return $?
+  fi
+
+  return 0
+}

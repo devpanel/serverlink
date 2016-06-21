@@ -22,6 +22,7 @@ sub usage {
   
   Options:
     -c            create the specified file if it doesn't exist
+    -q            quiet, don't print informational msgs to stdout
 
 
   This script creates or updates a .ini file.
@@ -40,6 +41,7 @@ if($#ARGV < 0) {
 my %r_opts;
 my %getopt_flags = (
     'c'         => \$r_opts{create_file},
+    'q'         => \$r_opts{quiet},
 );
 
 if(!GetOptions(%getopt_flags)) {
@@ -71,7 +73,10 @@ if(!$cfg_r) {
       "\n";
 }
 
-print "Reading stdin...\n";
+if(!$r_opts{quiet}) {
+  print "Reading stdin...\n";
+}
+
 my $line_n = 0;
 my $values_set_n = 0;
 while(<STDIN>) {
@@ -99,7 +104,9 @@ while(<STDIN>) {
 }
 
 if($values_set_n > 0) {
-  print "Successfully wrote $values_set_n changes to file '$file'.\n";
+  if(!$r_opts{quiet}) {
+    print "Successfully wrote $values_set_n changes to file '$file'.\n";
+  }
   $cfg_r->write($file);
 } else {
   print "Error: no values updated.\n";

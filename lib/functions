@@ -1616,3 +1616,53 @@ generate_vhost_ini_str() {
 
   echo -n "$ini_str"
 }
+
+dump_vhost_mysql_db() {
+  local vhost="$1"
+  local database="$2"
+
+  if ! "$DEVPANEL_HOME/libexec/check-vhost-name" archive "$vhost"; then
+    return 1
+  fi
+
+  local temp_my_cnf
+  local mysql_host mysql_port mysql_user mysql_pass
+  mysql_host=$(get_vhost_key_value app:0:_:db_host "$vhost" 2>/dev/null)
+  mysql_port=$(get_vhost_key_value app:0:_:db_port "$vhost" 2>/dev/null)
+  mysql_user=$(get_vhost_key_value app:0:_:db_user "$vhost" 2>/dev/null)
+  mysql_pass=$(get_vhost_key_value app:0:_:db_password "$vhost" 2>/dev/null)
+  
+  if [ -z "$database" ]; then
+    database=$(get_vhost_key_value app:0:_:db_name "$vhost" 2>/dev/null)
+    if [ $? -ne 0 ]; then
+      echo "$FUNCNAME(): unable to get database name for vhost $vhost" 1>&2
+      return 1
+    fi
+  fi
+
+  if ! temp_my_cnf=$(mktemp); then
+    echo "$FUNCNAME(): unable to create temporary file" 1>&2
+    return 1
+  fi
+
+  echo "
+client.host = $mysql_host
+client.port = $mysql_port
+client.user = $mysql_user
+client.password = $mysql_pass
+" | "$DEVPANEL_HOME/bin/update-ini-file" -q -c "$temp_my_cnf"
+  if [ $? -ne 0 ]; then
+    echo "$FUNCNAME(): unable to write ini file '$temp_my_cnf'" 1>&2
+    rm -f "$temp_my_cnf"
+    return 1
+  fi
+
+  local st
+
+  mysqldump --defaults-extra-file="$temp_my_cnf" "$database"
+  st=$?
+
+  rm -f "$temp_my_cnf"
+
+  return $st
+}
