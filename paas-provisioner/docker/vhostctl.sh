@@ -19,9 +19,11 @@ Options:
   -DD, --destination-domain       Destination domain name. For 'clone' operation different domain name should be passed.
   -B, --backup-name               Backup name.
   -R, --restore-name              Restore previously backed up name.
+  -L, --build-local               Build docker cache image locally instead downloading from docker hub.
 
 Usage examples:
   ./vhostctl.sh -A=wordpress -C=start -DD=t3st.some.domain
+  ./vhostctl.sh -A=wordpress -C=start -DD=t3st.some.domain -L
   ./vhostctl.sh -A=wordpress -C=fullclone -SD=t3st.some.domain -DD=t4st.some.domain
   ./vhostctl.sh -A=wordpress -C=clone -SD=t3st.some.domain -DD=t4st.some.domain
   ./vhostctl.sh -C=backup  -DD=t3st.some.domain -B=t3st_backup1
@@ -62,6 +64,10 @@ case $i in
     ;;
     -R=*|--restore-name=*)
     restore_name="${i#*=}"
+    shift # past argument=value
+    ;;
+    -L*|--build-local*)
+    build_image="${i#*=}"
     shift # past argument=value
     ;;
     *)
@@ -118,7 +124,8 @@ server {
 EOF
   ${sudo} mv /tmp/${domain}.conf /etc/nginx/sites-enabled/${domain}.conf
   # restart nginx instead reload to avoid error with not running instance
-  ${sudo} service nginx restart
+  sudo killall nginx; sudo service nginx start
+  # ${sudo} service nginx restart
 }
 
 patch_definition_files_and_build()
@@ -181,9 +188,12 @@ if [ ! -f /usr/local/bin/docker-compose ]; then
   chmod +x /usr/local/bin/docker-compose
 fi
 
-# check for devpanel_cache image
-if [ `docker images devpanel_cache|grep -c devpanel_cache` -eq 0 ]; then
+# build locally or pull image from docker hub
+if [ $build_image ]; then
   docker build -t devpanel_cache:v2 "$self_dir/cache"
+else
+  docker pull freeminder/devpanel_cache:v2
+  docker tag freeminder/devpanel_cache:v2 devpanel_cache:v2
 fi
 
 # main logic
