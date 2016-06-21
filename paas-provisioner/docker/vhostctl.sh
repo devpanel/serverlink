@@ -141,11 +141,13 @@ patch_definition_files_and_build()
     s/USER_VAR/${user}/;
     s/DOMAIN_VAR/${domain_name}/;
     s/SRC_USER_VAR/${source_user}/;
-    s/SRC_DOMAIN_VAR/${source_domain_name}/;"
+    s/SRC_DOMAIN_VAR/${source_domain_name}/;
+    s/APP_VAR/${app}/;"
 
-  if [ "$app" == "drupal" ]; then
-    sed_str+="s/wordpress-v4/${app}-v7/;"
-    sed_str+="s/wordpress/${app}/;"
+  if [ "$app" == "wordpress" ]; then
+    sed_str+="s/SEEDAPP_ARCHIVE_VAR/${app}-v4.tgz/;"
+  elif [ "$app" == "drupal" ]; then
+    sed_str+="s/SEEDAPP_ARCHIVE_VAR/${app}-v7.tgz/;"
   fi
 
   sed -i "$sed_str" "$compose_file"
@@ -186,6 +188,8 @@ fi
 
 # main logic
 if [ "$app" -a "$operation" == "start" -a "$domain" ]; then
+  ${sudo} rm -fr ${self_dir}/original/${domain}_${app}_web_volume
+  ${sudo} rm -fr ${self_dir}/original/${domain}_${app}_data_volume
   patch_definition_files_and_build
 elif [ "$app" -a "$operation" == "clone" -a "$source_domain" -a "$domain" ]; then
   # parse variables
@@ -276,6 +280,17 @@ elif [ "$operation" == "backup" -a "$backup_name" -a "$domain" ]; then
   # save current state of containers as images
   docker commit ${CONTAINER_WEB_NAME} ${domain}_${backup_name}_bkp_web
   docker commit ${CONTAINER_DB_NAME}  ${domain}_${backup_name}_bkp_db
+  # create backup shared volumes and copy source data
+  ${sudo} rm -fr ${self_dir}/original/${domain}_${app}_${backup_name}_bkp_web_volume
+  ${sudo} mkdir ${self_dir}/original/${domain}_${app}_${backup_name}_bkp_web_volume && \
+    echo "created backup dir: ${self_dir}/original/${domain}_${app}_${backup_name}_bkp_web_volume"
+  ${sudo} rm -fr ${self_dir}/original/${domain}_${app}_${backup_name}_bkp_db_volume
+  ${sudo} mkdir ${self_dir}/original/${domain}_${app}_${backup_name}_bkp_db_volume && \
+    echo "created backup dir: ${self_dir}/original/${domain}_${app}_${backup_name}_bkp_db_volume"
+  ${sudo} cp -dpfR ${self_dir}/original/${domain}_${app}_web_volume/* ${self_dir}/original/${domain}_${app}_${backup_name}_bkp_web_volume/ && \
+    echo "copied source to backup dir: ${self_dir}/original/${domain}_${app}_${backup_name}_bkp_web_volume"
+  ${sudo} cp -dpfR ${self_dir}/original/${domain}_${app}_data_volume/* ${self_dir}/original/${domain}_${app}_${backup_name}_bkp_db_volume/ && \
+    echo "copied source to backup dir: ${self_dir}/original/${domain}_${app}_${backup_name}_bkp_db_volume"
 elif [ "$operation" == "restore" -a "$restore_name" -a "$domain" ]; then
   # get ids of current containers
   docker_get_ids_and_names_of_containers
@@ -285,9 +300,36 @@ elif [ "$operation" == "restore" -a "$restore_name" -a "$domain" ]; then
   # get ids of images
   IMAGE_WEB_NAME=`docker images|grep ${domain}_${restore_name}_bkp_web|awk '{print $1}'`
   IMAGE_DB_NAME=`docker images|grep ${domain}_${restore_name}_bkp_db|awk '{print $1}'`
+  # get current path and set it for mount point
+  data_volume_mount_path="${self_dir}/original/${domain}_${app}_data_volume"
+  web_volume_mount_path="${self_dir}/original/${domain}_${app}_web_volume"
+  # recreate shared volumes for cloned containers
+  ${sudo} rm -fr ${self_dir}/original/${domain}_${app}_web_volume
+  ${sudo} mkdir -p ${self_dir}/original/${domain}_${app}_web_volume/websites
+  ${sudo} cp -dpfR ${self_dir}/original/${domain}_${app}_${restore_name}_bkp_web_volume/* ${web_volume_mount_path}/ && \
+    echo "copied data from backup: ${web_volume_mount_path}"
+  ${sudo} rm -fr ${self_dir}/original/${domain}_${app}_data_volume
+  ${sudo} mkdir -p ${self_dir}/original/${domain}_${app}_data_volume/databases
+  ${sudo} cp -dpfR ${self_dir}/original/${domain}_${app}_${restore_name}_bkp_db_volume/* ${data_volume_mount_path}/ && \
+    echo "copied data from backup: ${data_volume_mount_path}"
+  # let container know that it was backed up
+  echo "BACKUP=true" > ${self_dir}/backup_info
+  ${sudo} cp -f ${self_dir}/backup_info ${self_dir}/original/${domain}_${app}_web_volume/websites/
   # start backed up containers
-  docker run -d --name=${CONTAINER_DB_NAME}  ${IMAGE_DB_NAME}
-  docker run -d --name=${CONTAINER_WEB_NAME} ${IMAGE_WEB_NAME}
+  docker run -v ${data_volume_mount_path}:/data -d --name=${CONTAINER_DB_NAME}  ${IMAGE_DB_NAME}
+  # wait for db container to start since web depends from it
+  while [ `docker ps|grep ${CONTAINER_DB_NAME}|wc -l` -eq 0 ]; do
+    echo "DB container is not running. Waiting its start."
+    sleep 1
+  done
+  docker run -v ${data_volume_mount_path}:/data:ro -v ${web_volume_mount_path}:/home/clients -d --name=${CONTAINER_WEB_NAME} ${IMAGE_WEB_NAME}
+  while [ `docker ps|grep ${domain}_${app}_web|wc -l` -eq 0 ]; do
+    echo "WEB container is not running. Waiting its start."
+    sleep 1
+  done
+  # let web container know about db's ip address
+  DB_IP=`awk -F':' '{print $1}' ${self_dir}/original/${domain}_${app}_data_volume/databases/db_info`
+  docker exec -it ${CONTAINER_WEB_NAME} /bin/sh -c "echo '${DB_IP} db' >> /etc/hosts"
   # update nginx config with new IP of web container
   update_nginx_config ${CONTAINER_WEB_NAME}
 else

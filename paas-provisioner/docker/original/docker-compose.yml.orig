@@ -10,8 +10,12 @@ services:
       args:
         USER: USER_VAR
         DOMAIN: DOMAIN_VAR
-        APP: wordpress
-        SEEDAPP_ARCHIVE: wordpress-v4.tgz
+        APP: APP_VAR
+        SEEDAPP_ARCHIVE: SEEDAPP_ARCHIVE_VAR
+    environment:
+      USER: USER_VAR
+      DOMAIN: DOMAIN_VAR
+      APP: APP_VAR
     networks:
       - NETWORK_NAME_VAR_net
     volumes:
@@ -29,8 +33,8 @@ services:
       args:
         USER: USER_VAR
         DOMAIN: DOMAIN_VAR
-        APP: wordpress
-        SEEDAPP_ARCHIVE: wordpress-v4.tgz
+        APP: APP_VAR
+        SEEDAPP_ARCHIVE: SEEDAPP_ARCHIVE_VAR
     networks:
       - NETWORK_NAME_VAR_net
     volumes:
