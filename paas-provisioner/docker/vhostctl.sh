@@ -19,7 +19,7 @@ Options:
   -DD, --destination-domain       Destination domain name. For 'clone' operation different domain name should be passed.
   -B, --backup-name               Backup name.
   -R, --restore-name              Restore previously backed up name.
-  -L, --build-local               Build docker cache image locally instead downloading from docker hub.
+  -L, --build-image               Build devpanel_cache image locally instead of downloading it from docker hub.
 
 Usage examples:
   ./vhostctl.sh -A=wordpress -C=start -DD=t3st.some.domain
@@ -124,8 +124,7 @@ server {
 EOF
   ${sudo} mv /tmp/${domain}.conf /etc/nginx/sites-enabled/${domain}.conf
   # restart nginx instead reload to avoid error with not running instance
-  sudo killall nginx; sudo service nginx start
-  # ${sudo} service nginx restart
+  ${sudo} service nginx restart
 }
 
 patch_definition_files_and_build()
