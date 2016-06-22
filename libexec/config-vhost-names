@@ -5,7 +5,7 @@ usage() {
   local prog=`basename "$0"`
 
   echo "
-  Usage: $prog [ options ]  {*|+|-} name [name ...]
+  Usage: $prog vhost-name [ options ]  {*|+|-} [domain-name ...]
 
   Options:
     -s                      force the name to be a subdomain of the main
