@@ -294,13 +294,12 @@ if [ -n "$just_pack" ]; then
 fi
 
 declare -a restore_args=()
-if [ -z "$db_dump_type" ]; then
+if [ -z "$db_dump_type" -o -n "$install_profile" ]; then
   restore_args+=( -O config_function="setup_from_git" )
 fi
 
 "$self_dir/restore-vhost" "${restore_args[@]}" -s "$subsystem" \
   ${install_profile:+-O install_profile="$install_profile"} \
-  ${install_profile:+-O config_function="setup_from_git"  } \
   "$vhost" "$final_archive_file"
 if [ $? -eq 0 ]; then
   echo
