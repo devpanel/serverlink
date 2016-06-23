@@ -1,0 +1,68 @@
+#!/bin/bash
+usage(){
+  local self=${0##*/}
+
+echo "
+Executes updates provided by the Linux distribution.
+
+Keep in mind that some programs may break due to unexpected updates or changes in the libraries
+Use this at your own risk.
+
+Usage: $self -Y
+"
+  exit 1
+}
+
+unset confirmed
+getopt_flags='Y'
+while getopts $getopt_flags OPTN; do
+  case $OPTN in
+    Y)
+      confirmed=1
+      ;;
+    *)
+      exit 1
+      ;;
+  esac
+done
+[ $OPTIND -gt 1 ] && shift $(( $OPTIND - 1 ))
+
+[ -z "$confirmed" ] && usage
+
+AUTOMATICLOGS="/var/log/automatic-updates.log"
+
+self_bin=$(readlink -e "$0")
+if [ $? -ne 0 ]; then
+  echo "Error: unable to detect self path" 1>&2
+  exit 1
+fi
+self_dir=${self_bin%/*}
+sys_dir=${self_dir%/*}
+lib_file="$sys_dir/lib/functions"
+
+if ! source "$lib_file"; then
+  echo "Error: unable to source file $lib_file"
+  exit 1
+fi
+
+# Call function to detect OS 
+DEVPANELOS=$(devpanel_auto_detect_distro)
+if [ $? -ne 0 ]; then
+  exit 1
+fi
+
+# Add date to logfile
+echo "###############################################" >> $AUTOMATICLOGS; date +%y-%m-%d >> $AUTOMATICLOGS
+# Validation for ubuntu
+if [ "$DEVPANELOS" == "ubuntu" ];then
+        apt-get update -y >> $AUTOMATICLOGS; apt-get upgrade --assume-yes >> $AUTOMATICLOGS
+# Validation for Debian
+elif [ "$DEVPANELOS" == "debian" ];then
+        apt-get update -y >> \$AUTOMATICLOGS; apt-get upgrade --assume-yes >> $AUTOMATICLOGS
+# Validation for rhel/cenOS
+elif [ "$DEVPANELOS" == "centos" ] || [ "$DEVPANELOS" == "redhat" ];then
+        yum update -y >> $AUTOMATICLOGS
+else
+        echo "Could not detect OS"
+        exit 1
+fi
