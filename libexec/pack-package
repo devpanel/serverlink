@@ -1,0 +1,73 @@
+#!/bin/bash
+
+usage() {
+  echo "Usage: ${0##*/} <-d ref_dir> <new_file.tar.gz> <path_1> [...] [path_N]
+
+  Packs the specified files and directories into a .tar.gz designed for
+  package installation.
+"
+  exit 1
+}
+
+error() {
+  local msg="$1"
+  local exit_code="${2:-1}"
+
+  [ -n "$msg" ] && echo "Error: $msg" 1>&2
+  exit $exit_code
+}
+
+# main
+
+[ $# -lt 2 ] && usage
+
+getopt_flags='hd:'
+while getopts $getopt_flags OPTN; do
+  case $OPTN in
+    d)
+      ref_dir="$OPTARG"
+      if [ ! -d "$ref_dir" ]; then
+        error "missing ref directory '$ref_dir'"
+      fi
+      ;;
+    h)
+      usage
+      ;;
+    *)
+      exit 1
+      ;;
+  esac
+done
+[ $OPTIND -gt 1 ] && shift $(( $OPTIND - 1 ))
+
+[ $# -lt 2 -o -z "$1" ] && usage
+
+archive_file="$1"
+if [ -e "$archive_file" ]; then
+  error "path '$archive_file' already exists."
+fi
+
+shift # the next args are the file paths to include in the package
+[ $# -lt 1 -o -z "$1" ] && usage
+
+temp_dir=$(mktemp -d)
+if [ $? -ne 0 ]; then
+  error "unable to create temporary directory."
+fi
+
+if ! mkdir "$temp_dir/pkg-files" "$temp_dir/setup"; then
+  error "unable to create directory structure for package."
+fi
+
+tar -C "$ref_dir" -cSf - "$@" | tar -C "$temp_dir/pkg-files" --no-same-owner -xpf -
+if [ $? -ne 0 ]; then
+  error "unable to files to temporary directory"
+fi
+
+tar -C "$temp_dir" --no-same-owner -zScf "$archive_file" .
+if [ $? -eq 0 ]; then
+  echo "Successfully created package $archive_file"
+  exit 0
+else
+  error "unable to create package."
+fi
