@@ -527,96 +527,6 @@ devpanel_download_pkg() {
   fi
 }
 
-devpanel_install_pkg() {
-  local package="$1"
-  local version="$2"
-  local file="$3"
-  local system_dir="$4"
-
-  local tmp_pkg_dir=`dirname "$file"`/"$package-$version"
-  if ! mkdir "$tmp_pkg_dir" ; then
-    echo "$FUNCNAME(): unable to create temp dir '$tmp_pkg_dir'" 1>&2
-    return 1
-  fi
-
-  local pkg_register_dir="$system_dir/config/packages/$package"
-  if [ ! -d "$pkg_register_dir" ] && ! mkdir "$pkg_register_dir"; then
-    echo "$FUNCNAME(): unable to create package dir '$pkg_register_dir'" 1>&2
-    return 1
-  fi
-
-  tar --no-same-owner -zxf "$file" -C "$tmp_pkg_dir" ./setup/
-  if [ $? -ne 0 ]; then
-    echo "$FUNCNAME(): unable to extract package setup files for package '$package-$version'" 1>&2
-    return 1
-  fi
-
-  local pre_install_script="$tmp_pkg_dir/setup/pre-install"
-  local post_install_script="$tmp_pkg_dir/setup/post-install"
-  if [ -f "$pre_install_script" -a -x "$pre_install_script" ]; then
-    "$pre_install_script" "$package" "$version" "$system_dir"
-  fi
-
-  tar --no-same-owner -zxf "$file" -C "$system_dir" --strip-components 2 ./pkg-files/
-  if [ $? -ne 0 ]; then
-    echo "$FUNCNAME(): unable to extract package files" 1>&2
-    return 1
-  fi
-
-  if [ -f "$post_install_script" -a -x "$post_install_script" ]; then
-    "$post_install_script" "$package" "$version" "$system_dir"
-  fi
-
-  devpanel_update_pkg_link_version "$package" "$version" "$system_dir"
-  if [ $? -ne 0 ]; then
-    return 1
-  fi
-
-  return 0
-}
-
-devpanel_update_pkg() {
-  local package="$1"
-  local version="$2"
-  local file="$3"
-  local system_dir="$4"
-
-  local tmp_pkg_dir=`dirname "$file"`/"$package-$version"
-  if ! mkdir "$tmp_pkg_dir" ; then
-    echo "$FUNCNAME(): unable to create temp dir '$tmp_pkg_dir'" 1>&2
-    return 1
-  fi
-
-  tar --no-same-owner -zxf "$file" -C "$tmp_pkg_dir" ./setup/
-  if [ $? -ne 0 ]; then
-    echo "$FUNCNAME(): unable to extract package file" 1>&2
-    return 1
-  fi
-
-  local pre_update_script="$tmp_pkg_dir/setup/pre-update"
-  local post_update_script="$tmp_pkg_dir/setup/post-update"
-  if [ -f "$pre_update_script" -a -x "$pre_update_script" ]; then
-    "$pre_update_script" "$package" "$version" "$system_dir"
-  fi
-
-  tar --no-same-owner -zxf "$file" -C "$system_dir" --strip-components 2 ./pkg-files/
-  if [ $? -ne 0 ]; then
-    echo "$FUNCNAME(): unable to extract package files" 1>&2
-    return 1
-  fi
-
-  if [ -f "$post_update_script" -a -x "$post_update_script" ]; then
-    "$post_update_script" "$package" "$version" "$system_dir"
-  fi
-
-  devpanel_update_pkg_link_version "$package" "$version" "$system_dir"
-  if [ $? -ne 0 ]; then
-    return 1
-  fi
-
-  return 0
-}
-
 devpanel_update_versioned_pkg_version() {
   local package="$1"
   local version="$2"
@@ -649,10 +559,13 @@ devpanel_update_versioned_pkg_version() {
 
 devpanel_update_pkg_link_version() {
   local package="$1"
-  local version="$2"
-  local system_dir="$3"
+  local serial="$2"
+  local version="$3"
+  local system_dir="$4"
 
   local target_link="$system_dir/config/packages/$package/version"
+  local serial_link="$system_dir/config/packages/$package/serial"
+  local repo_link="$system_dir/config/packages/$package/repository"
 
   if [ ! -L "$target_link" -a -e "$target_link" ]; then
     echo "$FUNCNAME(): path '$target_link' exists but is not a symbolic link" 1>&2
@@ -666,6 +579,9 @@ devpanel_update_pkg_link_version() {
   if [ $status -ne 0 ]; then
     echo "$FUNCNAME(): unable to update target link '$target_link'" 1>&2
   fi
+
+  ln -sf "$serial" "$serial_link"
+  ln -sf "devpanel" "$repo_link"
 
   return $status
 }
@@ -694,6 +610,34 @@ calc_md5_str() {
   echo -n "$md5_str"
 
   return 0
+}
+
+calc_sha512_of_file() {
+  local file="$1"
+
+  if [ ! -e "$file" ]; then
+    echo "$FUNCNAME(): non-existing path $file" 1>&2
+    return 1
+  elif [ ! -f "$file" ]; then
+    echo "$FUNCNAME(): not a regular file $file" 1>&2
+    return 1
+  fi
+
+  local line shastr
+  line=$(sha512sum "$file")
+  if [ $? -eq 0 ]; then
+    shastr="${line%% *}"
+    if [ -n "$shastr" ]; then
+      echo "$shastr"
+      return 0
+    else
+      echo "$FUNCNAME(): got unknown line from sha512sum '$line'" 1>&2
+      return 1
+    fi
+  else
+    echo "$FUNCNAME(): unable to calculate, sha512sum returned non-zero" 1>&2
+    return 1
+  fi
 }
 
 devpanel_get_os_version() {
