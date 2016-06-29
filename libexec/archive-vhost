@@ -410,6 +410,21 @@ if [ -n "$webenabled_backwards" -a -z "$no_checksum" ]; then
     su -l -s /bin/bash -c "umask 027; cd "$vhost_archive_dir" && \
       echo "$sha1_str" >"$sha1_file"" "$user_web"
   fi
+
+  # create a link to $HOME/public_html/gen/archive so that it displays in
+  # Webenabled v1 dashboard
+  su -l -s /bin/bash -c '
+    target_file='"$target_file"'                 ;
+    md5_file="${target_file%.*}.md5"             ;
+    sha1_file="${target_file%.*}.sha1"           ;
+    ard=$HOME/public_html/gen/archive            ;
+    [ ! -d $ard ] && mkdir -m 751 -p $ard        ;
+    cd $ard                                      ;
+    ln -s $target_file .                         ;
+    [ -e "$md5_file"  ]  && ln -s $md5_file .    ;
+    [ -e "$sha1_file" ]  && ln -s $sha1_file .   ;
+  ' "$user_web"
+ 
 fi
 
 # successfully ran the backup process, now go through the postrun scripts
