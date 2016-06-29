@@ -899,12 +899,7 @@ lock_path() {
 
   local lock_file=""
 
-  if [ ! -L "$path" -a ! -e "$path" ]; then
-    wedp_warn "path '$path' doesn't exist"
-    return 1
-  else
-    lock_file="`dirname "$path"`/.`basename "$path"`.lock"
-  fi
+  lock_file="`dirname "$path"`/.`basename "$path"`.lock"
 
   local -i retries=1
   while [ $retries -le $max_retries ]; do
@@ -927,12 +922,7 @@ unlock_path() {
   
   local lock_file=""
 
-  if [ ! -L "$path" -a ! -e "$path" ]; then
-    wedp_warn "path '$path' doesn't exist"
-    return 1
-  else
-    lock_file="`dirname "$path"`/.`basename "$path"`.lock"
-  fi
+  lock_file="`dirname "$path"`/.`basename "$path"`.lock"
 
   if [ ! -L "$lock_file" -a ! -e "$lock_file" ]; then
     wedp_warn "didn't find lock file '$lock_file'"
