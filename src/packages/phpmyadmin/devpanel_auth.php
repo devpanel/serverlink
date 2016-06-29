@@ -1,7 +1,7 @@
 <?php
 
 $curr_path = dirname(__FILE__);
-require_once($curr_path . "/../../../../../../lib/php/webapp_token_access.inc.php");
+require_once($curr_path . "/../../../../../lib/php/webapp_token_access.inc.php");
 
 $app_name = "phpmyadmin";
 
