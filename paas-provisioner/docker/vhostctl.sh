@@ -12,7 +12,6 @@ Options:
   -C, --operation                 Operation commands:
                                     start - to build and start containers with the application
                                     clone - to copy containers with new names and replace configuration with new URL
-                                    fullclone - to setup new containers from scratch and replicate existing data
                                     backup - to save current state of existing containers
                                     restore - to restore containers to previous state
   -SD, --source-domain            Source domain name. Used for 'clone' operation.
@@ -24,7 +23,6 @@ Options:
 Usage examples:
   ./vhostctl.sh -A=wordpress -C=start -DD=t3st.some.domain
   ./vhostctl.sh -A=wordpress -C=start -DD=t3st.some.domain -L
-  ./vhostctl.sh -A=wordpress -C=fullclone -SD=t3st.some.domain -DD=t4st.some.domain
   ./vhostctl.sh -A=wordpress -C=clone -SD=t3st.some.domain -DD=t4st.some.domain
   ./vhostctl.sh -C=backup  -DD=t3st.some.domain -B=t3st_backup1
   ./vhostctl.sh -C=restore -DD=t3st.some.domain -R=t3st_backup1
@@ -105,8 +103,6 @@ update_nginx_config()
     container_name="${domain}_${app}_web"
   elif [ "$operation" == "clone" ]; then
     container_name="${domain}_${app}_web"
-  elif [ "$operation" == "fullclone" ]; then
-    container_name="${domain}_${app}_web_clone"
   elif [ "$operation" == "restore" ]; then
     container_name=$CONTAINER_WEB_NAME
   fi
@@ -280,9 +276,6 @@ elif [ "$app" -a "$operation" == "clone" -a "$source_domain" -a "$domain" ]; the
   fi
   # update host's nginx config with new IP of cloned web container
   update_nginx_config ${domain}_${app}_web
-elif [ "$app" -a "$operation" == "fullclone" -a "$source_domain" -a "$domain" ]; then
-  cd clone
-  patch_definition_files_and_build
 elif [ "$operation" == "backup" -a "$backup_name" -a "$domain" ]; then
   # get ids of current containers
   docker_get_ids_and_names_of_containers
