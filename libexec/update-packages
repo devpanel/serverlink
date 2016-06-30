@@ -134,9 +134,20 @@ remove_leftover_files() {
 
   # now remove directories of the package
   if [ -s "$old_dirs_txt" ]; then
-    local dir_name
+
+    # for directory removal the file needs to be reverse sorted because
+    # directories need to be removed in an inverse order
+    # e.g. /a /a/b  /a/b/c needs  to be removed first as /a/b/c then
+    # /a/b and only then /a
+    local old_dirs_rev_txt="$old_dirs_txt.rev"
+    sort -r -u "$old_dirs_txt" >"$old_dirs_rev_txt"
+    if [ $? -ne 0 ]; then
+      error "unable to sort-reverse file $old_dirs_txt"
+    fi
+
     [ -n "$verbose" ] && echo "Removing left over directories..."
 
+    local dir_name
     while read dir_name; do
       if is_inside_system_dir "$dir_name"; then
         n_entries=$(stat -c '%h' "$dir_name")
@@ -161,7 +172,7 @@ remove_leftover_files() {
         echo "  Warning: directory $dir_name is outside directory $system_dir, skipping..." 1>&2
         sleep 1
       fi
-    done < "$old_dirs_txt"
+    done < "$old_dirs_rev_txt"
   fi
 
   return 0
