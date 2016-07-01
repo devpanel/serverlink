@@ -233,10 +233,26 @@ devpanel_install_pkg() {
     return 1
   fi
 
+  # old exec logic (to be removed after all packages are migrated)
   local pre_install_script="$tmp_pkg_dir/setup/pre-install"
   local post_install_script="$tmp_pkg_dir/setup/post-install"
   if [ -f "$pre_install_script" -a -x "$pre_install_script" ]; then
     "$pre_install_script" "$package" "$version" "$system_dir"
+  fi
+
+  # new exec logic
+  local has_setup_script=""
+  local setup_bin="$tmp_pkg_dir/setup/setup-package"
+  if [ -f "$setup_bin" -a -x "$setup_bin" ]; then
+    has_setup_script=1
+  fi
+
+  if [ -n "$has_setup_script" ]; then
+    DEVPANEL_HOME="$DEVPANEL_HOME"       \
+    DEVPANEL_PKG_NAME="$package"         \
+    DEVPANEL_PKG_SERIAL="$serial"        \
+    DEVPANEL_PKG_VERSION="$version"      \
+      "$setup_bin" install pre-install
   fi
 
   tar --no-same-owner -zxf "$file" -C "$system_dir" --strip-components 2 ./pkg-files/
@@ -251,8 +267,18 @@ devpanel_install_pkg() {
     return 1
   fi
 
+  # old exec logic (to be removed after all packages are migrated)
   if [ -f "$post_install_script" -a -x "$post_install_script" ]; then
     "$post_install_script" "$package" "$version" "$system_dir"
+  fi
+
+  # new exec logic
+  if [ -n "$has_setup_script" ]; then
+    DEVPANEL_HOME="$DEVPANEL_HOME"       \
+    DEVPANEL_PKG_NAME="$package"         \
+    DEVPANEL_PKG_SERIAL="$serial"        \
+    DEVPANEL_PKG_VERSION="$version"      \
+      "$setup_bin" install post-install
   fi
 
   devpanel_update_pkg_link_version "$package" "$serial" "$version" "$system_dir"
@@ -283,9 +309,25 @@ devpanel_upgrade_pkg() {
     return 1
   fi
 
-  local curr_serial serial_file
+  local tmp_pkg_extracted_dir="$tmp_pkg_dir/pkg-extracted"
+  if [ ! -d "$tmp_pkg_extracted_dir" ]; then
+    if ! mkdir -p "$tmp_pkg_extracted_dir"; then
+      echo "$FUNCNAME(): unable to create temp dir '$tmp_pkg_extracted_dir'" 1>&2
+      return 1
+    fi
+
+    tar --no-same-owner -zxf "$file" -C "$tmp_pkg_extracted_dir" ./setup/
+    if [ $? -ne 0 ]; then
+      echo "$FUNCNAME(): unable to extract package setup files for package '$package-$version'" 1>&2
+      return 1
+    fi
+  fi
+
+  local curr_serial serial_file version_file previous_version
   serial_file="$pkg_reg_dir/serial"
-  curr_serial=$(deref_contents "$serial_file") || return 2
+  version_file="$pkg_reg_dir/version"
+  curr_serial=$(deref_contents "$serial_file")       || return 2
+  previous_version=$(deref_contents "$version_file") || return 2
 
   if [ "$serial" == "$curr_serial" ]; then
     echo "$FUNCNAME(): cannot upgrade, serial number is the same ($serial)" 1>&2
@@ -303,13 +345,51 @@ devpanel_upgrade_pkg() {
   [ -n "$verbose" ] && \
     echo "Upgrading $package, pre-installing serial $serial, version $version"
 
+  local has_setup_script=""
+  local setup_bin="$tmp_pkg_extracted_dir/setup/setup-package"
+  if [ -f "$setup_bin" -a -x "$setup_bin" ]; then
+    has_setup_script=1
+  fi
+
+  if [ -n "$has_setup_script" ]; then
+    DEVPANEL_HOME="$DEVPANEL_HOME"                          \
+    DEVPANEL_PKG_NAME="$package"                            \
+    DEVPANEL_PKG_SERIAL="$serial"                           \
+    DEVPANEL_PKG_SERIAL_PREVIOUS="$curr_serial"             \
+    DEVPANEL_PKG_VERSION="$version"                         \
+    DEVPANEL_PKG_VERSION_PREVIOUS="$previous_version"       \
+      "$setup_bin" update pre-update
+  fi
+
   devpanel_install_pkg "$@"
   if [ $? -ne 0 ]; then
     echo "$FUNCNAME(): failed to pre-install package $package" 1>&2
     return 1
   fi
 
-  remove_leftover_files "$prev_files_list" "$file_list"
+  if [ -n "$has_setup_script" ]; then
+    DEVPANEL_HOME="$DEVPANEL_HOME"                          \
+    DEVPANEL_PKG_NAME="$package"                            \
+    DEVPANEL_PKG_SERIAL="$serial"                           \
+    DEVPANEL_PKG_SERIAL_PREVIOUS="$curr_serial"             \
+    DEVPANEL_PKG_VERSION="$version"                         \
+    DEVPANEL_PKG_VERSION_PREVIOUS="$previous_version"       \
+      "$setup_bin" update post-update
+  fi
+
+  remove_leftover_files "$package" "$prev_files_list" "$file_list"
+
+  if [ -n "$has_setup_script" ]; then
+    DEVPANEL_HOME="$DEVPANEL_HOME"                          \
+    DEVPANEL_PKG_NAME="$package"                            \
+    DEVPANEL_PKG_SERIAL="$serial"                           \
+    DEVPANEL_PKG_SERIAL_PREVIOUS="$curr_serial"             \
+    DEVPANEL_PKG_VERSION="$version"                         \
+    DEVPANEL_PKG_VERSION_PREVIOUS="$previous_version"       \
+      "$setup_bin" update post-cleanup
+  fi
+
+  return 0
 }
 
 assemble_pkg_url() {
