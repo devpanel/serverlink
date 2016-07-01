@@ -1,7 +1,7 @@
 #!/bin/bash
 
 usage() {
-  echo "Usage: ${0##*/} <-d ref_dir> <new_file.tar.gz> <path_1> [...] [path_N]
+  echo "Usage: ${0##*/} <-s setup_script> <-d ref_dir> <new_file.tar.gz> <path_1> [...] [path_N]
 
   Packs the specified files and directories into a .tar.gz designed for
   package installation.
@@ -21,7 +21,8 @@ error() {
 
 [ $# -lt 2 ] && usage
 
-getopt_flags='hd:'
+unset ref_dir setup_script
+getopt_flags='hd:s:'
 while getopts $getopt_flags OPTN; do
   case $OPTN in
     d)
@@ -32,6 +33,13 @@ while getopts $getopt_flags OPTN; do
       ;;
     h)
       usage
+      ;;
+    s)
+      if [ -f "$OPTARG" ]; then
+        setup_script="$OPTARG"
+      else
+        error "option -s should receive a regular file as argument"
+      fi
       ;;
     *)
       exit 1
@@ -47,6 +55,14 @@ if [ -e "$archive_file" ]; then
   error "path '$archive_file' already exists."
 fi
 
+self_bin=$(readlink -e "$0")
+if [ $? -ne 0 ]; then
+  echo "Error: unable to detect self path" 1>&2
+  exit 1
+fi
+self_dir=${self_bin%/*}
+sys_dir=${self_dir%/*}
+
 shift # the next args are the file paths to include in the package
 [ $# -lt 1 -o -z "$1" ] && usage
 
@@ -57,6 +73,22 @@ fi
 
 if ! mkdir "$temp_dir/pkg-files" "$temp_dir/setup"; then
   error "unable to create directory structure for package."
+fi
+
+setup_bin="$temp_dir/setup/setup-package"
+if cp "$setup_script" "$setup_bin"; then
+  chmod 755 "$setup_bin"
+else
+  error "unable to copy setup script $setup_script to $setup_bin"
+fi
+
+ini_file="$temp_dir/devpanel.ini"
+echo "\
+package.format = 1
+package.vendor = devpanel
+"  | "$sys_dir/bin/update-ini-file" -c "$ini_file"
+if [ $? -ne 0 ]; then
+  error "unable to write ini file $ini_file"
 fi
 
 tar -C "$ref_dir" -cSf - "$@" | tar -C "$temp_dir/pkg-files" --no-same-owner -xpf -
