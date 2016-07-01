@@ -51,6 +51,7 @@ for t_dir in "tools_vhost_2_2" "tools_vhost_2_4" ; do
   ln -s "$pkg_name" "$include_dir/include:$pkg_name"
 done
 
-"$sys_dir/libexec/pack-package" -d "$pack_dir" "$pkg_name-$version.tar.gz" .
+"$sys_dir/libexec/pack-package" -s "$self_dir/setup-package" \
+  -d "$pack_dir" "$pkg_name-$version.tar.gz" .
 
 echo "Inspect: $temp_dir"
