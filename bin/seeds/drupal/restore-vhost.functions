@@ -230,7 +230,7 @@ drupal_update_php_config_6()
 
 drupal_update_php_config_7() {
   local drupal_base_url_none_sed_script="s|^[[:space:]]*\\\$base_url[[:space:]]*=[[:space:]]*'[^']*';||"
-  local file dir
+  local file
   local config_dir="$home/public_html/$vhost/sites"
 
   local driver='\1'
