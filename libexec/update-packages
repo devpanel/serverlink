@@ -67,17 +67,20 @@ needs_update() {
 }
 
 remove_leftover_files() {
-  local old_list="$1"
-  local new_list="$2"
-  local system_dir=${3:-$system_dir}
+  local package="$1"
+  local old_list="$2"
+  local new_list="$3"
+  local system_dir=${4:-$system_dir}
 
-  if [ $# -ne 2 -o -z "$1" -o -z "$2" ]; then
+  if [ $# -ne 3 -o -z "$1" -o -z "$2" -o -z "$3" ]; then
     echo "$FUNCNAME(): missing arguments" 1>&2
     return 1
   fi
 
-  local old_list_sorted_txt="$tmp_dir/old_list_sorted.txt"
-  local new_list_sorted_txt="$tmp_dir/new_list_sorted.txt"
+  local tmp_pkg_dir="$tmp_dir/$package"
+
+  local old_list_sorted_txt="$tmp_pkg_dir/old_list_sorted.txt"
+  local new_list_sorted_txt="$tmp_pkg_dir/new_list_sorted.txt"
 
   sort -u "$old_list" >"$old_list_sorted_txt"
   if [ $? -ne 0 ]; then
@@ -91,7 +94,7 @@ remove_leftover_files() {
     return 1
   fi
 
-  local only_in_old_txt="$tmp_dir/only_in_old.txt"
+  local only_in_old_txt="$tmp_pkg_dir/only_in_old.txt"
   comm -23 "$old_list_sorted_txt" "$new_list_sorted_txt" >"$only_in_old_txt"
   if [ $? -ne 0 ]; then
     echo "$FUNCNAME(): unable to get files only in previous pkg" 1>&2
@@ -99,8 +102,8 @@ remove_leftover_files() {
   fi
 
   local file full_file_path
-  local old_dirs_txt="$tmp_dir/old_dirs.txt"
-  local old_others_txt="$tmp_dir/old_others.txt"
+  local old_dirs_txt="$tmp_pkg_dir/old_dirs.txt"
+  local old_others_txt="$tmp_pkg_dir/old_others.txt"
 
   while read file; do
     full_file_path=$(readlink -m "$system_dir/$file")
