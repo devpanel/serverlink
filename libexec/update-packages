@@ -186,8 +186,8 @@ devpanel_install_pkg() {
   local exp_sha="$5"
   local system_dir="$6"
 
-  local tmp_pkg_dir="$tmp_dir/pkg-extracted/$package"
-  if ! mkdir -p "$tmp_pkg_dir" ; then
+  local tmp_pkg_dir="$tmp_dir/$package/pkg-extracted"
+  if [ ! -d "$tmp_pkg_dir" ] && ! mkdir -p "$tmp_pkg_dir" ; then
     echo "$FUNCNAME(): unable to create temp dir '$tmp_pkg_dir'" 1>&2
     return 1
   fi
@@ -274,6 +274,12 @@ devpanel_upgrade_pkg() {
     return 1
   fi
 
+  local tmp_pkg_dir="$tmp_dir/$package"
+  if [ ! -d "$tmp_pkg_dir" ] && ! mkdir -p "$tmp_pkg_dir" ; then
+    echo "$FUNCNAME(): unable to create temp dir '$tmp_pkg_dir'" 1>&2
+    return 1
+  fi
+
   local curr_serial serial_file
   serial_file="$pkg_reg_dir/serial"
   curr_serial=$(deref_contents "$serial_file") || return 2
@@ -284,7 +290,7 @@ devpanel_upgrade_pkg() {
   fi
   
   local file_list="$pkg_reg_dir/filelist.txt"
-  local prev_files_list="$tmp_dir/prev_ver_files.txt"
+  local prev_files_list="$tmp_pkg_dir/prev_ver_files.txt"
 
   if ! cp "$file_list" "$prev_files_list"; then
     echo "$FUNCNAME(): unable to copy list of existing files" 1>&2
