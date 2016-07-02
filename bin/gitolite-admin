@@ -884,7 +884,22 @@ if ($command eq 'setperms') {
       }
 
       delete_repo($config, $repo, 0);
+
+      # remove ssh key files related to the repository
+      my $priv_key_file = "$ENV{HOME}/.ssh/id_rsa_dp_repo_$repo";
+      my $pub_key_file  = "$ENV{HOME}/.ssh/id_rsa_dp_repo_$repo.pub";
+      foreach my $key_file ($priv_key_file, $pub_key_file ) {
+        if(-f $key_file) {
+          system('shred', '-u', $key_file);
+          system('rm', '-f', $key_file); # just in case shred is not installed
+        }
+      }
+
+      # remove section from ~/.ssh/config referencing the repo key
+      system($FindBin::RealBin . '/update-dot-ssh-config', "$ENV{HOME}/.ssh/config",
+                                 'remove_section', "git-repo-$repo.*");
     }
+
     return $errors;
   });
 } elsif($command eq 'add-hook') {
