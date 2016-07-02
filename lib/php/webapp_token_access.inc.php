@@ -27,9 +27,39 @@ function dp_has_valid_token($vhost, $app, $token_str) {
 }
 
 function dp_is_already_logged_to_app($app) {
-  ini_get('session.auto_start') || session_start();
+  if(session_status() == PHP_SESSION_ACTIVE) {
+    // there's an existing session
+    if(session_name != "devpanel_$app") {
+      $previous_session_name = session_name();
+      session_write_close();
+      if(!empty($_COOKIE["devpanel_$app"])) {
+        session_id($_COOKIE["devpanel_$app"]);
+      } else {
+        return false;
+      }
+      session_name("devpanel_$app");
+      session_start();
+    }
+  } else {
+    // no session available
+    if(!empty($_COOKIE["devpanel_$app"])) {
+      session_id($_COOKIE["devpanel_$app"]);
+    } else {
+      return false;
+    }
+    session_name("devpanel_$app");
+    session_start();
+  }
 
   if(!empty($_SESSION) && !empty($_SESSION['app']) && $_SESSION['app'] == $app) {
+    session_write_close();
+
+    // if there was another session before, then re-open it
+    if(!empty($previous_session_name)) {
+      session_name($previous_session_name);
+      session_start();
+    }
+
     return true;
   } else {
     return false;
@@ -77,7 +107,9 @@ function dp_get_token_from_params() {
 }
 
 function dp_start_app_session($vhost, $app, $token) {
-  session_start();
+  if(session_status() != PHP_SESSION_ACTIVE) {
+    session_start();
+  }
 
   session_cache_expire(120);
   session_cache_limiter("private");
