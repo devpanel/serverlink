@@ -10,6 +10,7 @@ self_dir=${self_bin%/*}
 # assuming self_dir = install/utils/crontab
 sys_dir=${self_dir%/*/*/*}
 
+"$sys_dir/bin/utils/stmpclean" -t 1h "$sys_dir/var/tokens"
 
 # recurring snapshots for vhosts
 "$sys_dir/libexec/create-recurring-snapshots-starter" -q -Y
