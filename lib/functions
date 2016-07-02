@@ -1135,6 +1135,71 @@ escape_quotes() {
   printf '%s' "$new"
 }
 
+get_virtwww_base_domain() {
+  local system_dir="${1:-$DEVPANEL_HOME}"
+  local domain
+
+  domain=$(deref_os_prop "$system_dir" apache_virtwww_domain)
+  if [ $? -eq 0 ]; then
+    echo "$domain"
+  else
+    echo "$FUNCNAME(): unable to get virtwww base domain" 1>&2
+    return 1
+  fi
+}
+
+format_hostname_internal() {
+  local test_hostname="$1"
+  local force_subdomain="${2:-0}"
+  local base_domain="$3"
+
+  if [ -z "$base_domain" ]; then
+    base_domain=$(get_virtwww_base_domain) || return $?
+  fi
+
+  local test_host_stripped="" final_hostname="" has_dot=""
+
+  if [[ "$test_hostname" =~ \. ]]; then
+   has_dot=1
+  fi
+
+  # remove the server hostname from the end of name
+  if [ "${test_hostname: -1}" == "." ]; then
+    test_host_stripped=${test_hostname%.$base_domain.}
+  else
+    test_host_stripped=${test_hostname%.$base_domain}
+  fi
+
+  if [ "$force_subdomain" == "1" ]; then
+    if [ "${test_hostname: -1}" == "." ]; then
+      # $len_minus_one is a workaround for older bash versions that don't know
+      # negative lengths (e.g. CentOS 6.5 and previous)
+      local len_minus_one=$(( ${#test_hostname} - 1 ))
+      final_hostname="${test_host_stripped:0:$len_minus_one}"
+    else
+      final_hostname="$test_host_stripped"
+    fi
+  else
+    if [ "$test_host_stripped" != "$test_hostname" ]; then
+      # had the server name successfully stripped, so it's a subdomain
+      final_hostname="$test_host_stripped"
+    elif [ "${test_hostname: -1}" == "." ]; then
+      # if the hostname ends with a dot, then take it as fully defined
+      final_hostname="$test_hostname"
+    elif [ -n "$has_dot" ]; then
+      # hostname doesn't end with a dot, but has a dot in the name
+      # so let's guess it's a full domain
+      final_hostname="$test_hostname."
+    else
+      # hostname doesn't end with a dot, doesn't have a dot
+      # consider it a sub domain of the default server domain
+      final_hostname="$test_hostname"
+    fi
+  fi
+
+  echo -n "$final_hostname"
+}
+
 get_list_of_vhosts() {
   local vhost_config_dir="$DEVPANEL_HOME/config/vhosts"
   local vhost vhost_dir
@@ -1156,6 +1221,37 @@ get_list_of_vhosts() {
   else
     echo "${vhosts_ar[@]}"
   fi
+}
+
+get_vhost_with_hostname() {
+  local hostname="$1"
+  local tst_vhost tst_main tst_conf_dir tst_alias_link tst_main_link
+  local hostname_fmt
+
+  hostname_fmt=$(format_hostname_internal "$hostname")
+
+  local main_base="apache_vhost:0:_:ServerName"
+  local alias_base="apache_vhost:0:_:ServerAlias"
+
+  for tst_vhost in $(get_list_of_vhosts); do
+    tst_conf_dir="$DEVPANEL_HOME/config/vhosts/$tst_vhost"
+
+    tst_link="$tst_conf_dir/$alias_base:$hostname_fmt"
+    if [ -L "$tst_link" ]; then
+      echo "$tst_vhost"
+      return 0
+    fi
+
+    tst_main_link="$tst_conf_dir/$main_base"
+    if tst_main=$(deref_contents "$tst_main_link"); then
+      if [ "$tst_main" == "$hostname" ]; then
+        echo "$tst_vhost"
+        return 0
+      fi
+    fi
+  done
+
+  return 1 # not found in any vhost
 }
 
 translate_archive_placeholders() {

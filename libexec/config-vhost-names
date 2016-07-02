@@ -21,54 +21,6 @@ usage() {
   exit 1
 }
 
-format_hostname() {
-  local server_hostname="$1"
-  local test_hostname="$2"
-  local force_subdomain="$3"
-
-  local test_host_stripped="" final_hostname="" has_dot=""
-
-  if [[ "$test_hostname" =~ \. ]]; then
-   has_dot=1
-  fi
-
-  # remove the server hostname from the end of name
-  if [ "${test_hostname: -1}" == "." ]; then
-    test_host_stripped=${test_hostname%.$server_hostname.}
-  else
-    test_host_stripped=${test_hostname%.$server_hostname}
-  fi
-
-  if [ "$force_subdomain" == "1" ]; then
-    if [ "${test_hostname: -1}" == "." ]; then
-      # $len_minus_one is a workaround for older bash versions that don't know
-      # negative lengths (e.g. CentOS 6.5 and previous)
-      local len_minus_one=$(( ${#test_hostname} - 1 ))
-      final_hostname="${test_host_stripped:0:$len_minus_one}"
-    else
-      final_hostname="$test_host_stripped"
-    fi
-  else
-    if [ "$test_host_stripped" != "$test_hostname" ]; then
-      # had the server name successfully stripped, so it's a subdomain
-      final_hostname="$test_host_stripped"
-    elif [ "${test_hostname: -1}" == "." ]; then
-      # if the hostname ends with a dot, then take it as fully defined
-      final_hostname="$test_hostname"
-    elif [ -n "$has_dot" ]; then
-      # hostname doesn't end with a dot, but has a dot in the name
-      # so let's guess it's a full domain
-      final_hostname="$test_hostname."
-    else
-      # hostname doesn't end with a dot, doesn't have a dot
-      # consider it a sub domain of the default server domain
-      final_hostname="$test_hostname"
-    fi
-  fi
-
-  echo -n "$final_hostname"
-}
-
 format_to_apache() {
   local server_hostname="$1"
   local local_hostname="$2"
@@ -145,8 +97,10 @@ if ! source "$lib_file"; then
 fi
 
 prefix_with_www=1
+force_subdomain=0
 getopt_flags='nsi:'
-unset ip force_subdomain
+
+unset ip
 while getopts $getopt_flags OPTOPT
 do
   case "$OPTOPT" in
@@ -176,7 +130,8 @@ if [ -z "$ip" ]; then
   ip='*'
 fi
 
-config_dir="$we_dir/config/vhosts/$vhost"
+sys_vhost_config_dir="$we_dir/config/vhosts"
+config_dir="$sys_vhost_config_dir/$vhost"
 
 server_hostname=`deref_os_prop "$we_dir" apache_virtwww_domain`
 if [ $? -ne 0 ]; then
@@ -201,7 +156,9 @@ if ! "$dir/check-vhost-name" archive "$vhost"; then
   exit 1
 fi
 mode=""
-vhost_base="$config_dir/apache_vhost:0"
+
+vhost_config_prefix_str="apache_vhost:0"
+vhost_base="$config_dir/$vhost_config_prefix_str"
 base_host_link="$vhost_base:_:ServerName"
 
 if [ -L "$base_host_link" ]; then
@@ -215,6 +172,7 @@ fi
 unset changed
 alias_base="$vhost_base:param:1:ServerAlias"
 alias_priv="$vhost_base:_:ServerAlias"
+
 shift # remove the last argument and leave only the options on $*
 
 # note: can't use 'for i in' style here, because when i=* it'll expand 
@@ -233,9 +191,17 @@ for i; do
     '*')
         new_name="$i"
 
-        new_default_name=`format_hostname "$server_hostname" "$new_name" ${force_subdomain:0:-1}`
+        new_default_name=`format_hostname_internal "$new_name" $force_subdomain`
+
         default_name_fmt="$new_default_name" # to check later in the '+' if present
         default_name_apache=`format_to_apache "$server_hostname" "$new_default_name"`
+
+        tst_vhost=$(get_vhost_with_hostname "$new_name")
+        if [ $? -eq 0 ]; then
+          if [ "$tst_vhost" != "$vhost" ]; then
+            error "hostname $new_name is already on vhost $tst_vhost"
+          fi
+        fi
 
         # saving the previous name into the aliases
         [ -L "$base_host_link" ] && previous_name=`readlink "$base_host_link"`
@@ -247,7 +213,7 @@ for i; do
             continue
           fi
 
-          alias_fmt_hn=`format_hostname "$server_hostname" "$previous_name_cut"`
+          alias_fmt_hn=`format_hostname_internal "$previous_name_cut"`
           alias_file="$alias_base:$previous_name_cut"
           alias_file_previous="$alias_priv:$alias_fmt_hn"
 
@@ -297,28 +263,34 @@ for i; do
     '+')
         this_hostname="$i"
 
-        this_hostname=`format_hostname "$server_hostname" "$this_hostname" ${force_subdomain:-0}`
-        this_name_apache=`format_to_apache "$server_hostname" "$this_hostname" ${force_subdomain:-0}`
+        this_hostname_fmt=`format_hostname_internal "$this_hostname" $force_subdomain`
+        this_name_apache=`format_to_apache "$server_hostname" "$this_hostname_fmt" $force_subdomain`
 
-        if [ "$this_hostname" == "$default_name_fmt" ]; then
+        if [ "$this_hostname_fmt" == "$default_name_fmt" ]; then
           echo "Warning: this hostname is equal to the default hostname.  Skipping..." 1>&2
           break;
         fi
 
-        name_file="$alias_priv:$this_hostname"
-
-        if [ -L "$name_file" -o -e "$name_file" ]; then
-          echo "Warning: name $this_hostname already exists..." 1>&2
-        else 
-          if ! ln -sf /dev/null "$name_file"; then
-            error "unable to add hostname $this_hostname"
+        tst_vhost=$(get_vhost_with_hostname "$this_hostname")
+        if [ $? -eq 0 ]; then
+          if [ "$tst_vhost" == "$vhost" ]; then
+            echo "Warning: name $this_hostname is already set, skipping..." 1>&2
+            continue
+          else
+            error "hostname ${this_name_apache} already in vhost $tst_vhost"
           fi
+        fi
 
-          if [ -n "$prefix_with_www" ]; then
-            www_name_file="$alias_priv:www.$this_hostname"
-            if ! ln -sf /dev/null "$www_name_file"; then
-              error "unable to add hostname www.$this_hostname"
-            fi
+        name_file="$alias_priv:$this_hostname_fmt"
+
+        if ! ln -sf /dev/null "$name_file"; then
+          error "unable to add hostname $this_hostname"
+        fi
+
+        if [ -n "$prefix_with_www" ]; then
+          www_name_file="$alias_priv:www.$this_hostname_fmt"
+          if ! ln -sf /dev/null "$www_name_file"; then
+            error "unable to add hostname www.$this_hostname"
           fi
         fi
 
@@ -329,12 +301,12 @@ for i; do
     '-')
         this_hostname="$i"
 
-        this_hostname=`format_hostname "$server_hostname" "$this_hostname" ${force_subdomain:-0}`
+        this_hostname_fmt=`format_hostname_internal "$this_hostname" $force_subdomain`
 
         [ "$default_name" = "$this_hostname" ] && \
           error "Cannot remove the default name $this_hostname; change the default name first"
         
-        name_file="$alias_priv:$this_hostname"
+        name_file="$alias_priv:$this_hostname_fmt"
         if [ ! -L "$name_file" ]; then
           printf "Warning: name %s doesn't exist for vhost %s and IP %s\n" \
             "$this_hostname" "$vhost" "$ip" 1>&2
@@ -344,7 +316,7 @@ for i; do
         fi
 
         if [ -n "$prefix_with_www" ]; then
-          www_name_file="$alias_priv:www.$this_hostname"
+          www_name_file="$alias_priv:www.$this_hostname_fmt"
           if [ ! -L "$www_name_file" ]; then
             printf "Warning: name %s doesn't exist for vhost %s and IP %s\n" \
               "www.$this_hostname" "$vhost" "$ip" 1>&2
