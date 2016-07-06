@@ -18,107 +18,51 @@ centos_install_distro_packages() {
     yum -y install vixie-cron
   fi 
 
-  yum -y install curl
-
-
-  # Install Epel and Remi repositories so that we have more up to date
-  # packages, specially for PHP and MySQL, than the ones available on CentOS
-  # 
-  # EPEL: https://fedoraproject.org/wiki/EPEL
-  # Remi: http://rpms.famillecollet.com/
-
-  local epel_url=$(deref_os_prop "$source_dir" names/epel_pkg_url )
-  if [ $? -ne 0 -o -z "$epel_url" ]; then
-    echo "$FUNCNAME(): error, missing epel_pkg_url" 1>&2
-    return 1
+  # install external repositories needed
+  local distro_config_dir="$source_dir/config/os.$linux_distro"
+  local repos_link repos_dir_1 repos_dir_2 repos_rpm_file
+  local ver_major ver_major_minor
+  ver_major=${distro_version%%.*}
+  if [[ "$distro_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    ver_major_minor=${distro_version%.*}
+  elif [[ "$distro_version" =~ ^[0-9]+\.[0-9]+$ ]]; then
+    ver_major_minor="$distro_version"
   fi
 
-  local remi_url=$(deref_os_prop "$source_dir" names/remi_pkg_url )
-  if [ $? -ne 0 -o -z "$remi_url" ]; then
-    echo "$FUNCNAME(): error, missing remi_pkg_url" 1>&2
-    return 1
+  repos_dir_1="$distro_config_dir/$ver_major_minor/repositories"
+  repos_dir_2="$distro_config_dir/$ver_major/repositories"
+  for repos_link in "$repos_dir_1/repos."[0-9]*.* \
+                    "$repos_dir_2/repos."[0-9]*.*; do
+
+    if [ ! -L "$repos_link" ]; then
+      continue
+    fi
+
+    repos_rpm_file=$(readlink -e "$repos_link")
+    if [ $? -ne 0 ]; then
+      echo "$FUNCNAME(): warning, link $repos_link doesn't resolve" 1>&2
+      sleep 2
+      continue
+    fi
+
+    rpm -Uvh "$repos_rpm_file"
+  done
+
+  # enable PHP 5.6 from the Remi by default
+  local remi_file="/etc/yum.repos.d/remi.repo"
+  if [ -f "$remi_file" ]; then
+    { 
+      echo "remi.enabled=1"; 
+      echo "remi-php56.enabled=1"; 
+    } | "$source_dir/bin/update-ini-file" "$remi_file"
   fi
-
-  local tmp_pkg_file=$(mktemp)
-
-  local installed_epel=""
-  local installed_remi=""
-
-  if rpm -qa | egrep -q ^epel-release; then
-    installed_epel=1
-  else
-    local i=0
-    for i in 1 2 3; do
-      echo "Installing EPEL repository, attempt $i..."
-      curl -so "$tmp_pkg_file" -L --retry 3 --retry-delay 15 "$epel_url"
-      if [ $? -eq 0 ]; then
-        rpm -Uvh "$tmp_pkg_file"
-        if [ $? -eq 0 ]; then
-          installed_epel=1
-          break
-        else
-          echo "Failed attempt $i of installing EPEL..." 1>&2
-        fi
-      fi
-      sleep 15
-    done
-
-    rm -f "$tmp_pkg_file"
-  fi
-
-  if [ -z "$installed_epel" ]; then
-    echo "$FUNCNAME(): error, unable to install EPEL repository" 1>&2
-    return 1
-  fi
-
-
-  tmp_pkg_file=$(mktemp)
-
-  if rpm -qa | egrep -q ^remi-release; then
-    installed_remi=1
-  else
-    i=0
-    for i in 1 2 3; do
-      echo "Installing Remi repository, attempt $i..."
-      curl -so "$tmp_pkg_file" -L --retry 3 --retry-delay 15 "$remi_url"
-      if [ $? -eq 0 ]; then
-        rpm -Uvh "$tmp_pkg_file"
-        if [ $? -eq 0 ]; then
-          installed_remi=1
-          break
-        else
-          echo "Failed attempt $i of installing Remi..." 1>&2
-        fi
-      fi
-      sleep 15
-    done
-
-    rm -f "$tmp_pkg_file"
-  fi
-
-  if [ -z "$installed_remi" ]; then
-    echo "$FUNCNAME(): error, unable to install Remi repository" 1>&2
-    return 1
-  fi
-
-  # For CentOS 6.x the default PHP version is 5.3 that is very outdated.
-  #
-  # So we use the Remi repository to get a more up-to-date PHP version that
-  # is more current for the needs of current applications (as of early
-  # 2016). If the repository for the newest version is not explicitly
-  # enabled, CentOS will get the old PHP version.
-  #
-
-  { 
-    echo "remi.enabled=1"; 
-    echo "remi-php56.enabled=1"; 
-  } | "$source_dir/bin/update-ini-file" /etc/yum.repos.d/remi.repo
 
   # end of external repository installation
 
-  local -a install_pkgs=( httpd mod_fcgid php make mysql mysql-server \
+  local -a install_pkgs=( curl httpd mod_fcgid php make mysql-server mysql \
                           nano vim s3cmd unzip \
                         )
+
   # install some of the most critical packages
   for pkg in ${install_pkgs[@]}; do
     yum -y install "$pkg"
