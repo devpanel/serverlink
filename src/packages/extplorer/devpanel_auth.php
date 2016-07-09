@@ -22,4 +22,11 @@ global $GLOBALS;
 $GLOBALS["require_login"] = false;
 $GLOBALS["home_dir"     ] = $user_info["dir"];
 
+// when session.save_path is not defined, extplorer tries to create sessions 
+// on it's own directory, but in devPanel's case it's not writable. So have 
+// to set it to a writable path
+if(empty(ini_get('session.save_path'))) {
+  ini_set('session.save_path', "/tmp");
+}
+
 ?>

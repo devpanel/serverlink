@@ -87,6 +87,9 @@ set_global_variables() {
   _apache_main_include=`deref_os_prop "$source_dir" names/apache_main_include` \
     || return 1
 
+  _apachectl_bin=`deref_os_prop "$source_dir" pathnames/sbin/apachectl` \
+    || return 1
+
   [ -z "$homedir_base" ] && \
   { homedir_base=`deref_os_prop "$source_dir" apache_virtwww_homedir` || return 1; }
 
@@ -101,7 +104,11 @@ install_ce_software() {
   local source_dir="$2"
   local webenabled_install_dir="$3"
   local machine_type=$(uname -m)
-  local distro_skel_dir="$webenabled_install_dir/install/skel/$linux_distro"
+
+  local skel_base_dir="$webenabled_install_dir/install/skel/$linux_distro"
+  local skel_dir_common="$skel_base_dir/common"
+  local skel_dir_major="$skel_base_dir/$distro_ver_major"
+  local skel_dir_major_minor="$skel_dir_major.$distro_ver_minor"
 
   local data_dir="${webenabled_install_dir}-data"
   local removed_vhosts_dir="$data_dir/removed_vhosts"
@@ -114,13 +121,16 @@ install_ce_software() {
     return 1
   fi
 
-  if [ -d "$distro_skel_dir" ]; then
-    (cd "$distro_skel_dir" && cp -a . /)
-    if [ $? -ne 0 ]; then
-      echo -e "\n\nWarning: unable to copy distro skel files to /\n\n" 1>&2
-      sleep 3
+  local t_dir
+  for t_dir in "$skel_dir_common" "$skel_dir_major" "$skel_dir_major_minor"; do
+    if [ -d "$t_dir" ]; then
+      cp -a "$t_dir/." /
+      if [ $? -ne 0 ]; then
+        echo -e "\n\nWarning: unable to copy distro skel files from $t_dir to /\n\n" 1>&2
+        sleep 3
+      fi
     fi
-  fi
+  done
 
   ln -snf "$webenabled_install_dir"/compat/w_ "$homedir_base"/w_
   chown -R w_:"$_apache_exec_group" "$webenabled_install_dir"/compat/w_
@@ -414,6 +424,8 @@ ServerName $dp_server_hostname
   if [ -z "$we_v1_compat" ]; then
     $webenabled_install_dir/install/install-zabbix on $dp_server_hostname
   fi
+
+  return 0
 }
 
 # main
@@ -526,6 +538,9 @@ if [ -z "$linux_distro" ]; then
   if [ $status -ne 0 ]; then
     error "unable to detect linux distribution. If you know the distro, try using the -L option"
   fi
+
+  distro_ver_major=$(devpanel_get_os_version_major)
+  distro_ver_minor=$(devpanel_get_os_version_minor)
 fi
 
 source_config_dir="$install_source_dir/config/os.$linux_distro"
@@ -604,13 +619,15 @@ if type -t "${linux_distro}_adjust_system_config" >/dev/null; then
 fi
 
 # reload Apache just before the end of the installation
-"$webenabled_install_dir/config/os/pathnames/sbin/apachectl" configtest
+"$_apachectl_bin" configtest
 if [ $? -ne 0 ]; then
   echo
   echo "Warning: apache configuration test failed. Please verify!" >&2
   sleep 3
 else
-  "$webenabled_install_dir/config/os/pathnames/sbin/apachectl" graceful
+  "$_apachectl_bin" stop &>/dev/null
+  sleep 2 # on Debian if we don't sleep the start gets port already in use
+  "$_apachectl_bin" start
 fi
 
 # WE v1.0 backwards compatibility changes

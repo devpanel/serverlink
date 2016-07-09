@@ -1,0 +1,111 @@
+#!/bin/bash
+# Options:
+#   -i  pass mysql passwd via stdin
+#   -c# pass ~b_USER/.my.cnf via fd #
+#   -S engine  sets a specific default storage engine for tables
+
+self=$(readlink -e "$0")
+DBMGR_BINDIR="${self%/*}"
+sys_dir=$(readlink -e "$DBMGR_BINDIR/../../../..")
+DB_HOME_BASE="/home/clients/databases"
+
+opt_i=""
+opt_c=""
+storage_engine=""
+while getopts "ic:S:" OPTOPT
+do
+  case "$OPTOPT" in
+    i) opt_i='-db-password-stdin';;
+    c) opt_c="$OPTARG";;
+    S) storage_engine="$OPTARG" ;;
+    *) exit 1;;
+  esac
+done
+shift `expr $OPTIND - 1`
+
+USER="$1"
+shift
+ADDON="$*"
+
+# add the ending slash
+DBMGR_BINDIR="${DBMGR_BINDIR%%/}/"
+DB_HOME_BASE="${DB_HOME_BASE%%/}/"
+
+TYPE=mysql
+
+function usage() {
+	echo "`basename $0` account"
+	echo
+	echo "where:"
+	echo "        account - non-existing system account to run daemon"
+	echo
+	exit 1
+}
+
+[ -z "$USER" ] && usage
+[ "$TYPE" != "mysql" ] && usage
+
+# Locking starts here
+lockfile -1 -r 15 -l 120 "$self.lock"
+# set traps to remove the lock file
+trap 'rc=$?; rm -f -- "$self.lock"; exit $rc' EXIT
+trap '(exit 1); exit 1' HUP INT QUIT TERM
+
+if [ x"$USER" == x$(id -nu "$USER" 2>/dev/null) ]; then
+	echo "Sorry, but adding database for existing user not implemented yet"
+	exit 3
+fi
+
+DATA_DIR="${DB_HOME_BASE%%/}/$USER/$TYPE"
+
+"$DBMGR_BINDIR"daemon-add -t "$TYPE" -u "$USER" -d "$DATA_DIR" $ADDON #&> /dev/null
+if [ "$?" -ne 0 ]; then
+	echo "Error adding daemon to the configuration"
+	exit 4
+fi
+
+# if .my.cnf is passed as input via fd
+if [ -n "$opt_c" ]
+then
+  if ! su -s /bin/sh -l -c 'cat >>.my.cnf' "$USER" <&"$opt_c"
+  then
+	echo "Error creating .my.cnf"
+	exit 6
+  fi
+fi
+
+# check if the app requires a special mysql storage engine
+# and set ~/.my.cnf accordingly, before starting mysqld
+if [ -n "$storage_engine" ]; then
+  ini_str="mysqld.default_storage_engine=$storage_engine"$'\n'
+  if [ "$storage_engine" == "innodb" ]; then
+    ini_str+="mysqld.innodb=on"$'\n'
+  fi
+
+  ini_str_double_escaped=$(printf '%q' "$ini_str")
+  su -l -s /bin/bash \
+    -c "echo $ini_str_double_escaped | $sys_dir/bin/update-ini-file -c ~/.my.cnf" \
+    "$USER"
+fi
+
+"$DBMGR_BINDIR"daemon-start -t "$TYPE" -u "$USER" -d "$DATA_DIR" $ADDON #&>/dev/null
+if [ "$?" -ne 0 ]; then
+	echo "Error starting daemon"
+	exit 5
+fi
+
+"$DBMGR_BINDIR"user-add -t "$TYPE" -u "$USER" -d "$DATA_DIR" --db-user=admin --db-admin
+if [ "$?" -ne 0 ]; then
+	echo "Error adding admin user to the running daemon"
+	exit 5
+fi
+
+# this is a hack
+w_USER=${USER/b_/w_}
+"$DBMGR_BINDIR"user-add $opt_i -t "$TYPE" -u "$USER" -d "$DATA_DIR" "--db-user=$w_USER" --db-admin
+if [ "$?" -ne 0 ]; then
+	echo "Error adding w_user to the running daemon"
+	exit 5
+fi
+
+echo "Completed"

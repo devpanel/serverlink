@@ -45,11 +45,9 @@ debian_adjust_system_config() {
     fi
   fi
 
-  for module in rewrite macro suexec ssl proxy proxy_http; do
-    if [ ! -e "$_apache_base_dir/mods-enabled/$module.load" \
-      -a -f "$_apache_base_dir/mods-available/$module.load" ]; then
-      ln -sf ../mods-available/$module.load "$_apache_base_dir"/mods-enabled/
-    fi
+  local module=""
+  for module in cgi rewrite macro suexec ssl proxy proxy_http; do
+    a2enmod $module
   done
 
   # fuser fails on slicehost CentOS  (/proc/net/tcp is empty)
@@ -60,20 +58,24 @@ debian_adjust_system_config() {
   #  echo 'Listen 443' >> "$_apache_base_dir"/conf.d/webenabled.conf
   #fi
 
-  [ -e "$_apache_base_dir"/mods-enabled/php5.load ] && rm -f "$_apache_base_dir"/mods-enabled/php5.load
-  [ -e "$_apache_base_dir"/mods-enabled/php5.conf ] && rm -f "$_apache_base_dir"/mods-enabled/php5.conf
+  if hash systemctl &>/dev/null; then
+    systemctl enable devpanel-taskd
+  else
+    local taskd_init=/etc/init.d/devpanel-taskd
+    if [ -L "$taskd_init" -o -e "$taskd_init" ]; then
+      update-rc.d devpanel-taskd defaults
+    fi
+  fi
 
+  # dbmgr.init is not yet compatible with systemd (mysqld dies even when
+  # service type is oneshot)
+  # so do a sysvinit setup style
   [ -e /etc/init.d/dbmgr ] && rm -f /etc/init.d/dbmgr
   ln -s "$install_dir"/compat/dbmgr/current/bin/dbmgr.init /etc/init.d/devpanel-dbmgr
   update-rc.d devpanel-dbmgr defaults
 
-  local taskd_init=/etc/init.d/devpanel-taskd
-  if [ -L "$taskd_init" -o -e "$taskd_init" ]; then
-    update-rc.d devpanel-taskd defaults
-  fi
-
   if ! fuser -s 25/tcp; then
-    apt-get install postfix
+    apt-get -y install postfix
   fi
 
   return 0
@@ -88,6 +90,8 @@ debian_post_software_install() {
     echo "$dp_server_hostname" >/etc/hostname
     hostname "$dp_server_hostname"
   fi
+
+  a2dismod php5
 
   return 0
 }

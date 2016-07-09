@@ -1,7 +1,14 @@
 <?php
 
 define('DEVPANEL_TOKEN_LEN', 50);
-define('DEVPANEL_DIR', "/opt/webenabled");
+define('DEVPANEL_DIR', realpath(dirname(__FILE__) . "/../.."));
+
+// some apps don't behave well when session.save_path is not set
+if(empty(ini_get('session.save_path')) ||
+   !@is_writable(ini_get('session.save_path'))) {
+
+  ini_set('session.save_path', "/tmp");
+}
 
 function dp_has_valid_token($vhost, $app, $token_str) {
   $ret = false;

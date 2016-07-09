@@ -121,11 +121,14 @@ else
   dbmgr_dir="$sys_dir/config/os/pathnames/opt/dbmgr"
   file1="$dbmgr_dir/config/db-daemons.conf"
   file2="$dbmgr_dir/config/db-shadow.conf"
+  instance_conf_dir="$dbmgr_dir/config/mysql/$user_db"
 
   echo "Commenting out the entries in db-daemons.conf and db-shadow.conf:"
   run sed -i.old "s/^$user_db:/#&/" "$file1"
   #grep "$user" $file1 | sed 's/^/  /'
   run sed -i.old "s/^$user_db:/#&/" "$file2"
+
+  rm -v -rf "$instance_conf_dir"
 
   "$dir/remove-user" "$user_db"
 

@@ -109,13 +109,12 @@ if [ $create_db_instance -eq 1 ]; then
   elif ! "$sys_dir/config/os/pathnames/opt/dbmgr/current/bin/createdb" $options "$user"; then
     error "unable to create database instance"
   fi
-fi
 
-home="`eval \"echo ~$user\"`"
-if ! [ -d "$home" ]
-then
-  echo "Home dir $home does not exist" >&2
-  exit 1
+  # remove the test database, as it may conflict with some seedapps that
+  # have the 'test' database
+  run2 $dir/dbmgr-mysql-as-root "$user" mysql \
+    "-B -D test -e \"SHOW DATABASES;\"" &>/dev/null && \
+  run2 $dir/dbmgr-mysql-as-root "$user" mysql "-B -e \"DROP DATABASE test;\""
 fi
 
 for database in $list
@@ -125,7 +124,8 @@ do
   then
      echo "Archive file $archive_file not found" >&2
   fi
-  if [ o"$database" = o"mysql" -o o"$database" = o"information_schema" ]
+  if [ o"$database" = o"mysql" -o o"$database" = o"information_schema" \
+       -o "$database" = "performance_schema" -o "$database" = "sys" ]
   then
     echo Skipping database $database
     continue

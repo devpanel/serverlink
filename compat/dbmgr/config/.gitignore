@@ -1,3 +1,4 @@
+mysql/b_*
 db-daemons.conf
 db-shadow.conf
 db-daemons.conf.old

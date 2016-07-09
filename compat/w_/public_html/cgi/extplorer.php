@@ -10,8 +10,8 @@ $vhost = dp_derive_gen_vhost();
 
 $is_logged_in = dp_is_already_logged_to_app($app_name);
 
+$token = dp_get_app_token_from_url();
 if(!$is_logged_in) {
-  $token = dp_get_app_token_from_url();
   if(empty($token)) {
     echo "Access denied. Unable to verify app token.\n";
     exit(1);
@@ -26,6 +26,10 @@ if(!$is_logged_in) {
     exit(1);
   }
 } else {
-  header('Location: ' . str_replace("/$token", "", $_SERVER['SCRIPT_URI']) . '/index.php');
+  if(empty($token)) {
+    header('Location: ' . $_SERVER['SCRIPT_URI'] . '/index.php');
+  } else {
+    header('Location: ' . str_replace("/$token", "", $_SERVER['SCRIPT_URI']) . '/index.php');
+  }
   exit;
 }

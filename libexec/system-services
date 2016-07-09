@@ -31,29 +31,25 @@ centos_service_action() {
   local service="$1"
   local action="$2"
 
-  if [ -e "/etc/init.d/$service" ]; then
-    "/etc/init.d/$service" "$action"
-  else
+  if hash initctl &>/dev/null && \
+     initctl status "$service" &>/dev/null; then
+
+    # for CentOS 6 and RHEL 6 if initctl status "$service" &>/dev/null; then
     initctl "$action" "$service"
+  else
+    service "$service" "$action"
   fi
 }
 
 redhat_service_action() {
-  local service="$1"
-  local action="$2"
-
-  if [ -e "/etc/init.d/$service" ]; then
-    "/etc/init.d/$service" "$action"
-  else
-    initctl "$action" "$service"
-  fi
+  centos_service_action "$@"
 }
 
 debian_service_action() {
   local service="$1"
   local action="$2"
   
-  "/etc/init.d/$service" "$action"
+  service "$service" "$action"
 }
 
 macosx_service_action() {

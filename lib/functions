@@ -663,13 +663,18 @@ devpanel_get_os_version_major() {
   fi
 
   local version="" major=""
-  version=`lsb_release -r 2>/dev/null | egrep -o '[0-9\.]+$'`
+  version=`lsb_release -sr 2>/dev/null`
   if [ -z "$version" ]; then
     echo "$FUNCNAME(): error, unable to get OS version" 1>&2
     return 1
   fi
 
-  major=${version%%.*}
+  if [[ "$version" =~ ^[0-9]+\. ]]; then
+    major=${version%%.*}
+  else
+    echo "$FUNCNAME(): got string '$version', don't know what to do" 1>&2
+    return 1
+  fi
 
   echo -n "$major"
 }
@@ -681,13 +686,21 @@ devpanel_get_os_version_minor() {
   fi
 
   local version="" minor=""
-  version=`lsb_release -r 2>/dev/null | egrep -o '[0-9\.]+$'`
+  version=`lsb_release -sr 2>/dev/null`
   if [ -z "$version" ]; then
     echo "$FUNCNAME(): error, unable to get OS version" 1>&2
     return 1
   fi
 
-  minor=${version%*.}
+  if [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then # X.Y.Z
+    minor=${version#*.}
+    minor=${minor%.*}
+  elif [[ "$version" =~ ^[0-9]+\.[0-9]+$ ]]; then # X.Y
+    minor=${version#*.}
+  else
+    echo "$FUNCNAME(): got string '$version', don't know what to do" 1>&2
+    return 1
+  fi
 
   echo -n "$minor"
 }
