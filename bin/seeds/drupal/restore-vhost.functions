@@ -128,11 +128,11 @@ drupal_set_drupal_6_or_7_sitename()
 
   if [ -n "$site_title" ]; then
     site_title_esc=$(escape_quotes "$site_title")
-    update_site_name_sql="UPDATE variable SET value = 's:%s:\"%s\"' WHERE name = 'site_name';"
+    update_site_name_sql="UPDATE variable SET value = 's:%s:\"%s\";' WHERE name = 'site_name';"
     sql_query "`printf "$update_site_name_sql" ${#site_title} "$site_title_esc"`"
   else
     echo Found, changing site_name to $fqdn
-    sql_query "update variable set value=concat('s:', length('$fqdn'), ':\"', '$fqdn', '\"') where name='site_name'"
+    sql_query "update variable set value=concat('s:', length('$fqdn'), ':\"', '$fqdn', '\";') where name='site_name'"
   fi
 }
 
