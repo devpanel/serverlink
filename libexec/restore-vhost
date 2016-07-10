@@ -275,11 +275,6 @@ fi
 [ $create_vhost -eq 0 ] && \
     web_options="$web_options${web_options+ }-N"
 
-echo "Updating .mysql.passwd"
-run_su "mkdir -p -m 0711 .webenabled"
-run_su "mkdir -p -m 0711 $vhost_config_dir"
-
-
 echo Processing web...
 run $0-web $web_options "$vhost" "$archive_dir/web" "$@" || exit 1
 
@@ -320,6 +315,7 @@ mysql_password=$(get_param_from_db_output "w_$vhost" password "$output")
   printf 'client.password = %s\n' "$mysql_password";
 } | run_su "$we_base_dir/bin/update-ini-file" -c "~/.my.cnf"
 
+echo "Updating .mysql.passwd"
 admin_password=$(get_param_from_db_output admin password "$output")
 {
   echo "admin:$admin_password";

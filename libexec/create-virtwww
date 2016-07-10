@@ -313,6 +313,7 @@ chgrp $apache_group "$VHOST_HOME" || exit 2
 su - -c "
 set -e
 chmod 0710 \"$VHOST_HOME\"
+mkdir -m 0711 ~/.webenabled ~/.webenabled/private
 # start of PHP hack (added by (GM) on 20050923)
 mkdir -p \"$VHOST_HOME/bin\"
 chmod 0700 \"$VHOST_HOME/bin\"
