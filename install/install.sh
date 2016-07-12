@@ -479,7 +479,7 @@ while getopts $getopt_flags OPTS; do
       webenabled_install_dir="$OPTARG"
       ;;
     V)
-      webenabled_distro_version="$OPTARG"
+      distro_version="$OPTARG"
       ;;
     H)
       dp_server_hostname="$OPTARG"
@@ -538,9 +538,6 @@ if [ -z "$linux_distro" ]; then
   if [ $status -ne 0 ]; then
     error "unable to detect linux distribution. If you know the distro, try using the -L option"
   fi
-
-  distro_ver_major=$(devpanel_get_os_version_major)
-  distro_ver_minor=$(devpanel_get_os_version_minor)
 fi
 
 source_config_dir="$install_source_dir/config/os.$linux_distro"
@@ -556,11 +553,13 @@ else
   fi
 fi
 
-if [ -z "$webenabled_distro_version" ]; then
-  webenabled_distro_version=$(wedp_auto_detect_distro_version "$linux_distro")
-fi
+distro_version=$(wedp_auto_detect_distro_version "$linux_distro") || exit 1
+distro_ver_major=$(devpanel_get_os_version_major)
+distro_ver_minor=$(devpanel_get_os_version_minor)
 
-if ! set_global_variables "$install_source_dir" "$webenabled_install_dir" "$linux_distro"; then
+set_global_variables "$install_source_dir" "$webenabled_install_dir" \
+  "$linux_distro" "$distro_version" "$distro_ver_major" "$distro_ver_minor"
+if [ $? -ne 0 ]; then
   error "unable to properly set global variables"
 fi
 
@@ -579,8 +578,9 @@ fi
 
 for func in set_variables pre_run; do
   if [ "$(type -t ${linux_distro}_$func)" == "function" ]; then
-    ${linux_distro}_$func "$webenabled_install_dir" \
-      "$webenabled_distro_version"
+    ${linux_distro}_$func "$install_source_dir" "$webenabled_install_dir" \
+      "$linux_distro" "$distro_version" "$distro_ver_major" \
+      "$distro_ver_minor"
     status=$?
     [ $status -ne 0 ] && error "${linux_distro}_$func returned $status"
   fi
@@ -588,7 +588,8 @@ done
 
 if type -t "${linux_distro}_install_distro_packages" >/dev/null; then
   "${linux_distro}_install_distro_packages" "$install_source_dir" \
-    "$webenabled_install_dir" "$webenabled_distro_version"
+    "$webenabled_install_dir" "$linux_distro" "$distro_version"   \
+    "$distro_ver_major" "$distro_ver_minor"
   if [ $? -ne 0 ]; then
     error "failed to install required packages"
   fi

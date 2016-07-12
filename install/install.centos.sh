@@ -11,28 +11,30 @@ centos_pre_run() {
 centos_install_distro_packages() {
   local source_dir="$1"
   local install_dir="$2"
-  local distro_version="${3:-0}"
-
+  local distro="$3"
+  local distro_ver="$4"
+  local distro_ver_major="$5"
+  local distro_ver_minor="$6"
+ 
   echo Checking for crontab availability
   if ! hash crontab &>/dev/null; then
     yum -y install vixie-cron
   fi 
 
   # install external repositories needed
-  local distro_config_dir="$source_dir/config/os.$linux_distro"
-  local repos_link repos_dir_1 repos_dir_2 repos_rpm_file
-  local ver_major ver_major_minor
-  ver_major=${distro_version%%.*}
-  if [[ "$distro_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-    ver_major_minor=${distro_version%.*}
-  elif [[ "$distro_version" =~ ^[0-9]+\.[0-9]+$ ]]; then
-    ver_major_minor="$distro_version"
-  fi
+  local distro_config_dir="$source_dir/config/os.$distro"
+  local repos_dir_tmpl="$distro_config_dir/@version@/repositories"
+  local repos_link repos_dir_1 repos_dir_2 repos_dir_3 repos_rpm_file
 
-  repos_dir_1="$distro_config_dir/$ver_major_minor/repositories"
-  repos_dir_2="$distro_config_dir/$ver_major/repositories"
+  local distro_ver_major_minor="$distro_ver_major.$distro_ver_minor"
+
+  repos_dir_1="${repos_dir_tmpl//@version@/$distro_ver}"
+  repos_dir_2="${repos_dir_tmpl//@version@/$distro_ver_major_minor}"
+  repos_dir_3="${repos_dir_tmpl//@version@/$distro_ver_major}"
+
   for repos_link in "$repos_dir_1/repos."[0-9]*.* \
-                    "$repos_dir_2/repos."[0-9]*.*; do
+                    "$repos_dir_2/repos."[0-9]*.* \
+                    "$repos_dir_3/repos."[0-9]*.* ; do
 
     if [ ! -L "$repos_link" ]; then
       continue
