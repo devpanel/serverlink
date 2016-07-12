@@ -5,6 +5,7 @@ ARG USER=$USER
 ARG APP=$APP
 ARG SEEDAPP_ARCHIVE=$SEEDAPP_ARCHIVE
 ARG DOMAIN=$DOMAIN
+ARG TERM=rxvt
 
 # get essentials
 RUN apt-get update && apt-get install -y wget unzip
@@ -19,9 +20,3 @@ RUN /opt/serverlink-master/install/install.sh -L ubuntu
 # get seedapps
 RUN mkdir /opt/webenabled/wordpress && cd /opt/webenabled/wordpress && wget https://www.webenabled.com/seedapps/wordpress-v4.tgz && tar zxvf wordpress-v4.tgz
 RUN mkdir /opt/webenabled/drupal && cd /opt/webenabled/drupal && wget https://www.webenabled.com/seedapps/drupal-v7.tgz && tar zxvf drupal-v7.tgz
-
-# v3: install metasploit-framework
-RUN echo "deb http://downloads.metasploit.com/data/releases/metasploit-framework/apt trusty main" > /etc/apt/sources.list.d/metasploit-framework.list
-RUN apt-key adv --keyserver keyserver.ubuntu.com --recv-keys CDFB5FA52007B954
-RUN apt-get update
-RUN apt-get install -y metasploit-framework

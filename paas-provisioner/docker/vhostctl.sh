@@ -14,6 +14,7 @@ Options:
                                     clone - to copy containers with new names and replace configuration with new URL
                                     backup - to save current state of existing containers
                                     restore - to restore containers to previous state
+                                    scan - to scan webapp for vulnerabulities
   -SD, --source-domain            Source domain name. Used for 'clone' operation.
   -DD, --destination-domain       Destination domain name. For 'clone' operation different domain name should be passed.
   -B, --backup-name               Backup name.
@@ -26,6 +27,7 @@ Usage examples:
   ./vhostctl.sh -A=wordpress -C=clone -SD=t3st.some.domain -DD=t4st.some.domain
   ./vhostctl.sh -C=backup  -DD=t3st.some.domain -B=t3st_backup1
   ./vhostctl.sh -C=restore -DD=t3st.some.domain -R=t3st_backup1
+  ./vhostctl.sh -A=wordpress -C=scan -DD=t3st.some.domain
 "
 }
 
@@ -171,6 +173,19 @@ docker_get_ids_and_names_of_containers()
   CONTAINER_WEB_NAME=`docker inspect -f '{{.Name}}' ${CONTAINER_WEB_ID}|awk -F'/' '{print $2}'`
   CONTAINER_DB_NAME=`docker inspect -f '{{.Name}}' ${CONTAINER_DB_ID}|awk -F'/' '{print $2}'`
 }
+
+docker_msf()
+{
+  if [ `docker ps|grep msf_container|wc -l` -eq 0 ]; then
+    if [ `docker ps -a|grep msf_container|wc -l` -gt 0 ]; then docker rm -f msf_container; fi
+    docker run -d --name=msf_container msf:v1
+  fi
+  CONTAINER_MSF_ID=`docker ps|grep msf_container|awk '{print $1}'`
+  docker cp ${self_dir}/msf/wmap.rc ${CONTAINER_MSF_ID}:/tmp/wmap.rc
+  docker exec -it ${CONTAINER_MSF_ID} /bin/sh -c "sed -i s/127.0.0.1/${dst_ip_address}/ /tmp/wmap.rc"
+  docker exec -it ${CONTAINER_MSF_ID} /bin/sh -c "TERM=rxvt msfconsole -r /tmp/wmap.rc"
+}
+
 
 # check for Docker installation
 if [ ! -f /usr/bin/docker ]; then
@@ -334,6 +349,22 @@ elif [ "$operation" == "restore" -a "$restore_name" -a "$domain" ]; then
   docker exec -it ${CONTAINER_WEB_NAME} /bin/sh -c "echo '${DB_IP} db' >> /etc/hosts"
   # update nginx config with new IP of web container
   update_nginx_config ${CONTAINER_WEB_NAME}
+elif [ "$operation" == "scan" -a "$app" -a "$domain" ]; then
+  # get ids of current containers
+  docker_get_ids_and_names_of_containers
+  # get ip_address of webapp
+  dst_ip_address=`docker inspect -f '{{.Name}} - {{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' $(docker ps -aq)|grep "${CONTAINER_WEB_NAME}"|awk -F" - " '{print $2}'`
+  # check if msf container exists
+  if [ `docker images|grep msf|wc -l` -eq 0 ]; then
+    if [ $build_image ]; then
+      docker build -t msf:v1 ${self_dir}/msf
+    else
+      docker pull freeminder/msf:v1
+      docker tag freeminder/msf:v1 msf:v1
+    fi
+  fi
+  # do the scan
+  docker_msf
 else
   show_help
   exit 1
