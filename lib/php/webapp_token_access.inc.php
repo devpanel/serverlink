@@ -3,10 +3,10 @@
 define('DEVPANEL_TOKEN_LEN', 50);
 define('DEVPANEL_DIR', realpath(dirname(__FILE__) . "/../.."));
 
-// some apps don't behave well when session.save_path is not set
-if(empty(ini_get('session.save_path')) ||
-   !@is_writable(ini_get('session.save_path'))) {
-
+// for apps that set an unwritable save_path (e.g. extplorer),
+// it's needed to workaround with this
+$session_path = ini_get('session.save_path');
+if(!empty($session_path) && !@is_writable($session_path)) {
   ini_set('session.save_path', "/tmp");
 }
 
