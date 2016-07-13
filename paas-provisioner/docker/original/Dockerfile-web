@@ -6,9 +6,6 @@ ARG APP=$APP
 ARG SEEDAPP_ARCHIVE=$SEEDAPP_ARCHIVE
 ARG DOMAIN=$DOMAIN
 
-# get seedapp
-#RUN mkdir /opt/webenabled/${APP} && cd /opt/webenabled/${APP} && wget https://www.webenabled.com/seedapps/${SEEDAPP_ARCHIVE} && tar zxvf ${SEEDAPP_ARCHIVE}
-
 # setup environment for the app
 RUN /opt/webenabled/libexec/config-vhost-names-default ${DOMAIN}
 RUN /opt/webenabled/libexec/restore-vhost -F ${USER} /opt/webenabled/${APP}

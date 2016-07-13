@@ -1,8 +1,5 @@
 #!/bin/bash
 
-# restart postgresql for metasploit
-service postgresql restart
-
 # check for backup operation
 source /home/clients/websites/backup_info
 if [ "$BACKUP" == "true" ]; then
