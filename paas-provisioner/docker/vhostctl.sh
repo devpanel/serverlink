@@ -109,6 +109,11 @@ update_nginx_config()
     container_name=$CONTAINER_WEB_NAME
   fi
   container_ip_address=`docker inspect -f '{{.Name}} - {{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' $(docker ps -aq)|grep "${container_name}"|awk -F" - " '{print $2}'`
+  if [ "$app" == "hippo" ]; then
+    WEB_PORT=8080
+  else
+    WEB_PORT=80
+  fi
   # create config
   cat << EOF > /tmp/${domain}.conf
 server {
@@ -116,10 +121,11 @@ server {
   server_name  ${domain};
   location / {
     proxy_set_header Host ${domain};
-    proxy_pass http://${container_ip_address};
+    proxy_pass http://${container_ip_address}:${WEB_PORT};
   }
 }
 EOF
+  ${sudo} rm -f /etc/nginx/sites-enabled/${domain}.conf
   ${sudo} mv /tmp/${domain}.conf /etc/nginx/sites-enabled/${domain}.conf
   # restart nginx instead reload to avoid error with not running instance
   ${sudo} service nginx restart
@@ -207,7 +213,29 @@ else
 fi
 
 # main logic
-if [ "$app" -a "$operation" == "start" -a "$domain" ]; then
+if [ "$app" == "zabbix" -a "$operation" == "start" -a "$domain" ]; then
+  if [ `docker images|grep devpanel_zabbix|wc -l` -eq 0 ]; then
+    if [ $build_image ]; then
+      docker build -t devpanel_zabbix:v1 ${self_dir}/zabbix
+    else
+      docker pull freeminder/devpanel_zabbix:v1
+      docker tag freeminder/devpanel_zabbix:v1 devpanel_zabbix:v1
+    fi
+  fi
+  docker run -d -it --name ${domain}_${app}_web devpanel_zabbix:v1
+  update_nginx_config
+elif [ "$app" == "hippo" -a "$operation" == "start" -a "$domain" ]; then
+  if [ `docker images|grep devpanel_hippo|wc -l` -eq 0 ]; then
+    if [ $build_image ]; then
+      docker build -t devpanel_hippo:v1 ${self_dir}/hippo
+    else
+      docker pull freeminder/devpanel_hippo:v1
+      docker tag freeminder/devpanel_hippo:v1 devpanel_hippo:v1
+    fi
+  fi
+  docker run -d -it --name ${domain}_${app}_web devpanel_hippo:v1
+  update_nginx_config
+elif [ "$app" -a "$operation" == "start" -a "$domain" ]; then
   ${sudo} rm -fr ${self_dir}/original/${domain}_${app}_web_volume
   ${sudo} rm -fr ${self_dir}/original/${domain}_${app}_data_volume
   patch_definition_files_and_build
