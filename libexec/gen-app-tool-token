@@ -27,7 +27,7 @@ get_real_url() {
 
 # main
 
-[ $# -lt 1 -o -z "$1" -o -z "$2" ] && usage
+[ $# -lt 2 -o -z "$1" -o -z "$2" ] && usage
 
 self_bin=`readlink -e "$0"`
 if [ $? -ne 0 ]; then
