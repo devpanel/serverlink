@@ -61,7 +61,7 @@ drupal_set_password()
     # enough. It required one more login with the old password before the
     # new password worked. But running cache-rebuild made it apply 
     # immediately (tested, May 2015)
-    ( cd "$home/public_html/$vhost" && drush cache-rebuild )
+    ( cd "$home/public_html/$vhost" && drush-8 cache-rebuild )
 
     return $status
   fi
@@ -384,7 +384,7 @@ drupal_update_php_config_8() {
     fi
   fi
 
-  drush -r "$public_html_dir" cache-rebuild
+  drush-8 -r "$public_html_dir" cache-rebuild
 }
 
 drupal_set_tmp_6_or_7() {
@@ -534,7 +534,7 @@ drupal_custom()
     else
       "drupal_set_tmp_$version"
       "drupal_set_cron_key_$version"
-      ( cd "$home/public_html/$vhost" && drush cache-rebuild )
+      ( cd "$home/public_html/$vhost" && drush-8 cache-rebuild )
     fi
 
     aws_cdn_endpoint=`deref_os_prop "$we_base_dir" aws_cdn_endpoint 2>/dev/null`
