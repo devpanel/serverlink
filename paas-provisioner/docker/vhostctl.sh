@@ -8,12 +8,13 @@ show_help()
 
 Options:
 
-  -A, --application               Application name. Apps supported: Wordpress, Drupal.
+  -A, --application               Application name. Apps supported: Wordpress, Drupal, Zabbix, Hippo.
   -C, --operation                 Operation commands:
                                     start - to build and start containers with the application
                                     clone - to copy containers with new names and replace configuration with new URL
                                     backup - to save current state of existing containers
                                     restore - to restore containers to previous state
+                                    destroy - to remove container(s) with webapp
                                     scan - to scan webapp for vulnerabulities
   -SD, --source-domain            Source domain name. Used for 'clone' operation.
   -DD, --destination-domain       Destination domain name. For 'clone' operation different domain name should be passed.
@@ -27,6 +28,7 @@ Usage examples:
   ./vhostctl.sh -A=wordpress -C=clone -SD=t3st.some.domain -DD=t4st.some.domain
   ./vhostctl.sh -C=backup  -DD=t3st.some.domain -B=t3st_backup1
   ./vhostctl.sh -C=restore -DD=t3st.some.domain -R=t3st_backup1
+  ./vhostctl.sh -A=wordpress -C=destroy -DD=t3st.some.domain
   ./vhostctl.sh -A=wordpress -C=scan -DD=t3st.some.domain
 "
 }
@@ -393,6 +395,14 @@ elif [ "$operation" == "scan" -a "$app" -a "$domain" ]; then
   fi
   # do the scan
   docker_msf
+elif [ "$operation" == "destroy" -a "$app" -a "$domain" ]; then
+  if [ "$app" == "zabbix" -o "$app" == "hippo" ]; then
+    docker rm  -f ${domain}_${app}_web
+    docker rmi -f devpanel_${app}:v1
+  else
+    docker rm  -f ${domain}_${app}_web ${domain}_${app}_db
+    docker rmi -f original_${domain}_${app}_web original_${domain}_${app}_db
+  fi
 else
   show_help
   exit 1

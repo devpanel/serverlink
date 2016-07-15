@@ -2,7 +2,7 @@ FROM ubuntu:14.04.4
 EXPOSE 8080
 
 # setup Hippo
-RUN apt-get update 
+RUN apt-get update
 RUN apt-get install -y software-properties-common
 RUN add-apt-repository -y ppa:andrei-pozolotin/maven3
 RUN add-apt-repository -y ppa:webupd8team/java
