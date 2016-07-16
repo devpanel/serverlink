@@ -72,6 +72,10 @@ case $i in
     build_image="${i#*=}"
     shift # past argument=value
     ;;
+    -RB*|--remove-backups*)
+    remove_backups="${i#*=}"
+    shift # past argument=value
+    ;;
     *)
     show_help
             # unknown option
@@ -306,6 +310,13 @@ elif [ "$operation" == "destroy" -a "$app" -a "$domain" ]; then
     docker rmi -f devpanel_${app}:v1
   else
     docker rmi -f original_${domain}_${app}_web
+  fi
+  # remove backups also if requested
+  if [ $remove_backups ]; then
+    readarray -t backups_array <<< `docker images|grep ${domain}|awk '{print $1}'`
+    for i in "${backups_array[@]}"; do
+      docker rmi -f ${i}
+    done
   fi
 else
   show_help
