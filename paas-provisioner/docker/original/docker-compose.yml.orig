@@ -18,27 +18,6 @@ services:
       APP: APP_VAR
     networks:
       - NETWORK_NAME_VAR_net
-    volumes:
-      - ./CONTAINER_NAME_VAR_data_volume:/data:ro
-      - ./CONTAINER_NAME_VAR_web_volume:/home/clients
-    links:
-      - SERVICE_NAME_VAR_db:db
-  SERVICE_NAME_VAR_db:
-    container_name: CONTAINER_NAME_VAR_db
-    hostname: USER_VAR-db
-    domainname: DOMAIN_VAR
-    build:
-      context: .
-      dockerfile: Dockerfile-db
-      args:
-        USER: USER_VAR
-        DOMAIN: DOMAIN_VAR
-        APP: APP_VAR
-        SEEDAPP_ARCHIVE: SEEDAPP_ARCHIVE_VAR
-    networks:
-      - NETWORK_NAME_VAR_net
-    volumes:
-      - ./CONTAINER_NAME_VAR_data_volume:/data
 
 networks:
   NETWORK_NAME_VAR_net:

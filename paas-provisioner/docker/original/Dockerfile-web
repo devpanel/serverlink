@@ -1,5 +1,5 @@
 FROM devpanel_cache:v2
-EXPOSE 80
+EXPOSE 80 4000
 
 ARG USER=$USER
 ARG APP=$APP
@@ -12,5 +12,5 @@ RUN /opt/webenabled/libexec/restore-vhost -F ${USER} /opt/webenabled/${APP}
 RUN mv /etc/mysql/my.cnf /etc/mysql/my.cnf.orig
 
 # start services
-ADD ./patch_configs.sh /tmp/patch_configs.sh
-CMD bash /tmp/patch_configs.sh
+ADD ./startup.sh /tmp/startup.sh
+CMD bash /tmp/startup.sh
