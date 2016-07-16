@@ -21,6 +21,7 @@ Options:
   -B, --backup-name               Backup name.
   -R, --restore-name              Restore previously backed up name.
   -L, --build-image               Build devpanel_cache image locally instead of downloading it from docker hub.
+  -RB, --remove-backups           Remove backups for requested webapp.
 
 Usage examples:
   ./vhostctl.sh -A=wordpress -C=start -DD=t3st.some.domain
@@ -29,6 +30,7 @@ Usage examples:
   ./vhostctl.sh -A=wordpress -C=backup  -DD=t3st.some.domain -B=t3st_backup1
   ./vhostctl.sh -A=wordpress -C=restore -DD=t3st.some.domain -R=t3st_backup1
   ./vhostctl.sh -A=wordpress -C=destroy -DD=t3st.some.domain
+  ./vhostctl.sh -A=wordpress -C=destroy -DD=t3st.some.domain -RB
   ./vhostctl.sh -A=wordpress -C=scan -DD=t3st.some.domain
 "
 }
@@ -318,6 +320,9 @@ elif [ "$operation" == "destroy" -a "$app" -a "$domain" ]; then
       docker rmi -f ${i}
     done
   fi
+  # remove config from nginx
+  ${sudo} rm -f /etc/nginx/sites-enabled/${domain}.conf
+  ${sudo} service nginx reload
 else
   show_help
   exit 1
