@@ -16,12 +16,14 @@ Options:
                                     restore - to restore containers to previous state
                                     destroy - to remove container(s) with webapp
                                     scan - to scan webapp for vulnerabulities
+                                    handle - to handle parameters from front-end for devPanel's script
   -SD, --source-domain            Source domain name. Used for 'clone' operation.
   -DD, --destination-domain       Destination domain name. For 'clone' operation different domain name should be passed.
   -B, --backup-name               Backup name.
   -R, --restore-name              Restore previously backed up name.
   -L, --build-image               Build devpanel_cache image locally instead of downloading it from docker hub.
   -RB, --remove-backups           Remove backups for requested webapp.
+  -H, --handler                   devPanel's script name and parameters to process.
 
 Usage examples:
   ./vhostctl.sh -A=wordpress -C=start -DD=t3st.some.domain
@@ -32,6 +34,7 @@ Usage examples:
   ./vhostctl.sh -A=wordpress -C=destroy -DD=t3st.some.domain
   ./vhostctl.sh -A=wordpress -C=destroy -DD=t3st.some.domain -RB
   ./vhostctl.sh -A=wordpress -C=scan -DD=t3st.some.domain
+  ./vhostctl.sh -A=wordpress -C=handle -DD=t3st.some.domain -H="check-disk-quota 90"
 "
 }
 
@@ -76,6 +79,10 @@ case $i in
     ;;
     -RB*|--remove-backups*)
     remove_backups="${i#*=}"
+    shift # past argument=value
+    ;;
+    -H*|--handler*)
+    docker_handler="${i#*=}"
     shift # past argument=value
     ;;
     *)
@@ -205,16 +212,17 @@ fi
 
 # check for Docker Compose binary
 if [ ! -f /usr/local/bin/docker-compose ]; then
-  curl -L https://github.com/docker/compose/releases/download/1.7.1/docker-compose-`uname -s`-`uname -m` > /usr/local/bin/docker-compose
-  chmod +x /usr/local/bin/docker-compose
+  ${sudo} curl -L https://github.com/docker/compose/releases/download/1.7.1/docker-compose-`uname -s`-`uname -m` -o /usr/local/bin/docker-compose
+  ${sudo} chmod +x /usr/local/bin/docker-compose
 fi
 
 # build locally or pull image from docker hub
-if [ $build_image ]; then
-  docker build -t devpanel_cache:v2 "$self_dir/cache"
-else
-  docker pull freeminder/devpanel_cache:v2
-  docker tag freeminder/devpanel_cache:v2 devpanel_cache:v2
+if [ `docker images|grep devpanel_cache|wc -l` -eq 0 ]; then
+  if [ $build_image ]; then
+    docker build -t devpanel_cache:v4 "$self_dir/cache"
+  else
+    docker pull freeminder/devpanel_cache:v4 && docker tag freeminder/devpanel_cache:v4 devpanel_cache:v4
+  fi
 fi
 
 # main logic
@@ -323,6 +331,9 @@ elif [ "$operation" == "destroy" -a "$app" -a "$domain" ]; then
   # remove config from nginx
   ${sudo} rm -f /etc/nginx/sites-enabled/${domain}.conf
   ${sudo} service nginx reload
+elif [ "$operation" == "handle" -a "$docker_handler" -a "$app" -a "$domain" ]; then
+  docker_get_ids_and_names_of_containers
+  docker exec -it ${CONTAINER_WEB_ID} /opt/webenabled/libexec/${docker_handler}
 else
   show_help
   exit 1

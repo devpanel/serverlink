@@ -17,6 +17,9 @@ RUN sed -i 's/apt-get install postfix/apt-get install -y postfix/' /opt/serverli
 # install serverlink's environment
 RUN /opt/serverlink-master/install/install.sh -L ubuntu
 
+# get tools for proper devPanel's scripts work
+RUN apt-get install -y quota
+
 # get seedapps
 RUN mkdir /opt/webenabled/wordpress && cd /opt/webenabled/wordpress && wget https://www.webenabled.com/seedapps/wordpress-v4.tgz && tar zxvf wordpress-v4.tgz
 RUN mkdir /opt/webenabled/drupal && cd /opt/webenabled/drupal && wget https://www.webenabled.com/seedapps/drupal-v7.tgz && tar zxvf drupal-v7.tgz
