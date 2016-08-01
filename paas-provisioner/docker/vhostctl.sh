@@ -24,17 +24,18 @@ Options:
   -L, --build-image               Build devpanel_cache image locally instead of downloading it from docker hub.
   -RB, --remove-backups           Remove backups for requested webapp.
   -H, --handler                   devPanel's script name and parameters to process.
+  -T, --type                      Type of the host. Can be docker or local.
 
 Usage examples:
-  ./vhostctl.sh -A=wordpress -C=start -DD=t3st.some.domain
-  ./vhostctl.sh -A=wordpress -C=start -DD=t3st.some.domain -L
-  ./vhostctl.sh -A=wordpress -C=clone -SD=t3st.some.domain -DD=t4st.some.domain
-  ./vhostctl.sh -A=wordpress -C=backup  -DD=t3st.some.domain -B=t3st_backup1
-  ./vhostctl.sh -A=wordpress -C=restore -DD=t3st.some.domain -R=t3st_backup1
+  ./vhostctl.sh -A=wordpress -C=start -DD=t3st.some.domain -T=local
+  ./vhostctl.sh -A=wordpress -C=start -DD=t3st.some.domain -L -T=docker
+  ./vhostctl.sh -A=wordpress -C=clone -SD=t3st.some.domain -DD=t4st.some.domain -T=docker
+  ./vhostctl.sh -A=wordpress -C=backup  -DD=t3st.some.domain -B=t3st_backup1 -T=docker
+  ./vhostctl.sh -A=wordpress -C=restore -DD=t3st.some.domain -R=t3st_backup1 -T=docker
   ./vhostctl.sh -A=wordpress -C=destroy -DD=t3st.some.domain
   ./vhostctl.sh -A=wordpress -C=destroy -DD=t3st.some.domain -RB
-  ./vhostctl.sh -A=wordpress -C=scan -DD=t3st.some.domain
-  ./vhostctl.sh -A=wordpress -C=handle -DD=t3st.some.domain -H="check-disk-quota 90"
+  ./vhostctl.sh -A=wordpress -C=scan -DD=t3st.some.domain -T=docker
+  ./vhostctl.sh -A=wordpress -C=handle -DD=t3st.some.domain -H="check-disk-quota 90" -T=docker
 "
 }
 
@@ -44,6 +45,15 @@ if [ $? -ne 0 ]; then
   exit 1
 fi
 self_dir=${self_bin%/*}
+sys_dir=$(readlink -e "$self_dir/../..")
+lib_file="$sys_dir/lib/functions"
+
+if ! source "$lib_file"; then
+  echo "Error: unable to source lib file $lib_file" 1>&2
+  exit 1
+fi
+
+
 
 # parse option arguments
 for i in "$@"
@@ -85,6 +95,10 @@ case $i in
     docker_handler="${i#*=}"
     shift # past argument=value
     ;;
+    -T*|--type*)
+    host_type="${i#*=}"
+    shift # past argument=value
+    ;;
     *)
     show_help
             # unknown option
@@ -108,6 +122,37 @@ else
   echo "OS not supported. Exiting ..."
   exit 1
 fi
+
+
+create_local_config()
+{
+  # create dir if not exist
+  if [ ! -d /opt/webenabled/config/apps ];then
+    ${sudo} mkdir -p /opt/webenabled/config/apps
+  fi
+  # write config
+  docker_get_ids_and_names_of_containers
+  if [ "$host_type" == "docker" ];then
+    ini_contents="\
+app.name           = ${user}
+app.hosting        = docker
+app.container_name = ${CONTAINER_WEB_NAME}
+"
+  else
+    ini_contents="\
+app.name           = ${user}
+app.hosting        = local
+"
+  fi
+  echo "$ini_contents" | ${sudo} /opt/webenabled/bin/update-ini-file -q -c /opt/webenabled/config/apps/${user}.ini
+}
+
+read_local_config()
+{
+  vhost=`echo "${domain}" | awk -F'[.]' '{print $1}'`
+  app_name=`ini_section_get_key_value /opt/webenabled/config/apps/${vhost}.ini app name`
+  app_hosting=`ini_section_get_key_value /opt/webenabled/config/apps/${vhost}.ini app hosting`
+}
 
 update_nginx_config()
 {
@@ -207,7 +252,11 @@ docker_msf()
 
 # check for Docker installation
 if [ ! -f /usr/bin/docker ]; then
-  ${sudo} ${installation_tool} docker
+  # quick install for Ubuntu only
+  ${sudo} echo "deb https://apt.dockerproject.org/repo ubuntu-trusty main" > /etc/apt/sources.list.d/docker.list
+  ${sudo} apt-key adv --keyserver hkp://p80.pool.sks-keyservers.net:80 --recv-keys 58118E89F3A912897C070ADBF76221572C52609D
+  ${sudo} apt-get update
+  ${sudo} apt-get install -y docker-engine
 fi
 
 # check for Docker Compose binary
@@ -217,16 +266,16 @@ if [ ! -f /usr/local/bin/docker-compose ]; then
 fi
 
 # build locally or pull image from docker hub
-if [ `docker images|grep devpanel_cache|wc -l` -eq 0 ]; then
+if [ `docker images|grep devpanel_cache|grep latest|wc -l` -eq 0 ]; then
   if [ $build_image ]; then
-    docker build -t devpanel_cache:v4 "$self_dir/cache"
+    docker build -t devpanel_cache:latest "$self_dir/cache"
   else
-    docker pull freeminder/devpanel_cache:v4 && docker tag freeminder/devpanel_cache:v4 devpanel_cache:v4
+    docker pull freeminder/devpanel_cache:latest && docker tag freeminder/devpanel_cache:latest devpanel_cache:latest
   fi
 fi
 
 # main logic
-if [ "$app" == "zabbix" -a "$operation" == "start" -a "$domain" ]; then
+if [ "$app" == "zabbix" -a "$operation" == "start" -a "$domain" -a "$host_type" ]; then
   if [ `docker images|grep devpanel_zabbix|wc -l` -eq 0 ]; then
     if [ $build_image ]; then
       docker build -t devpanel_zabbix:v1 ${self_dir}/zabbix
@@ -237,7 +286,7 @@ if [ "$app" == "zabbix" -a "$operation" == "start" -a "$domain" ]; then
   fi
   docker run -d -it --name ${domain}_${app}_web devpanel_zabbix:v1
   update_nginx_config
-elif [ "$app" == "hippo" -a "$operation" == "start" -a "$domain" ]; then
+elif [ "$app" == "hippo" -a "$operation" == "start" -a "$domain" -a "$host_type" ]; then
   if [ `docker images|grep devpanel_hippo|wc -l` -eq 0 ]; then
     if [ $build_image ]; then
       docker build -t devpanel_hippo:v1 ${self_dir}/hippo
@@ -248,9 +297,24 @@ elif [ "$app" == "hippo" -a "$operation" == "start" -a "$domain" ]; then
   fi
   docker run -d -it --name ${domain}_${app}_web devpanel_hippo:v1
   update_nginx_config
-elif [ "$app" -a "$operation" == "start" -a "$domain" ]; then
-  patch_definition_files_and_build
-elif [ "$app" -a "$operation" == "clone" -a "$source_domain" -a "$domain" ]; then
+elif [ "$app" -a "$operation" == "start" -a "$domain" -a "$host_type" ]; then
+  if [ "$host_type" == "docker" ]; then
+    patch_definition_files_and_build
+  else
+    if [ "$app" == "wordpress" ]; then
+      app_arch="wordpress-v4.tgz"
+    elif [ "$app" == "drupal" ]; then
+      app_arch="drupal-v7.tgz"
+    else
+      echo "App not supported."
+      exit 1
+    fi
+    ${sudo} mkdir ${sys_dir}/${app} && cd ${sys_dir}/${app} && wget https://www.webenabled.com/seedapps/${app_arch} && tar zxvf ${app_arch}
+    ${sudo} ${sys_dir}/libexec/config-vhost-names-default ${domain}
+    ${sudo} ${sys_dir}/libexec/restore-vhost -F ${vhost} ${sys_dir}/${app}
+  fi
+  create_local_config
+elif [ "$app" -a "$operation" == "clone" -a "$source_domain" -a "$domain" -a "$host_type" == "docker" ]; then
   # parse variables
   source_user=`echo "${source_domain}" | awk -F'[.]' '{print $1}'`
   source_domain_name=`echo "${source_domain}" | awk -F"${source_user}." '{print $2}'`
@@ -278,12 +342,12 @@ elif [ "$app" -a "$operation" == "clone" -a "$source_domain" -a "$domain" ]; the
   docker exec -it ${CONTAINER_WEB_ID} service apache2 reload
   # update host's nginx config with new IP of cloned web container
   update_nginx_config ${domain}_${app}_web
-elif [ "$operation" == "backup" -a "$backup_name" -a "$domain" ]; then
+elif [ "$operation" == "backup" -a "$backup_name" -a "$domain" -a "$host_type" == "docker" ]; then
   # get ids of current containers
   docker_get_ids_and_names_of_containers
   # save current state of containers as images
   docker commit ${CONTAINER_WEB_NAME} ${domain}_${backup_name}_bkp_web
-elif [ "$operation" == "restore" -a "$restore_name" -a "$domain" ]; then
+elif [ "$operation" == "restore" -a "$restore_name" -a "$domain" -a "$host_type" == "docker" ]; then
   # get ids of current containers
   docker_get_ids_and_names_of_containers
   # remove source containers to avoid name conflicts
@@ -298,7 +362,7 @@ elif [ "$operation" == "restore" -a "$restore_name" -a "$domain" ]; then
   done
   # update nginx config with new IP of web container
   update_nginx_config ${CONTAINER_WEB_NAME}
-elif [ "$operation" == "scan" -a "$app" -a "$domain" ]; then
+elif [ "$operation" == "scan" -a "$app" -a "$domain" -a "$host_type" == "docker" ]; then
   # get ids of current containers
   docker_get_ids_and_names_of_containers
   # get ip_address of webapp
@@ -315,18 +379,23 @@ elif [ "$operation" == "scan" -a "$app" -a "$domain" ]; then
   # do the scan
   docker_msf
 elif [ "$operation" == "destroy" -a "$app" -a "$domain" ]; then
-  docker rm  -f ${domain}_${app}_web
-  if [ "$app" == "zabbix" -o "$app" == "hippo" ]; then
-    docker rmi -f devpanel_${app}:v1
+  read_local_config
+  if [ "$app_hosting" == "docker" ]; then
+    docker rm  -f ${domain}_${app}_web
+    if [ "$app" == "zabbix" -o "$app" == "hippo" ]; then
+      docker rmi -f devpanel_${app}:v1
+    else
+      docker rmi -f original_${domain}_${app}_web
+    fi
+    # remove backups also if requested
+    if [ $remove_backups ]; then
+      readarray -t backups_array <<< `docker images|grep ${domain}|awk '{print $1}'`
+      for i in "${backups_array[@]}"; do
+        docker rmi -f ${i}
+      done
+    fi
   else
-    docker rmi -f original_${domain}_${app}_web
-  fi
-  # remove backups also if requested
-  if [ $remove_backups ]; then
-    readarray -t backups_array <<< `docker images|grep ${domain}|awk '{print $1}'`
-    for i in "${backups_array[@]}"; do
-      docker rmi -f ${i}
-    done
+    remove-vhost ${vhost}
   fi
   # remove config from nginx
   ${sudo} rm -f /etc/nginx/sites-enabled/${domain}.conf
