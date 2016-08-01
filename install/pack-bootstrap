@@ -34,7 +34,6 @@ declare -a bootstrap_files=( \
   'bin/update-ini-file' \
   'bin/run-vhost-shell' \
   'bin/devpanel' \
-  'bin/usr.bin/' \
   'libexec/run-root-shell' \
   'libexec/download-installer' \
   'install/uninstall.sh' \
