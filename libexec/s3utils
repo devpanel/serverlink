@@ -9,7 +9,7 @@ error() {
 }
 
 usage_config_vhost() {
-  echo "Usage: $self_bin [options] $op <vhost>
+  echo "Usage: $self_bin $op [options] <vhost>
 
   Options:
     -e                  enable archive uploads to S3 for this vhost
@@ -54,7 +54,7 @@ usage() {
 }
 
 usage_config_server() {
-  echo "Usage: $self_bin_basename [options] $op
+  echo "Usage: $self_bin_basename $op [options]
 
   Options:
     -e                  enable archive uploads to S3 for this server
@@ -216,12 +216,15 @@ case "$op" in
         i)
           read_stdin=1
           do_enable=1
+          action_opts+=1
           ;;
         e)
           do_enable=1
+          action_opts+=1
           ;;
         D)
           do_disable=1
+          action_opts+=1
           ;;
         *)
           usage_config_server
