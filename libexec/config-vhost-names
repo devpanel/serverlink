@@ -67,6 +67,13 @@ generate_serveralias() {
   done
 
   if [ -n "$aliases_str" ]; then
+    if [ -L "$alias_link" ]; then
+      # can't use ln -sf  here because ln tries to dereference first and it
+      # returns error when the ref string is longer than 256 chars, so using
+      # rm -f to remove existing file
+      rm -f "$alias_link"
+    fi
+
     ln -sf "$aliases_str" "$alias_link"
     if [ $? -eq 0 ]; then
       return 0
