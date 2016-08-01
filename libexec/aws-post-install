@@ -71,4 +71,10 @@ if [ -n "$root_key_file" -a -s "$root_key_file" ]; then
   cp /dev/null "$root_key_file"
 fi
 
+if [ "$distro" == ubuntu ]; then
+  passwd -d ubuntu
+elif [ "$distro" == centos -o "$distro" == redhat ]; then
+  passwd -d ec2-user
+fi
+
 exit 0
