@@ -128,8 +128,6 @@ linux_distro=$(wedp_auto_detect_distro)
 if [ $? -ne 0 -o -z "$linux_distro" ]; then
   error "unable to detect linux distro"
 fi
-distro_ver_major=$(devpanel_get_os_version_major)
-distro_ver_minor=$(devpanel_get_os_version_minor)
 
 distro_bootstrap_file="$source_dir/bootstrap.$linux_distro.sh"
 if ! source "$distro_bootstrap_file"; then
@@ -141,6 +139,9 @@ if ! type -t "bootstrap_${linux_distro}" >/dev/null; then
 elif ! "bootstrap_$linux_distro" "$source_dir" "$DP_TARGET_DIR"; then
   error "failed running function 'bootstrap_$linux_distro'"
 fi
+
+distro_ver_major=$(devpanel_get_os_version_major)
+distro_ver_minor=$(devpanel_get_os_version_minor)
 
 skel_dir="$source_dir/skel/$linux_distro"
 if [ ! -d "$skel_dir" ]; then

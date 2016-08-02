@@ -45,6 +45,10 @@ redhat_service_action() {
   centos_service_action "$@"
 }
 
+redhatenterpriseserver_service_action() {
+  centos_service_action "$@"
+}
+
 debian_service_action() {
   local service="$1"
   local action="$2"
