@@ -128,6 +128,8 @@ linux_distro=$(wedp_auto_detect_distro)
 if [ $? -ne 0 -o -z "$linux_distro" ]; then
   error "unable to detect linux distro"
 fi
+distro_ver_major=$(devpanel_get_os_version_major)
+distro_ver_minor=$(devpanel_get_os_version_minor)
 
 distro_bootstrap_file="$source_dir/bootstrap.$linux_distro.sh"
 if ! source "$distro_bootstrap_file"; then
@@ -144,11 +146,18 @@ skel_dir="$source_dir/skel/$linux_distro"
 if [ ! -d "$skel_dir" ]; then
   error "missing skel dir '$skel_dir'"
 fi
+skel_common="$skel_dir/common"
+skel_major="$skel_dir/$distro_ver_major"
+skel_major_minor="$skel_dir/$distro_ver_major.$distro_ver_minor"
 
-(cd "$skel_dir" && cp -a . /)
-if [ $? -ne 0 ]; then
-  error "unable to copy files from skel dir '$skel_dir'"
-fi
+for t_dir in "$skel_common" "$skel_major" "$skel_major_minor"; do
+  if [ -d "$t_dir" ]; then
+    cp -a "$t_dir/." /
+    if [ $? -ne 0 ]; then
+      error "unable to copy files from skel dir '$t_dir'"
+    fi
+  fi
+done
 
 # config/os is a link set after a successful installation
 # if it's there it means that a previous installation was successful
