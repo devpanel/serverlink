@@ -65,11 +65,20 @@ ubuntu_install_distro_packages() {
     apt-get -y install $i
   done
 
+  # test whether CGI::Util is available, it's needed by taskd
+  # from Ubuntu 16 it's not included in the perl distribution
+  perl -MCGI::Util -e 'exit 0;' &>/dev/null
+  if [ $? -eq 0 ]; then
+    :
+  else
+    apt-get -y install libcgi-pm-perl
+  fi
+
   # this is Ubuntu specific, that right now doesn't ship with a default MTA
   # if there isn't anything listening on port 25/tcp then we install Postfix
   # for the sites to be able to send e-mail
   if ! fuser -s 25/tcp; then
-    apt-get install postfix
+    apt-get -y install postfix
   fi
 }
 

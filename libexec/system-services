@@ -19,8 +19,8 @@ ubuntu_service_action() {
 
   if hash status &>/dev/null && status "$service" &>/dev/null; then
     $action $service
-  elif [ -e "/etc/init.d/$service" ]; then
-    "/etc/init.d/$service" "$action"
+  elif hash service &>/dev/null; then
+    service "$service" "$action"
   else
     echo "$FUNCNAME(): don't know how to run '$action' on '$service'" 1>&2
     return 1
