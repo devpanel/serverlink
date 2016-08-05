@@ -130,21 +130,21 @@ create_local_config()
   if [ ! -d /opt/webenabled/config/apps ];then
     ${sudo} mkdir -p /opt/webenabled/config/apps
   fi
-  # write config
-  docker_get_ids_and_names_of_containers
+  vhost=`echo "${domain}" | awk -F'[.]' '{print $1}'`
   if [ "$host_type" == "docker" ];then
+    docker_get_ids_and_names_of_containers
     ini_contents="\
-app.name           = ${user}
+app.name           = ${vhost}
 app.hosting        = docker
 app.container_name = ${CONTAINER_WEB_NAME}
 "
   else
     ini_contents="\
-app.name           = ${user}
+app.name           = ${vhost}
 app.hosting        = local
 "
   fi
-  echo "$ini_contents" | ${sudo} /opt/webenabled/bin/update-ini-file -q -c /opt/webenabled/config/apps/${user}.ini
+  echo "$ini_contents" | ${sudo} /opt/webenabled/bin/update-ini-file -q -c /opt/webenabled/config/apps/${vhost}.ini
 }
 
 read_local_config()
@@ -168,7 +168,9 @@ update_nginx_config()
   elif [ "$operation" == "restore" ]; then
     container_name=$CONTAINER_WEB_NAME
   fi
-  container_ip_address=`docker inspect -f '{{.Name}} - {{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' $(docker ps -aq)|grep "${container_name}"|awk -F" - " '{print $2}'`
+  if [ "$host_type" == "docker" ]; then
+    container_ip_address=`docker inspect -f '{{.Name}} - {{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' $(docker ps -aq)|grep "${container_name}"|awk -F" - " '{print $2}'`
+  fi
   if [ "$app" == "hippo" ]; then
     WEB_PORT=8080
   else
@@ -187,8 +189,26 @@ server {
 EOF
   ${sudo} rm -f /etc/nginx/sites-enabled/${domain}.conf
   ${sudo} mv /tmp/${domain}.conf /etc/nginx/sites-enabled/${domain}.conf
-  # restart nginx instead reload to avoid error with not running instance
-  ${sudo} service nginx restart
+  restart_or_reload_nginx
+}
+
+restart_or_reload_nginx()
+{
+  # The hash bucket size parameter is aligned to the size that is a multiple of the processor’s cache line size.
+  # This speeds up key search in a hash on modern processors by reducing the number of memory accesses.
+  # If hash bucket size is equal to one processor’s cache line size then the number of memory accesses during the key search
+  # will be two in the worst case — first to compute the bucket address, and second during the key search inside the bucket.
+  # Therefore, if nginx emits the message requesting to increase either hash max size or hash bucket size
+  # then the first parameter should first be increased.
+  if [ ! -f /etc/nginx/conf.d/server_names_hash_bucket_size.conf ]; then
+    ${sudo} echo "server_names_hash_bucket_size  128;" > /etc/nginx/conf.d/server_names_hash_bucket_size.conf
+  fi
+
+  if [[ `service nginx status` == " * nginx is running" ]]; then
+    ${sudo} service nginx reload
+  else
+    ${sudo} service nginx restart
+  fi
 }
 
 patch_definition_files_and_build()
@@ -249,6 +269,42 @@ docker_msf()
   docker exec -it ${CONTAINER_MSF_ID} /bin/sh -c "TERM=rxvt msfconsole -r /tmp/wmap.rc"
 }
 
+detect_running_apache_and_patch_configs()
+{
+  if [ `ps aux|grep apache2|wc -l` -gt 0 ]; then
+    # patch configs with new port
+    readarray -t apache_configs_array <<< `find -L /etc/apache2 -name *.conf`
+    servernames_array=()
+    for i in ${apache_configs_array[@]}; do
+      if [ `grep ":80" ${i}|wc -l` -gt 0 -a `grep ":8080" ${i}|wc -l` -eq 0 ]; then
+        sed -i 's/:80/:8080/' ${i}
+      fi
+      if [ `grep "  ServerName " ${i}|wc -l` -gt 0 ]; then
+        servernames_array+=(`grep "  ServerName " ${i}|awk -F "  ServerName " '{print $2}'`)
+      fi
+    done
+    # restart apache
+    ${sudo} service apache2 restart
+    # update nginx configs with apache's hosts
+    for servername in ${servernames_array[@]}; do
+      # create config
+      cat << EOF > /tmp/${servername}.conf
+server {
+  listen       80;
+  server_name  ${servername};
+  location / {
+    proxy_set_header Host ${servername};
+    proxy_pass http://localhost:8080;
+  }
+}
+EOF
+      ${sudo} rm -f /etc/nginx/sites-enabled/${servername}.conf
+      ${sudo} mv /tmp/${servername}.conf /etc/nginx/sites-enabled/${servername}.conf
+    done
+    restart_or_reload_nginx
+  fi
+}
+
 
 # check for Docker installation
 if [ ! -f /usr/bin/docker ]; then
@@ -299,8 +355,9 @@ elif [ "$app" == "hippo" -a "$operation" == "start" -a "$domain" -a "$host_type"
   update_nginx_config
 elif [ "$app" -a "$operation" == "start" -a "$domain" -a "$host_type" ]; then
   if [ "$host_type" == "docker" ]; then
+    detect_running_apache_and_patch_configs
     patch_definition_files_and_build
-  else
+  elif [ "$host_type" == "local" ]; then
     if [ "$app" == "wordpress" ]; then
       app_arch="wordpress-v4.tgz"
     elif [ "$app" == "drupal" ]; then
@@ -309,9 +366,17 @@ elif [ "$app" -a "$operation" == "start" -a "$domain" -a "$host_type" ]; then
       echo "App not supported."
       exit 1
     fi
-    ${sudo} mkdir ${sys_dir}/${app} && cd ${sys_dir}/${app} && wget https://www.webenabled.com/seedapps/${app_arch} && tar zxvf ${app_arch}
-    ${sudo} ${sys_dir}/libexec/config-vhost-names-default ${domain}
+    # check for downloaded app
+    if [ ! -f ${sys_dir}/${app}/${app_arch} ]; then
+      ${sudo} mkdir -p ${sys_dir}/${app} && cd ${sys_dir}/${app} && wget https://www.webenabled.com/seedapps/${app_arch} && tar zxvf ${app_arch}
+    fi
+    vhost=`echo "${domain}" | awk -F'[.]' '{print $1}'`
+    domain_name=`echo "${domain}" | awk -F"${vhost}." '{print $2}'`
+    ${sudo} ${sys_dir}/libexec/config-vhost-names-default ${domain_name}
     ${sudo} ${sys_dir}/libexec/restore-vhost -F ${vhost} ${sys_dir}/${app}
+    detect_running_apache_and_patch_configs
+  else
+    show_help
   fi
   create_local_config
 elif [ "$app" -a "$operation" == "clone" -a "$source_domain" -a "$domain" -a "$host_type" == "docker" ]; then
@@ -390,16 +455,16 @@ elif [ "$operation" == "destroy" -a "$app" -a "$domain" ]; then
     # remove backups also if requested
     if [ $remove_backups ]; then
       readarray -t backups_array <<< `docker images|grep ${domain}|awk '{print $1}'`
-      for i in "${backups_array[@]}"; do
+      for i in ${backups_array[@]}; do
         docker rmi -f ${i}
       done
     fi
   else
-    remove-vhost ${vhost}
+    ${sys_dir}/libexec/remove-vhost ${vhost}
   fi
   # remove config from nginx
   ${sudo} rm -f /etc/nginx/sites-enabled/${domain}.conf
-  ${sudo} service nginx reload
+  restart_or_reload_nginx
 elif [ "$operation" == "handle" -a "$docker_handler" -a "$app" -a "$domain" ]; then
   docker_get_ids_and_names_of_containers
   docker exec -it ${CONTAINER_WEB_ID} /opt/webenabled/libexec/${docker_handler}
