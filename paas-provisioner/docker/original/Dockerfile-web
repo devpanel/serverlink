@@ -1,0 +1,16 @@
+FROM devpanel_cache:v4
+EXPOSE 80 4000
+
+ARG USER=$USER
+ARG APP=$APP
+ARG SEEDAPP_ARCHIVE=$SEEDAPP_ARCHIVE
+ARG DOMAIN=$DOMAIN
+
+# setup environment for the app
+RUN /opt/webenabled/libexec/config-vhost-names-default ${DOMAIN}
+RUN /opt/webenabled/libexec/restore-vhost -F ${USER} /opt/webenabled/${APP}
+RUN mv /etc/mysql/my.cnf /etc/mysql/my.cnf.orig
+
+# start services
+ADD ./startup.sh /tmp/startup.sh
+CMD bash /tmp/startup.sh
