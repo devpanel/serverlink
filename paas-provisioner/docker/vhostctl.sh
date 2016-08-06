@@ -16,26 +16,30 @@ Options:
                                     restore - to restore containers to previous state
                                     destroy - to remove container(s) with webapp
                                     scan - to scan webapp for vulnerabulities
-                                    handle - to handle parameters from front-end for devPanel's script
+                                    handle - to handle parameters from front-end for devPanel's script inside docker container
   -SD, --source-domain            Source domain name. Used for 'clone' operation.
   -DD, --destination-domain       Destination domain name. For 'clone' operation different domain name should be passed.
   -B, --backup-name               Backup name.
   -R, --restore-name              Restore previously backed up name.
   -L, --build-image               Build devpanel_cache image locally instead of downloading it from docker hub.
   -RB, --remove-backups           Remove backups for requested webapp.
-  -H, --handler                   devPanel's script name and parameters to process.
+  -H, --handler                   devPanel's script name and parameters to process inside docker container.
+  -O, --options                   Parameters to process for webapp at local hosting.
   -T, --type                      Type of the host. Can be docker or local.
+  -RC, --read-config              Read config to determine type of the host.
 
 Usage examples:
   ./vhostctl.sh -A=wordpress -C=start -DD=t3st.some.domain -T=local
   ./vhostctl.sh -A=wordpress -C=start -DD=t3st.some.domain -L -T=docker
-  ./vhostctl.sh -A=wordpress -C=clone -SD=t3st.some.domain -DD=t4st.some.domain -T=docker
-  ./vhostctl.sh -A=wordpress -C=backup  -DD=t3st.some.domain -B=t3st_backup1 -T=docker
-  ./vhostctl.sh -A=wordpress -C=restore -DD=t3st.some.domain -R=t3st_backup1 -T=docker
+  ./vhostctl.sh -A=wordpress -C=clone -SD=t3st.some.domain -DD=t4st.some.domain
+  ./vhostctl.sh -A=wordpress -C=backup  -DD=t3st.some.domain -B=t3st_backup1
+  ./vhostctl.sh -A=wordpress -C=restore -DD=t3st.some.domain -R=t3st_backup1
   ./vhostctl.sh -A=wordpress -C=destroy -DD=t3st.some.domain
   ./vhostctl.sh -A=wordpress -C=destroy -DD=t3st.some.domain -RB
-  ./vhostctl.sh -A=wordpress -C=scan -DD=t3st.some.domain -T=docker
-  ./vhostctl.sh -A=wordpress -C=handle -DD=t3st.some.domain -H="check-disk-quota 90" -T=docker
+  ./vhostctl.sh -A=wordpress -C=scan -DD=t3st.some.domain
+  ./vhostctl.sh -A=wordpress -C=handle -DD=t3st.some.domain -H="check-disk-quota 90"
+  ./vhostctl.sh -A=wordpress -C=backup -DD=t3st.some.domain -O="-P -C t3st t3st.tgz"
+  ./vhostctl.sh -DD=t3st.some.domain -RC
 "
 }
 
@@ -95,8 +99,16 @@ case $i in
     docker_handler="${i#*=}"
     shift # past argument=value
     ;;
+    -O*|--options*)
+    local_options="${i#*=}"
+    shift # past argument=value
+    ;;
     -T*|--type*)
     host_type="${i#*=}"
+    shift # past argument=value
+    ;;
+    -RC*|--read-config*)
+    read_config="${i#*=}"
     shift # past argument=value
     ;;
     *)
@@ -331,7 +343,7 @@ if [ `docker images|grep devpanel_cache|grep latest|wc -l` -eq 0 ]; then
 fi
 
 # main logic
-if [ "$app" == "zabbix" -a "$operation" == "start" -a "$domain" -a "$host_type" ]; then
+if [ "$app" == "zabbix" -a "$operation" == "start" -a "$domain" -a "$host_type" == "docker" ]; then
   if [ `docker images|grep devpanel_zabbix|wc -l` -eq 0 ]; then
     if [ $build_image ]; then
       docker build -t devpanel_zabbix:v1 ${self_dir}/zabbix
@@ -342,7 +354,7 @@ if [ "$app" == "zabbix" -a "$operation" == "start" -a "$domain" -a "$host_type" 
   fi
   docker run -d -it --name ${domain}_${app}_web devpanel_zabbix:v1
   update_nginx_config
-elif [ "$app" == "hippo" -a "$operation" == "start" -a "$domain" -a "$host_type" ]; then
+elif [ "$app" == "hippo" -a "$operation" == "start" -a "$domain" -a "$host_type" == "docker" ]; then
   if [ `docker images|grep devpanel_hippo|wc -l` -eq 0 ]; then
     if [ $build_image ]; then
       docker build -t devpanel_hippo:v1 ${self_dir}/hippo
@@ -379,54 +391,78 @@ elif [ "$app" -a "$operation" == "start" -a "$domain" -a "$host_type" ]; then
     show_help
   fi
   create_local_config
-elif [ "$app" -a "$operation" == "clone" -a "$source_domain" -a "$domain" -a "$host_type" == "docker" ]; then
-  # parse variables
-  source_user=`echo "${source_domain}" | awk -F'[.]' '{print $1}'`
-  source_domain_name=`echo "${source_domain}" | awk -F"${source_user}." '{print $2}'`
-  user=`echo "${domain}" | awk -F'[.]' '{print $1}'`
-  domain_name=`echo "${domain}" | awk -F"${user}." '{print $2}'`
-  docker_get_ids_and_names_of_containers
-  # save current state of containers as images
-  docker commit ${CONTAINER_WEB_NAME} ${domain}_web
-  # get ids of images
-  IMAGE_WEB_NAME=`docker images|grep ${domain}_web|awk '{print $1}'`
-  docker run -d --name=${domain}_${app}_web ${IMAGE_WEB_NAME}
-  while [ `docker ps|grep ${domain}_${app}_web|wc -l` -eq 0 ]; do
-    echo "WEB container is not running. Waiting its start."
-    sleep 1
-  done
-  # get destination containers ids
-  CONTAINER_WEB_ID=`docker ps|grep ${user}.${domain_name}_${app}_web|awk '{print $1}'`
-  # update container's apache2 config with new URL
-  USER=`awk -F'.' '{print $1}' <<< "$source_domain"`
-  DOMAIN=${source_domain_name}
-  DST_USER=${user}
-  DST_DOMAIN=${domain_name}
-  docker exec -it ${CONTAINER_WEB_ID} sed -i "s/${USER}.${DOMAIN}/${DST_USER}.${DST_DOMAIN}/" /opt/webenabled/compat/apache_include/virtwww/w_${USER}.conf
-  docker exec -it ${CONTAINER_WEB_ID} sed -i "s/${USER}-gen.${DOMAIN}/${DST_USER}-gen.${DST_DOMAIN}/" /opt/webenabled/compat/apache_include/virtwww/w_${USER}.conf
-  docker exec -it ${CONTAINER_WEB_ID} service apache2 reload
-  # update host's nginx config with new IP of cloned web container
-  update_nginx_config ${domain}_${app}_web
-elif [ "$operation" == "backup" -a "$backup_name" -a "$domain" -a "$host_type" == "docker" ]; then
-  # get ids of current containers
-  docker_get_ids_and_names_of_containers
-  # save current state of containers as images
-  docker commit ${CONTAINER_WEB_NAME} ${domain}_${backup_name}_bkp_web
-elif [ "$operation" == "restore" -a "$restore_name" -a "$domain" -a "$host_type" == "docker" ]; then
-  # get ids of current containers
-  docker_get_ids_and_names_of_containers
-  # remove source containers to avoid name conflicts
-  docker rm -f ${CONTAINER_WEB_ID}
-  # get ids of images
-  IMAGE_WEB_NAME=`docker images|grep ${domain}_${restore_name}_bkp_web|awk '{print $1}'`
-  # start backed up containers
-  docker run -d --name=${CONTAINER_WEB_NAME} ${IMAGE_WEB_NAME}
-  while [ `docker ps|grep ${domain}_${app}_web|wc -l` -eq 0 ]; do
-    echo "WEB container is not running. Waiting its start."
-    sleep 1
-  done
-  # update nginx config with new IP of web container
-  update_nginx_config ${CONTAINER_WEB_NAME}
+elif [ "$app" -a "$operation" == "clone" -a "$source_domain" -a "$domain" ]; then
+  read_local_config
+  if [ "$app_hosting" == "docker" ]; then
+    # parse variables
+    source_user=`echo "${source_domain}" | awk -F'[.]' '{print $1}'`
+    source_domain_name=`echo "${source_domain}" | awk -F"${source_user}." '{print $2}'`
+    user=`echo "${domain}" | awk -F'[.]' '{print $1}'`
+    domain_name=`echo "${domain}" | awk -F"${user}." '{print $2}'`
+    docker_get_ids_and_names_of_containers
+    # save current state of containers as images
+    docker commit ${CONTAINER_WEB_NAME} ${domain}_web
+    # get ids of images
+    IMAGE_WEB_NAME=`docker images|grep ${domain}_web|awk '{print $1}'`
+    docker run -d --name=${domain}_${app}_web ${IMAGE_WEB_NAME}
+    while [ `docker ps|grep ${domain}_${app}_web|wc -l` -eq 0 ]; do
+      echo "WEB container is not running. Waiting its start."
+      sleep 1
+    done
+    # get destination containers ids
+    CONTAINER_WEB_ID=`docker ps|grep ${user}.${domain_name}_${app}_web|awk '{print $1}'`
+    # update container's apache2 config with new URL
+    USER=`awk -F'.' '{print $1}' <<< "$source_domain"`
+    DOMAIN=${source_domain_name}
+    DST_USER=${user}
+    DST_DOMAIN=${domain_name}
+    docker exec -it ${CONTAINER_WEB_ID} sed -i "s/${USER}.${DOMAIN}/${DST_USER}.${DST_DOMAIN}/" /opt/webenabled/compat/apache_include/virtwww/w_${USER}.conf
+    docker exec -it ${CONTAINER_WEB_ID} sed -i "s/${USER}-gen.${DOMAIN}/${DST_USER}-gen.${DST_DOMAIN}/" /opt/webenabled/compat/apache_include/virtwww/w_${USER}.conf
+    docker exec -it ${CONTAINER_WEB_ID} service apache2 reload
+    # update host's nginx config with new IP of cloned web container
+    update_nginx_config ${domain}_${app}_web
+  elif [ "$app_hosting" == "local" ]; then
+    ${sys_dir}/libexec/clone-vhost-local "$source_domain" "$domain"
+  else
+    show_help
+    exit 1
+  fi
+elif [ "$operation" == "backup" -a "$backup_name" -a "$domain" ]; then
+  read_local_config
+  if [ "$app_hosting" == "docker" ]; then
+    # get ids of current containers
+    docker_get_ids_and_names_of_containers
+    # save current state of containers as images
+    docker commit ${CONTAINER_WEB_NAME} ${domain}_${backup_name}_bkp_web
+  elif [ "$app_hosting" == "local" ]; then
+    ${sys_dir}/libexec/archive-vhost "$local_options" "$vhost"
+  else
+    show_help
+    exit 1
+  fi
+elif [ "$operation" == "restore" -a "$restore_name" -a "$domain" ]; then
+  read_local_config
+  if [ "$app_hosting" == "docker" ]; then
+    # get ids of current containers
+    docker_get_ids_and_names_of_containers
+    # remove source containers to avoid name conflicts
+    docker rm -f ${CONTAINER_WEB_ID}
+    # get ids of images
+    IMAGE_WEB_NAME=`docker images|grep ${domain}_${restore_name}_bkp_web|awk '{print $1}'`
+    # start backed up containers
+    docker run -d --name=${CONTAINER_WEB_NAME} ${IMAGE_WEB_NAME}
+    while [ `docker ps|grep ${domain}_${app}_web|wc -l` -eq 0 ]; do
+      echo "WEB container is not running. Waiting its start."
+      sleep 1
+    done
+    # update nginx config with new IP of web container
+    update_nginx_config ${CONTAINER_WEB_NAME}
+  elif [ "$app_hosting" == "local" ]; then
+    ${sys_dir}/libexec/restore-vhost "$local_options" "$vhost"
+  else
+    show_help
+    exit 1
+  fi
 elif [ "$operation" == "scan" -a "$app" -a "$domain" -a "$host_type" == "docker" ]; then
   # get ids of current containers
   docker_get_ids_and_names_of_containers
@@ -459,8 +495,11 @@ elif [ "$operation" == "destroy" -a "$app" -a "$domain" ]; then
         docker rmi -f ${i}
       done
     fi
-  else
+  elif [ "$app_hosting" == "local" ]; then
     ${sys_dir}/libexec/remove-vhost ${vhost}
+  else
+    show_help
+    exit 1
   fi
   # remove config from nginx
   ${sudo} rm -f /etc/nginx/sites-enabled/${domain}.conf
@@ -468,6 +507,9 @@ elif [ "$operation" == "destroy" -a "$app" -a "$domain" ]; then
 elif [ "$operation" == "handle" -a "$docker_handler" -a "$app" -a "$domain" ]; then
   docker_get_ids_and_names_of_containers
   docker exec -it ${CONTAINER_WEB_ID} /opt/webenabled/libexec/${docker_handler}
+elif [ "$domain" -a "$read_config" ]; then
+  read_local_config
+  echo "$app_hosting"
 else
   show_help
   exit 1
