@@ -370,6 +370,9 @@ elif [ "$app" -a "$operation" == "start" -a "$domain" -a "$host_type" ]; then
     detect_running_apache_and_patch_configs
     patch_definition_files_and_build
   elif [ "$host_type" == "local" ]; then
+    #
+    # will be changed to parse /apps.txt in next update
+    #
     if [ "$app" == "wordpress" ]; then
       app_arch="wordpress-v4.tgz"
     elif [ "$app" == "drupal" ]; then
@@ -422,7 +425,10 @@ elif [ "$app" -a "$operation" == "clone" -a "$source_domain" -a "$domain" ]; the
     # update host's nginx config with new IP of cloned web container
     update_nginx_config ${domain}_${app}_web
   elif [ "$app_hosting" == "local" ]; then
-    ${sys_dir}/libexec/clone-vhost-local "$source_domain" "$domain"
+    source_vhost=${source_domain}
+    target_vhost=${domain}
+    # clone_vhost||libexec/clone-vhost|%source_vhost% %target_vhost%|
+    ${sys_dir}/libexec/clone-vhost "$source_vhost" "$target_vhost"
   else
     show_help
     exit 1
@@ -435,7 +441,8 @@ elif [ "$operation" == "backup" -a "$backup_name" -a "$domain" ]; then
     # save current state of containers as images
     docker commit ${CONTAINER_WEB_NAME} ${domain}_${backup_name}_bkp_web
   elif [ "$app_hosting" == "local" ]; then
-    ${sys_dir}/libexec/archive-vhost "$local_options" "$vhost"
+    # archive_vhost||libexec/archive-vhost|%vhost% %filename%|
+    ${sys_dir}/libexec/archive-vhost "$vhost" "$backup_name"
   else
     show_help
     exit 1
@@ -458,7 +465,8 @@ elif [ "$operation" == "restore" -a "$restore_name" -a "$domain" ]; then
     # update nginx config with new IP of web container
     update_nginx_config ${CONTAINER_WEB_NAME}
   elif [ "$app_hosting" == "local" ]; then
-    ${sys_dir}/libexec/restore-vhost "$local_options" "$vhost"
+    # restore_vhost||libexec/restore-vhost|%vhost% %filename%|
+    ${sys_dir}/libexec/restore-vhost "$vhost" "$restore_name"
   else
     show_help
     exit 1
@@ -496,6 +504,7 @@ elif [ "$operation" == "destroy" -a "$app" -a "$domain" ]; then
       done
     fi
   elif [ "$app_hosting" == "local" ]; then
+    # remove_vhost||libexec/remove-vhost|%vhost% %filename%|
     ${sys_dir}/libexec/remove-vhost ${vhost}
   else
     show_help
