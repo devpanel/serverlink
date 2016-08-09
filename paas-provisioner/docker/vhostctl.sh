@@ -164,6 +164,9 @@ read_local_config()
   vhost=`echo "${domain}" | awk -F'[.]' '{print $1}'`
   app_name=`ini_section_get_key_value /opt/webenabled/config/apps/${vhost}.ini app name`
   app_hosting=`ini_section_get_key_value /opt/webenabled/config/apps/${vhost}.ini app hosting`
+  if [ "$app_hosting" == "docker" ]; then
+    app_container_name=`ini_section_get_key_value /opt/webenabled/config/apps/${vhost}.ini app container_name`
+  fi
 }
 
 update_nginx_config()
@@ -180,7 +183,8 @@ update_nginx_config()
   elif [ "$operation" == "restore" ]; then
     container_name=$CONTAINER_WEB_NAME
   fi
-  if [ "$host_type" == "docker" ]; then
+  if [ "$host_type" == "docker" -o "$app_hosting" == "docker" ]; then
+    if [ "$app_container_name" ]; then container_name="$app_container_name"; fi
     container_ip_address=`docker inspect -f '{{.Name}} - {{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' $(docker ps -aq)|grep "${container_name}"|awk -F" - " '{print $2}'`
   fi
   if [ "$app" == "hippo" ]; then
@@ -427,8 +431,8 @@ elif [ "$operation" == "clone" -a "$source_domain" -a "$domain" ]; then
   elif [ "$app_hosting" == "local" ]; then
     source_vhost=${source_domain}
     target_vhost=${domain}
-    # clone_vhost||libexec/clone-vhost|%source_vhost% %target_vhost%|
-    ${sys_dir}/libexec/clone-vhost "$source_vhost" "$target_vhost"
+    # clone_vhost||libexec/clone-vhost-local|%source_vhost% %target_vhost%|
+    ${sys_dir}/libexec/clone-vhost-local "$source_vhost" "$target_vhost"
   else
     show_help
     exit 1
@@ -490,11 +494,11 @@ elif [ "$operation" == "scan" -a "$domain" -a "$host_type" == "docker" ]; then
 elif [ "$operation" == "destroy" -a "$domain" ]; then
   read_local_config
   if [ "$app_hosting" == "docker" ]; then
-    docker rm  -f ${domain}_${app}_web
+    docker rm  -f ${app_container_name}
     if [ "$app" == "zabbix" -o "$app" == "hippo" ]; then
       docker rmi -f devpanel_${app}:v1
     else
-      docker rmi -f original_${domain}_${app}_web
+      docker rmi -f original_${app_container_name}
     fi
     # remove backups also if requested
     if [ $remove_backups ]; then
