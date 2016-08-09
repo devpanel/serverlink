@@ -365,7 +365,7 @@ elif [ "$app" == "hippo" -a "$operation" == "start" -a "$domain" -a "$host_type"
   fi
   docker run -d -it --name ${domain}_${app}_web devpanel_hippo:v1
   update_nginx_config
-elif [ "$app" -a "$operation" == "start" -a "$domain" -a "$host_type" ]; then
+elif [ "$operation" == "start" -a "$domain" -a "$host_type" ]; then
   if [ "$host_type" == "docker" ]; then
     detect_running_apache_and_patch_configs
     patch_definition_files_and_build
@@ -394,7 +394,7 @@ elif [ "$app" -a "$operation" == "start" -a "$domain" -a "$host_type" ]; then
     show_help
   fi
   create_local_config
-elif [ "$app" -a "$operation" == "clone" -a "$source_domain" -a "$domain" ]; then
+elif [ "$operation" == "clone" -a "$source_domain" -a "$domain" ]; then
   read_local_config
   if [ "$app_hosting" == "docker" ]; then
     # parse variables
@@ -471,7 +471,7 @@ elif [ "$operation" == "restore" -a "$restore_name" -a "$domain" ]; then
     show_help
     exit 1
   fi
-elif [ "$operation" == "scan" -a "$app" -a "$domain" -a "$host_type" == "docker" ]; then
+elif [ "$operation" == "scan" -a "$domain" -a "$host_type" == "docker" ]; then
   # get ids of current containers
   docker_get_ids_and_names_of_containers
   # get ip_address of webapp
@@ -487,7 +487,7 @@ elif [ "$operation" == "scan" -a "$app" -a "$domain" -a "$host_type" == "docker"
   fi
   # do the scan
   docker_msf
-elif [ "$operation" == "destroy" -a "$app" -a "$domain" ]; then
+elif [ "$operation" == "destroy" -a "$domain" ]; then
   read_local_config
   if [ "$app_hosting" == "docker" ]; then
     docker rm  -f ${domain}_${app}_web
@@ -513,7 +513,7 @@ elif [ "$operation" == "destroy" -a "$app" -a "$domain" ]; then
   # remove config from nginx
   ${sudo} rm -f /etc/nginx/sites-enabled/${domain}.conf
   restart_or_reload_nginx
-elif [ "$operation" == "handle" -a "$docker_handler" -a "$app" -a "$domain" ]; then
+elif [ "$operation" == "handle" -a "$docker_handler" -a "$domain" ]; then
   docker_get_ids_and_names_of_containers
   docker exec -it ${CONTAINER_WEB_ID} /opt/webenabled/libexec/${docker_handler}
 elif [ "$domain" -a "$read_config" ]; then
