@@ -23,8 +23,7 @@ Options:
   -R, --restore-name              Restore previously backed up name.
   -L, --build-image               Build devpanel_cache image locally instead of downloading it from docker hub.
   -RB, --remove-backups           Remove backups for requested webapp.
-  -H, --handler                   devPanel's script name and parameters to process inside docker container.
-  -O, --options                   Parameters to process for webapp at local hosting.
+  -O, --options                   Script's name and parameters to process for webapp.
   -T, --type                      Type of the host. Can be docker or local.
   -RC, --read-config              Read config to determine type of the host.
 
@@ -37,8 +36,7 @@ Usage examples:
   ./vhostctl.sh -C=destroy -DD=t3st.some.domain
   ./vhostctl.sh -C=destroy -DD=t3st.some.domain -RB
   ./vhostctl.sh -C=scan -DD=t3st.some.domain
-  ./vhostctl.sh -C=handle -DD=t3st.some.domain -H="check-disk-quota 90"
-  ./vhostctl.sh -C=backup -DD=t3st.some.domain -O="-P -C t3st t3st.tgz"
+  ./vhostctl.sh -C=handle -DD=t3st.some.domain -O="check-disk-quota 90"
   ./vhostctl.sh -DD=t3st.some.domain -RC
 "
 }
@@ -95,12 +93,8 @@ case $i in
     remove_backups="${i#*=}"
     shift # past argument=value
     ;;
-    -H*|--handler*)
-    docker_handler="${i#*=}"
-    shift # past argument=value
-    ;;
     -O*|--options*)
-    local_options="${i#*=}"
+    handler_options="${i#*=}"
     shift # past argument=value
     ;;
     -T*|--type*)
@@ -139,8 +133,8 @@ fi
 create_local_config()
 {
   # create dir if not exist
-  if [ ! -d /opt/webenabled/config/apps ];then
-    ${sudo} mkdir -p /opt/webenabled/config/apps
+  if [ ! -d ${sys_dir}/config/apps ];then
+    ${sudo} mkdir -p ${sys_dir}/config/apps
   fi
   vhost=`echo "${domain}" | awk -F'[.]' '{print $1}'`
   # if [ "$operation" == "start" ]; then vhost="${orig_domain}"; fi
@@ -166,19 +160,63 @@ app.hosting        = local
 app.clone          = ${clone_state}
 "
   fi
-  echo "$ini_contents" | ${sudo} /opt/webenabled/bin/update-ini-file -q -c /opt/webenabled/config/apps/${vhost}.ini
+  echo "$ini_contents" | ${sudo} ${sys_dir}/bin/update-ini-file -q -c ${sys_dir}/config/apps/${vhost}.ini
+  store_last_vhost_variable
 }
 
 read_local_config()
 {
   vhost=`echo "${domain}" | awk -F'[.]' '{print $1}'`
-  app_name=`ini_section_get_key_value /opt/webenabled/config/apps/${vhost}.ini app name`
-  app_hosting=`ini_section_get_key_value /opt/webenabled/config/apps/${vhost}.ini app hosting`
-  app_clone=`ini_section_get_key_value /opt/webenabled/config/apps/${vhost}.ini app clone`
-  if [ "$app_hosting" == "docker" ]; then
-    app_container_name=`ini_section_get_key_value /opt/webenabled/config/apps/${vhost}.ini app container_name`
+
+  # check if config exists. if not, set to local. standard script 'restore-vhost' does not create any configs by default
+  if [ ! -f ${sys_dir}/config/apps/${vhost}.ini ]; then
+    app_hosting="local"
+  else
+    app_name=`ini_section_get_key_value ${sys_dir}/config/apps/${vhost}.ini app name`
+    app_hosting=`ini_section_get_key_value ${sys_dir}/config/apps/${vhost}.ini app hosting`
+    app_clone=`ini_section_get_key_value ${sys_dir}/config/apps/${vhost}.ini app clone`
+    if [ "$app_hosting" == "docker" ]; then
+      app_container_name=`ini_section_get_key_value ${sys_dir}/config/apps/${vhost}.ini app container_name`
+    fi
   fi
 }
+
+controller_handler()
+# 31|list_vhost_logs||libexec/check-logs|-s %vhost%|0.0|0|2012-05-22 07:27:25|2016-02-19 20:38:03
+# handler_options="libexec/check-logs -s ${vhost}"
+{
+  read_local_config
+  read_last_vhost_variable
+  handler_options=`echo ${handler_options}|sed 's/+/ /g'`
+  if [ "$app_hosting" == "docker" ]; then
+    docker exec ${app_container_name} ${sys_dir}/${handler_options}
+  elif [ "$app_hosting" == "local" ]; then
+    ${sys_dir}/${handler_options}
+  fi
+  # workaround. useful for some scripts without %vhost% support
+  store_last_vhost_variable
+}
+
+store_last_vhost_variable()
+{
+  if [ "$vhost" ]; then
+    echo "app.vhost = ${vhost}" | ${sudo} ${sys_dir}/bin/update-ini-file -q -c ${sys_dir}/config/apps/last_vhost_used.info
+  fi
+}
+
+read_last_vhost_variable()
+{
+  if [ -z "$vhost" ]; then
+    vhost=`ini_section_get_key_value ${sys_dir}/config/apps/last_vhost_used.info app vhost`
+    # check for existing vhost at local hosting
+    if [ ! -d /home/clients/websites/w_${vhost} ]; then
+      # set domain to last vhost and read its config
+      domain=$vhost
+      read_local_config
+    fi
+  fi
+}
+
 
 update_nginx_config()
 {
@@ -582,12 +620,11 @@ elif [ "$operation" == "destroy" -a "$domain" ]; then
   # remove config from nginx
   ${sudo} rm -f /etc/nginx/sites-enabled/${domain}*.conf
   restart_or_reload_nginx
-  ${sudo} rm -f /opt/webenabled/config/apps/${domain}.ini
-  ${sudo} rm -f /opt/webenabled/config/apps/${vhost}.ini
+  ${sudo} rm -f ${sys_dir}/config/apps/${domain}.ini
+  ${sudo} rm -f ${sys_dir}/config/apps/${vhost}.ini
 
-elif [ "$operation" == "handle" -a "$docker_handler" -a "$domain" ]; then
-  docker_get_ids_and_names_of_containers
-  docker exec ${CONTAINER_WEB_ID} /opt/webenabled/libexec/${docker_handler}
+elif [ "$operation" == "handle" -a "$handler_options" ]; then
+  controller_handler
 
 elif [ "$domain" -a "$read_config" ]; then
   read_local_config
