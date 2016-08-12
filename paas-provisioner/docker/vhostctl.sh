@@ -182,18 +182,30 @@ read_local_config()
 }
 
 controller_handler()
+# example in db@controller
 # 31|list_vhost_logs||libexec/check-logs|-s %vhost%|0.0|0|2012-05-22 07:27:25|2016-02-19 20:38:03
-# handler_options="libexec/check-logs -s ${vhost}"
+# becomes ('+' used as a whitespace)
+# 31|list_vhost_logs||paas-provisioner/docker/vhostctl.sh|-C=handle -O=libexec/check-logs+-s+%vhost% -DD=%vhost%|0.0|0|2012-05-22 07:27:25|2016-02-19 20:38:03
+# and vhostctl receives (after sed processed '+')
+# handler_options="libexec/check-logs -s some_vhost"
 {
   read_local_config
   read_last_vhost_variable
   handler_options=`echo ${handler_options}|sed 's/+/ /g'`
   if [ "$app_hosting" == "docker" ]; then
-    docker exec ${app_container_name} ${sys_dir}/${handler_options}
+    case "$handler_options" in
+      bin/restore-vhost-subsystem*)
+      docker exec ${app_container_name} chmod -R o+rx ${sys_dir}/config/vhosts/ # permissions workaround
+      docker exec -u w_${vhost} ${app_container_name} /bin/sh -c "USER=w_${vhost} ${sys_dir}/${handler_options}"
+      ;;
+      *)
+      docker exec ${app_container_name} ${sys_dir}/${handler_options}
+      ;;
+    esac
   elif [ "$app_hosting" == "local" ]; then
     ${sys_dir}/${handler_options}
   fi
-  # workaround. useful for some scripts without %vhost% support
+  # workaround. useful for scripts without %vhost% support
   store_last_vhost_variable
 }
 
