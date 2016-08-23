@@ -1,4 +1,4 @@
-FROM devpanel_cache:v4
+FROM devpanel_cache:latest
 EXPOSE 80 4000
 
 ARG USER=$USER
