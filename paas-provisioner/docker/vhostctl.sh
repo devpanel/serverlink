@@ -191,6 +191,12 @@ controller_handler()
 {
   read_local_config
   read_last_vhost_variable
+  # read STDIN
+  while read line
+  do
+    stdin_data="$line"
+  done < "${1:-/dev/stdin}"
+
   handler_options=`echo ${handler_options}|sed 's/+/ /g'`
   if [ "$app_hosting" == "docker" ]; then
     case "$handler_options" in
@@ -199,7 +205,7 @@ controller_handler()
       docker exec -u w_${vhost} ${app_container_name} /bin/sh -c "USER=w_${vhost} ${sys_dir}/${handler_options}"
       ;;
       *)
-      docker exec ${app_container_name} ${sys_dir}/${handler_options}
+      docker exec ${app_container_name} /bin/sh -c "echo ${stdin_data} | ${sys_dir}/${handler_options}"
       ;;
     esac
   elif [ "$app_hosting" == "local" ]; then
