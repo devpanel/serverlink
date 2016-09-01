@@ -190,45 +190,25 @@ controller_handler()
 # handler_options="libexec/check-logs -s some_vhost"
 {
   read_local_config
-  read_last_vhost_variable
   handler_options=`echo ${handler_options}|sed 's/+/ /g'`
-  if [ "$app_hosting" == "docker" ]; then
-    case "$handler_options" in
-      bin/restore-vhost-subsystem*)
-      docker exec ${app_container_name} chmod -R o+rx ${sys_dir}/config/vhosts/ # permissions workaround
+  case "$handler_options" in
+    bin/restore-vhost-subsystem*|bin/list-backups*|libexec/check-logs*)
+    if [ "$app_hosting" == "docker" ]; then
+      docker exec -i ${app_container_name} chmod -R o+rx ${sys_dir}/config/vhosts/ # permissions workaround
       docker exec -u w_${vhost} ${app_container_name} /bin/sh -c "USER=w_${vhost} ${sys_dir}/${handler_options}"
-      ;;
-      *)
-      docker exec -i ${app_container_name} ${sys_dir}/${handler_options}
-      ;;
-    esac
-  elif [ "$app_hosting" == "local" ]; then
-    ${sys_dir}/${handler_options}
-  fi
-  # workaround. useful for scripts without %vhost% support
-  store_last_vhost_variable
-}
-
-store_last_vhost_variable()
-{
-  if [ "$vhost" ]; then
-    echo "app.vhost = ${vhost}" | ${sudo} ${sys_dir}/bin/update-ini-file -q -c ${sys_dir}/config/apps/last_vhost_used.info
-  fi
-}
-
-read_last_vhost_variable()
-{
-  if [ -z "$vhost" ]; then
-    vhost=`ini_section_get_key_value ${sys_dir}/config/apps/last_vhost_used.info app vhost`
-    # check for existing vhost at local hosting
-    if [ ! -d /home/clients/websites/w_${vhost} ]; then
-      # set domain to last vhost and read its config
-      domain=$vhost
-      read_local_config
+    elif [ "$app_hosting" == "local" ]; then
+      su - w_${vhost} -c "${sys_dir}/${handler_options}"
     fi
-  fi
+    ;;
+    *)
+    if [ "$app_hosting" == "docker" ]; then
+      docker exec -i ${app_container_name} ${sys_dir}/${handler_options}
+    elif [ "$app_hosting" == "local" ]; then
+      ${sys_dir}/${handler_options}
+    fi
+    ;;
+  esac
 }
-
 
 update_nginx_config()
 {
