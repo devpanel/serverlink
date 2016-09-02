@@ -192,11 +192,19 @@ controller_handler()
   read_local_config
   handler_options=`echo ${handler_options}|sed 's/+/ /g'`
   case "$handler_options" in
-    bin/restore-vhost-subsystem*|bin/list-backups*|libexec/check-logs*)
+    bin/restore-vhost-subsystem\ -p\ -i*|bin/restore-vhost-subsystem\ -m*)
     if [ "$app_hosting" == "docker" ]; then
       docker exec -i ${app_container_name} chmod -R o+rx ${sys_dir}/config/vhosts/ # permissions workaround
-      while read line; do stdin_data=$line; done < "${1:-/dev/stdin}" # workaround for STDIN passing to the shell inside docker container
+      while read line; do stdin_data=$line; done < "${1:-/dev/stdin}"
       docker exec -u w_${vhost} ${app_container_name} /bin/sh -c "echo ${stdin_data} | USER=w_${vhost} ${sys_dir}/${handler_options}"
+    elif [ "$app_hosting" == "local" ]; then
+      su - w_${vhost} -c "${sys_dir}/${handler_options}"
+    fi
+    ;;
+    bin/restore-vhost-subsystem*|bin/list-backups*)
+    if [ "$app_hosting" == "docker" ]; then
+      docker exec -i ${app_container_name} chmod -R o+rx ${sys_dir}/config/vhosts/ # permissions workaround
+      docker exec -u w_${vhost} ${app_container_name} /bin/sh -c "USER=w_${vhost} ${sys_dir}/${handler_options}"
     elif [ "$app_hosting" == "local" ]; then
       su - w_${vhost} -c "${sys_dir}/${handler_options}"
     fi
