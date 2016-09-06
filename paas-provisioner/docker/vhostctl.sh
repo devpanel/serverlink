@@ -210,7 +210,7 @@ controller_handler()
     fi
     ;;
   esac
-  ${docker_exec} ${su_exec} "${sys_dir}/${handler_options}"
+  ${docker_exec}${su_exec} ${sys_dir}/${handler_options}
 }
 
 update_nginx_config()
@@ -488,6 +488,13 @@ elif [ "$operation" == "clone" -a "$source_domain" -a "$domain" ]; then
     PASSWORD=`docker exec ${CONTAINER_WEB_ID} grep w_${USER} /home/clients/websites/w_${USER}/.mysql.passwd|awk -F ":" '{print $2}'`
     docker exec ${CONTAINER_WEB_ID} mysql ${app} -h localhost -P ${PORT} -u w_${USER} --password=${PASSWORD} --socket=/home/clients/databases/b_${USER}/mysql/mysql.sock -e \
       "UPDATE wp_options SET option_value = replace(option_value, 'http://${USER}.${DOMAIN}', 'http://${DST_USER}.${DST_DOMAIN}');"
+    while [ `docker exec ${CONTAINER_WEB_ID} /bin/sh -c "netstat -ltpn|grep 4000|wc -l"` -eq 0 ]; do
+      echo "DB is not running. Waiting its start."
+      sleep 1
+      docker exec ${CONTAINER_WEB_ID} mysql ${app} -h localhost -P ${PORT} -u w_${USER} --password=${PASSWORD} --socket=/home/clients/databases/b_${USER}/mysql/mysql.sock -e \
+        "UPDATE wp_options SET option_value = replace(option_value, 'http://${USER}.${DOMAIN}', 'http://${DST_USER}.${DST_DOMAIN}');"
+    done
+
     # check if it was replaced correctly
     if [ `docker exec ${CONTAINER_WEB_ID} mysql ${app} -h localhost -P ${PORT} -u w_${USER} --password=${PASSWORD} --socket=/home/clients/databases/b_${USER}/mysql/mysql.sock -e \
       "select * from wp_options;"|grep -c ${DST_USER}` -eq 2 ]; then
