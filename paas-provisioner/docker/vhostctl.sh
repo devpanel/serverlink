@@ -236,7 +236,7 @@ update_nginx_config()
   else
     WEB_PORT=80
   fi
-  # create config
+  # create config for domain
   cat << EOF > /tmp/${domain}.conf
 server {
   listen       80;
@@ -247,8 +247,24 @@ server {
   }
 }
 EOF
-  ${sudo} rm -f /etc/nginx/sites-enabled/${domain}.conf
+  # create config for subdomain
+  domain_fp=`echo "${domain}"|awk -F'[.]' '{print $1}'`
+  domain_lp=`echo "${domain}"|awk -F"${domain_fp}." '{print $2}'`
+  subdomain="${domain_fp}-gen.${domain_lp}"
+  cat << EOF > /tmp/${subdomain}.conf
+server {
+  listen       80;
+  server_name  ${subdomain};
+  location / {
+    proxy_set_header Host ${subdomain};
+    proxy_pass http://${container_ip_address}:${WEB_PORT};
+  }
+}
+EOF
+  # apply configs
+  ${sudo} rm -f /etc/nginx/sites-enabled/${domain}.conf /etc/nginx/sites-enabled/${subdomain}.conf
   ${sudo} mv /tmp/${domain}.conf /etc/nginx/sites-enabled/${domain}.conf
+  ${sudo} mv /tmp/${subdomain}.conf /etc/nginx/sites-enabled/${subdomain}.conf
   restart_or_reload_nginx
 }
 
@@ -486,14 +502,14 @@ elif [ "$operation" == "clone" -a "$source_domain" -a "$domain" ]; then
     app="wordpress"
     PORT=4000
     PASSWORD=`docker exec ${CONTAINER_WEB_ID} grep w_${USER} /home/clients/websites/w_${USER}/.mysql.passwd|awk -F ":" '{print $2}'`
-    docker exec ${CONTAINER_WEB_ID} mysql ${app} -h localhost -P ${PORT} -u w_${USER} --password=${PASSWORD} --socket=/home/clients/databases/b_${USER}/mysql/mysql.sock -e \
-      "UPDATE wp_options SET option_value = replace(option_value, 'http://${USER}.${DOMAIN}', 'http://${DST_USER}.${DST_DOMAIN}');"
     while [ `docker exec ${CONTAINER_WEB_ID} /bin/sh -c "netstat -ltpn|grep 4000|wc -l"` -eq 0 ]; do
       echo "DB is not running. Waiting its start."
       sleep 1
       docker exec ${CONTAINER_WEB_ID} mysql ${app} -h localhost -P ${PORT} -u w_${USER} --password=${PASSWORD} --socket=/home/clients/databases/b_${USER}/mysql/mysql.sock -e \
         "UPDATE wp_options SET option_value = replace(option_value, 'http://${USER}.${DOMAIN}', 'http://${DST_USER}.${DST_DOMAIN}');"
     done
+    docker exec ${CONTAINER_WEB_ID} mysql ${app} -h localhost -P ${PORT} -u w_${USER} --password=${PASSWORD} --socket=/home/clients/databases/b_${USER}/mysql/mysql.sock -e \
+      "UPDATE wp_options SET option_value = replace(option_value, 'http://${USER}.${DOMAIN}', 'http://${DST_USER}.${DST_DOMAIN}');"
 
     # check if it was replaced correctly
     if [ `docker exec ${CONTAINER_WEB_ID} mysql ${app} -h localhost -P ${PORT} -u w_${USER} --password=${PASSWORD} --socket=/home/clients/databases/b_${USER}/mysql/mysql.sock -e \
