@@ -200,6 +200,34 @@ controller_handler()
       su_exec="su - w_${vhost} -c"
     fi
     ;;
+    libexec/restore-vhost*)
+
+    new_vhost_name=`echo ${handler_options}|awk '{print $2}'`
+    old_vhost_name=`echo ${handler_options}|awk -F'/opt/webenabled-data/vhost_archives/' '{print $2}'|awk -F'/' '{print $1}'`
+    hostname_fqdn=`hostname -f`
+    vhost="${old_vhost_name}.${hostname_fqdn}"
+
+    if [ `docker ps|grep ${vhost}|wc -l` -gt 0 ]; then
+      app_hosting="docker"
+    fi
+
+    if [ -z "$app_hosting" ]; then
+      # create and run a new container
+      CONTAINER_WEB_ID=`docker ps|grep ${vhost}|awk '{print $1}'`
+      app_container_name="${new_vhost_name}.${hostname_fqdn}"
+      docker commit ${CONTAINER_WEB_ID} ${app_container_name}
+      docker run -d --name=${app_container_name} ${app_container_name}
+      # create nginx config
+      domain="${app_container_name}"
+      update_nginx_config
+
+      docker_exec="docker exec -i ${app_container_name}"
+      su_exec=""
+    elif [ "$app_hosting" == "local" ]; then
+      docker_exec=""
+      su_exec=""
+    fi
+    ;;
     *)
     if [ "$app_hosting" == "docker" ]; then
       docker_exec="docker exec -i ${app_container_name}"
