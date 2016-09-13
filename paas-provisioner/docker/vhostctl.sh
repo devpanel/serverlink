@@ -217,6 +217,14 @@ controller_handler()
       app_container_name="${new_vhost_name}.${hostname_fqdn}"
       docker commit ${CONTAINER_WEB_ID} ${app_container_name}
       docker run -d --name=${app_container_name} ${app_container_name}
+      # write app's config
+      ini_contents="\
+app.name           = ${new_vhost_name}
+app.hosting        = docker
+app.container_name = ${app_container_name}
+app.clone          = true
+"
+      echo "$ini_contents" | ${sudo} ${sys_dir}/bin/update-ini-file -q -c ${sys_dir}/config/apps/${new_vhost_name}.ini
       # create nginx config
       domain="${app_container_name}"
       update_nginx_config
@@ -224,6 +232,14 @@ controller_handler()
       docker_exec="docker exec -i ${app_container_name}"
       su_exec=""
     elif [ "$app_hosting" == "local" ]; then
+      # write app's config
+      ini_contents="\
+app.name           = ${new_vhost_name}
+app.hosting        = local
+app.clone          = true
+"
+      echo "$ini_contents" | ${sudo} ${sys_dir}/bin/update-ini-file -q -c ${sys_dir}/config/apps/${new_vhost_name}.ini
+
       docker_exec=""
       su_exec=""
     fi
