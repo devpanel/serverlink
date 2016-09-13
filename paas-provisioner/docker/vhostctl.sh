@@ -211,7 +211,7 @@ controller_handler()
       app_hosting="docker"
     fi
 
-    if [ -z "$app_hosting" ]; then
+    if [ "$app_hosting" == "docker" ]; then
       # create and run a new container
       CONTAINER_WEB_ID=`docker ps|grep ${vhost}|awk '{print $1}'`
       app_container_name="${new_vhost_name}.${hostname_fqdn}"
