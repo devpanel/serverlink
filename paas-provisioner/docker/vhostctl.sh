@@ -193,15 +193,17 @@ controller_handler()
   case "$handler_options" in
     bin/restore-vhost-subsystem*|bin/list-backups*)
     if [ "$app_hosting" == "docker" ]; then
-      docker_exec="docker exec -i ${app_container_name}"
-      su_exec="su - w_${vhost} -c"
+      docker exec -i ${app_container_name} su - w_${vhost} -c "${sys_dir}/${handler_options}"
     elif [ "$app_hosting" == "local" ]; then
-      docker_exec=""
-      su_exec="su - w_${vhost} -c"
+      su - w_${vhost} -c "${sys_dir}/${handler_options}"
     fi
     ;;
-    libexec/restore-vhost*)
 
+    libexec/restore-vhost*http://www.webenabled.com/seedapps/*)
+    ${sys_dir}/${handler_options}
+    ;;
+
+    libexec/restore-vhost*)
     new_vhost_name=`echo ${handler_options}|awk '{print $2}'`
     old_vhost_name=`echo ${handler_options}|awk -F'/opt/webenabled-data/vhost_archives/' '{print $2}'|awk -F'/' '{print $1}'`
     hostname_fqdn=`hostname -f`
@@ -217,7 +219,7 @@ controller_handler()
       app_container_name="${new_vhost_name}.${hostname_fqdn}"
       docker commit ${CONTAINER_WEB_ID} ${app_container_name}
       docker run -d --name=${app_container_name} ${app_container_name}
-      # write app's config
+
       ini_contents="\
 app.name           = ${new_vhost_name}
 app.hosting        = docker
@@ -225,36 +227,32 @@ app.container_name = ${app_container_name}
 app.clone          = true
 "
       echo "$ini_contents" | ${sudo} ${sys_dir}/bin/update-ini-file -q -c ${sys_dir}/config/apps/${new_vhost_name}.ini
+
       # create nginx config
       domain="${app_container_name}"
       update_nginx_config
 
-      docker_exec="docker exec -i ${app_container_name}"
-      su_exec=""
+      docker exec -i ${app_container_name} "${sys_dir}/${handler_options}"
     elif [ "$app_hosting" == "local" ]; then
-      # write app's config
       ini_contents="\
 app.name           = ${new_vhost_name}
 app.hosting        = local
 app.clone          = true
 "
       echo "$ini_contents" | ${sudo} ${sys_dir}/bin/update-ini-file -q -c ${sys_dir}/config/apps/${new_vhost_name}.ini
-
-      docker_exec=""
-      su_exec=""
+      ${sys_dir}/${handler_options}
     fi
     ;;
     *)
     if [ "$app_hosting" == "docker" ]; then
-      docker_exec="docker exec -i ${app_container_name}"
-      su_exec=""
+      docker exec -i ${app_container_name} "${sys_dir}/${handler_options}"
     elif [ "$app_hosting" == "local" ]; then
-      docker_exec=""
-      su_exec=""
+      ${sys_dir}/${handler_options}
     fi
     ;;
   esac
-  ${docker_exec}${su_exec} ${sys_dir}/${handler_options}
+
+  detect_running_apache_and_patch_configs
 }
 
 update_nginx_config()
