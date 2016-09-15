@@ -257,10 +257,6 @@ app.clone          = true
 
 update_nginx_config()
 {
-  # check for nginx installation
-  if [ ! -f /usr/sbin/nginx ]; then
-    ${sudo} ${installation_tool} nginx
-  fi
   # get ip address of web container
   if [ "$operation" == "start" ]; then
     container_name="${domain}_${app}_web"
@@ -449,6 +445,12 @@ if [ `docker images|grep devpanel_cache|grep latest|wc -l` -eq 0 ]; then
     docker pull freeminder/devpanel_cache:latest && docker tag freeminder/devpanel_cache:latest devpanel_cache:latest
   fi
 fi
+
+# check for nginx installation
+if [ ! -f /usr/sbin/nginx ]; then
+  ${sudo} ${installation_tool} nginx
+fi
+
 
 # main logic
 if [ "$app" == "zabbix" -a "$operation" == "start" -a "$domain" -a "$host_type" == "docker" ]; then
