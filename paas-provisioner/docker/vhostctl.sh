@@ -399,6 +399,7 @@ detect_running_apache_and_patch_configs()
         servernames_array+=(`grep "  ServerName " ${i}|awk -F "  ServerName " '{print $2}'`)
       fi
     done
+    sed -i 's/^Listen 80$/Listen 8080/' /etc/apache2/ports.conf
     # restart apache
     ${sudo} service apache2 restart
     # update nginx configs with apache's hosts
