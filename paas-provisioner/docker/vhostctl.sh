@@ -369,12 +369,12 @@ docker_get_ids_and_names_of_containers()
 {
   if   [ "$operation" == "clone" ]; then
     CONTAINER_WEB_ID=`docker ps|grep ${source_vhost}|awk '{print $1}'`
-  elif [ "$operation" == "backup" -o "$operation" == "list_backups" -o "$operation" == "status" ]; then
+  elif [ "$operation" == "backup" -o "$operation" == "list_backups" -o "$operation" == "status" -o "$operation" == "stop" ]; then
     CONTAINER_WEB_ID=`docker ps|grep ${domain}|awk '{print $1}'`
   else
     CONTAINER_WEB_ID=`docker ps|grep ${domain}_${app}_web|awk '{print $1}'`
   fi
-  CONTAINER_WEB_NAME=`docker inspect -f '{{.Name}}' ${CONTAINER_WEB_ID}|awk -F'/' '{print $2}'`
+  if [ ${CONTAINER_WEB_ID} ]; then CONTAINER_WEB_NAME=`docker inspect -f '{{.Name}}' ${CONTAINER_WEB_ID}|awk -F'/' '{print $2}'`; fi
 }
 
 docker_msf()
@@ -521,8 +521,17 @@ elif [ "$operation" == "start" -a "$domain" -a "$host_type" ]; then
 elif [ "$operation" == "status" -a "$domain" ]; then
   read_local_config
   if [ "$app_hosting" == "docker" ]; then
-    docker_get_ids_and_names_of_containers
-    docker inspect ${CONTAINER_WEB_ID}|jq '.[0].State.Status'|sed 's/"//g'
+    docker inspect -f '{{.State.Status}}' ${app_container_name}
+  else
+    show_help
+  fi
+
+elif [ "$operation" == "stop" -a "$domain" ]; then
+  read_local_config
+  if [ "$app_hosting" == "docker" ]; then
+    IMAGE_NAME=`docker inspect -f '{{.Config.Image}}' ${app_container_name}`
+    docker commit ${app_container_name} ${IMAGE_NAME}
+    docker stop ${app_container_name}
   else
     show_help
   fi
