@@ -10,11 +10,13 @@ Options:
 
   -A, --application               Application name. Apps supported: Wordpress, Drupal, Zabbix, Hippo.
   -C, --operation                 Operation commands:
-                                    start - to build and start containers with the application
-                                    clone - to copy containers with new names and replace configuration with new URL
-                                    backup - to save current state of existing containers
-                                    restore - to restore containers to previous state
-                                    destroy - to remove container(s) with webapp
+                                    start - to build and start container with the application
+                                    status - to show status of container with the application
+                                    stop - to stop container with the application
+                                    clone - to copy container with new names and replace configuration with new URL
+                                    backup - to save current state of existing container
+                                    restore - to restore container to previous state
+                                    destroy - to remove container with webapp
                                     scan - to scan webapp for vulnerabulities
                                     handle - to handle parameters from front-end for devPanel's script inside docker container
   -SD, --source-domain            Source domain name. Used for 'clone' operation.
@@ -30,6 +32,8 @@ Options:
 Usage examples:
   ./vhostctl.sh -A=wordpress -C=start -DD=t3st.some.domain -T=local
   ./vhostctl.sh -A=wordpress -C=start -DD=t3st.some.domain -L -T=docker
+  ./vhostctl.sh -C=status -DD=t3st.some.domain
+  ./vhostctl.sh -C=stop -DD=t3st.some.domain
   ./vhostctl.sh -C=clone -SD=t3st.some.domain -DD=t4st.some.domain
   ./vhostctl.sh -C=backup  -DD=t3st.some.domain -B=t3st_backup1
   ./vhostctl.sh -C=restore -DD=t3st.some.domain -R=t3st_backup1
@@ -365,7 +369,7 @@ docker_get_ids_and_names_of_containers()
 {
   if   [ "$operation" == "clone" ]; then
     CONTAINER_WEB_ID=`docker ps|grep ${source_vhost}|awk '{print $1}'`
-  elif [ "$operation" == "backup" -o "$operation" == "list_backups" ]; then
+  elif [ "$operation" == "backup" -o "$operation" == "list_backups" -o "$operation" == "status" ]; then
     CONTAINER_WEB_ID=`docker ps|grep ${domain}|awk '{print $1}'`
   else
     CONTAINER_WEB_ID=`docker ps|grep ${domain}_${app}_web|awk '{print $1}'`
@@ -452,6 +456,11 @@ if [ ! -f /usr/sbin/nginx ]; then
   ${sudo} ${installation_tool} nginx
 fi
 
+# check for jq installation
+if [ ! -f /usr/bin/jq ]; then
+  ${sudo} apt-get install jq
+fi
+
 
 # main logic
 if [ "$app" == "zabbix" -a "$operation" == "start" -a "$domain" -a "$host_type" == "docker" ]; then
@@ -508,6 +517,15 @@ elif [ "$operation" == "start" -a "$domain" -a "$host_type" ]; then
     show_help
   fi
   create_local_config
+
+elif [ "$operation" == "status" -a "$domain" ]; then
+  read_local_config
+  if [ "$app_hosting" == "docker" ]; then
+    docker_get_ids_and_names_of_containers
+    docker inspect ${CONTAINER_WEB_ID}|jq '.[0].State.Status'|sed 's/"//g'
+  else
+    show_help
+  fi
 
 elif [ "$operation" == "clone" -a "$source_domain" -a "$domain" ]; then
   source_vhost=${source_domain}
