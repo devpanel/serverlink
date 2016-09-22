@@ -248,6 +248,31 @@ app.clone          = true
       ${sys_dir}/${handler_options}
     fi
     ;;
+
+    libexec/config-vhost-names*+*)
+    if [ "$app_hosting" == "docker" ]; then
+      docker exec -i ${app_container_name} ${sys_dir}/${handler_options}
+      additional_domain=`echo ${handler_options}|awk '{print $NF}'`
+      add_domain_to_nginx_config="true"
+    elif [ "$app_hosting" == "local" ]; then
+      ${sys_dir}/${handler_options}
+      additional_domain=`echo ${handler_options}|awk '{print $NF}'`
+      add_domain_to_nginx_config="true"
+    fi
+    ;;
+
+    libexec/config-vhost-names*-*)
+    if [ "$app_hosting" == "docker" ]; then
+      docker exec -i ${app_container_name} ${sys_dir}/${handler_options}
+      additional_domain=`echo ${handler_options}|awk '{print $NF}'`
+      remove_domain_from_nginx_config="true"
+    elif [ "$app_hosting" == "local" ]; then
+      ${sys_dir}/${handler_options}
+      additional_domain=`echo ${handler_options}|awk '{print $NF}'`
+      remove_domain_from_nginx_config="true"
+    fi
+    ;;
+
     *)
     if [ "$app_hosting" == "docker" ]; then
       docker exec -i ${app_container_name} ${sys_dir}/${handler_options}
@@ -257,6 +282,7 @@ app.clone          = true
     ;;
   esac
 
+  update_nginx_config
   detect_running_apache_and_patch_configs
 }
 
@@ -279,13 +305,17 @@ update_nginx_config()
   else
     WEB_PORT=80
   fi
+  if [ "${app_hosting}" == "local" ]; then
+    container_ip_address="localhost"
+    WEB_PORT=8080
+  fi
   # create config for domain
   cat << EOF > /tmp/${domain}.conf
 server {
   listen       80;
   server_name  ${domain};
   location / {
-    proxy_set_header Host ${domain};
+    proxy_set_header Host \$host;
     proxy_pass http://${container_ip_address}:${WEB_PORT};
   }
 }
@@ -299,11 +329,29 @@ server {
   listen       80;
   server_name  ${subdomain};
   location / {
-    proxy_set_header Host ${subdomain};
+    proxy_set_header Host \$host;
     proxy_pass http://${container_ip_address}:${WEB_PORT};
   }
 }
 EOF
+
+  # handle additional domain
+  if [ "${add_domain_to_nginx_config}" == "true" ]; then
+    cat << EOF > /tmp/${additional_domain}.conf
+server {
+  listen       80;
+  server_name  ${additional_domain};
+  location / {
+    proxy_set_header Host \$host;
+    proxy_pass http://${container_ip_address}:${WEB_PORT};
+  }
+}
+EOF
+    ${sudo} mv /tmp/${additional_domain}.conf /etc/nginx/sites-enabled/${additional_domain}.conf
+  elif [ "${remove_domain_from_nginx_config}" == "true" ]; then
+    ${sudo} rm -f /etc/nginx/sites-enabled/${additional_domain}.conf
+  fi
+
   # apply configs
   ${sudo} rm -f /etc/nginx/sites-enabled/${domain}.conf /etc/nginx/sites-enabled/${subdomain}.conf
   ${sudo} mv /tmp/${domain}.conf /etc/nginx/sites-enabled/${domain}.conf
@@ -415,7 +463,7 @@ server {
   listen       80;
   server_name  ${servername};
   location / {
-    proxy_set_header Host ${servername};
+    proxy_set_header Host \$host;
     proxy_pass http://localhost:8080;
   }
 }
