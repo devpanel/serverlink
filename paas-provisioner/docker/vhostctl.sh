@@ -10,7 +10,7 @@ Options:
 
   -A, --application               Application name. Apps supported: Wordpress, Drupal, Zabbix, Hippo.
   -C, --operation                 Operation commands:
-                                    start - to build and start container with the application
+                                    start - to build and/or start container with the application
                                     status - to show status of container with the application
                                     stop - to stop container with the application
                                     clone - to copy container with new names and replace configuration with new URL
@@ -32,6 +32,7 @@ Options:
 Usage examples:
   ./vhostctl.sh -A=wordpress -C=start -DD=t3st.some.domain -T=local
   ./vhostctl.sh -A=wordpress -C=start -DD=t3st.some.domain -L -T=docker
+  ./vhostctl.sh -C=start -DD=t3st.some.domain
   ./vhostctl.sh -C=status -DD=t3st.some.domain
   ./vhostctl.sh -C=stop -DD=t3st.some.domain
   ./vhostctl.sh -C=clone -SD=t3st.some.domain -DD=t4st.some.domain
@@ -369,7 +370,7 @@ docker_get_ids_and_names_of_containers()
 {
   if   [ "$operation" == "clone" ]; then
     CONTAINER_WEB_ID=`docker ps|grep ${source_vhost}|awk '{print $1}'`
-  elif [ "$operation" == "backup" -o "$operation" == "list_backups" -o "$operation" == "status" -o "$operation" == "stop" ]; then
+  elif [ "$operation" == "backup" -o "$operation" == "list_backups" -o "$operation" == "status" -o "$operation" == "start" -o "$operation" == "stop" ]; then
     CONTAINER_WEB_ID=`docker ps|grep ${domain}|awk '{print $1}'`
   else
     CONTAINER_WEB_ID=`docker ps|grep ${domain}_${app}_web|awk '{print $1}'`
@@ -456,11 +457,6 @@ if [ ! -f /usr/sbin/nginx ]; then
   ${sudo} ${installation_tool} nginx
 fi
 
-# check for jq installation
-if [ ! -f /usr/bin/jq ]; then
-  ${sudo} apt-get install jq
-fi
-
 
 # main logic
 if [ "$app" == "zabbix" -a "$operation" == "start" -a "$domain" -a "$host_type" == "docker" ]; then
@@ -487,36 +483,47 @@ elif [ "$app" == "hippo" -a "$operation" == "start" -a "$domain" -a "$host_type"
   docker run -d -it --name ${domain}_${app}_web devpanel_hippo:v1
   update_nginx_config
 
-elif [ "$operation" == "start" -a "$domain" -a "$host_type" ]; then
-  if [ "$host_type" == "docker" ]; then
-    orig_domain="$domain"
-    detect_running_apache_and_patch_configs
-    patch_definition_files_and_build
-  elif [ "$host_type" == "local" ]; then
-    #
-    # will be changed to parse /apps.txt in next update
-    #
-    if [ "$app" == "wordpress" ]; then
-      app_arch="wordpress-v4.tgz"
-    elif [ "$app" == "drupal" ]; then
-      app_arch="drupal-v7.tgz"
+elif [ "$operation" == "start" -a "$domain" ]; then
+  read_local_config
+  if [ "${app_hosting}" == "docker" ]; then
+    if [ `docker inspect -f '{{.State.Status}}' ${app_container_name}` == "exited" ]; then
+      docker start ${app_container_name}
+      update_nginx_config
     else
-      echo "App not supported."
-      exit 1
+      echo "container already started"
+      # exit 1
     fi
-    # check for downloaded app
-    if [ ! -f ${sys_dir}/${app}/${app_arch} ]; then
-      ${sudo} mkdir -p ${sys_dir}/${app} && cd ${sys_dir}/${app} && wget https://www.webenabled.com/seedapps/${app_arch} && tar zxvf ${app_arch}
-    fi
-    vhost=`echo "${domain}" | awk -F'[.]' '{print $1}'`
-    domain_name=`echo "${domain}" | awk -F"${vhost}." '{print $2}'`
-    ${sudo} ${sys_dir}/libexec/config-vhost-names-default ${domain_name}
-    ${sudo} ${sys_dir}/libexec/restore-vhost -F ${vhost} ${sys_dir}/${app}
-    detect_running_apache_and_patch_configs
   else
-    show_help
+    if [ "$host_type" == "docker" ]; then
+      orig_domain="$domain"
+      detect_running_apache_and_patch_configs
+      patch_definition_files_and_build
+    elif [ "$host_type" == "local" ]; then
+      #
+      # will be changed to parse /apps.txt in next update
+      #
+      if [ "$app" == "wordpress" ]; then
+        app_arch="wordpress-v4.tgz"
+      elif [ "$app" == "drupal" ]; then
+        app_arch="drupal-v7.tgz"
+      else
+        echo "App not supported."
+        exit 1
+      fi
+      # check for downloaded app
+      if [ ! -f ${sys_dir}/${app}/${app_arch} ]; then
+        ${sudo} mkdir -p ${sys_dir}/${app} && cd ${sys_dir}/${app} && wget https://www.webenabled.com/seedapps/${app_arch} && tar zxvf ${app_arch}
+      fi
+      vhost=`echo "${domain}" | awk -F'[.]' '{print $1}'`
+      domain_name=`echo "${domain}" | awk -F"${vhost}." '{print $2}'`
+      ${sudo} ${sys_dir}/libexec/config-vhost-names-default ${domain_name}
+      ${sudo} ${sys_dir}/libexec/restore-vhost -F ${vhost} ${sys_dir}/${app}
+      detect_running_apache_and_patch_configs
+    else
+      show_help
+    fi
+    create_local_config
   fi
-  create_local_config
 
 elif [ "$operation" == "status" -a "$domain" ]; then
   read_local_config
