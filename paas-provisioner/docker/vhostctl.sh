@@ -188,13 +188,13 @@ read_local_config()
 controller_handler()
 # example in db@controller
 # 31|list_vhost_logs||libexec/check-logs|-s %vhost%|0.0|0|2012-05-22 07:27:25|2016-02-19 20:38:03
-# becomes ('+' used as a whitespace)
-# 31|list_vhost_logs||paas-provisioner/docker/vhostctl.sh|-C=handle -O=libexec/check-logs+-s+%vhost% -DD=%vhost%|0.0|0|2012-05-22 07:27:25|2016-02-19 20:38:03
-# and vhostctl receives (after sed processed '+')
+# becomes ('##' used as a whitespace)
+# 31|list_vhost_logs||paas-provisioner/docker/vhostctl.sh|-C=handle -O=libexec/check-logs##-s##%vhost% -DD=%vhost%|0.0|0|2012-05-22 07:27:25|2016-02-19 20:38:03
+# and vhostctl receives (after sed processed '##')
 # handler_options="libexec/check-logs -s some_vhost"
 {
   read_local_config
-  handler_options=`echo ${handler_options}|sed 's/+/ /g'`
+  handler_options=`echo ${handler_options}|sed 's/##/ /g'`
   case "$handler_options" in
     bin/restore-vhost-subsystem*|bin/list-backups*)
     if [ "$app_hosting" == "docker" ]; then
@@ -250,7 +250,7 @@ app.clone          = true
     ;;
     *)
     if [ "$app_hosting" == "docker" ]; then
-      docker exec -i ${app_container_name} "${sys_dir}/${handler_options}"
+      docker exec -i ${app_container_name} ${sys_dir}/${handler_options}
     elif [ "$app_hosting" == "local" ]; then
       ${sys_dir}/${handler_options}
     fi
@@ -370,7 +370,7 @@ docker_get_ids_and_names_of_containers()
 {
   if   [ "$operation" == "clone" ]; then
     CONTAINER_WEB_ID=`docker ps|grep ${source_vhost}|awk '{print $1}'`
-  elif [ "$operation" == "backup" -o "$operation" == "list_backups" -o "$operation" == "status" -o "$operation" == "start" -o "$operation" == "stop" ]; then
+  elif [ "$operation" == "backup" -o "$operation" == "list_backups" -o "$operation" == "status" -o "$operation" == "stop" ]; then
     CONTAINER_WEB_ID=`docker ps|grep ${domain}|awk '{print $1}'`
   else
     CONTAINER_WEB_ID=`docker ps|grep ${domain}_${app}_web|awk '{print $1}'`
