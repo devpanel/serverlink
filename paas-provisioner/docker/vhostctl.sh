@@ -252,25 +252,19 @@ app.clone          = true
     libexec/config-vhost-names*+*)
     if [ "$app_hosting" == "docker" ]; then
       docker exec -i ${app_container_name} ${sys_dir}/${handler_options}
-      additional_domain=`echo ${handler_options}|awk '{print $NF}'`
-      add_domain_to_nginx_config="true"
     elif [ "$app_hosting" == "local" ]; then
       ${sys_dir}/${handler_options}
-      additional_domain=`echo ${handler_options}|awk '{print $NF}'`
-      add_domain_to_nginx_config="true"
     fi
+    add_domain_to_nginx_config="true"
     ;;
 
     libexec/config-vhost-names*-*)
     if [ "$app_hosting" == "docker" ]; then
       docker exec -i ${app_container_name} ${sys_dir}/${handler_options}
-      additional_domain=`echo ${handler_options}|awk '{print $NF}'`
-      remove_domain_from_nginx_config="true"
     elif [ "$app_hosting" == "local" ]; then
       ${sys_dir}/${handler_options}
-      additional_domain=`echo ${handler_options}|awk '{print $NF}'`
-      remove_domain_from_nginx_config="true"
     fi
+    remove_domain_from_nginx_config="true"
     ;;
 
     *)
@@ -309,6 +303,7 @@ update_nginx_config()
     container_ip_address="localhost"
     WEB_PORT=8080
   fi
+
   # create config for domain
   cat << EOF > /tmp/${domain}.conf
 server {
@@ -336,6 +331,7 @@ server {
 EOF
 
   # handle additional domain
+  additional_domain=`echo ${handler_options}|awk '{print $NF}'`
   if [ "${add_domain_to_nginx_config}" == "true" ]; then
     cat << EOF > /tmp/${additional_domain}.conf
 server {
