@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# update scripts
+/opt/webenabled/libexec/update-scripts
+
 service apache2 restart
 # start mysqld
 if [ `ps aux|grep -v grep|grep -c mysqld` -gt 0 ]; then

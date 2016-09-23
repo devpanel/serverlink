@@ -14,4 +14,7 @@ ADD ./database.yml /root/.msf4/database.yml
 ADD ./wmap.rc /tmp/wmap.rc
 ADD ./wmap.profile /tmp/wmap.profile
 
+# update scripts
+/opt/webenabled/libexec/update-scripts
+
 CMD service postgresql restart && sleep infinity
