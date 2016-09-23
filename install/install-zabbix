@@ -27,6 +27,26 @@ if ! source "$lib_file"; then
   exit 1
 fi
 
+patch_zabbix_config()
+{
+  local sed_str=""
+  sed_str="\
+    s/Server=127.0.0.1/Server=monitoring.devpanel.com/;
+    s/ServerActive=127.0.0.1/ServerActive=monitoring.devpanel.com/;
+    s/Hostname=Zabbix\ server/Hostname=$ZabbixHostname/;
+    s/# EnableRemoteCommands=0/EnableRemoteCommands=1/;"
+  sed -i "$sed_str" /etc/zabbix/zabbix_agentd.conf
+}
+
+patch_sudoers()
+{
+  # avoid duplicates
+  if [ ! `grep -Fxq "zabbix ALL=NOPASSWD" /etc/sudoers` ]; then sed -i 's/^zabbix\ ALL=NOPASSWD.*//g' /etc/sudoers; fi
+  echo "zabbix ALL=NOPASSWD: /opt/webenabled/sbin/check_mem_diskspace_usage.sh" >> /etc/sudoers
+  echo "zabbix ALL=NOPASSWD: /opt/webenabled/sbin/check_apache2_logs.sh" >> /etc/sudoers
+  echo "zabbix ALL=NOPASSWD: /opt/webenabled/sbin/check_git_update.sh" >> /etc/sudoers
+}
+
 installzabbix(){
 DEVPANELOS=$(devpanel_auto_detect_distro)
 
@@ -35,19 +55,8 @@ if [ "$DEVPANELOS" == "ubuntu" ] || [ "$DEVPANELOS" == "debian" ];then
   apt-get update
   apt-get -y install zabbix-agent sysv-rc-conf
   sysv-rc-conf zabbix-agent on
-  sed -i 's/Server=127.0.0.1/Server=monitoring.devpanel.com/' /etc/zabbix/zabbix_agentd.conf
-  sed -i 's/ServerActive=127.0.0.1/ServerActive=monitoring.devpanel.com/' /etc/zabbix/zabbix_agentd.conf
-  sed -i "s/Hostname=Zabbix\ server/Hostname=$ZabbixHostname/" /etc/zabbix/zabbix_agentd.conf
-  sed -i "s/# EnableRemoteCommands=0/EnableRemoteCommands=1/" /etc/zabbix/zabbix_agentd.conf
-# patch sudoers and avoid duplicates
-  if [ `grep -Fxq "zabbix ALL=NOPASSWD" /etc/sudoers` ]; then
-    echo "zabbix ALL=NOPASSWD: /opt/webenabled/sbin/check_mem_diskspace_usage.sh" >> /etc/sudoers
-    echo "zabbix ALL=NOPASSWD: /opt/webenabled/sbin/check_apache2_logs.sh" >> /etc/sudoers
-  else
-    sed -i 's/^zabbix\ ALL=NOPASSWD.*//g' /etc/sudoers
-    echo "zabbix ALL=NOPASSWD: /opt/webenabled/sbin/check_mem_diskspace_usage.sh" >> /etc/sudoers
-    echo "zabbix ALL=NOPASSWD: /opt/webenabled/sbin/check_apache2_logs.sh" >> /etc/sudoers
-  fi
+  patch_zabbix_config
+  patch_sudoers
   service zabbix-agent restart
 
 # Only run it if we can (ie. on RHEL/CentOS)
@@ -56,19 +65,8 @@ elif [ "$DEVPANELOS" == "centos" ] || [ "$DEVPANELOS" == "redhat" ];then
   rpm -ivh http://repo.zabbix.com/zabbix/2.4/rhel/6/x86_64/zabbix-release-2.4-1.el6.noarch.rpm
   yum -y install zabbix-agent
   chkconfig zabbix-agent on
-  sed -i 's/Server=127.0.0.1/Server=monitoring.devpanel.com/' /etc/zabbix/zabbix_agentd.conf
-  sed -i 's/ServerActive=127.0.0.1/ServerActive=monitoring.devpanel.com/' /etc/zabbix/zabbix_agentd.conf
-  sed -i "s/Hostname=Zabbix\ server/Hostname=$ZabbixHostname/" /etc/zabbix/zabbix_agentd.conf
-  sed -i "s/# EnableRemoteCommands=0/EnableRemoteCommands=1/" /etc/zabbix/zabbix_agentd.conf
-# patch sudoers and avoid duplicates
-  if [ `grep -Fxq "zabbix ALL=NOPASSWD" /etc/sudoers` ]; then
-    echo "zabbix ALL=NOPASSWD: /opt/webenabled/sbin/check_mem_diskspace_usage.sh" >> /etc/sudoers
-    echo "zabbix ALL=NOPASSWD: /opt/webenabled/sbin/check_apache2_logs.sh" >> /etc/sudoers
-  else
-    sed -i 's/^zabbix\ ALL=NOPASSWD.*//g' /etc/sudoers
-    echo "zabbix ALL=NOPASSWD: /opt/webenabled/sbin/check_mem_diskspace_usage.sh" >> /etc/sudoers
-    echo "zabbix ALL=NOPASSWD: /opt/webenabled/sbin/check_apache2_logs.sh" >> /etc/sudoers
-  fi
+  patch_zabbix_config
+  patch_sudoers
   service zabbix-agent restart
 
 else
