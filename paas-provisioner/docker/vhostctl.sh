@@ -280,6 +280,23 @@ app.clone          = true
   detect_running_apache_and_patch_configs
 }
 
+create_nginx_config()
+{
+cat << EOF > /tmp/"${servername}".conf
+server {
+  listen       80;
+  server_name  ${servername}${serveraliases};
+  location / {
+    proxy_set_header Host \$host;
+    proxy_pass http://localhost:8080;
+  }
+}
+EOF
+
+${sudo} rm -f /etc/nginx/sites-enabled/${servername}.conf
+${sudo} mv /tmp/${servername}.conf /etc/nginx/sites-enabled/${servername}.conf
+}
+
 update_nginx_config()
 {
   # get ip address of web container
@@ -437,36 +454,28 @@ docker_msf()
 detect_running_apache_and_patch_configs()
 {
   if [ `ps aux|grep apache2|wc -l` -gt 0 ]; then
-    # patch configs with new port
-    readarray -t apache_configs_array <<< `find -L /etc/apache2 -name *.conf`
+    readarray -t apache_configs_array <<< `find -L /etc/apache2/devpanel-virtwww -name '*.conf'`
     servernames_array=()
     for i in ${apache_configs_array[@]}; do
+      # patch configs with new port
       if [ `grep ":80" ${i}|wc -l` -gt 0 -a `grep ":8080" ${i}|wc -l` -eq 0 ]; then
         sed -i 's/:80/:8080/' ${i}
       fi
       if [ `grep "  ServerName " ${i}|wc -l` -gt 0 ]; then
-        servernames_array+=(`grep "  ServerName " ${i}|awk -F "  ServerName " '{print $2}'`)
+        # create config for main and additional domains
+        servername=`grep "  ServerName " ${i}|grep -v -- -gen|awk -F "  ServerName " '{print $2}'|tr -d '\r\n'`
+        serveraliases=`grep "  ServerAlias " ${i}|awk -F "  ServerAlias" '{print $2}'`
+        create_nginx_config
+        # create config for -gen domain (mysqladmin and filexplorer)
+        servername=`grep "  ServerName " ${i}|grep -- -gen|awk -F "  ServerName " '{print $2}'|tr -d '\r\n'`
+        serveraliases=''
+        create_nginx_config
       fi
     done
     sed -i 's/^Listen 80$/Listen 8080/' /etc/apache2/ports.conf
     # restart apache
     ${sudo} service apache2 restart
     # update nginx configs with apache's hosts
-    for servername in ${servernames_array[@]}; do
-      # create config
-      cat << EOF > /tmp/${servername}.conf
-server {
-  listen       80;
-  server_name  ${servername};
-  location / {
-    proxy_set_header Host \$host;
-    proxy_pass http://localhost:8080;
-  }
-}
-EOF
-      ${sudo} rm -f /etc/nginx/sites-enabled/${servername}.conf
-      ${sudo} mv /tmp/${servername}.conf /etc/nginx/sites-enabled/${servername}.conf
-    done
     restart_or_reload_nginx
   fi
 }
