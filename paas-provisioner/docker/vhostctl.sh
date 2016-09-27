@@ -19,6 +19,7 @@ Options:
                                     destroy - to remove container with webapp
                                     scan - to scan webapp for vulnerabulities
                                     handle - to handle parameters from front-end for devPanel's script inside docker container
+  -DB, --database-type            Type of database. Can be 'mysql' or 'rds'.
   -SD, --source-domain            Source domain name. Used for 'clone' operation.
   -DD, --destination-domain       Destination domain name. For 'clone' operation different domain name should be passed.
   -B, --backup-name               Backup name.
@@ -31,7 +32,7 @@ Options:
 
 Usage examples:
   ./vhostctl.sh -A=wordpress -C=start -DD=t3st.some.domain -T=local
-  ./vhostctl.sh -A=wordpress -C=start -DD=t3st.some.domain -L -T=docker
+  ./vhostctl.sh -A=wordpress -C=start -DB=mysql -DD=t3st.some.domain -L -T=docker
   ./vhostctl.sh -C=start -DD=t3st.some.domain
   ./vhostctl.sh -C=status -DD=t3st.some.domain
   ./vhostctl.sh -C=stop -DD=t3st.some.domain
@@ -72,6 +73,10 @@ case $i in
     ;;
     -C=*|--operation=*)
     operation="${i#*=}"
+    shift # past argument=value
+    ;;
+    -DB=*|--database-type=*)
+    db_type="${i#*=}"
     shift # past argument=value
     ;;
     -SD=*|--source-domain=*)
@@ -148,6 +153,8 @@ create_local_config()
     if [ "$operation" == "clone" ]; then
       clone_state="true"
       source_vhost="${target_vhost}"
+    elif [ "${app_clone}" == "true" ]; then
+      clone_state="true"
     else
       clone_state="false"
     fi
@@ -155,6 +162,7 @@ create_local_config()
     ini_contents="\
 app.name           = ${vhost}
 app.hosting        = docker
+app.db_type        = ${db_type}
 app.container_name = ${CONTAINER_WEB_NAME}
 app.clone          = ${clone_state}
 "
@@ -181,6 +189,7 @@ read_local_config()
     app_clone=`ini_section_get_key_value ${sys_dir}/config/apps/${vhost}.ini app clone`
     if [ "$app_hosting" == "docker" ]; then
       app_container_name=`ini_section_get_key_value ${sys_dir}/config/apps/${vhost}.ini app container_name`
+      app_db_type=`ini_section_get_key_value ${sys_dir}/config/apps/${vhost}.ini app db_type`
     fi
   fi
 }
@@ -228,6 +237,7 @@ controller_handler()
       ini_contents="\
 app.name           = ${new_vhost_name}
 app.hosting        = docker
+app.db_type        = ${app_db_type}
 app.container_name = ${app_container_name}
 app.clone          = true
 "
@@ -455,7 +465,6 @@ detect_running_apache_and_patch_configs()
 {
   if [ `ps aux|grep apache2|wc -l` -gt 0 ]; then
     readarray -t apache_configs_array <<< `find -L /etc/apache2/devpanel-virtwww -name '*.conf'`
-    servernames_array=()
     for i in ${apache_configs_array[@]}; do
       # patch configs with new port
       if [ `grep ":80" ${i}|wc -l` -gt 0 -a `grep ":8080" ${i}|wc -l` -eq 0 ]; then
@@ -654,9 +663,9 @@ elif [ "$operation" == "clone" -a "$source_domain" -a "$domain" ]; then
 
     # update host's nginx config with new IP of cloned web container
     domain="${target_vhost}"
-    create_local_config
     app_clone="true"
     app_container_name="${target_vhost}"
+    create_local_config
     update_nginx_config ${target_vhost}
   elif [ "$app_hosting" == "local" ]; then
     # clone_vhost_local||libexec/clone-vhost-local|%source_vhost% %target_vhost%|
