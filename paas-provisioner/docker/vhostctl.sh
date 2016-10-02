@@ -20,6 +20,9 @@ Options:
                                     scan - to scan webapp for vulnerabulities
                                     handle - to handle parameters from front-end for devPanel's script inside docker container
   -DB, --database-type            Type of database. Can be 'mysql' or 'rds'.
+  -AWS_ACCESS_KEY_ID              AWS ACCESS KEY ID.
+  -AWS_SECRET_ACCESS_KEY          AWS SECRET ACCESS KEY.
+  -AWS_DEFAULT_REGION             AWS DEFAULT REGION.
   -SD, --source-domain            Source domain name. Used for 'clone' operation.
   -DD, --destination-domain       Destination domain name. For 'clone' operation different domain name should be passed.
   -B, --backup-name               Backup name.
@@ -33,6 +36,7 @@ Options:
 Usage examples:
   ./vhostctl.sh -A=wordpress -C=start -DD=t3st.some.domain -T=local
   ./vhostctl.sh -A=wordpress -C=start -DB=mysql -DD=t3st.some.domain -L -T=docker
+  ./vhostctl.sh -A=wordpress -C=start -DB=rds -AWS_ACCESS_KEY_ID=some+key+id -AWS_SECRET_ACCESS_KEY=some+access+key -AWS_DEFAULT_REGION=us-east-1 -DD=t3st.some.domain -T=docker
   ./vhostctl.sh -C=start -DD=t3st.some.domain
   ./vhostctl.sh -C=status -DD=t3st.some.domain
   ./vhostctl.sh -C=stop -DD=t3st.some.domain
@@ -77,6 +81,18 @@ case $i in
     ;;
     -DB=*|--database-type=*)
     db_type="${i#*=}"
+    shift # past argument=value
+    ;;
+    -AWS_ACCESS_KEY_ID=*)
+    aws_access_key_id="${i#*=}"
+    shift # past argument=value
+    ;;
+    -AWS_SECRET_ACCESS_KEY=*)
+    aws_secret_access_key="${i#*=}"
+    shift # past argument=value
+    ;;
+    -AWS_DEFAULT_REGION=*)
+    aws_default_region="${i#*=}"
     shift # past argument=value
     ;;
     -SD=*|--source-domain=*)
@@ -139,6 +155,9 @@ else
   exit 1
 fi
 
+# definitions
+vps_ip=`ip ad sh dev eth0|grep brd|grep inet|awk '{print $2}'|awk -F'/' '{print $1}'`
+
 
 create_local_config()
 {
@@ -160,11 +179,17 @@ create_local_config()
     fi
     docker_get_ids_and_names_of_containers
     ini_contents="\
-app.name           = ${vhost}
-app.hosting        = docker
-app.db_type        = ${db_type}
-app.container_name = ${CONTAINER_WEB_NAME}
-app.clone          = ${clone_state}
+app.name                  = ${vhost}
+app.hosting               = docker
+app.db_type               = ${db_type}
+app.container_name        = ${CONTAINER_WEB_NAME}
+app.clone                 = ${clone_state}
+aws.access_key_id         = ${aws_access_key_id}
+aws.secret_access_key     = ${aws_secret_access_key}
+aws.default_region        = ${aws_default_region}
+rds.endpoint_address      = ${rds_endpoint_address}
+rds.endpoint_port         = ${rds_endpoint_port}
+rds.vpcsecuritygroupid    = ${rds_vpcsecuritygroupid}
 "
   else
     ini_contents="\
@@ -179,6 +204,7 @@ app.clone          = ${clone_state}
 read_local_config()
 {
   vhost=`echo "${domain}" | awk -F'[.]' '{print $1}'`
+  root_domain=`echo "${domain}" | awk -F'[.]' '{print $2}'`
 
   # check if config exists. if not, set to local. standard script 'restore-vhost' does not create any configs by default
   if [ ! -f ${sys_dir}/config/apps/${vhost}.ini ]; then
@@ -190,6 +216,12 @@ read_local_config()
     if [ "$app_hosting" == "docker" ]; then
       app_container_name=`ini_section_get_key_value ${sys_dir}/config/apps/${vhost}.ini app container_name`
       app_db_type=`ini_section_get_key_value ${sys_dir}/config/apps/${vhost}.ini app db_type`
+      aws_access_key_id=`ini_section_get_key_value ${sys_dir}/config/apps/${vhost}.ini aws access_key_id`
+      aws_secret_access_key=`ini_section_get_key_value ${sys_dir}/config/apps/${vhost}.ini aws secret_access_key`
+      aws_default_region=`ini_section_get_key_value ${sys_dir}/config/apps/${vhost}.ini aws default_region`
+      rds_endpoint_address=`ini_section_get_key_value ${sys_dir}/config/apps/${vhost}.ini rds endpoint_address`
+      rds_endpoint_port=`ini_section_get_key_value ${sys_dir}/config/apps/${vhost}.ini rds endpoint_port`
+      rds_vpcsecuritygroupid=`ini_section_get_key_value ${sys_dir}/config/apps/${vhost}.ini rds vpcsecuritygroupid`
     fi
   fi
 }
@@ -235,11 +267,14 @@ controller_handler()
       docker run -d --name=${app_container_name} ${app_container_name}
 
       ini_contents="\
-app.name           = ${new_vhost_name}
-app.hosting        = docker
-app.db_type        = ${app_db_type}
-app.container_name = ${app_container_name}
-app.clone          = true
+app.name              = ${new_vhost_name}
+app.hosting           = docker
+app.db_type           = ${app_db_type}
+aws.access_key_id     = ${aws_access_key_id}
+aws.secret_access_key = ${aws_secret_access_key}
+aws.default_region    = ${aws_default_region}
+app.container_name    = ${app_container_name}
+app.clone             = true
 "
       echo "$ini_contents" | ${sudo} ${sys_dir}/bin/update-ini-file -q -c ${sys_dir}/config/apps/${new_vhost_name}.ini
 
@@ -519,6 +554,16 @@ if [ ! -f /usr/sbin/nginx ]; then
   ${sudo} ${installation_tool} nginx
 fi
 
+# check for AWS CLI installation
+if [ ! -f /usr/bin/aws ]; then
+  ${sudo} ${installation_tool} awscli
+fi
+
+# check for jq installation
+if [ ! -f /usr/bin/jq ]; then
+  ${sudo} ${installation_tool} jq
+fi
+
 
 # main logic
 if [ "$app" == "zabbix" -a "$operation" == "start" -a "$domain" -a "$host_type" == "docker" ]; then
@@ -545,6 +590,77 @@ elif [ "$app" == "hippo" -a "$operation" == "start" -a "$domain" -a "$host_type"
   docker run -d -it --name ${domain}_${app}_web devpanel_hippo:v1
   update_nginx_config
 
+# create app
+elif [ "$operation" == "start" -a "$domain" -a "$host_type" ]; then
+  if [ "$host_type" == "docker" ]; then
+    vhost=`echo "${domain}" | awk -F'[.]' '{print $1}'`
+    orig_domain="$domain"
+    detect_running_apache_and_patch_configs
+    patch_definition_files_and_build
+    # RDS
+    if [ "$db_type" == "rds" ]; then
+      export AWS_ACCESS_KEY_ID="${aws_access_key_id}"
+      export AWS_SECRET_ACCESS_KEY="${aws_secret_access_key}"
+      export AWS_DEFAULT_REGION="${aws_default_region}"
+      docker_get_ids_and_names_of_containers
+      DB_USER=w_${vhost}
+      DB_PASSWORD=`docker exec ${CONTAINER_WEB_ID} tail -1 /home/clients/websites/w_${vhost}/.mysql.passwd|awk -F':' '{print $2}'`
+      # dump db
+      while [ ! `docker exec ${CONTAINER_WEB_ID} /bin/sh -c "mysql -S /home/clients/databases/b_${vhost}/mysql/mysql.sock -h localhost -P 4000 --password=${DB_PASSWORD} -u ${DB_USER} ${app} -e 'print;'|grep print|wc -l"` -eq 1 ]; do sleep 1; done
+      docker exec ${CONTAINER_WEB_ID} /bin/sh -c "mysqldump -S /home/clients/databases/b_${vhost}/mysql/mysql.sock -h localhost -P 4000 --password=${DB_PASSWORD} -u ${DB_USER} ${app} > /tmp/${app}.sql"
+      # # create rds instance
+      aws rds create-db-instance --db-instance-identifier ${vhost} --allocated-storage 5 --db-instance-class db.t1.micro --engine mysql --master-username ${DB_USER} --master-user-password ${DB_PASSWORD}
+      while [ ! `aws rds describe-db-instances --db-instance-identifier ${vhost}|jq '.DBInstances[0].DBInstanceStatus'|tr -d '"'` == "available" ]; do
+        echo "Waiting for RDS instance to be ready. Current status is: "
+        aws rds describe-db-instances --db-instance-identifier ${vhost}|jq '.DBInstances[0].DBInstanceStatus'|tr -d '"'
+        sleep 5
+      done
+      # get rds endpoint
+      rds_endpoint_address=`aws rds describe-db-instances --db-instance-identifier ${vhost}|jq '.DBInstances[0].Endpoint.Address'|tr -d '"'`
+      rds_endpoint_port=`aws rds describe-db-instances --db-instance-identifier ${vhost}|jq '.DBInstances[0].Endpoint.Port'|tr -d '"'`
+      # get VpcSecurityGroupId
+      rds_vpcsecuritygroupid=`aws rds describe-db-instances --db-instance-identifier ${vhost}|jq '.DBInstances[0].VpcSecurityGroups[0].VpcSecurityGroupId'|tr -d '"'`
+      # add VpcSecurityGroup rule to allow access from current VPS to RDS
+      aws ec2 authorize-security-group-ingress --group-id ${rds_vpcsecuritygroupid} --protocol tcp --port ${rds_endpoint_port} --cidr ${vps_ip}/32
+      # write db endpoint into webapp's config
+      if [ "${app}" == "wordpress" ]; then
+        docker exec ${CONTAINER_WEB_ID} sed -i "s/127.0.0.1:4000/${rds_endpoint_address}:${rds_endpoint_port}/" /home/clients/websites/w_${vhost}/public_html/${vhost}/wp-config.php
+      elif [ "${app}" == "drupal" ]; then
+        docker exec ${CONTAINER_WEB_ID} sed -i "s/${rds_endpoint_address}/db/" /home/clients/websites/w_${vhost}/public_html/${vhost}/sites/default/settings.php
+      fi
+      # restore db dump to rds
+      docker exec ${CONTAINER_WEB_ID} mysql -h ${rds_endpoint_address} -P ${rds_endpoint_port} -S /tmp/mysql.sock -u ${DB_USER} --password=${DB_PASSWORD} -e "CREATE DATABASE ${app};"
+      docker exec ${CONTAINER_WEB_ID} /bin/sh -c "mysql -h ${rds_endpoint_address} -P ${rds_endpoint_port} -S /tmp/mysql.sock -u ${DB_USER} --password=${DB_PASSWORD} ${app} < /tmp/${app}.sql"
+      docker exec ${CONTAINER_WEB_ID} rm -f /tmp/${app}.sql /tmp/mysql.sock
+      docker exec ${CONTAINER_WEB_ID} killall mysqld
+    fi
+  elif [ "$host_type" == "local" ]; then
+    #
+    # will be changed to parse /apps.txt in next update
+    #
+    if [ "$app" == "wordpress" ]; then
+      app_arch="wordpress-v4.tgz"
+    elif [ "$app" == "drupal" ]; then
+      app_arch="drupal-v7.tgz"
+    else
+      echo "App not supported."
+      exit 1
+    fi
+    # check for downloaded app
+    if [ ! -f ${sys_dir}/${app}/${app_arch} ]; then
+      ${sudo} mkdir -p ${sys_dir}/${app} && cd ${sys_dir}/${app} && wget https://www.webenabled.com/seedapps/${app_arch} && tar zxvf ${app_arch}
+    fi
+    vhost=`echo "${domain}" | awk -F'[.]' '{print $1}'`
+    domain_name=`echo "${domain}" | awk -F"${vhost}." '{print $2}'`
+    ${sudo} ${sys_dir}/libexec/config-vhost-names-default ${domain_name}
+    ${sudo} ${sys_dir}/libexec/restore-vhost -F ${vhost} ${sys_dir}/${app}
+    detect_running_apache_and_patch_configs
+  else
+    show_help
+  fi
+  create_local_config
+
+# start app's container
 elif [ "$operation" == "start" -a "$domain" ]; then
   read_local_config
   if [ "${app_hosting}" == "docker" ]; then
@@ -556,35 +672,8 @@ elif [ "$operation" == "start" -a "$domain" ]; then
       # exit 1
     fi
   else
-    if [ "$host_type" == "docker" ]; then
-      orig_domain="$domain"
-      detect_running_apache_and_patch_configs
-      patch_definition_files_and_build
-    elif [ "$host_type" == "local" ]; then
-      #
-      # will be changed to parse /apps.txt in next update
-      #
-      if [ "$app" == "wordpress" ]; then
-        app_arch="wordpress-v4.tgz"
-      elif [ "$app" == "drupal" ]; then
-        app_arch="drupal-v7.tgz"
-      else
-        echo "App not supported."
-        exit 1
-      fi
-      # check for downloaded app
-      if [ ! -f ${sys_dir}/${app}/${app_arch} ]; then
-        ${sudo} mkdir -p ${sys_dir}/${app} && cd ${sys_dir}/${app} && wget https://www.webenabled.com/seedapps/${app_arch} && tar zxvf ${app_arch}
-      fi
-      vhost=`echo "${domain}" | awk -F'[.]' '{print $1}'`
-      domain_name=`echo "${domain}" | awk -F"${vhost}." '{print $2}'`
-      ${sudo} ${sys_dir}/libexec/config-vhost-names-default ${domain_name}
-      ${sudo} ${sys_dir}/libexec/restore-vhost -F ${vhost} ${sys_dir}/${app}
-      detect_running_apache_and_patch_configs
-    else
-      show_help
-    fi
-    create_local_config
+    echo "Can't start a local app. Should be a docker container."
+    exit 1
   fi
 
 elif [ "$operation" == "status" -a "$domain" ]; then
@@ -762,6 +851,11 @@ elif [ "$operation" == "destroy" -a "$domain" ]; then
     else
       docker rmi -f original_${app_container_name}
     fi
+    # RDS
+    if [ "$app_db_type" == "rds" ]; then
+      aws ec2 revoke-security-group-ingress --group-id ${rds_vpcsecuritygroupid} --protocol tcp --port ${rds_endpoint_port} --cidr ${vps_ip}/32
+      aws rds delete-db-instance --db-instance-identifier ${app_name} --skip-final-snapshot
+    fi
     # remove backups also if requested
     if [ $remove_backups ]; then
       readarray -t backups_array <<< `docker images|grep ${domain}|awk '{print $1}'`
@@ -778,6 +872,7 @@ elif [ "$operation" == "destroy" -a "$domain" ]; then
   fi
   # remove config from nginx
   ${sudo} rm -f /etc/nginx/sites-enabled/${domain}*.conf
+  ${sudo} rm -f /etc/nginx/sites-enabled/${vhost}-gen.${root_domain}*.conf
   restart_or_reload_nginx
   ${sudo} rm -f ${sys_dir}/config/apps/${domain}.ini
   ${sudo} rm -f ${sys_dir}/config/apps/${vhost}.ini
