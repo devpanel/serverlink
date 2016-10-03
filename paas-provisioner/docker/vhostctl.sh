@@ -527,8 +527,15 @@ detect_running_apache_and_patch_configs()
 
 # check for Docker installation
 if [ ! -f /usr/bin/docker ]; then
-  # quick install for Ubuntu only
-  ${sudo} echo "deb https://apt.dockerproject.org/repo ubuntu-trusty main" > /etc/apt/sources.list.d/docker.list
+  # quick install for Ubuntu LTS 14.04 and 16.04 only
+  if   [ `lsb_release -c|grep -c xenial` -eq 1 ]; then
+    ${sudo} echo "deb https://apt.dockerproject.org/repo ubuntu-xenial main" > /etc/apt/sources.list.d/docker.list
+  elif [ `lsb_release -c|grep -c trusty` -eq 1 ]; then
+    ${sudo} echo "deb https://apt.dockerproject.org/repo ubuntu-trusty main" > /etc/apt/sources.list.d/docker.list
+  else
+    echo "Unsupported Ubuntu release."
+    exit 1
+  fi
   ${sudo} apt-key adv --keyserver hkp://p80.pool.sks-keyservers.net:80 --recv-keys 58118E89F3A912897C070ADBF76221572C52609D
   ${sudo} apt-get update
   ${sudo} apt-get install -y docker-engine
