@@ -21,57 +21,17 @@ debian_install_distro_packages() {
   local distro_ver_major="$5"
   local distro_ver_minor="$6"
 
-  # install external repositories needed
-  local repos_link repos_file repos_name key_link t_dir
-  local repos_dir_1 repos_dir_2 repos_dir_3
-  local pref_file pref_name
+  local tmp_self_file="${BASH_SOURCE[0]}"
+  local tmp_self_dir=${tmp_self_file%/*}
+  local tmp_aux_lib="$tmp_self_dir/lib.debian_ubuntu.sh"
 
-  local distro_config_dir="$source_dir/config/os.$distro"
-  local repos_dir_tmpl="$distro_config_dir/@version@/repositories"
+  if ! . "$tmp_aux_lib"; then
+    echo "$FUNCNAME(): error - unable to load file $tmp_aux_lib" 1>&2
+    return 1
+  fi
 
-  local distro_ver_major_minor="$distro_ver_major.$distro_ver_minor"
-
-  repos_dir_1="${repos_dir_tmpl//@version@/$distro_ver}"
-  repos_dir_2="${repos_dir_tmpl//@version@/$distro_ver_major_minor}"
-  repos_dir_3="${repos_dir_tmpl//@version@/$distro_ver_major}"
-
-  for repos_link in "$repos_dir_1/repos."[0-9]*.* \
-                    "$repos_dir_2/repos."[0-9]*.* \
-                    "$repos_dir_3/repos."[0-9]*.*; do
-
-    if [ ! -L "$repos_link" ]; then
-      continue
-    fi
-
-    repos_name="${repos_link##*.}"
-    t_dir="${repos_link%/*}"
-    repos_file=$(readlink -e "$repos_link")
-    if [ $? -ne 0 ]; then
-      echo "$FUNCNAME(): warning, link $repos_link doesn't resolve" 1>&2
-      sleep 2
-      continue
-    fi
-
-    cp -f "$repos_file" /etc/apt/sources.list.d
-
-    key_link="$t_dir/$repos_name.key"
-    if [ -L "$key_link" -a -f "$key_link" ]; then
-      apt-key add "$key_link"
-    fi
-  done
-
-  for pref_file in "$repos_dir_1"/preferences.*  \
-                    "$repos_dir_2"/preferences.* \
-                    "$repos_dir_3"/preferences.* ; do
-
-    if [ ! -f "$pref_file" ]; then
-      continue
-    fi
-
-    pref_name="${pref_file##*.}"
-    cp -f "$pref_file" "/etc/apt/preferences.d/$pref_name"
-  done
-
+  add_apt_repositories "$source_dir" "$distro" "$distro_ver" \
+    "$distro_ver_major" "$distro_ver_minor" || return $?
 
   export DEBIAN_FRONTEND='noninteractive'
 
@@ -109,9 +69,15 @@ debian_adjust_system_config() {
   fi
 
   local module=""
-  for module in cgi rewrite macro suexec ssl proxy proxy_http; do
+  local -a apache2_modules=( \
+    cgi expires headers macro rewrite suexec ssl proxy proxy_http \
+  )
+  for module in ${apache2_modules[@]}; do
     a2enmod $module
   done
+
+  # remove distro default cgi-bin aliases, will not be used
+  a2disconf serve-cgi-bin
 
   # fuser fails on slicehost CentOS  (/proc/net/tcp is empty)
   #if fuser 443/tcp >/dev/null || netstat -ln --tcp|grep -q :443
@@ -121,8 +87,12 @@ debian_adjust_system_config() {
   #  echo 'Listen 443' >> "$_apache_base_dir"/conf.d/webenabled.conf
   #fi
 
+  # stop mysql from the distro
+  service mysql stop
+
   if hash systemctl &>/dev/null; then
     systemctl enable devpanel-taskd
+    systemctl disable mysql
   else
     local taskd_init=/etc/init.d/devpanel-taskd
     if [ -L "$taskd_init" -o -e "$taskd_init" ]; then

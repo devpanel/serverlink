@@ -37,9 +37,24 @@ ubuntu_pre_run() {
 ubuntu_install_distro_packages() {
   local source_dir="$1"
   local install_dir="$2"
-  local ubuntu_version="${3:-0}"
+  local distro="$3"
+  local distro_ver="$4"
+  local distro_ver_major="$5"
+  local distro_ver_minor="$6"
 
   # NOTE: at this point the $install_dir has not been copied in place yet
+
+  local tmp_self_file="${BASH_SOURCE[0]}"
+  local tmp_self_dir=${tmp_self_file%/*}
+  local tmp_aux_lib="$tmp_self_dir/lib.debian_ubuntu.sh"
+
+  if ! . "$tmp_aux_lib"; then
+    echo "$FUNCNAME(): error - unable to load file $tmp_aux_lib" 1>&2
+    return 1
+  fi
+
+  add_apt_repositories "$source_dir" "$distro" "$distro_ver" \
+    "$distro_ver_major" "$distro_ver_minor" || return $?
 
   export DEBIAN_FRONTEND='noninteractive'
 
@@ -105,9 +120,17 @@ ubuntu_adjust_system_config() {
     fi
   fi
 
-  for module in rewrite macro cgi suexec ssl proxy proxy_http; do
+  local module
+  local -a apache2_modules=( \
+    cgi expires headers macro rewrite proxy proxy_http ssl suexec \
+  )
+
+  for module in ${apache2_modules[@]}; do
     a2enmod $module
   done
+
+  # remove distro default cgi-bin aliases, will not be used
+  a2disconf serve-cgi-bin
 
   # fuser fails on slicehost CentOS  (/proc/net/tcp is empty)
   #if fuser 443/tcp >/dev/null || netstat -ln --tcp|grep -q :443
