@@ -552,7 +552,15 @@ if [ `docker images|grep devpanel_cache|grep latest|wc -l` -eq 0 ]; then
   if [ $build_image ]; then
     docker build -t devpanel_cache:latest "$self_dir/cache"
   else
-    docker pull freeminder/devpanel_cache:latest && docker tag freeminder/devpanel_cache:latest devpanel_cache:latest
+    # avoid error 500 from docker hub
+    docker_pull()
+    {
+      docker pull freeminder/devpanel_cache:latest
+      exit_status=`echo $?`
+    }
+
+    while [ ! "${exit_status}" == "0" ]; do docker_pull; done
+    docker tag freeminder/devpanel_cache:latest devpanel_cache:latest
   fi
 fi
 
