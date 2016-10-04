@@ -489,7 +489,7 @@ docker_msf()
 {
   if [ `docker ps|grep msf_container|wc -l` -eq 0 ]; then
     if [ `docker ps -a|grep msf_container|wc -l` -gt 0 ]; then docker rm -f msf_container; fi
-    docker run -d --name=msf_container msf:v1
+    docker run -d --name=msf_container devpanel_msf:latest
   fi
   CONTAINER_MSF_ID=`docker ps|grep msf_container|awk '{print $1}'`
   docker cp ${self_dir}/msf/wmap.rc ${CONTAINER_MSF_ID}:/tmp/wmap.rc
@@ -556,12 +556,12 @@ if [ `docker images|grep devpanel_cache|grep latest|wc -l` -eq 0 ]; then
     # avoid error 500 from docker hub
     docker_pull()
     {
-      docker pull freeminder/devpanel_cache:latest
+      docker pull devpanel/cache:latest
       exit_status=`echo $?`
     }
 
     while [ ! "${exit_status}" == "0" ]; do docker_pull; done
-    docker tag freeminder/devpanel_cache:latest devpanel_cache:latest
+    docker tag devpanel/cache:latest devpanel_cache:latest
   fi
 fi
 
@@ -585,25 +585,25 @@ fi
 if [ "$app" == "zabbix" -a "$operation" == "start" -a "$domain" -a "$host_type" == "docker" ]; then
   if [ `docker images|grep devpanel_zabbix|wc -l` -eq 0 ]; then
     if [ $build_image ]; then
-      docker build -t devpanel_zabbix:v1 ${self_dir}/zabbix
+      docker build -t devpanel_zabbix:latest ${self_dir}/zabbix
     else
-      docker pull freeminder/devpanel_zabbix:v1
-      docker tag freeminder/devpanel_zabbix:v1 devpanel_zabbix:v1
+      docker pull devpanel/zabbix:latest
+      docker tag devpanel/zabbix:latest devpanel_zabbix:latest
     fi
   fi
-  docker run -d -it --name ${domain}_${app}_web devpanel_zabbix:v1
+  docker run -d -it --name ${domain}_${app}_web devpanel_zabbix:latest
   update_nginx_config
 
 elif [ "$app" == "hippo" -a "$operation" == "start" -a "$domain" -a "$host_type" == "docker" ]; then
   if [ `docker images|grep devpanel_hippo|wc -l` -eq 0 ]; then
     if [ $build_image ]; then
-      docker build -t devpanel_hippo:v1 ${self_dir}/hippo
+      docker build -t devpanel_hippo:latest ${self_dir}/hippo
     else
-      docker pull freeminder/devpanel_hippo:v1
-      docker tag freeminder/devpanel_hippo:v1 devpanel_hippo:v1
+      docker pull devpanel/hippo:latest
+      docker tag devpanel/hippo:latest devpanel_hippo:latest
     fi
   fi
-  docker run -d -it --name ${domain}_${app}_web devpanel_hippo:v1
+  docker run -d -it --name ${domain}_${app}_web devpanel_hippo:latest
   update_nginx_config
 
 # create app
@@ -847,10 +847,10 @@ elif [ "$operation" == "scan" -a "$domain" -a "$host_type" == "docker" ]; then
   # check if msf container exists
   if [ `docker images|grep msf|wc -l` -eq 0 ]; then
     if [ $build_image ]; then
-      docker build -t msf:v1 ${self_dir}/msf
+      docker build -t msf:latest ${self_dir}/msf
     else
-      docker pull freeminder/msf:v1
-      docker tag freeminder/msf:v1 msf:v1
+      docker pull devpanel/msf:latest
+      docker tag devpanel/msf:latest devpanel_msf:latest
     fi
   fi
   # do the scan
@@ -860,8 +860,8 @@ elif [ "$operation" == "destroy" -a "$domain" ]; then
   read_local_config
   if [[ "$app_hosting" == "docker" ]]; then
     docker rm  -f ${app_container_name}
-    if [ "$app" == "zabbix" -o "$app" == "hippo" ]; then
-      docker rmi -f devpanel_${app}:v1
+    if [ "$app" == "zabbix" -o "$app" == "hippo" -o "$app" == "msf" ]; then
+      docker rmi -f devpanel_${app}:latest
     elif [[ "$app_clone" == "true" ]]; then
       docker rmi -f ${app_container_name}
     else
