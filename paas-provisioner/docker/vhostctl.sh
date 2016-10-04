@@ -497,6 +497,22 @@ docker_msf()
   docker exec ${CONTAINER_MSF_ID} /bin/sh -c "TERM=rxvt msfconsole -r /tmp/wmap.rc"
 }
 
+# avoid error 500 from docker hub
+docker_build_or_pull_and_tag()
+{
+  if [ `docker images|grep devpanel_${1}|wc -l` -eq 0 ]; then
+    if [ $build_image ]; then
+      docker build -t devpanel_${1}:latest ${self_dir}/${1}
+    else
+      while [ ! "${exit_status}" == "0" ]; do
+        docker pull devpanel/${1}:latest
+        exit_status=`echo $?`
+      done
+      docker tag devpanel/${1}:latest devpanel_${1}:latest
+    fi
+  fi
+}
+
 detect_running_apache_and_patch_configs()
 {
   if [ `ps aux|grep apache2|wc -l` -gt 0 ]; then
@@ -549,21 +565,7 @@ if [ ! -f /usr/local/bin/docker-compose ]; then
 fi
 
 # build locally or pull image from docker hub
-if [ `docker images|grep devpanel_cache|grep latest|wc -l` -eq 0 ]; then
-  if [ $build_image ]; then
-    docker build -t devpanel_cache:latest "$self_dir/cache"
-  else
-    # avoid error 500 from docker hub
-    docker_pull()
-    {
-      docker pull devpanel/cache:latest
-      exit_status=`echo $?`
-    }
-
-    while [ ! "${exit_status}" == "0" ]; do docker_pull; done
-    docker tag devpanel/cache:latest devpanel_cache:latest
-  fi
-fi
+docker_build_or_pull_and_tag cache
 
 # check for nginx installation
 if [ ! -f /usr/sbin/nginx ]; then
@@ -583,26 +585,12 @@ fi
 
 # main logic
 if [ "$app" == "zabbix" -a "$operation" == "start" -a "$domain" -a "$host_type" == "docker" ]; then
-  if [ `docker images|grep devpanel_zabbix|wc -l` -eq 0 ]; then
-    if [ $build_image ]; then
-      docker build -t devpanel_zabbix:latest ${self_dir}/zabbix
-    else
-      docker pull devpanel/zabbix:latest
-      docker tag devpanel/zabbix:latest devpanel_zabbix:latest
-    fi
-  fi
+  docker_build_or_pull_and_tag zabbix
   docker run -d -it --name ${domain}_${app}_web devpanel_zabbix:latest
   update_nginx_config
 
 elif [ "$app" == "hippo" -a "$operation" == "start" -a "$domain" -a "$host_type" == "docker" ]; then
-  if [ `docker images|grep devpanel_hippo|wc -l` -eq 0 ]; then
-    if [ $build_image ]; then
-      docker build -t devpanel_hippo:latest ${self_dir}/hippo
-    else
-      docker pull devpanel/hippo:latest
-      docker tag devpanel/hippo:latest devpanel_hippo:latest
-    fi
-  fi
+  docker_build_or_pull_and_tag hippo
   docker run -d -it --name ${domain}_${app}_web devpanel_hippo:latest
   update_nginx_config
 
@@ -845,14 +833,7 @@ elif [ "$operation" == "scan" -a "$domain" -a "$host_type" == "docker" ]; then
   # get ip_address of webapp
   dst_ip_address=`docker inspect -f '{{.Name}} - {{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' $(docker ps -aq)|grep "${CONTAINER_WEB_NAME}"|awk -F" - " '{print $2}'`
   # check if msf container exists
-  if [ `docker images|grep msf|wc -l` -eq 0 ]; then
-    if [ $build_image ]; then
-      docker build -t msf:latest ${self_dir}/msf
-    else
-      docker pull devpanel/msf:latest
-      docker tag devpanel/msf:latest devpanel_msf:latest
-    fi
-  fi
+  docker_build_or_pull_and_tag msf
   # do the scan
   docker_msf
 
