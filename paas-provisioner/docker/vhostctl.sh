@@ -425,8 +425,9 @@ restart_or_reload_nginx()
   # will be two in the worst case — first to compute the bucket address, and second during the key search inside the bucket.
   # Therefore, if nginx emits the message requesting to increase either hash max size or hash bucket size
   # then the first parameter should first be increased.
-  if [ ! -f /etc/nginx/conf.d/server_names_hash_bucket_size.conf ]; then
+  if [ ! -f /etc/nginx/conf.d/server_names_hash_bucket_size.conf -o ! -f /etc/nginx/conf.d/client_max_body_size.conf ]; then
     ${sudo} echo "server_names_hash_bucket_size  128;" > /etc/nginx/conf.d/server_names_hash_bucket_size.conf
+    ${sudo} echo "client_max_body_size 200M;" > /etc/nginx/conf.d/client_max_body_size.conf
   fi
 
   if [[ `service nginx status` == " * nginx is running" ]]; then
