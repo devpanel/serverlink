@@ -1,418 +1,305 @@
-#!/usr/bin/perl
-package DevPanel::CLI;
+#!/bin/bash
 
-use strict;
-use warnings;
-use Cwd (qw( abs_path ));
-use File::Basename;
-use FindBin (qw( $RealBin ));
+usage_default() {
+  # devpanel <word>
+  # devpanel <action> <object> <specific> <args>
+  #            create   vhost    
+  #            remove   vhost    
+  #            get      vhost    token
+  #            get      vhost    token
 
-our $main_dir;
-our $devpanel_lib_dir;
-our $libdir; # bad name, but I'll keep the backwards for now ;)
+  local -A sections_r=()
+  local summ_dir tmp_summ_file tmp_section tmp_desc_file desc
+  local tmp_real_file tmp_msg tmp_cmd tmp_cmd_str tmp_cmd_line
+  local section section_l section_b cmd_f
+  local -a commands_ar=()
 
-BEGIN {
-  $main_dir = abs_path(dirname($RealBin));
-  $devpanel_lib_dir = "$main_dir/lib/perl5";
-  $libdir = "$main_dir/lib/perl5/DevPanel/CLI/includes";
-  if(! -e $libdir) {
-    die "Error: missing expected lib directory $libdir.\n";
-  } elsif(! -d $libdir) {
-    die "Error: path $libdir is not a directory.\n";
-  } elsif(-d $libdir) {
-    unshift(@INC, $libdir);
-  }
+  echo "Usage: ${0##*/} <command> [args]"
+  echo
 
-  if(-d $devpanel_lib_dir) {
-    unshift(@INC, $devpanel_lib_dir);
-  }
+  summ_dir="$lib_dir/.usage-lines"
+  for section_l in $summ_dir/.section.[0-9]; do
+    section_b=${section_l##*/}
+
+    section=$(readlink "$section_l")
+    echo "  $section"
+
+    for tmp_summ_file in $summ_dir/$section_b.cmd.*; do
+      if [ ! -L "$tmp_summ_file" ]; then
+        continue
+      fi
+
+      tmp_cmd_str=${tmp_summ_file#$summ_dir/$section_b.cmd.*.}
+      tmp_real_file=$(readlink -m "$tmp_summ_file")
+      desc=${tmp_real_file##*/}
+
+      printf "    %-20s %s\n" "$tmp_cmd_str" "$desc"
+
+      # tmp_cmd_line=$(printf "    %-20s %s\n" "$tmp_cmd_str" "$desc")
+      # commands_ar+=( "$tmp_cmd_line" )
+    done
+      
+    echo # print a new line at the end of the section
+  done
+
+  echo "
+  For more information about a specific command, run:
+    $ devpanel COMMAND --help
+
+    Example: $ devpanel create vhost --help
+"
+  # if [ ${#commands_ar[@]} -gt 0 ]; then
+  #   echo "
+  # Commands: "
+  #
+  #   for tmp_cmd in "${commands_ar[@]}"; do
+  #     echo "$tmp_cmd"
+  #   done
+  # 
+  #   echo
+  # fi
+
+  exit 1
 }
 
-use Getopt::Long;
-use Data::Dumper;
-use Config::Tiny;
-use Cloudenabled::Util (qw( :DEFAULT ));
-use Cloudenabled::Constants (qw( :DEFAULT %CE_OP_ST_MAP ));
+usage() {
+  local name="$1"
+  local msg
 
-our %ro; # ro == received opts
-$ro{config_file} = "$main_dir/etc/devpanel.conf";
-$ro{taskd_config_file} = "$main_dir/config/taskd.conf";
+  if [ -z "$name" ]; then
+    if [ -n "${devpanel_usage_r[$namespace]}" ]; then
+      echo "${devpanel_usage_r[$namespace]}" 1>&2
+    else 
+      usage_default
+    fi
+  else
+    if [ -n "${devpanel_usage_r[$namespace]}" ]; then
+      echo "${devpanel_usage_r[$namespace]}" 1>&2
+    else
+      echo "Error: (missing usage msg for '$name')" 1>&2
+    fi
+  fi
 
-our $prog;
-#our(@get_operations, @post_operations, @unauth_operations, @local_operations);
-#our($help, $http_method, $local_op, $remote_op);
-our $conf;
-our($section, $command);
-our(%general_opts, %received_opts, %req_params);
-
-our(%cmd_help_msgs, %section_help, %section_commands);
-
-sub is_valid_dir_entry {
-  my($dir, $entry) = @_;
-
-  if($entry eq "." || $entry eq "..") {
-    return 0;
-  }
-
-  my $path = sprintf("%s/%s", $dir, $entry);
-  if(-d $path) {
-    return 1;
-  } elsif(-f $path) {
-    my $len = length($entry);
-    if(substr($entry, $len-3) eq ".pl") {
-      return 1;
-    }
-  }
-
-  return 0;
+  exit 1
 }
 
-sub is_valid_cmd_str {
-  my($cmd) = @_;
-  my $cmd_regex = qr/^[^-][\w_\.-]+$/;
-  if(length($cmd) > 0 && $cmd =~ $cmd_regex) {
-    return 1;
-  } else {
-    return 0;
-  }
+error() {
+  local msg="$1"
+  local exit_code="${2:-1}"
+
+  [ -n "$msg" ] && echo "Error: $msg" 1>&2
+  exit $exit_code
 }
 
-sub usage {
-  my $msg = shift;
+get_namespace() {
+  local path="$1"
 
-  my $b = basename($0);
-  print "
-Usage: $b <section> <command> [ options ]
-       $b <section> -h
+  local action subject object
+  local basename namespace
+  basename="${path#$lib_dir/*/}"
 
-  Options:
-    -c config_file          Use an alternate config file
-    -d                      Enable debug
-    -s                      Silent (don't display some error messages)
-    -h                      shows help for the given command
+  if [[ "$basename" == *-*-* ]]; then
+    IFS=- read action object subject <<< "$basename"
+    namespace="${object}_${action}_${subject}"
+  elif [[ "$basename" == *-* ]]; then
+    IFS=- read action object <<< "$basename"
+    namespace="${object}_${action}"
+  else
+    namespace=${basename//\//_}
+  fi
 
-  Available sections:
-";
 
-  # foreach my $op (@get_operations, @post_operations, @local_operations) {
-  #  print "    $op\n";
-  # }
-  if(!opendir(LIBDIR, $libdir)) {
-    print "  (unable to load libraries directory. Will not list available sections)\n";
-  } else {
-    my $fmt = "    %-25s %s\n";
-    while(my $entry = readdir(LIBDIR)) {
-      if(!is_valid_dir_entry($libdir, $entry)) {
-        next;
-      }
-
-      my $path      = sprintf("%s/%s", $libdir, $entry);
-      my $help_file = sprintf("%s/%s/_section_info.pl", $libdir, $entry);
-
-      if(-d $path && -f $help_file && (my $hlp_ref = load_command_file($help_file))) {
-        printf $fmt, $entry, $hlp_ref->{short_txt};
-      } elsif(-d $path) {
-        printf $fmt, $entry, "(No description available)";
-      } elsif(-f $path && ($hlp_ref = load_command_file($path))) {
-        printf $fmt, substr($entry, 0, length($entry)-3), $hlp_ref->{short_txt};
-      } elsif(-f $path) {
-        printf $fmt, substr($entry, 0, length($entry)-3), "(No description available)";
-      }
-    }
-    close(LIBDIR);
-  }
-
-  print "\n\n";
-
-  if(defined($msg)) {
-    printf "\n[*] Error: %s\n", $msg;
-  }
-
-  exit(1);
+  echo -n "$namespace"
 }
 
-sub print_cmd_help {
-  my($cmd_ref, $errmsg) = @_;
+get_executable_basename() {
+  local path="$1"
 
-  print "DevPanel Command Line Utility - Help information\n\n";
+  local action subject object
+  local name
+  name="${path#$lib_dir/*/}"
 
-  my $desc = exists($cmd_ref->{desc}) ? $cmd_ref->{desc} 
-                                      : 'No description available';
+  if [[ "$name" == *-*-* ]]; then
+    echo "$name" | IFS=/ read action subject object
+    name="${object}_${action}_${subject}"
+  elif [[ "$name" == *-* ]]; then
+    echo "$name" | IFS=/ read action object
+    name="${object}_${action}"
+  fi
 
-  print "Command: $cmd_ref->{op}\n";
-  print "Description: $desc\n\n";
-  if(exists($cmd_ref->{req_params}) && keys %{ $cmd_ref->{req_params} }) {
-    print "Required parameters:\n";
-    foreach my $k (keys %{ $cmd_ref->{req_params} }) {
-      printf "  %s: %s\n", $k, $cmd_ref->{req_params}->{$k};
-    }
-    print "\n";
-  }
 
-  if(exists($cmd_ref->{opt_params}) && keys %{ $cmd_ref->{opt_params} }) {
-    print "Optional parameters:\n";
-    foreach my $k (keys %{ $cmd_ref->{opt_params} }) {
-      printf "  %s: %s\n", $k, $cmd_ref->{opt_params}->{$k};
-    }
-    print "\n";
-  }
-
-  if(exists($cmd_ref->{examples}) && $#{ $cmd_ref->{examples} } >= 0) {
-    my $i = 0;
-    print "Examples:\n";
-    foreach my $ex (@{ $cmd_ref->{examples} }) {
-      printf "  %d. %s %s %s\n", ++$i, $prog, $cmd_ref->{op}, $ex;
-    }
-  }
-
-  if(defined($errmsg)) {
-    print "--\n";
-    printf "Error: %s. Please see the command requirements above.\n", $errmsg;
-  }
-
-  return 0;
-}
-
-sub print_section_help {
-  my($section_name, $errmsg) = @_;
-
-  print "Section: $section_name\n\n";
-
-  my $section_dir = sprintf("%s/%s", $libdir, $section_name);
-  if(!-d $section_dir) {
-    warn "Error: section directory '$section_dir' doesn't seem to exist.\n";
-    return 0;
-  }
-
-  if(!opendir(SEC_DIR, $section_dir)) {
-    warn "Error: unable to open section directory '$section_dir': $!\n";
-    return 0;
-  }
-
-  print "Available sub-commands:\n";
-  my $sub_fmt = "    %-25s %s\n";
-
-  while(my $entry = readdir(SEC_DIR)) {
-    my $file = sprintf("%s/%s", $section_dir, $entry);
-    if(! -f $file || substr($entry, 0, 1) eq "_") {
-      next;
-    }
-
-    if(!is_valid_dir_entry($section_dir, $entry)) {
-      next;
-    } elsif(my $hlp_ref = load_command_file($file)) {
-      printf $sub_fmt, substr($entry, 0, length($entry)-3), $hlp_ref->{desc};
-    } else {
-      printf $sub_fmt, substr($entry, 0, length($entry)-3), "(No description available)";
-    }
-
-  }
-  close(SEC_DIR);
-
-  if(defined($errmsg)) {
-    print "\n--\n";
-    print "[*] Error: $errmsg\n";
-  } else {
-    print "\n--\n";
-    print "For help in a specific sub-command please use: $prog $section_name <subcommand> --help\n";
-  }
-}
-
-sub load_command_file {
-  my($file) = @_;
-
-  my $ref = do($file);
-  if($@) {
-    warn "Error parsing command file '$file': $@\n";
-    return 0;
-  } elsif(!defined($ref)) {
-    warn "Error parsing command file '$file': $!\n";
-    return 0;
-  } elsif(ref($ref) ne 'HASH') {
-    warn "Error: command file '$file' didn't return a hash reference\n";
-    return 0;
-  }
-
-  return $ref;
+  echo -n "$name"
 }
 
 
-# main()
+devpanel_load_n_run() {
+  local function_name="$1"
+  local bin_file="$2"
+  shift 2
 
-%general_opts = (
-  'h|help'     => \$ro{help},
-  'd|debug'    => \$ro{debug},
-  's|silent'   => \$ro{silent},
-  'c|config=s' => \$ro{config_file},
-);
+  if ! . "$bin_file"; then
+    echo "$FUNCNAME(): failed to load '$bin_file'" 1>&2
+    return 1
+  fi
 
-$prog = basename($0);
-
-if($#ARGV < 0) {
-  &usage();
+  $function_name "${@:+$@}"
 }
 
-my %opts;
-my $operation;
-my $cmd_ref;
+set_usage_msg() {
+  local msg="$1"
 
-&usage() if($#ARGV < 0);
+  if [ -z "$namespace" ]; then
+    echo "$FUNCNAME(): namespace is not defined" 1>&2
+    return 1
+  elif [ -z "$msg" ]; then
+    echo "$FUNCNAME(): missing msg argument" 1>&2
+    return 1
+  fi
 
-# determine first and second arguments, if are section/command or options
-if($#ARGV >= 0 && substr($ARGV[0], 0, 1) ne "-") {
-  # is the 1st argument, an option or a section
-  $section = lc(shift(@ARGV));
-  if(!is_valid_cmd_str($section)) {
-    warn "Error: section name (1st argument) has an invalid string format.\n";
-    exit(1);
-  }
-} elsif($#ARGV >= 0 && substr($ARGV[0], 0, 1) eq '-' &&
-  $ARGV[0] ne "-h" && $ARGV[0] ne "--help" && $ARGV[0] ne "-help") {
-  warn "Error: first argument in command line must be a command\n";
-  exit(1);
+  devpanel_usage_r[$namespace]="$msg"
 }
 
-my $test_section_lib = sprintf('%s/%s.pl', $libdir, $section);
-my $test_section_dir = sprintf('%s/%s', $libdir, $section);
-if(-f $test_section_lib && !($cmd_ref = load_command_file($test_section_lib))) {
-  exit(1);
-} elsif(!$cmd_ref && ! -e $test_section_dir) {
-  warn "Error: unknown section\n";
-  exit(1);
+print_object_help() {
+  local obj="$1"
+
+  local t_file usage_file t_dir t_bname line op usage_msg help_msg
+
+  t_dir="$lib_dir/$obj"
+
+  usage_msg+="Usage: $bin_name <action> $obj [options]"$'\n'$'\n'
+
+  for usage_file in $t_dir/.summary-files/*; do
+    [ ! -f "$usage_file" ] && continue
+
+    line=$(head -1 "$usage_file")
+    help_msg+=$(printf "    %-15s %s" "$op" "$line")
+    help_msg+=$'\n'
+  done
+
+  if [ -n "$help_msg" ]; then
+    usage_msg+="  Actions:"$'\n'
+    help_msg+=$'\n'
+    echo "$usage_msg"
+    echo "$help_msg"
+    return 0
+  else
+    echo "$FUNCNAME(): no help msg for $obj" 1>&2
+    return 1
+  fi
 }
 
-if(defined($section) && $#ARGV >= 0 && substr($ARGV[0], 0, 1) ne "-") {
-  # if a section was defined in the previous test, this might be a command
-  $command = lc(shift(@ARGV));
-  if(!is_valid_cmd_str($command)) {
-    warn "Error: command name (2nd argument) has an invalid string format.\n";
-    exit(1);
-  }
+error_missing_value() {
+  local name="$1"
 
-  my $test_cmd_file = sprintf('%s/%s/%s.pl', $libdir, $section, $command);
-  if(-f $test_cmd_file && !($cmd_ref = load_command_file($test_cmd_file))) {
-    exit(1);
-  } elsif(! -e $test_cmd_file) {
-    warn "Error: unknown command name.\n";
-    exit(1);
-  }
+  error "missing value of parameter --$name"
 }
 
-if(exists($cmd_ref->{getopt_params})) {
-  foreach my $key (keys %{ $cmd_ref->{getopt_params} }) {
-    $general_opts{$key} = $cmd_ref->{getopt_params}->{$key};
-  }
+error_missing_param() {
+  local name="$1"
+
+  error "missing required parameter --$name. Please specify it."
 }
 
-if(!GetOptions(%general_opts)) {
-  exit(1);
-}
+# main
+__self_bin=`readlink -e "$0"`
+if [ $? -ne 0 ]; then
+  echo "Error: unable to get self path" 1>&2
+  exit 1
+fi
 
-$conf = Config::Tiny->read($ro{config_file});
-if(!$conf) {
-  die "Error: " . Config::Tiny::errstr() .  "\n";
-}
+declare -r self_bin="$__self_bin"
+declare -r bin_name=${self_bin##*/}
+declare -r self_bin_dir="${self_bin%/*}"
+declare -r sys_dir="${self_bin_dir%/*}"
 
-if($ro{debug}) {
-  print "Parsed operation: ", Dumper($cmd_ref), "\n";
-}
+declare -r lib_dir="$sys_dir/lib/cli"
 
-if(($ro{help} && defined($section) && !defined($command)) || !(keys %$cmd_ref)) {
-  print_section_help($section);
-  exit(0);
-} elsif($ro{help}) {
-  print_cmd_help($cmd_ref);
-  exit(0);
-}
+[ $# -eq 0 -o -z "$1" ] && usage
 
-if(exists($cmd_ref->{req_params})) {
-  foreach my $param (keys %{ $cmd_ref->{req_params} }) {
-    if(!exists($ro{$param}) || !defined($ro{$param})) {
-      (my $param_tr = $param) =~ tr/_/-/;
-      print_cmd_help($cmd_ref, "missing option --$param_tr");
-      exit(1);
-    } else {
-      $req_params{$param} = $ro{$param};
-    }
-  }
-}
+declare -A devpanel_usage_r=()
 
-if(exists($cmd_ref->{opt_params})) {
-  foreach my $param (keys %{ $cmd_ref->{opt_params} }) {
-    if(exists($ro{$param}) && defined($ro{$param})) {
-      $req_params{$param} = $ro{$param};
-    }
-  }
-}
+unset verbose
+getopt_flags='v'
+while getopts $getopt_flags OPTN; do
+  case $OPTN in
+    v)
+      verbose=1
+      ;;
+    *)
+      exit 1
+      ;;
+  esac
+done
+[ $OPTIND -gt 1 ] && shift $(( $OPTIND - 1 ))
 
-my $requires_auth = ( exists($cmd_ref->{requires_auth}) && $cmd_ref->{requires_auth} == 0) ? 0 : 1;
-my $is_local      = ( exists($cmd_ref->{is_local})      && $cmd_ref->{is_local} == 1)      ? 1 : 0;
+unset full_bin_path found_bin
+unset action object
 
-my $user_api_r;
-if($requires_auth) {
-  if(!exists($conf->{user_api})) {
-    die "Error: missing user_api section on config file.\n";
-  }
+declare -a walk_args=()
+path_walk=""
 
-  $user_api_r = $conf->{user_api};
-  foreach my $key (qw( api_key api_secret )) {
-    if(!exists($user_api_r->{$key})) {
-      warn "Error: missing parameter $key on user_api section of file '$ro{config_file}'\n";
-      exit(1);
-    }
-  }
-}
+while [ -n "$1" ] && [ "${1:0:1}" != "-" ] && [[ "$1" =~ ^[A-Za-z0-9_.-]+$ ]]; do
+  walk_args+=( "$1" )
+  shift
+done
 
-if(!exists($cmd_ref->{run})) {
-  warn "Error: missing the function to run the code in operation.\n";
-  exit(1);
-} elsif(!ref($cmd_ref->{run}) || ref($cmd_ref->{run}) ne 'CODE') {
-  warn "Error: run function defined, but not a code reference.\n";
-  exit(1);
-}
+if [ ${#walk_args[@]} -eq 1 ]; then
+  arg="${walk_args[0]}"
+  if [ -d "$lib_dir/$arg" ]; then
+    print_object_help "$arg"
+    exit 1
+  fi
 
-# before executing the request, check if there's a prerun function
-if(exists($cmd_ref->{prerun}) && ref($cmd_ref->{prerun}) &&
-  ref($cmd_ref->{prerun}) eq 'CODE') {
+  if [ $EUID -eq 0 ]; then
+    path_walk="$lib_dir/sbin/$arg"
+  else
+    path_walk="$lib_dir/bin/$arg"
+  fi
 
-  my $status = &{ $cmd_ref->{prerun} }($conf, \%ro, \%req_params);
-}
+  if [ -f "$path_walk" -a -x "$path_walk" ]; then
+    action="$arg"
+    object=""
+    namespace="$action"
+    full_bin_path="$path_walk"
+    found_bin=1
+    # shift # crucial as there's only one argument
+  fi
+elif [ ${#walk_args[@]} -ge 2 ]; then
+  action="${walk_args[0]}"
+  object="${walk_args[1]}"
 
-my $http_rsp;
-if(!$is_local) {
-  $req_params{__method}  = $cmd_ref->{method};
-  $req_params{__api_url} = sprintf('%s/api/%s', $user_api_r->{api_url}, $cmd_ref->{op});
-  $req_params{timestamp} = time();
+  namespace="${object}_${action}"
 
-  if($requires_auth) {
-    $req_params{__key} = $user_api_r->{api_secret};
-    $req_params{__headers}->{'X-Webenabled-Key'} = $user_api_r->{api_key};
+  path_walk="$lib_dir/libexec/$action-$object"
 
-    $user_api_r->{'api_key'}    = exists($opts{'k'}) ? $opts{'k'} : $user_api_r->{'api_key'};
-    $user_api_r->{'api_url'}    = exists($opts{'u'}) ? $opts{'u'} : $user_api_r->{'api_url'};
-    $user_api_r->{'api_secret'} = exists($opts{'S'}) ? $opts{'S'} : $user_api_r->{'api_secret'};
-  }
+  if [ -d "$path_walk" -a ${#walk_args[@]} -eq 2 ]; then
+    print_object_help "$action"
+  elif [ -f "$path_walk" -a -x "$path_walk" ]; then
+    full_bin_path="$path_walk"
+    found_bin=1
+  else
+    for((i=2; $i < ${#walk_args[@]}; i++)); do
+      arg=${walk_args[$i]}
+      path_walk+="-$arg"
+      namespace+="_$arg"
 
-  if($requires_auth) {
-    $http_rsp = ce_http_request_new(\%req_params);
-  } else {
-    $http_rsp = ce_http_request_unauth(\%req_params);
-  }
+      if [ -f "$path_walk" -a -x "$path_walk" ]; then
+        namespace=${namespace//-/_}
+        full_bin_path="$path_walk"
+        found_bin=1
+        break
+      fi
+    done
+  fi
+fi
+ 
+if [ -z "$found_bin" ]; then
+  error "unknown command (not found)"
+fi
 
-  if($ro{debug}) {
-    print "Received HTTP response: ", Dumper($http_rsp), "\n";
-  }
+if [ -n "$verbose" ]; then
+  echo
+  echo "Executing: $full_bin_path $@"
+fi
 
-  if(!ce_was_successful($http_rsp)) {
-    warn sprintf("Error: response error. Returned: %s\n",
-                      $CE_OP_ST_MAP{$http_rsp->{status}});
-    if(exists($http_rsp->{'errmsg'})) {
-      warn sprintf("Error message: %s\n", $http_rsp->{'errmsg'});
-    }
-
-    exit(1);
-  }
-}
-
-my $status = &{ $cmd_ref->{run} }($conf, \%ro, $http_rsp);
-exit($status);
+devpanel_load_n_run "$namespace" "$full_bin_path" "$@"

@@ -1,0 +1,30 @@
+#!/bin/bash
+
+usage() {
+  echo "Usage: ${0##*/} create account --username <username>"
+
+  exit 1
+}
+
+while [ -n "$1" ]; do
+  name="$1"
+  case "$name" in
+    --username)
+      username="$2"
+      shift 2
+      ;;
+    *)
+      error "unknown argument $name"
+      ;;
+  esac
+done
+
+unset password
+while [ -z "$password" ]; do
+  read -s -p "New password: " password
+done
+
+echo
+echo -n "Creating account..."
+sleep 1
+echo OK

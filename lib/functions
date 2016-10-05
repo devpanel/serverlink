@@ -1608,6 +1608,68 @@ is_known_seedapp_subsystem() {
   fi
 }
 
+has_min_path_matches() {
+  local t_dir="$1"
+  local -i n_min_matches=$2
+  local -i n_matches=0
+
+  if [ $# -lt 3 ]; then
+    echo "$FUNCNAME(): error - missing arguments" 1>&2
+    return 1
+  fi
+
+  shift 2
+
+  local t_path
+
+  while [ -n "$1" ]; do
+    t_path="$t_dir/$1"
+    if [ -e "$t_path" ]; then
+      n_matches+=1
+    fi
+    shift
+
+    if [ $n_matches -ge $n_min_matches ]; then
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+detect_app_type_on_dir() {
+  local t_dir="$1"
+  local min_matches=3
+
+  local app_type
+
+  local -a d6_paths=( includes/bootstrap.inc modules index.php update.php )
+  local -a d7_paths=( includes/bootstrap.inc modules index.php update.php )
+  local -a d8_paths=( core/lib/Drupal autoload.php modules index.php update.php )
+  local -a wordpress_v4_paths=( wp-config.php wp-content wp-includes \
+                                      wp-login.php wp-admin )
+
+
+  if has_min_path_matches "$t_dir" $min_matches "${d6_paths[@]}"; then
+    app_type=drupal
+  elif has_min_path_matches "$t_dir" $min_matches "${d7_paths[@]}"; then
+    app_type=drupal
+  elif has_min_path_matches "$t_dir" $min_matches "${d8_paths[@]}"; then
+    app_type=drupal
+  elif has_min_path_matches "$t_dir" $min_matches "${wordpress_v4_paths[@]}"; then
+    app_type=wordpress
+  else
+    return 1
+  fi
+
+  if [ -n "$app_type" ]; then
+    echo -n "$app_type"
+    return 0
+  else
+    return 1
+  fi
+}
+
 translate_dayname_to_number() {
   local name="${1,,}"
   local n
@@ -1935,6 +1997,29 @@ translate_daynumber_to_name() {
   echo "$name"
 }
 
+bytes_to_human() {
+  local -i n_bytes="$1"
+  local n_bytes_human unit
+
+  local -i kb=1024 mb=$(( 1024 * 1024 )) gb=$(( 1024 * 1024 * 1024 ))
+
+  if [ -z "$n_bytes" ] || ! [[ "$n_bytes" =~ ^[0-9]+$ ]]; then
+    return 1
+  fi
+
+  if [ $n_bytes -gt $gb ]; then
+    unit='gb'
+  elif [ $n_bytes -gt $mb ]; then
+    unit='mb'
+  elif [ $n_bytes -gt $kb ]; then
+    unit='kb'
+  fi
+
+  n_bytes_human=$(echo "scale = 2; $n_bytes / ${!unit}" | bc -l)
+
+  echo -n "$n_bytes_human ${unit^^}"
+}
+
 generate_vhost_ini_str() {
   local vhost="$1"
 
@@ -2028,4 +2113,18 @@ generate_vhost_ini_str() {
   fi
 
   echo -n "$ini_str"
+}
+
+get_app_type_from_vhost() {
+  local vhost="$1"
+
+  local app
+  
+  app=$(get_vhost_key_value "app:0:_:seed_app" "$vhost" 2>/dev/null)
+  if [ $? -eq 0 ]; then
+    echo -n "$app"
+    return 0
+  else
+    return 1
+  fi
 }

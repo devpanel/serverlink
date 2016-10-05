@@ -25,6 +25,9 @@ usage() {
                               but don't actually create the vhost. Only use
                               this option if you want to generate an archive
                               in the right format, but to be used later.
+
+    -O name=value             options to pass to restore-vhost (e.g
+                              site_title, site_email,etc)
 "
   exit 1
 }
@@ -95,11 +98,12 @@ if ! source "$lib_file"; then
   error "unable to source file $lib_file"
 fi
 
-getopt_flags='hb:d:s:p:I:t:'
+getopt_flags='hb:d:s:p:I:t:O:'
 unset orig_archive_file subsystem
 unset db_dump_type db_dump_file orig_db_dump_file
 unset temp_dir just_pack pack_file clone_vhost_db ref_vhost_db
 unset install_profile db_url download_db
+declare -a restore_args=()
 while getopts $getopt_flags OPTN; do
   case $OPTN in
     b)
@@ -144,6 +148,9 @@ while getopts $getopt_flags OPTN; do
         error "unknown DB dump type. Valid ones are: sql, zip and gz"
       fi
       ;;
+    O)
+      restore_args+=( -O "$OPTARG" )
+      ;;
     h)
       usage
       ;;
@@ -172,9 +179,7 @@ if ! "$self_dir/check-vhost-name" $vhost_check "$vhost"; then
   exit 1
 fi
 
-if [ -z "$subsystem" ]; then
-  error "missing subsystem. Please specify it with option -s"
-elif ! is_known_seedapp_subsystem "$subsystem"; then
+if [ -n "$subsystem" ] && ! is_known_seedapp_subsystem "$subsystem"; then
   error "unknown subsystem: $subsystem"
 fi
 
@@ -271,6 +276,17 @@ if [ $? -ne 0 ]; then
   error "unable to clone git url $git_url"
 fi
 
+if [ -z "$subsystem" ]; then
+  subsystem=$(detect_app_type_on_dir "$public_html_dir")
+  if [ $? -eq 0 ]; then
+    echo "Automatically detected app as: $subsystem"
+  else
+    err_msg="app type not specified, and unable to guess it"
+    err_msg+=" from the directory structure"
+    error "$err_msg"
+  fi
+fi
+
 web_archive_file="$pack_dir/web/w_$vhost.tgz"
 tar -zSpcf "$web_archive_file" -C "$app_dir_dist" .
 if [ $? -ne 0 ]; then
@@ -293,7 +309,6 @@ if [ -n "$just_pack" ]; then
   exit 0
 fi
 
-declare -a restore_args=()
 if [ -z "$db_dump_type" -o -n "$install_profile" ]; then
   restore_args+=( -O config_function="setup_from_git" )
 fi

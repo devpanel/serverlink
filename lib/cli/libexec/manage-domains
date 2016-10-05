@@ -1,0 +1,72 @@
+#!/bin/bash
+
+set_usage_msg \
+  "Usage: $bin_name $action $object --vhost <vhost> <options>
+
+  Options:
+    --vhost <vhost>           the vhost to backup
+
+    --add   <domain>          adds the domain to vhost
+                              (can be used multiple times)
+
+    --rm    <domain>          removes the domain from vhost
+                              (can be used multiple times)
+
+    --add-default <domain>    add the domain and set is as default (will be
+                              used by the app and also as the Server Name on
+                              the http error msg)
+
+  Manages domains on the specified vhost.
+"
+
+domains_manage() {
+  [ $# -eq 0 -o -z "$1" ] && usage
+
+  local name vhost domain
+  local -a cmd_args=()
+
+  while [ -n "$1" ]; do
+    name="$1"
+    case "$name" in
+      --vhost)
+        [ -z "$2" ] && error_missing_value vhost
+        vhost="$2"
+        shift 2
+        ;;
+      --add)
+        [ -z "$2" ] && error_missing_value add
+        domain="$2"
+        cmd_args+=( + "$domain" )
+        shift 2
+        ;;
+      --rm)
+        [ -z "$2" ] && error_missing_value rm
+        domain="$2"
+        cmd_args+=( - "$domain" )
+        shift 2
+        ;;
+      --add-default)
+        [ -z "$2" ] && error_missing_value add-default
+        domain="$2"
+        cmd_args+=( '*' "$domain" )
+        shift 2
+        ;;
+      --help)
+        usage
+        ;;
+      --[A-Za-z0-9_-]*)
+        error "unknown option $name"
+        ;;
+      *)
+        # pass unknown arguments/options to the original command
+        cmd_args+=( "$name" )
+        shift
+        ;;
+    esac
+  done
+
+  [ -z "$vhost" ]           && error_missing_param vhost
+  [ ${#cmd_args[@]} -eq 0 ] && usage
+
+  "$sys_dir/libexec/config-vhost-names" "$vhost" "${cmd_args[@]}"
+}
