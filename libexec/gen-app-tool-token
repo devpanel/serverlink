@@ -53,7 +53,7 @@ user="w_$vhost"
 
 assign_deref_os_prop_or_exit url_tmpl "$sys_dir" tools_base_url_tmpl
 
-virtwww_base_domain=$(get_virtwww_base_domain) || exit 1
+virtwww_base_domain=$(get_server_base_domain) || exit 1
 
 # using mode archive: it's OK to operate on a locked vhost
 "$self_dir/check-vhost-name" archive "$vhost" || exit 1

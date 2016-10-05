@@ -125,21 +125,41 @@ if [ "$cert_modulus" != "$key_modulus" ]; then
 "doesn't match key modulus ($key_modulus)"
 fi
 
+# need to get the full path of the files to use in the links below
+cert_file_full_path=$(readlink -e "$cert_file")
+if [ $? -ne 0 ]; then
+  error "unable to determine full path of file '$cert_file'"
+fi
+
+key_file_full_path=$(readlink -e "$key_file")
+if [ $? -ne 0 ]; then
+  error "unable to determine full path of file '$key_file'"
+fi
+
+if [ -n "$ca_bundle_file" ]; then
+  ca_bundle_file_full_path=$(readlink -e "$ca_bundle_file")
+  if [ $? -ne 0 ]; then
+    error "unable to determine full path of file '$ca_bundle_file'"
+  fi
+fi
+
 vhost_prefix="apache_vhost:3"
 vhost_internal_name="default_ssl"
 
 cert_link="$ssl_cert_dir/$vhost.$vhost_internal_name.crt"
 key_link="$ssl_key_dir/$vhost.$vhost_internal_name.key"
 
-ln -sf "$cert_file" "$cert_link"
-ln -sf "$key_file" "$key_link"
+ln -sf "$cert_file_full_path" "$cert_link"
+ln -sf "$key_file_full_path" "$key_link"
 
 ca_bundle_link="$ssl_cert_dir/CA-bundle.$vhost.$vhost_internal_name.crt"
 if [ -n "$ca_bundle_file" ]; then
-  ln -sf "$ca_bundle_file" "$ca_bundle_link"
-elif [ -L "$ca_bundle_link" ]; then
-  # CA bundle not provided, delete the link to CA file
-  rm -f "$ca_bundle_link"
+  ln -sf "$ca_bundle_file_full_path" "$ca_bundle_link"
+else
+  if [ -L "$ca_bundle_link" ]; then
+    # CA bundle not provided, delete the link to CA file
+    rm -f "$ca_bundle_link"
+  fi
 fi
 
 metadata_op=""

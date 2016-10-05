@@ -1148,7 +1148,84 @@ escape_quotes() {
   printf '%s' "$new"
 }
 
-get_virtwww_base_domain() {
+get_vhost_base_domain() {
+  # returns the real base domain of a vhost
+  local vhost="$1"
+
+  local domain_int base_domain key
+
+  key="apache_vhost:0:_:base_domain"
+
+  domain_int=$(get_vhost_key_value "$key" "$vhost") || return $?
+
+  base_domain=$(get_real_hostname "$domain_int") || return $?
+
+  echo "$base_domain"
+}
+
+get_vhost_default_hostname() {
+  # returns the default hostname of the vhost
+  # (i.e the one used on ServerName and in the app's config
+
+  local vhost="$1"
+  
+  local key="apache_vhost:0:_:ServerName"
+  local hostname
+
+  hostname=$(get_vhost_key_value "$key" "$vhost") || return $?
+  if [ $? -eq 0 ]; then
+    echo "$hostname"
+  else
+    echo "$FUNCNAME(): unable to get default hostname from vhost $vhost" 1>&2
+    return 1
+  fi
+}
+
+set_vhost_default_hostname() {
+  local vhost="$1"
+  local hostname="$2"
+
+  local metadata_str key
+  key="apache_vhost:0:_:ServerName"
+  metadata_str="set $key $hostname"
+
+  echo "$metadata_str" | "$DEVPANEL_HOME/libexec/apache-metadata-handler" \
+                           -q "$vhost"
+
+  if [ $? -eq 0 ]; then
+    return 0
+  else
+    echo "$FUNCNAME(): unable to set default domain for vhost $vhost" 1>&2
+    return 1
+  fi
+}
+
+set_vhost_base_domain() {
+  local vhost="$1"
+  local domain="$2"
+
+  local int_name metadata_str
+
+  if [ -z "$domain" ]; then
+    int_name=$(format_hostname_internal "$vhost") || return $?
+  else
+    int_name=$(format_hostname_internal "$domain") || return $?
+  fi
+
+  metadata_str="set apache_vhost:0:_:base_domain $int_name"
+
+  echo "$metadata_str" | "$DEVPANEL_HOME/libexec/apache-metadata-handler" \
+                           -q "$vhost"
+
+  if [ $? -eq 0 ]; then
+    return 0
+  else
+    echo "$FUNCNAME(): unable to set base domain for vhost $vhost" 1>&2
+    return 1
+  fi
+}
+
+get_server_base_domain() {
   local system_dir="${1:-$DEVPANEL_HOME}"
   local domain
 
@@ -1167,7 +1244,7 @@ format_hostname_internal() {
   local base_domain="$3"
 
   if [ -z "$base_domain" ]; then
-    base_domain=$(get_virtwww_base_domain) || return $?
+    base_domain=$(get_server_base_domain) || return $?
   fi
 
   local test_host_stripped="" final_hostname="" has_dot=""
@@ -1213,6 +1290,24 @@ format_hostname_internal() {
   echo -n "$final_hostname"
 }
 
+get_real_hostname() {
+  local hostname="$1"
+
+  local host_fmt="" server_base_domain=""
+
+  if [ "${hostname: -1}" == "." ]; then
+    # $len_minus_one is a workaround for older bash versions that don't know
+    # negative lengths (e.g. CentOS 6.5 and previous)
+    local len_minus_one=$(( ${#hostname} - 1 ))
+    host_fmt="${hostname:0:$len_minus_one}" # remove the last dot
+  else
+    server_base_domain=$(get_server_base_domain) || return $?   
+    host_fmt="$hostname.$server_base_domain"
+  fi
+
+  echo -n "$host_fmt"
+}
+
 get_list_of_vhosts() {
   local vhost_config_dir="$DEVPANEL_HOME/config/vhosts"
   local vhost vhost_dir
@@ -1238,12 +1333,15 @@ get_list_of_vhosts() {
 
 get_vhost_with_hostname() {
   local hostname="$1"
-  local tst_vhost tst_main tst_conf_dir tst_alias_link tst_main_link
+
+  local tst_vhost tst_main tst_conf_dir 
+  local tst_alias_link tst_value tst_base_link tst_link
   local hostname_fmt
 
   hostname_fmt=$(format_hostname_internal "$hostname")
 
-  local main_base="apache_vhost:0:_:ServerName"
+  local base_addr="apache_vhost:0:_:base_domain"
+  local default_base="apache_vhost:0:_:ServerName"
   local alias_base="apache_vhost:0:_:ServerAlias"
 
   for tst_vhost in $(get_list_of_vhosts); do
@@ -1255,16 +1353,52 @@ get_vhost_with_hostname() {
       return 0
     fi
 
-    tst_main_link="$tst_conf_dir/$main_base"
-    if tst_main=$(deref_contents "$tst_main_link"); then
-      if [ "$tst_main" == "$hostname" ]; then
-        echo "$tst_vhost"
-        return 0
+    tst_base_link="$tst_conf_dir/$base_addr"
+    tst_main_link="$tst_conf_dir/$default_base"
+
+    for tst_link in "$tst_base_link" "$tst_main_link"; do
+      if tst_value=$(deref_contents "$tst_link" 2>/dev/null); then
+        if [ "$tst_value" == "$hostname" ]; then
+          echo "$tst_vhost"
+          return 0
+        fi
       fi
-    fi
+    done
   done
 
   return 1 # not found in any vhost
+}
+
+get_hostnames_from_vhost() {
+  local vhost="$1"
+
+  local vhost_conf_dir="$DEVPANEL_HOME/config/vhosts/$vhost"
+
+  local base_domain base_domain_real tmp_link tmp_name tmp_fmt_name
+  local -a hosts_ar=()
+
+  base_domain=$(get_vhost_base_domain "$vhost") || return $?
+
+  hosts_ar+=( "$base_domain" )
+
+  for tmp_link in "$vhost_conf_dir/apache_vhost:0:_:ServerAlias:"*; do
+    if [ ! -L "$tmp_link" ]; then
+      continue
+    fi
+
+    # apache_vhost:0:_:ServerAlias:domain.com.
+    tmp_name=${tmp_link##*:}
+    tmp_fmt_name=$(get_real_hostname "$tmp_name") || return $?
+
+    if [ "$tmp_fmt_name" == "$base_domain" ]; then
+      continue
+    fi
+
+    hosts_ar+=( $tmp_fmt_name )
+  done
+
+  local IFS=$'\n'
+  echo "${hosts_ar[*]}"
 }
 
 translate_archive_placeholders() {

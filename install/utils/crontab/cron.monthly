@@ -10,4 +10,6 @@ self_dir=${self_bin%/*}
 # assuming self_dir = install/utils/crontab
 sys_dir=${self_dir%/*/*/*}
 
+run-parts "$sys_dir/bin/packages/cron.d/cron.monthly"
+
 /bin/true

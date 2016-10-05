@@ -19,4 +19,6 @@ fi
 # distro updates (actual updates depend on configuration)
 "$sys_dir/libexec/distro-updates" run-from-crontab
 
+run-parts "$sys_dir/bin/packages/cron.d/cron.daily"
+
 /bin/true

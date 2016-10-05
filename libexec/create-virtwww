@@ -38,6 +38,8 @@ assign_deref_os_fs_path_ex_or_exit VIRTWWW_CFGDIR "$we_base" pathnames/etc/apach
 assign_deref_os_prop_or_exit apache_group    "$we_base"  names/apache-exec.group
 assign_deref_os_prop_or_exit WEBSITES_HOME   "$we_base" apache_virtwww_homedir
 
+server_base_domain=$(get_server_base_domain) || exit $?
+
 template_file="$we_base/config/packages/apache_vhost/_:template"
 if [ -f "$template_file" ]; then
   assign_deref_contents_or_exit apache_vhost_template "$template_file"
@@ -278,6 +280,8 @@ if ! chown "root":"$ACCOUNT_NAME" "$config_dir"; then
   echo "Error: unable to chown dir '$config_dir' to user '$ACCOUNT_NAME'" 1>&2
   exit 1
 fi
+
+set_vhost_base_domain      "$vhost" || exit $?
 
 # 20060426 - (GM): added optional database creation
 DB_CREATE_FAILED=

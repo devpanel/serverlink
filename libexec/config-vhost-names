@@ -47,6 +47,11 @@ generate_serveralias() {
   local alias_link="$base:param:1:ServerAlias"
   local alias_hostname="" aliases_str="" hostname_fmt=""
 
+  if [ "$vhost_base_domain" != "$server_hostname" ]; then
+    # add the base hostname to the list of aliases
+    aliases_str+="$vhost_base_domain"
+  fi
+
   for alias_host in "$base":_:ServerAlias:*; do
     if [ "$alias_host" == "$base:_:ServerAlias:*" ]; then
       if [ -L "$alias_link" ]; then
@@ -89,20 +94,6 @@ generate_serveralias() {
 # main
 [ $# -eq 0 -o -z "$1" ] && usage
 
-if [ "${0:0:1}" != "/" ]; then
-  error "please call this script with the full path"
-fi
-
-self_bin=`readlink -e "$0"`
-dir=`dirname "$self_bin"`
-
-we_dir=`readlink -e "$dir/.."`
-
-lib_file="$we_dir/lib/functions"
-if ! source "$lib_file"; then
-  error "unable to source lib file '$lib_file'"
-fi
-
 prefix_with_www=1
 force_subdomain=0
 getopt_flags='nsi:'
@@ -127,6 +118,27 @@ do
 done
 [ $OPTIND -gt 1 ] && shift `expr $OPTIND - 1`
 
+[ -z "$1" ] && usage
+
+self_bin=`readlink -e "$0"`
+if [ $? -ne 0 ]; then
+  echo "Error: unable to get self path" 1>&2
+  exit 1
+fi
+
+dir=`dirname "$self_bin"`
+
+we_dir=`readlink -e "$dir/.."`
+
+lib_file="$we_dir/lib/functions"
+vars_file="$we_dir/lib/variables"
+
+for inc_file in "$lib_file" "$vars_file"; do
+  if ! source "$inc_file"; then
+    error "unable to source file '$inc_file'"
+  fi
+done
+
 vhost="$1"
 if ! "$dir/check-vhost-name" name-only "$vhost"; then
   error "vhost argument is in an invalid format"
@@ -140,19 +152,10 @@ fi
 sys_vhost_config_dir="$we_dir/config/vhosts"
 config_dir="$sys_vhost_config_dir/$vhost"
 
-server_hostname=`deref_os_prop "$we_dir" apache_virtwww_domain`
+server_hostname=`get_server_base_domain`
 if [ $? -ne 0 ]; then
   error "unable to get base domain name for apache virtual hosts"
 fi
-
-lib_file="$we_dir/lib/functions"
-vars_file="$we_dir/lib/variables"
-
-for inc_file in "$lib_file" "$vars_file"; do
-  if ! source "$inc_file"; then
-    error "unable to source file '$inc_file'"
-  fi
-done
 
 if get_metadata_value "$config_dir" "$DEVPANEL_VHOST_LOCK_FLAG" &>/dev/null; then
   error "vhost $vhost is locked. Can't work on a locked vhost."
@@ -166,15 +169,12 @@ mode=""
 
 vhost_config_prefix_str="apache_vhost:0"
 vhost_base="$config_dir/$vhost_config_prefix_str"
-base_host_link="$vhost_base:_:ServerName"
 
-if [ -L "$base_host_link" ]; then
-  default_name=`readlink "$base_host_link"`
+# administrative base domain
+vhost_base_domain=$(get_vhost_base_domain "$vhost") || exit $?
 
-  if [ -z "$default_name" ]; then
-    error "unable to get default hostname from vhost $vhost"
-  fi
-fi
+# default name that is on ServerName and in the app configs
+default_name=$(get_vhost_default_hostname "$vhost" 2>/dev/null) 
 
 unset changed
 alias_base="$vhost_base:param:1:ServerAlias"
@@ -210,10 +210,10 @@ for i; do
           fi
         fi
 
-        # saving the previous name into the aliases
-        [ -L "$base_host_link" ] && previous_name=`readlink "$base_host_link"`
+        previous_name="$default_name"
 
         if [ -n "$previous_name" ]; then
+          # saving the previous name into the aliases
           previous_name_cut=${previous_name%.$server_hostname}
           if [ "$previous_name" == "$default_name_apache" ]; then
             echo "Warning: the default name hasn't changed..." 1>&2
@@ -241,9 +241,7 @@ for i; do
         fi
 
         # overwriting the existing value
-        if ! ln -sf "$default_name_apache" "$base_host_link"; then
-          error "unable to set the default name"
-        fi
+        set_vhost_default_hostname "$vhost" "$default_name_apache" || exit $?
 
         if [ -n "$prefix_with_www" ]; then
           www_alias_link="$alias_priv:www.$new_default_name"
@@ -251,7 +249,6 @@ for i; do
             error "unable to set www alias to default name"
           fi
         fi
-
 
         # if this same name is already a domain alias, then remove it
         if [ -L "$alias_file" ]; then
@@ -273,7 +270,7 @@ for i; do
         this_hostname_fmt=`format_hostname_internal "$this_hostname" $force_subdomain`
         this_name_apache=`format_to_apache "$server_hostname" "$this_hostname_fmt" $force_subdomain`
 
-        if [ "$this_hostname_fmt" == "$default_name_fmt" ]; then
+        if [ "$this_name_apache" == "$default_name" ]; then
           echo "Warning: this hostname is equal to the default hostname.  Skipping..." 1>&2
           break;
         fi
@@ -309,10 +306,17 @@ for i; do
         this_hostname="$i"
 
         this_hostname_fmt=`format_hostname_internal "$this_hostname" $force_subdomain`
+        this_real_hostname=$(get_real_hostname "$this_hostname_fmt")
 
-        [ "$default_name" = "$this_hostname" ] && \
+        if [ "$this_real_hostname" == "$vhost_base_domain" ]; then
+          err_msg="host '$this_real_hostname' is the administrative hostname"
+          err_msg+=" for this vhost. Can't remove it."
+          error "$err_msg"
+        fi
+ 
+        [ "$default_name" = "$this_real_hostname" ] && \
           error "Cannot remove the default name $this_hostname; change the default name first"
-        
+       
         name_file="$alias_priv:$this_hostname_fmt"
         if [ ! -L "$name_file" ]; then
           printf "Warning: name %s doesn't exist for vhost %s and IP %s\n" \
