@@ -477,7 +477,7 @@ docker_get_ids_and_names_of_containers()
 {
   if   [ "$operation" == "clone" ]; then
     CONTAINER_WEB_ID=`docker ps|grep ${source_vhost}|awk '{print $1}'`
-  elif [ "$operation" == "backup" -o "$operation" == "list_backups" -o "$operation" == "status" -o "$operation" == "stop" ]; then
+  elif [ "$operation" == "backup" -o "$operation" == "list_backups" -o "$operation" == "status" -o "$operation" == "stop" -o "$operation" == "scan" ]; then
     CONTAINER_WEB_ID=`docker ps|grep ${domain}|awk '{print $1}'`
   else
     CONTAINER_WEB_ID=`docker ps|grep ${domain}_${app}_web|awk '{print $1}'`
@@ -487,23 +487,29 @@ docker_get_ids_and_names_of_containers()
 
 docker_msf()
 {
-  if [ `docker ps|grep msf_container|wc -l` -eq 0 ]; then
-    if [ `docker ps -a|grep msf_container|wc -l` -gt 0 ]; then docker rm -f msf_container; fi
-    docker run -d --name=msf_container devpanel_msf:latest
-  fi
+  read_local_config
+  # get ids of current containers
+  docker_get_ids_and_names_of_containers
+  # get ip_address of webapp
+  dst_ip_address=`docker inspect -f '{{.Name}} - {{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' $(docker ps -aq)|grep "${CONTAINER_WEB_NAME}"|awk -F" - " '{print $2}'`
+  # check if MSF container exists
+  docker_build_or_pull_and_tag msf
+  # run MSF container
+  docker run -d --name=msf_container devpanel_msf:latest
+  # do the scan
   CONTAINER_MSF_ID=`docker ps|grep msf_container|awk '{print $1}'`
   docker cp ${self_dir}/msf/wmap.rc ${CONTAINER_MSF_ID}:/tmp/wmap.rc
   docker exec ${CONTAINER_MSF_ID} /bin/sh -c "sed -i s/127.0.0.1/${dst_ip_address}/ /tmp/wmap.rc"
   docker exec ${CONTAINER_MSF_ID} /bin/sh -c "TERM=rxvt msfconsole -r /tmp/wmap.rc"
 }
 
-# avoid error 500 from docker hub
 docker_build_or_pull_and_tag()
 {
   if [ `docker images|grep devpanel_${1}|wc -l` -eq 0 ]; then
     if [ $build_image ]; then
       docker build -t devpanel_${1}:latest ${self_dir}/${1}
     else
+      # avoid error 500 from docker hub
       while [ ! "${exit_status}" == "0" ]; do
         docker pull devpanel/${1}:latest
         exit_status=`echo $?`
@@ -827,15 +833,16 @@ elif [ "$operation" == "restore" -a "$restore_name" -a "$domain" ]; then
     exit 1
   fi
 
-elif [ "$operation" == "scan" -a "$domain" -a "$host_type" == "docker" ]; then
-  # get ids of current containers
-  docker_get_ids_and_names_of_containers
-  # get ip_address of webapp
-  dst_ip_address=`docker inspect -f '{{.Name}} - {{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' $(docker ps -aq)|grep "${CONTAINER_WEB_NAME}"|awk -F" - " '{print $2}'`
-  # check if msf container exists
-  docker_build_or_pull_and_tag msf
-  # do the scan
-  docker_msf
+elif [ "$operation" == "scan" -a "$domain" ]; then
+  # remove previously used MSF container with old data to avoid errors
+  if [ `docker ps -a|grep msf_container|wc -l` -gt 0 ]; then docker rm -f msf_container; fi
+  # check if there is enough memory to run MSF with PostgreSQL
+  if [ `free -m|grep Mem|awk '{print $4}'` -gt 400 ]; then
+    docker_msf
+  else
+    echo "Not enough memory to run Metasploit!"
+    exit 1
+  fi
 
 elif [ "$operation" == "destroy" -a "$domain" ]; then
   read_local_config

@@ -18,8 +18,5 @@ RUN mvn --batch-mode archetype:generate \
 -DarchetypeRepository=http://maven.onehippo.com/maven2 && \
   cd /myhippoproject && mvn clean verify
 
-# update scripts
-/opt/webenabled/libexec/update-scripts
-
 # start services
 CMD cd /myhippoproject && mvn -Pcargo.run -Drepo.path=storage

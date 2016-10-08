@@ -17,8 +17,5 @@ ADD ./000-default.conf /etc/apache2/sites-available/000-default.conf
 ADD ./zabbix.conf.php /etc/zabbix/zabbix.conf.php
 RUN echo 'ServerName zabbix.localdomain' >> /etc/apache2/apache2.conf
 
-# update scripts
-/opt/webenabled/libexec/update-scripts
-
 # start services
 CMD service mysql restart && service zabbix-server restart && service apache2 restart && sleep infinity
