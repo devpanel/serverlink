@@ -76,10 +76,12 @@ if ! mkdir "$temp_dir/pkg-files" "$temp_dir/setup"; then
 fi
 
 setup_bin="$temp_dir/setup/setup-package"
-if cp "$setup_script" "$setup_bin"; then
+if [ -n "$setup_script" ]; then
+  cp "$setup_script" "$setup_bin"
+  if [ $? -ne 0 ]; then
+    error "unable to copy setup script $setup_script to $setup_bin"
+  fi
   chmod 755 "$setup_bin"
-else
-  error "unable to copy setup script $setup_script to $setup_bin"
 fi
 
 ini_file="$temp_dir/devpanel.ini"

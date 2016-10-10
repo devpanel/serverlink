@@ -37,7 +37,26 @@ ubuntu_pre_run() {
 ubuntu_install_distro_packages() {
   local source_dir="$1"
   local install_dir="$2"
-  local ubuntu_version="${3:-0}"
+  local distro="$3"
+  local distro_ver="$4"
+  local distro_ver_major="$5"
+  local distro_ver_minor="$6"
+
+  # NOTE: at this point the $install_dir has not been copied in place yet
+
+  local tmp_self_file="${BASH_SOURCE[0]}"
+  local tmp_self_dir=${tmp_self_file%/*}
+  local tmp_aux_lib="$tmp_self_dir/lib.debian_ubuntu.sh"
+
+  if ! . "$tmp_aux_lib"; then
+    echo "$FUNCNAME(): error - unable to load file $tmp_aux_lib" 1>&2
+    return 1
+  fi
+
+  add_apt_repositories "$source_dir" "$distro" "$distro_ver" \
+    "$distro_ver_major" "$distro_ver_minor" || return $?
+
+  # NOTE: at this point the $install_dir has not been copied in place yet
 
   export DEBIAN_FRONTEND='noninteractive'
 
@@ -52,18 +71,26 @@ ubuntu_install_distro_packages() {
   fi
 
   local -a install_pkgs=( curl apache2 libapache2-mod-macro apache2-suexec \
-                          zlib1g libapache2-mod-fcgid mysql-server git
-                          apache2-utils php5 php5-cli php-pear php5-gd
-                          php5-curl php5-mysql php5-cgi php5-mcrypt
-                          php5-sqlite libjson-xs-perl libcrypt-ssleay-perl
-                          libcgi-session-perl \
-                          nano vim s3cmd unzip
+                        zlib1g libapache2-mod-fcgid mysql-server git       \
+                        apache2-utils libjson-xs-perl libcrypt-ssleay-perl \
+                        libcgi-session-perl nano vim s3cmd unzip
                         )
                           
 
   for i in ${install_pkgs[@]}; do
     apt-get -y install $i
   done
+
+  local php_ver php_mod
+  php_ver=$(deref_os_prop "$source_dir" names/php_version_from_distro)
+
+  apt-get -y install php$php_ver php-pear
+
+  for php_mod in cli gd curl mysql cgi mcrypt sqlite gd; do
+    apt-get -y install php$php_ver-$php_mod
+  done
+
+  a2dismod php$php_ver
 
   # test whether CGI::Util is available, it's needed by taskd
   # from Ubuntu 16 it's not included in the perl distribution
@@ -94,12 +121,17 @@ ubuntu_adjust_system_config() {
     fi
   fi
 
-  for module in rewrite macro cgi suexec ssl proxy proxy_http; do
-    if [ ! -e "$_apache_base_dir/mods-enabled/$module.load" \
-      -a -f "$_apache_base_dir/mods-available/$module.load" ]; then
-      ln -sf ../mods-available/$module.load "$_apache_base_dir"/mods-enabled/
-    fi
+  local module
+  local -a apache2_modules=( \
+    cgi expires headers macro rewrite proxy proxy_http ssl suexec \
+  )
+
+  for module in ${apache2_modules[@]}; do
+    a2enmod $module
   done
+
+  # remove distro default cgi-bin aliases, will not be used
+  a2disconf serve-cgi-bin
 
   # fuser fails on slicehost CentOS  (/proc/net/tcp is empty)
   #if fuser 443/tcp >/dev/null || netstat -ln --tcp|grep -q :443
@@ -109,9 +141,6 @@ ubuntu_adjust_system_config() {
   #  echo 'Listen 443' >> "$_apache_base_dir"/conf.d/webenabled.conf
   #fi
 
-  [ -e "$_apache_base_dir"/mods-enabled/php5.load ] && rm -f "$_apache_base_dir"/mods-enabled/php5.load
-  [ -e "$_apache_base_dir"/mods-enabled/php5.conf ] && rm -f "$_apache_base_dir"/mods-enabled/php5.conf
-
   # enable php mcrypt module that is generally disabled
   if hash php5enmod &>/dev/null; then
     php5enmod mcrypt
@@ -120,6 +149,10 @@ ubuntu_adjust_system_config() {
   [ -e /etc/init.d/dbmgr ] && rm -f /etc/init.d/dbmgr
   ln -s "$install_dir"/compat/dbmgr/current/bin/dbmgr.init /etc/init.d/devpanel-dbmgr
   update-rc.d devpanel-dbmgr defaults
+
+  # stop the standard mysql service of Ubuntu
+  # the stop on boot is done by the skel directory
+  service mysql stop || true
 }
 
 ubuntu_post_users_n_groups() {
