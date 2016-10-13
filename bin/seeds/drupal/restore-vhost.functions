@@ -1,5 +1,44 @@
 #!/bin/sh
 
+drupal_detect_version_from_dir() {
+  local t_dir="$1"
+
+  # Drupal 6 doesn't have a version string, it gets itself from the database
+  # local ver_file_6="$t_dir/includes/bootstrap.inc"
+
+  local ver_file_7="$t_dir/includes/bootstrap.inc"
+  local ver_file_8="$t_dir/core/lib/Drupal.php"
+
+  # looking for a line like: const VERSION = '8.1.8';
+  # variations are also accepted, e.g.: 8.2.2-dev
+  local d8_regex="^[^#/]+[[:space:]]*VERSION[[:space:]]*=[[:space:]]*['\"]8\.[0-9a-zA-Z.-]+[\"']"
+
+  # looking for a line like: define('VERSION', '7.50');
+  # variations like 7.XX-dev are also possible
+  local d7_regex='^[#/]+[[:space:]]*define\(["'\'']VERSION["'\''],[[:space:]]*["'\'']7\.[0-9a-zA-Z.-]+["'\'']\)'
+
+  local major_ver
+
+  if [ -f "$ver_file_8" ]; then
+    # looking for a line like: 
+    if egrep -q "$d8_regex" "$ver_file_8"; then
+      major_ver=8
+    else
+      return 1
+    fi
+  elif [ -f "$ver_file_7" ]; then
+    if egrep -q "$d7_regex" "$ver_file_7"; then
+      major_ver=7
+    else
+      return 1
+    fi
+  else
+    return 1
+  fi
+
+  echo -n "$major_ver"
+}
+
 drupal_get_users()
 {
   local version=""
@@ -556,11 +595,28 @@ drupal_setup_from_git() {
   # drush dl drupal --drupal-project-rename=${public_html_dir##*/} \
   # --account-name=admin --account-pass=[useruser_pass] \
   # --site-name="..."
+  local st
   local install_profile=${install_profile:-standard}
 
   if [ -f "$public_html_dir/composer.json" ]; then
-    ( cd "$public_html_dir" && composer install )
+    composer --working-dir="$public_html_dir" install
   fi
 
   drush -r "$public_html_dir" -y si "$install_profile" --db-url="$mysql_url_with_pw"
+  st=$?
+  if [ $st -eq 0 ]; then
+    local version
+    version=`drupal_detect_version "$database"`
+    if [ -n "$version" ] && [[ "${version:0:1}" == [67] ]]; then
+      if [ -n "$email" ]; then
+        drush -r "$public_html_dir" vset --exact --yes site_mail "$email"
+      fi
+
+      if [ -n "$site_title" ]; then
+        drush -r "$public_html_dir" vset --exact --yes site_name "$site_title"
+      fi
+    fi
+  fi
+
+  return $st
 }
