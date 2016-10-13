@@ -116,7 +116,9 @@ install_ce_software() {
   mkdir -m 755 -p "$webenabled_install_dir" \
     "$homedir_base" "$databasedir_base" "$data_dir"
   
-  if ! ( cd "$source_dir" && cp -a . "$webenabled_install_dir" ); then
+  if ! cp -dR --preserve=mode,timestamps "$source_dir/." \
+        "$webenabled_install_dir"; then
+
     echo "Error: unable to copy installation files to target dir" >&2
     return 1
   fi
