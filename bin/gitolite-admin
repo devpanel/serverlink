@@ -265,7 +265,7 @@ sub key_fingerprint
   my ($fingerprint) = run "ssh-keygen -lf $path";
   unlink $path;
 
-  if ($fingerprint =~ /^\w+\s+([0-9a-z:]+)/) {
+  if ($fingerprint =~ /^\w+\s+([0-9a-zA-Z:+]+)/) {
     $fingerprint = $1; 
   } else {
     die "couldn't get key's fingerprint.\n"
