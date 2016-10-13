@@ -73,7 +73,7 @@ ubuntu_install_distro_packages() {
   local -a install_pkgs=( curl apache2 libapache2-mod-macro apache2-suexec \
                         zlib1g libapache2-mod-fcgid mysql-server git       \
                         apache2-utils libjson-xs-perl libcrypt-ssleay-perl \
-                        libcgi-session-perl nano vim s3cmd unzip
+                        libcgi-session-perl nano vim s3cmd unzip bc
                         )
                           
 
@@ -86,7 +86,7 @@ ubuntu_install_distro_packages() {
 
   apt-get -y install php$php_ver php-pear
 
-  for php_mod in cli gd curl mysql cgi mcrypt sqlite gd; do
+  for php_mod in cgi cli curl gd mbstring mcrypt mysql sqlite; do
     apt-get -y install php$php_ver-$php_mod
   done
 

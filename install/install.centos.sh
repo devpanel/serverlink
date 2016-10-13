@@ -61,7 +61,7 @@ centos_install_distro_packages() {
 
   # end of external repository installation
 
-  local -a install_pkgs=( curl httpd mod_fcgid php make mysql-server mysql \
+  local -a install_pkgs=( bc curl httpd mod_fcgid php make mysql-server mysql \
                           nano vim s3cmd unzip \
                         )
 
