@@ -153,6 +153,16 @@ ubuntu_adjust_system_config() {
   # stop the standard mysql service of Ubuntu
   # the stop on boot is done by the skel directory
   service mysql stop || true
+
+  if hash systemctl &>/dev/null; then
+    systemctl enable devpanel-taskd
+    systemctl disable mysql
+  else
+    local taskd_init=/etc/init.d/devpanel-taskd
+    if [ -L "$taskd_init" -o -e "$taskd_init" ]; then
+      update-rc.d devpanel-taskd defaults
+    fi
+  fi
 }
 
 ubuntu_post_users_n_groups() {
