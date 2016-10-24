@@ -8,8 +8,10 @@ usage() {
 
   Options:
     -D        disable the specified vhost
+    -n        only write the config file, but don't restart apache
 
-  This script generates apache mod_macro configuration files.
+  This script generates the Apache configuration file for the specified
+  vhost.
 "
 
   exit 1
@@ -279,11 +281,15 @@ cleanup() {
 
 dir=`dirname "$0"`
 
-getopt_flags='D'
+restart_apache=1
+getopt_flags='nD'
 while getopts $getopt_flags OPTN; do
   case $OPTN in
     D)
       disable_vhost=1
+      ;;
+    n)
+      unset restart_apache
       ;;
     *)
       exit 1
@@ -970,7 +976,12 @@ else
 fi
 
 echo "Successfully updated vhost $vhost on file $virtwww_file"
-echo Restarting apache
 
-run "$apachectl" graceful || \
-  error "Cannot restart apache, call a system administrator NOW!"
+if [ -n "$restart_apache" ]; then
+  echo Restarting apache
+
+  run "$apachectl" graceful || \
+    error "Cannot restart apache, call a system administrator NOW!"
+fi
+
+exit 0
