@@ -83,7 +83,9 @@ if($token_str) {
 # ...otherwise it's an authenticated request and is ready to download
 my $archive_str = $session_obj->param('archive_file');
 my $archive_file;
-if(substr($archive_str, 0, 1) ne "/") {
+if(substr($archive_str, 0, 1) eq "/") {
+  $archive_file = $archive_str;
+} else {
   $archive_file = abs_path($ENV{HOME} . "/$archive_str");
 }
 
@@ -97,11 +99,6 @@ if( ! -e $archive_file ) {
   error_rsp("path $archive_file is not a regular file");
 } elsif( ! -r $archive_file ) {
   error_rsp("archive file $archive_file is not readable");
-}
-
-if(length($archive_file) < length($ENV{HOME}) ||
-  substr($archive_file, 0, length($ENV{HOME})) ne $ENV{HOME}) {
-    error_rsp("this path $archive_file is outside the user home dir");
 }
 
 if(!open(ARCHIVE_FD, $archive_file)) {
