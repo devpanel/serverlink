@@ -126,7 +126,7 @@ install_ce_software() {
   local t_dir
   for t_dir in "$skel_dir_common" "$skel_dir_major" "$skel_dir_major_minor"; do
     if [ -d "$t_dir" ]; then
-      cp -a "$t_dir/." /
+      cp -dRn --preserve=mode,timestamps "$t_dir/." /
       if [ $? -ne 0 ]; then
         echo -e "\n\nWarning: unable to copy distro skel files from $t_dir to /\n\n" 1>&2
         sleep 3
@@ -430,6 +430,39 @@ ServerName $dp_server_hostname
   return 0
 }
 
+is_this_distro_version_supported() {
+  local i_dir="$1"
+  local distro="$2"
+  local major="$3"
+  local minor="$4"
+
+  local dir_1="$i_dir/config/os.$distro/$major"
+  local dir_2="$i_dir/config/os.$distro/$major.$minor"
+
+  local t_dir found_config_dir
+  for t_dir in $dir_1 $dir_2; do
+    if [ -d "$t_dir" ]; then
+      found_config_dir=1
+      break
+    fi
+  done
+
+  local distro_ext
+  if [ "$distro" == "ubuntu" ]; then
+    distro_ext=$(lsb_release -sd 2>/dev/null)
+    if ! [[ "$distro_ext" == *[Ll][Tt][Ss]* ]]; then
+      echo "$FUNCNAME(): for Ubuntu only LTS versions are supported" 1>&2
+      return 1
+    fi
+  fi
+
+  if [ -n "$found_config_dir" ]; then
+    return 0
+  else
+    return 1
+  fi
+}
+
 # main
 
 [ $# -eq 0 ] && usage
@@ -558,6 +591,11 @@ fi
 distro_version=$(wedp_auto_detect_distro_version "$linux_distro") || exit 1
 distro_ver_major=$(devpanel_get_os_version_major)
 distro_ver_minor=$(devpanel_get_os_version_minor)
+
+if ! is_this_distro_version_supported "$install_source_dir" \
+      "$linux_distro" "$distro_ver_major" "$distro_ver_minor"; then
+  error "linux distribution not supported."
+fi
 
 set_global_variables "$install_source_dir" "$webenabled_install_dir" \
   "$linux_distro" "$distro_version" "$distro_ver_major" "$distro_ver_minor"
