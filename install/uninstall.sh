@@ -309,6 +309,12 @@ echo "Successfully removed devPanel software"
     rm -f "$path_dir/webenabled"*
   done
 
+  rm -v -f /etc/cron*/devpanel*
+  rm -v -f /etc/logrotate.d/devpanel*
+  rm -v -f /etc/profile.d/devpanel*
+  rm -v -f /etc/init/devpanel*
+  rm -v -f /etc/default/devpanel*
+
   "$install_dir/libexec/remove-user" devpanel
 
   if getent group devpanel &>/dev/null; then
