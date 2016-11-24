@@ -280,7 +280,7 @@ reset_passwords() {
     fi
 
     # call set_password() from the seed API
-    ${subsystem}_set_password "$user" "$new_password_encrypted"
+    ${subsystem}_set_password "$user" "$new_password_encrypted" 1>&2
     if [ $? -ne 0 ]; then
       printf "Cannot change the password for user '%s'\n" \
         "$user" 1>&2
