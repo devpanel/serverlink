@@ -126,7 +126,7 @@ case "$op" in
       fi
     fi
 
-    acme_args+=( --home "$certs_dir" )
+    acme_args+=( --home "$certs_dir" --renew-hook "$self_bin post-renew" )
 
     public_dir=$(eval echo -n \~w_$vhost/public_html/$vhost)
     if [ ! -d "$public_dir" ]; then
@@ -210,19 +210,25 @@ case "$op" in
     ;;
 
   cron)
-    assign_deref_os_prop_or_exit apache_service "$sys_dir" \
-      names/apache_service_name
-
     for vhost in $(get_list_of_vhosts); do
       if is_lets_encrypt_enabled_for_vhost "$vhost"; then
         le_dir="$sys_dir/config/vhosts/$vhost/lets-encrypt"
         if [ -d "$le_dir" ]; then
-          services_bin="$sys_dir/libexec/system-services"
-          acme.sh --cron --home "$le_dir" \
-            --reloadcmd "$services_bin $apache_service restart"
+          acme.sh --home "$le_dir" --cron
         fi
       fi
     done
+
+    exit 0
+    ;;
+
+  post-renew)
+    assign_deref_os_prop_or_exit apache_service "$sys_dir" \
+      names/apache_service_name
+
+    services_bin="$sys_dir/libexec/system-services"
+
+    $services_bin $apache_service reload
     ;;
 
   disable)
