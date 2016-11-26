@@ -129,7 +129,13 @@ wordpress_custom() {
 }
 
 wordpress_clear_cache() {
-  wp --path="$home/public_html/$vhost" cache flush
+  wp-cli --path="$home/public_html/$vhost" cache flush
+}
+
+wordpress_download_from_cli() {
+  local version="${1:-latest}"
+
+  wp-cli --path="$public_html_dir" core download --version="$version"
 }
 
 wordpress_setup_from_git() {
@@ -149,4 +155,8 @@ wordpress_setup_from_git() {
   fi
 
   return 0
+}
+
+wordpress_setup_from_cli() {
+  wordpress_setup_from_git "$@"
 }
