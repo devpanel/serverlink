@@ -86,7 +86,7 @@ ubuntu_install_distro_packages() {
 
   apt-get -y install php$php_ver php-pear
 
-  for php_mod in cgi cli curl gd mbstring mcrypt mysql sqlite; do
+  for php_mod in cgi cli curl gd mbstring mcrypt mysql sqlite zip; do
     apt-get -y install php$php_ver-$php_mod
   done
 
