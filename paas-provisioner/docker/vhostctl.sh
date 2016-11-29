@@ -18,6 +18,7 @@ Options:
                                     restore - to restore container to previous state
                                     destroy - to remove container with webapp
                                     scan - to scan webapp for vulnerabulities
+                                    pentest - to do a penetration testing of devPanel UIV2
                                     handle - to handle parameters from front-end for devPanel's script inside docker container
   -DB, --database-type            Type of database. Can be 'mysql' or 'rds'.
   -AWS_ACCESS_KEY_ID              AWS ACCESS KEY ID.
@@ -46,6 +47,7 @@ Usage examples:
   ./vhostctl.sh -C=destroy -DD=t3st.some.domain
   ./vhostctl.sh -C=destroy -DD=t3st.some.domain -RB
   ./vhostctl.sh -C=scan -DD=t3st.some.domain
+  ./vhostctl.sh -C=pentest
   ./vhostctl.sh -C=handle -DD=t3st.some.domain -O="check-disk-quota 90"
   ./vhostctl.sh -DD=t3st.some.domain -RC
 "
@@ -487,11 +489,15 @@ docker_get_ids_and_names_of_containers()
 
 docker_msf()
 {
-  read_local_config
-  # get ids of current containers
-  docker_get_ids_and_names_of_containers
-  # get ip_address of webapp
-  dst_ip_address=`docker inspect -f '{{.Name}} - {{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' $(docker ps -aq)|grep "${CONTAINER_WEB_NAME}"|awk -F" - " '{print $2}'`
+  if [ -z "$1" ]; then
+    read_local_config
+    # get ids of current containers
+    docker_get_ids_and_names_of_containers
+    # get ip_address of webapp
+    dst_ip_address=`docker inspect -f '{{.Name}} - {{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' $(docker ps -aq)|grep "${CONTAINER_WEB_NAME}"|awk -F" - " '{print $2}'`
+  else
+    dst_ip_address=`host -t a uiv2.devpanel.com|tail -1|awk '{print $NF}'`
+  fi
   # check if MSF container exists
   docker_build_or_pull_and_tag msf
   # run MSF container
@@ -545,6 +551,12 @@ detect_running_apache_and_patch_configs()
     # update nginx configs with apache's hosts
     restart_or_reload_nginx
   fi
+}
+
+pentest()
+{
+  if [ -z "$domain" ]; then domain=uiv2.devpanel.com; fi
+  docker_msf ${domain}
 }
 
 
@@ -883,6 +895,9 @@ elif [ "$operation" == "destroy" -a "$domain" ]; then
 
 elif [ "$operation" == "handle" -a "$handler_options" ]; then
   controller_handler
+
+elif [ "$operation" == "pentest" ]; then
+  pentest
 
 elif [ "$domain" -a "$read_config" ]; then
   read_local_config
