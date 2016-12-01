@@ -50,7 +50,7 @@ debian_install_distro_packages() {
     mysql-server git subversion \
     php5 php5-cli php-pear php5-gd php5-curl php5-mysql \
     php5-cgi php5-mcrypt php5-sqlite php5-zip libjson-xs-perl libcrypt-ssleay-perl \
-    libcgi-session-perl unzip s3cmd bc
+    libcgi-session-perl unzip s3cmd bc libio-socket-ssl-perl
   do
     apt-get -y install $i
   done
