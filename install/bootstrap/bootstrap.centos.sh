@@ -3,10 +3,9 @@
 bootstrap_centos() {
   yum -y install git perl perl-devel perl-CGI perl-Time-HiRes \
     perl-Digest-HMAC perl-Digest-SHA perl-Crypt-SSLeay \
-    redhat-lsb-core
+    redhat-lsb-core perl-IO-Socket-SSL perl-URI
   
-  # test whether CGI::Util is available, it's needed by taskd
-  # from Ubuntu 16 it's not included in the perl distribution
+  # test whether Data::Dumper is available, it's needed by taskd
   perl -MData::Dumper -e 'exit 0;' &>/dev/null
   if [ $? -eq 0 ]; then
     :
