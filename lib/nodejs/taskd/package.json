@@ -1,0 +1,20 @@
+{
+  "name": "taskd",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "config": "^1.24.0",
+    "crypto-js": "^3.1.8",
+    "request": "^2.79.0",
+    "rx": "^4.1.0"
+  },
+  "bin": {
+    "taskd2": "./index.js"
+  }
+}
