@@ -136,7 +136,7 @@ case $i in
     shift # past argument=value
     ;;
     *)
-    show_help
+    # show_help
             # unknown option
     ;;
 esac
@@ -160,7 +160,12 @@ else
 fi
 
 # definitions
-vps_ip=`ip ad sh dev eth0|grep brd|grep inet|awk '{print $2}'|awk -F'/' '{print $1}'`
+## workaround for AWS
+if [ `ip ad sh|grep -c ' eth'` -gt '0' ]; then
+  vps_ip=`ip ad sh|grep ' eth'|tail -1|awk '{print $2}'|awk -F'/' '{print $1}'`
+else
+  vps_ip=`ip ad sh|grep ' ens'|tail -1|awk '{print $2}'|awk -F'/' '{print $1}'`
+fi
 hostname_fqdn=`hostname -f`
 
 
@@ -242,35 +247,51 @@ controller_handler()
   read_local_config
   handler_options=`echo ${handler_options}|sed 's/##/ /g'`
   case "$handler_options" in
+    libexec/check-logs*-f*)
+      vhost=`echo ${handler_options}|awk -F'/var/log/apache2/virtwww/' '{print $2}'|awk -F'/' '{print $1}'|awk -F'w_' '{print $2}'`
+      for dc in $(docker ps|grep -v 'NAMES'|awk '{print $NF}'); do
+        if [ "$vhost" == $(echo $dc|awk -F'.' '{print $1}') ]; then 
+          app_hosting="docker"
+          app_container_name=${dc}
+        fi
+      done
+      if [ "$app_hosting" == "docker" ]; then
+        docker exec -i ${app_container_name} ${sys_dir}/${handler_options}
+      elif [ "$app_hosting" == "local" ]; then
+        ${sys_dir}/${handler_options}
+      fi
+    ;;
+
     bin/restore-vhost-subsystem*|bin/list-backups*)
-    if [ "$app_hosting" == "docker" ]; then
-      docker exec -i ${app_container_name} su - w_${vhost} -c "${sys_dir}/${handler_options}"
-    elif [ "$app_hosting" == "local" ]; then
-      su - w_${vhost} -c "${sys_dir}/${handler_options}"
-    fi
+      if [ "$app_hosting" == "docker" ]; then
+        docker exec -i ${app_container_name} su - w_${vhost} -c "${sys_dir}/${handler_options}"
+      elif [ "$app_hosting" == "local" ]; then
+        su - w_${vhost} -c "${sys_dir}/${handler_options}"
+      fi
     ;;
 
     libexec/restore-vhost*http://www.webenabled.com/seedapps/*)
-    ${sys_dir}/${handler_options}
+      ${sys_dir}/${handler_options}
     ;;
 
     libexec/restore-vhost*)
-    new_vhost_name=`echo ${handler_options}|awk '{print $2}'`
-    old_vhost_name=`echo ${handler_options}|awk -F'/opt/webenabled-data/vhost_archives/' '{print $2}'|awk -F'/' '{print $1}'`
-    vhost="${old_vhost_name}.${hostname_fqdn}"
+      new_vhost_name=`echo ${handler_options}|awk '{print $2}'`
+      old_vhost_name=`echo ${handler_options}|awk -F'/opt/webenabled-data/vhost_archives/' '{print $2}'|awk -F'/' '{print $1}'`
+      vhost="${old_vhost_name}.${hostname_fqdn}"
 
-    if [ `docker ps|grep ${vhost}|wc -l` -gt 0 ]; then
-      app_hosting="docker"
-    fi
+      if [ `docker ps|grep ${vhost}|wc -l` -gt 0 ]; then
+        app_hosting="docker"
+      fi
 
-    if [ "$app_hosting" == "docker" ]; then
-      # create and run a new container
-      CONTAINER_WEB_ID=`docker ps|grep ${vhost}|awk '{print $1}'`
-      app_container_name="${new_vhost_name}.${hostname_fqdn}"
-      docker commit ${CONTAINER_WEB_ID} ${app_container_name}
-      docker run -d --name=${app_container_name} ${app_container_name}
+      if [ "$app_hosting" == "docker" ]; then
+        # create and run a new container
+        CONTAINER_WEB_ID=`docker ps|grep ${vhost}|awk '{print $1}'`
+        app_container_name="${new_vhost_name}.${hostname_fqdn}"
+        docker commit ${CONTAINER_WEB_ID} ${app_container_name}
+        docker run -d --name=${app_container_name} ${app_container_name}
+        docker exec -i ${app_container_name} ${sys_dir}/${handler_options}
 
-      ini_contents="\
+        ini_contents="\
 app.name              = ${new_vhost_name}
 app.hosting           = docker
 app.db_type           = ${app_db_type}
@@ -280,48 +301,47 @@ aws.default_region    = ${aws_default_region}
 app.container_name    = ${app_container_name}
 app.clone             = true
 "
-      echo "$ini_contents" | ${sudo} ${sys_dir}/bin/update-ini-file -q -c ${sys_dir}/config/apps/${new_vhost_name}.ini
+        echo "$ini_contents" | ${sudo} ${sys_dir}/bin/update-ini-file -q -c ${sys_dir}/config/apps/${new_vhost_name}.ini
 
-      # create nginx config
-      domain="${app_container_name}"
-      update_nginx_config
+        # create nginx config
+        domain="${app_container_name}"
+        update_nginx_config
 
-      docker exec -i ${app_container_name} "${sys_dir}/${handler_options}"
-    elif [ "$app_hosting" == "local" ]; then
-      ini_contents="\
+      elif [ "$app_hosting" == "local" ]; then
+        ini_contents="\
 app.name           = ${new_vhost_name}
 app.hosting        = local
 app.clone          = true
 "
-      echo "$ini_contents" | ${sudo} ${sys_dir}/bin/update-ini-file -q -c ${sys_dir}/config/apps/${new_vhost_name}.ini
-      ${sys_dir}/${handler_options}
-    fi
+        echo "$ini_contents" | ${sudo} ${sys_dir}/bin/update-ini-file -q -c ${sys_dir}/config/apps/${new_vhost_name}.ini
+        ${sys_dir}/${handler_options}
+      fi
     ;;
 
     libexec/config-vhost-names*+*)
-    if [ "$app_hosting" == "docker" ]; then
-      docker exec -i ${app_container_name} ${sys_dir}/${handler_options}
-    elif [ "$app_hosting" == "local" ]; then
-      ${sys_dir}/${handler_options}
-    fi
-    add_domain_to_nginx_config="true"
+      if [ "$app_hosting" == "docker" ]; then
+        docker exec -i ${app_container_name} ${sys_dir}/${handler_options}
+      elif [ "$app_hosting" == "local" ]; then
+        ${sys_dir}/${handler_options}
+      fi
+      add_domain_to_nginx_config="true"
     ;;
 
     libexec/config-vhost-names*-*)
-    if [ "$app_hosting" == "docker" ]; then
-      docker exec -i ${app_container_name} ${sys_dir}/${handler_options}
-    elif [ "$app_hosting" == "local" ]; then
-      ${sys_dir}/${handler_options}
-    fi
-    remove_domain_from_nginx_config="true"
+      if [ "$app_hosting" == "docker" ]; then
+        docker exec -i ${app_container_name} ${sys_dir}/${handler_options}
+      elif [ "$app_hosting" == "local" ]; then
+        ${sys_dir}/${handler_options}
+      fi
+      remove_domain_from_nginx_config="true"
     ;;
 
     *)
-    if [ "$app_hosting" == "docker" ]; then
-      docker exec -i ${app_container_name} ${sys_dir}/${handler_options}
-    elif [ "$app_hosting" == "local" ]; then
-      ${sys_dir}/${handler_options}
-    fi
+      if [ "$app_hosting" == "docker" ]; then
+        docker exec -i ${app_container_name} ${sys_dir}/${handler_options}
+      elif [ "$app_hosting" == "local" ]; then
+        ${sys_dir}/${handler_options}
+      fi
     ;;
   esac
 
@@ -590,6 +610,18 @@ convert()
 
 }
 
+update_scripts()
+{
+  cd /tmp && \
+  wget https://github.com/devpanel/serverlink/archive/master.zip && \
+  unzip master.zip && \
+  for c in $(docker ps|grep -v 'NAMES'|awk '{print $NF}'); do
+    for i in bin  compat  install  lib  libexec  LICENSE.txt  paas-provisioner  README.md  sbin  src; do
+      docker cp serverlink-master/$i $c:/opt/webenabled/
+    done
+  done
+}
+
 
 # check for Docker installation
 if [ ! -f /usr/bin/docker ]; then
@@ -771,31 +803,42 @@ elif [ "$operation" == "clone" -a "$source_domain" -a "$domain" ]; then
     # get destination containers ids
     CONTAINER_WEB_ID=`docker ps|grep ${user}|awk '{print $1}'`
 
+    # do symbolic links for old paths
+    docker exec ${CONTAINER_WEB_ID} ln -s /home/clients/websites/w_${source_user} /home/clients/websites/w_${user}
+    docker exec ${CONTAINER_WEB_ID} ln -s /home/clients/databases/b_${source_user} /home/clients/databases/b_${user}
+    docker exec ${CONTAINER_WEB_ID} ln -s /etc/apache2/webenabled-logs/virtwww/w_${source_user} /etc/apache2/webenabled-logs/virtwww/w_${user}
+    docker exec ${CONTAINER_WEB_ID} mv /var/log/apache2/virtwww/w_${source_user} /var/log/apache2/virtwww/w_${user}
+    docker exec ${CONTAINER_WEB_ID} mv /var/log/apache2/virtwww/w_${user}/${source_user}-access_log /var/log/apache2/virtwww/w_${user}/${user}-access_log
+    docker exec ${CONTAINER_WEB_ID} mv /var/log/apache2/virtwww/w_${user}/${source_user}-error_log /var/log/apache2/virtwww/w_${user}/${user}-error_log
+
     USER=`awk -F'.' '{print $1}' <<< "$source_vhost"`
     DOMAIN=${source_domain_name}
     DST_USER=${user}
     DST_DOMAIN=${domain_name}
     # update container's apache2 config with new URL
-    docker exec ${CONTAINER_WEB_ID} sed -i "s/ServerName ${USER}/ServerName ${DST_USER}/" /etc/apache2/devpanel-virtwww/w_${USER}.conf
-    docker exec ${CONTAINER_WEB_ID} sed -i "s/ServerAlias www.${USER}/ServerAlias www.${DST_USER}/" /etc/apache2/devpanel-virtwww/w_${USER}.conf
+    docker exec ${CONTAINER_WEB_ID} sed -i "s/${USER}/${DST_USER}/" /etc/apache2/devpanel-virtwww/w_${USER}.conf
+    docker exec ${CONTAINER_WEB_ID} sed -i "s/SuexecUserGroup w_${DST_USER}/SuexecUserGroup w_${USER}/" /etc/apache2/devpanel-virtwww/w_${USER}.conf
+    docker exec ${CONTAINER_WEB_ID} sed -i "s/${USER}-access_log/${DST_USER}-access_log/" /etc/apache2/devpanel-virtwww/w_${USER}.conf
+    docker exec ${CONTAINER_WEB_ID} sed -i "s/${USER}-error_log/${DST_USER}-error_log/" /etc/apache2/devpanel-virtwww/w_${USER}.conf
     docker exec -d ${CONTAINER_WEB_ID} /bin/sh -c "/tmp/startup.sh"
     docker exec ${CONTAINER_WEB_ID} service apache2 restart
 
     # replace db data with new URL
     app="wordpress"
     PORT=4000
-    PASSWORD=`docker exec ${CONTAINER_WEB_ID} grep w_${USER} /home/clients/websites/w_${USER}/.mysql.passwd|awk -F ":" '{print $2}'`
+    LOGIN=`docker exec ${CONTAINER_WEB_ID} grep w_ /home/clients/websites/w_${USER}/.mysql.passwd|tail -1|awk -F ":" '{print $1}'`
+    PASSWORD=`docker exec ${CONTAINER_WEB_ID} grep w_ /home/clients/websites/w_${USER}/.mysql.passwd|tail -1|awk -F ":" '{print $2}'`
     while [ `docker exec ${CONTAINER_WEB_ID} /bin/sh -c "netstat -ltpn|grep 4000|wc -l"` -eq 0 ]; do
       echo "DB is not running. Waiting its start."
       sleep 1
-      docker exec ${CONTAINER_WEB_ID} mysql ${app} -h localhost -P ${PORT} -u w_${USER} --password=${PASSWORD} --socket=/home/clients/databases/b_${USER}/mysql/mysql.sock -e \
+      docker exec ${CONTAINER_WEB_ID} mysql ${app} -h localhost -P ${PORT} -u ${LOGIN} --password=${PASSWORD} --socket=/home/clients/databases/b_${USER}/mysql/mysql.sock -e \
         "UPDATE wp_options SET option_value = replace(option_value, 'http://${USER}.${DOMAIN}', 'http://${DST_USER}.${DST_DOMAIN}');"
     done
-    docker exec ${CONTAINER_WEB_ID} mysql ${app} -h localhost -P ${PORT} -u w_${USER} --password=${PASSWORD} --socket=/home/clients/databases/b_${USER}/mysql/mysql.sock -e \
+    docker exec ${CONTAINER_WEB_ID} mysql ${app} -h localhost -P ${PORT} -u ${LOGIN} --password=${PASSWORD} --socket=/home/clients/databases/b_${USER}/mysql/mysql.sock -e \
       "UPDATE wp_options SET option_value = replace(option_value, 'http://${USER}.${DOMAIN}', 'http://${DST_USER}.${DST_DOMAIN}');"
 
     # check if it was replaced correctly
-    if [ `docker exec ${CONTAINER_WEB_ID} mysql ${app} -h localhost -P ${PORT} -u w_${USER} --password=${PASSWORD} --socket=/home/clients/databases/b_${USER}/mysql/mysql.sock -e \
+    if [ `docker exec ${CONTAINER_WEB_ID} mysql ${app} -h localhost -P ${PORT} -u ${LOGIN} --password=${PASSWORD} --socket=/home/clients/databases/b_${USER}/mysql/mysql.sock -e \
       "select * from wp_options;"|grep -c ${DST_USER}` -eq 2 ]; then
         echo "DB cloned correctly."
     else
