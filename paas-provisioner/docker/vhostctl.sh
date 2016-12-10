@@ -17,6 +17,7 @@ Options:
                                     backup - to save current state of existing container
                                     restore - to restore container to previous state
                                     destroy - to remove container with webapp
+                                    convert - to convert the application from local to docker
                                     scan - to scan webapp for vulnerabulities
                                     pentest - to do a penetration testing of devPanel UIV2
                                     handle - to handle parameters from front-end for devPanel's script inside docker container
@@ -46,6 +47,7 @@ Usage examples:
   ./vhostctl.sh -C=restore -DD=t3st.some.domain -R=t3st_backup1
   ./vhostctl.sh -C=destroy -DD=t3st.some.domain
   ./vhostctl.sh -C=destroy -DD=t3st.some.domain -RB
+  ./vhostctl.sh -C=convert
   ./vhostctl.sh -C=scan -DD=t3st.some.domain
   ./vhostctl.sh -C=pentest
   ./vhostctl.sh -C=handle -DD=t3st.some.domain -O="check-disk-quota 90"
@@ -159,6 +161,7 @@ fi
 
 # definitions
 vps_ip=`ip ad sh dev eth0|grep brd|grep inet|awk '{print $2}'|awk -F'/' '{print $1}'`
+hostname_fqdn=`hostname -f`
 
 
 create_local_config()
@@ -254,7 +257,6 @@ controller_handler()
     libexec/restore-vhost*)
     new_vhost_name=`echo ${handler_options}|awk '{print $2}'`
     old_vhost_name=`echo ${handler_options}|awk -F'/opt/webenabled-data/vhost_archives/' '{print $2}'|awk -F'/' '{print $1}'`
-    hostname_fqdn=`hostname -f`
     vhost="${old_vhost_name}.${hostname_fqdn}"
 
     if [ `docker ps|grep ${vhost}|wc -l` -gt 0 ]; then
@@ -479,7 +481,7 @@ docker_get_ids_and_names_of_containers()
 {
   if   [ "$operation" == "clone" ]; then
     CONTAINER_WEB_ID=`docker ps|grep ${source_vhost}|awk '{print $1}'`
-  elif [ "$operation" == "backup" -o "$operation" == "list_backups" -o "$operation" == "status" -o "$operation" == "stop" -o "$operation" == "scan" ]; then
+  elif [ "$operation" == "backup" -o "$operation" == "list_backups" -o "$operation" == "status" -o "$operation" == "stop" -o "$operation" == "scan" -o "$operation" == "convert" ]; then
     CONTAINER_WEB_ID=`docker ps|grep ${domain}|awk '{print $1}'`
   else
     CONTAINER_WEB_ID=`docker ps|grep ${domain}_${app}_web|awk '{print $1}'`
@@ -557,6 +559,35 @@ pentest()
 {
   if [ -z "$domain" ]; then domain=uiv2.devpanel.com; fi
   docker_msf ${domain}
+}
+
+convert()
+{
+  read_local_config
+  if [ "$app_hosting" == "docker" ]; then
+    docker_get_ids_and_names_of_containers
+    # code
+    # ...
+  else
+    # create docker container with app
+    # ...
+    # ${docker_container_name}=`docker ps|grep `
+    app_name=`echo $domain|awk -F'.' '{print $1}'`
+    app_path=/home/clients/websites/w_${app_name}
+    # archive local app
+    tar zcf /tmp/${app_name}.tgz ${app_path}
+    # copy app to docker container
+    docker cp /tmp/${app_name}.tgz ${docker_container_name}:/tmp/
+    # extract
+    docker exec -it ${docker_container_name} tar /tmp/${app_name}.tgz -C /home/clients/websites/
+    # get db creds
+    db_username=w_`docker exec -it ${docker_container_name} /bin/sh -c "tail -1 /home/clients/websites/w_${vhost}/.mysql.passwd | awk -F':' '{print $1}'"`
+    db_password=`docker exec -it ${docker_container_name} /bin/sh -c "tail -1 /home/clients/websites/w_${vhost}/.mysql.passwd | awk -F':' '{print $2}'"`
+    # patch db with new URL
+    docker exec -it ${docker_container_name} mysql -u ${db_username} -p${db_password} -S /home/clients/databases/b_${vhost}/mysql/mysql.sock -D wordpress -e "update wp_options set option_value='http://${vhost}.${hostname_fqdn}/' where option_name='siteurl'"
+    docker exec -it ${docker_container_name} mysql -u ${db_username} -p${db_password} -S /home/clients/databases/b_${vhost}/mysql/mysql.sock -D wordpress -e "update wp_options set option_value='http://${vhost}.${hostname_fqdn}/' where option_name='home'"
+  fi
+
 }
 
 
@@ -898,6 +929,9 @@ elif [ "$operation" == "handle" -a "$handler_options" ]; then
 
 elif [ "$operation" == "pentest" ]; then
   pentest
+
+elif [ "$operation" == "convert" -a "$domain" ]; then
+  convert
 
 elif [ "$domain" -a "$read_config" ]; then
   read_local_config
