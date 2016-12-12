@@ -74,6 +74,7 @@ ubuntu_install_distro_packages() {
                         zlib1g libapache2-mod-fcgid mysql-server git       \
                         apache2-utils libjson-xs-perl libcrypt-ssleay-perl \
                         libcgi-session-perl nano vim s3cmd unzip bc
+                        libio-socket-ssl-perl
                         )
                           
 

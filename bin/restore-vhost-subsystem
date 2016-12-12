@@ -539,9 +539,10 @@ fi
 
 # auxiliary variable to be used by the templates
 public_html_dir="$HOME/public_html/$vhost"
+export DEVPANEL_VHOST_PUBLIC_DIR="$public_html_dir"
 
 if [ -n "$opt_i" -o -n "$opt_M" -o -n "$opt_P" -o \
-     -n "$opt_m" -o -n "$email" ]; then
+     -n "$opt_m" -o -n "$email" -o -n "$opt_I" ]; then
   # connect to the database (credentials from ~/.my.cnf)
   echo "Looking for database '$database'"
   databases=`run_mysql -B -e "show databases;"` 2>&1

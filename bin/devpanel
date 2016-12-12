@@ -284,7 +284,6 @@ elif [ ${#walk_args[@]} -ge 2 ]; then
       namespace+="_$arg"
 
       if [ -f "$path_walk" -a -x "$path_walk" ]; then
-        namespace=${namespace//-/_}
         full_bin_path="$path_walk"
         found_bin=1
         break
@@ -302,4 +301,5 @@ if [ -n "$verbose" ]; then
   echo "Executing: $full_bin_path $@"
 fi
 
+namespace=${namespace//-/_}
 devpanel_load_n_run "$namespace" "$full_bin_path" "$@"
