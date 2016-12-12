@@ -12,10 +12,10 @@ Options:
                                     status - to show status of container with the application
                                     stop - to stop container with the application
                                     clone - to copy container with new names and replace configuration with new URL
+                                      has option to convert the application from local to docker
                                     backup - to save current state of existing container
                                     restore - to restore container to previous state
                                     destroy - to remove container with webapp
-                                    convert - to convert the application from local to docker
                                     scan - to scan webapp for vulnerabulities
                                     pentest - to do a penetration testing of devPanel UIV2
                                     handle - to handle parameters from front-end for devPanel's script inside docker container
@@ -41,11 +41,11 @@ Usage examples:
   ./vhostctl.sh -C=status -DD=t3st.some.domain
   ./vhostctl.sh -C=stop -DD=t3st.some.domain
   ./vhostctl.sh -C=clone -SD=t3st.some.domain -DD=t4st.some.domain
+  ./vhostctl.sh -C=clone -O=convert -SD=t3st.some.domain -DD=t4st.some.domain
   ./vhostctl.sh -C=backup  -DD=t3st.some.domain -B=t3st_backup1
   ./vhostctl.sh -C=restore -DD=t3st.some.domain -R=t3st_backup1
   ./vhostctl.sh -C=destroy -DD=t3st.some.domain
   ./vhostctl.sh -C=destroy -DD=t3st.some.domain -RB
-  ./vhostctl.sh -C=convert
   ./vhostctl.sh -C=scan -DD=t3st.some.domain
   ./vhostctl.sh -C=pentest
   ./vhostctl.sh -C=handle -DD=t3st.some.domain -O="check-disk-quota##90"
@@ -60,6 +60,7 @@ if [ $? -ne 0 ]; then
 fi
 self_dir=${self_bin%/*}
 sys_dir=$(readlink -e "$self_dir/../..")
+sys_data_dir=$(readlink -e "$self_dir/../../../webenabled-data")
 
 for lib_file in $sys_dir/lib/functions $self_dir/functions; do
   if ! source "$lib_file"; then
@@ -133,8 +134,9 @@ case $i in
     shift # past argument=value
     ;;
     *)
-    # show_help
-            # unknown option
+    echo "Unknown arguments: ${i}"
+    show_help
+          # unknown option
     ;;
 esac
 done
@@ -232,6 +234,9 @@ elif [ "$operation" == "status" -a "$domain" ]; then
 elif [ "$operation" == "stop" -a "$domain" ]; then
   operation_stop
 
+elif [ "$operation" == "clone" -a "$source_domain" -a "$domain" -a "$handler_options" == "convert" ]; then
+  operation_convert
+
 elif [ "$operation" == "clone" -a "$source_domain" -a "$domain" ]; then
   operation_clone
 
@@ -251,13 +256,10 @@ elif [ "$operation" == "destroy" -a "$domain" ]; then
   operation_destroy
 
 elif [ "$operation" == "handle" -a "$handler_options" ]; then
-  controller_handler
+  operation_handle
 
 elif [ "$operation" == "pentest" ]; then
-  pentest
-
-elif [ "$operation" == "convert" -a "$domain" ]; then
-  convert
+  operation_pentest
 
 elif [ "$domain" -a "$read_config" ]; then
   read_local_config

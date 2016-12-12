@@ -44,6 +44,7 @@ read_local_config()
 {
   vhost=`echo "${domain}" | awk -F'[.]' '{print $1}'`
   root_domain=`echo "${domain}" | awk -F'[.]' '{print $2}'`
+  if [ "${operation}" == "clone" -a "${handler_options}" == "convert" ]; then vhost=`echo "${source_domain}" | awk -F'[.]' '{print $1}'`; fi
 
   # check if config exists. if not, set to local. standard script 'restore-vhost' does not create any configs by default
   if [ ! -f ${sys_dir}/config/apps/${vhost}.ini ]; then
@@ -63,119 +64,6 @@ read_local_config()
       rds_vpcsecuritygroupid=`ini_section_get_key_value ${sys_dir}/config/apps/${vhost}.ini rds vpcsecuritygroupid`
     fi
   fi
-}
-
-controller_handler()
-# example in db@controller
-# 31|list_vhost_logs||libexec/check-logs|-s %vhost%|0.0|0|2012-05-22 07:27:25|2016-02-19 20:38:03
-# becomes ('##' used as a whitespace)
-# 31|list_vhost_logs||paas-provisioner/docker/vhostctl.sh|-C=handle -O=libexec/check-logs##-s##%vhost% -DD=%vhost%|0.0|0|2012-05-22 07:27:25|2016-02-19 20:38:03
-# and vhostctl receives (after sed processed '##')
-# handler_options="libexec/check-logs -s some_vhost"
-{
-  read_local_config
-  handler_options=`echo ${handler_options}|sed 's/##/ /g'`
-  case "$handler_options" in
-    libexec/check-logs*-f*)
-      vhost=`echo ${handler_options}|awk -F'/var/log/apache2/virtwww/' '{print $2}'|awk -F'/' '{print $1}'|awk -F'w_' '{print $2}'`
-      for dc in $(docker ps|grep -v 'NAMES'|awk '{print $NF}'); do
-        if [ "$vhost" == $(echo $dc|awk -F'.' '{print $1}') ]; then 
-          app_hosting="docker"
-          app_container_name=${dc}
-        fi
-      done
-      if [ "$app_hosting" == "docker" ]; then
-        docker exec -i ${app_container_name} ${sys_dir}/${handler_options}
-      elif [ "$app_hosting" == "local" ]; then
-        ${sys_dir}/${handler_options}
-      fi
-    ;;
-
-    bin/restore-vhost-subsystem*|bin/list-backups*)
-      if [ "$app_hosting" == "docker" ]; then
-        docker exec -i ${app_container_name} su - w_${vhost} -c "${sys_dir}/${handler_options}"
-      elif [ "$app_hosting" == "local" ]; then
-        su - w_${vhost} -c "${sys_dir}/${handler_options}"
-      fi
-    ;;
-
-    libexec/restore-vhost*http://www.webenabled.com/seedapps/*)
-      ${sys_dir}/${handler_options}
-    ;;
-
-    libexec/restore-vhost*)
-      new_vhost_name=`echo ${handler_options}|awk '{print $2}'`
-      old_vhost_name=`echo ${handler_options}|awk -F'/opt/webenabled-data/vhost_archives/' '{print $2}'|awk -F'/' '{print $1}'`
-      vhost="${old_vhost_name}.${hostname_fqdn}"
-
-      if [ `docker ps|grep ${vhost}|wc -l` -gt 0 ]; then
-        app_hosting="docker"
-      fi
-
-      if [ "$app_hosting" == "docker" ]; then
-        # create and run a new container
-        CONTAINER_WEB_ID=`docker ps|grep ${vhost}|awk '{print $1}'`
-        app_container_name="${new_vhost_name}.${hostname_fqdn}"
-        docker commit ${CONTAINER_WEB_ID} ${app_container_name}
-        docker run -d --name=${app_container_name} ${app_container_name}
-        docker exec -i ${app_container_name} ${sys_dir}/${handler_options}
-
-        ini_contents="\
-app.name              = ${new_vhost_name}
-app.hosting           = docker
-app.db_type           = ${app_db_type}
-aws.access_key_id     = ${aws_access_key_id}
-aws.secret_access_key = ${aws_secret_access_key}
-aws.default_region    = ${aws_default_region}
-app.container_name    = ${app_container_name}
-app.clone             = true
-"
-        echo "$ini_contents" | ${sudo} ${sys_dir}/bin/update-ini-file -q -c ${sys_dir}/config/apps/${new_vhost_name}.ini
-
-        # create nginx config
-        domain="${app_container_name}"
-        update_nginx_config
-
-      elif [ "$app_hosting" == "local" ]; then
-        ini_contents="\
-app.name           = ${new_vhost_name}
-app.hosting        = local
-app.clone          = true
-"
-        echo "$ini_contents" | ${sudo} ${sys_dir}/bin/update-ini-file -q -c ${sys_dir}/config/apps/${new_vhost_name}.ini
-        ${sys_dir}/${handler_options}
-      fi
-    ;;
-
-    libexec/config-vhost-names*+*)
-      if [ "$app_hosting" == "docker" ]; then
-        docker exec -i ${app_container_name} ${sys_dir}/${handler_options}
-      elif [ "$app_hosting" == "local" ]; then
-        ${sys_dir}/${handler_options}
-      fi
-      add_domain_to_nginx_config="true"
-    ;;
-
-    libexec/config-vhost-names*-*)
-      if [ "$app_hosting" == "docker" ]; then
-        docker exec -i ${app_container_name} ${sys_dir}/${handler_options}
-      elif [ "$app_hosting" == "local" ]; then
-        ${sys_dir}/${handler_options}
-      fi
-      remove_domain_from_nginx_config="true"
-    ;;
-
-    *)
-      if [ "$app_hosting" == "docker" ]; then
-        docker exec -i ${app_container_name} ${sys_dir}/${handler_options}
-      elif [ "$app_hosting" == "local" ]; then
-        ${sys_dir}/${handler_options}
-      fi
-    ;;
-  esac
-
-  update_nginx_config
-  detect_running_apache_and_patch_configs
 }
 
 create_nginx_config()
@@ -246,9 +134,10 @@ server {
 EOF
 
   # handle additional domain
-  additional_domain=`echo ${handler_options}|awk '{print $NF}'`
-  if [ "${add_domain_to_nginx_config}" == "true" ]; then
-    cat << EOF > /tmp/${additional_domain}.conf
+  if [ ! ${handler_options} == "convert" -o ! ${handler_options} == "" ]; then
+    additional_domain=`echo ${handler_options}|awk '{print $NF}'`
+    if [ "${add_domain_to_nginx_config}" == "true" ]; then
+      cat << EOF > /tmp/${additional_domain}.conf
 server {
   listen       80;
   server_name  ${additional_domain};
@@ -258,9 +147,10 @@ server {
   }
 }
 EOF
-    ${sudo} mv /tmp/${additional_domain}.conf /etc/nginx/sites-enabled/${additional_domain}.conf
-  elif [ "${remove_domain_from_nginx_config}" == "true" ]; then
-    ${sudo} rm -f /etc/nginx/sites-enabled/${additional_domain}.conf
+      ${sudo} mv /tmp/${additional_domain}.conf /etc/nginx/sites-enabled/${additional_domain}.conf
+    elif [ "${remove_domain_from_nginx_config}" == "true" ]; then
+      ${sudo} rm -f /etc/nginx/sites-enabled/${additional_domain}.conf
+    fi
   fi
 
   # apply configs
@@ -283,7 +173,7 @@ restart_or_reload_nginx()
     ${sudo} echo "client_max_body_size 200M;" > /etc/nginx/conf.d/client_max_body_size.conf
   fi
 
-  if [[ `service nginx status` == " * nginx is running" ]]; then
+  if [[ `service nginx status` == " * nginx is running" || `service nginx status|grep 'active (running)'|wc -l` -gt 0 ]]; then
     ${sudo} service nginx reload
   else
     ${sudo} service nginx restart
@@ -404,54 +294,131 @@ detect_running_apache_and_patch_configs()
   fi
 }
 
-pentest()
-{
-  if [ -z "$domain" ]; then domain=uiv2.devpanel.com; fi
-  docker_msf ${domain}
-}
-
-convert()
-{
-  read_local_config
-  if [ "$app_hosting" == "docker" ]; then
-    docker_get_ids_and_names_of_containers
-    # code
-    # ...
-  else
-    # create docker container with app
-    # ...
-    # ${docker_container_name}=`docker ps|grep `
-    app_name=`echo $domain|awk -F'.' '{print $1}'`
-    app_path=/home/clients/websites/w_${app_name}
-    # archive local app
-    tar zcf /tmp/${app_name}.tgz ${app_path}
-    # copy app to docker container
-    docker cp /tmp/${app_name}.tgz ${docker_container_name}:/tmp/
-    # extract
-    docker exec -it ${docker_container_name} tar /tmp/${app_name}.tgz -C /home/clients/websites/
-    # get db creds
-    db_username=w_`docker exec -it ${docker_container_name} /bin/sh -c "tail -1 /home/clients/websites/w_${vhost}/.mysql.passwd | awk -F':' '{print $1}'"`
-    db_password=`docker exec -it ${docker_container_name} /bin/sh -c "tail -1 /home/clients/websites/w_${vhost}/.mysql.passwd | awk -F':' '{print $2}'"`
-    # patch db with new URL
-    docker exec -it ${docker_container_name} mysql -u ${db_username} -p${db_password} -S /home/clients/databases/b_${vhost}/mysql/mysql.sock -D wordpress -e "update wp_options set option_value='http://${vhost}.${hostname_fqdn}/' where option_name='siteurl'"
-    docker exec -it ${docker_container_name} mysql -u ${db_username} -p${db_password} -S /home/clients/databases/b_${vhost}/mysql/mysql.sock -D wordpress -e "update wp_options set option_value='http://${vhost}.${hostname_fqdn}/' where option_name='home'"
-  fi
-
-}
-
 update_scripts()
 {
-  cd /tmp && \
-  wget https://github.com/devpanel/serverlink/archive/master.zip && \
-  unzip master.zip && \
+  cd /tmp && wget https://github.com/devpanel/serverlink/archive/master.zip && unzip master.zip && \
   for c in $(docker ps|grep -v 'NAMES'|awk '{print $NF}'); do
     for i in bin  compat  install  lib  libexec  LICENSE.txt  paas-provisioner  README.md  sbin  src; do
       docker cp serverlink-master/$i $c:/opt/webenabled/
     done
   done
+  rm -fr /tmp/serverlink-master /tmp/master.zip
 }
 
 
+
+operation_handle()
+# example in db@controller
+# 31|list_vhost_logs||libexec/check-logs|-s %vhost%|0.0|0|2012-05-22 07:27:25|2016-02-19 20:38:03
+# becomes ('##' used as a whitespace)
+# 31|list_vhost_logs||paas-provisioner/docker/vhostctl.sh|-C=handle -O=libexec/check-logs##-s##%vhost% -DD=%vhost%|0.0|0|2012-05-22 07:27:25|2016-02-19 20:38:03
+# and vhostctl receives (after sed processed '##')
+# handler_options="libexec/check-logs -s some_vhost"
+{
+  read_local_config
+  handler_options=`echo ${handler_options}|sed 's/##/ /g'`
+  case "$handler_options" in
+    libexec/check-logs*-f*)
+      vhost=`echo ${handler_options}|awk -F'/var/log/apache2/virtwww/' '{print $2}'|awk -F'/' '{print $1}'|awk -F'w_' '{print $2}'`
+      for dc in $(docker ps|grep -v 'NAMES'|awk '{print $NF}'); do
+        if [ "$vhost" == $(echo $dc|awk -F'.' '{print $1}') ]; then 
+          app_hosting="docker"
+          app_container_name=${dc}
+        fi
+      done
+      if [ "$app_hosting" == "docker" ]; then
+        docker exec -i ${app_container_name} ${sys_dir}/${handler_options}
+      elif [ "$app_hosting" == "local" ]; then
+        ${sys_dir}/${handler_options}
+      fi
+    ;;
+
+    bin/restore-vhost-subsystem*|bin/list-backups*)
+      if [ "$app_hosting" == "docker" ]; then
+        docker exec -i ${app_container_name} su - w_${vhost} -c "${sys_dir}/${handler_options}"
+      elif [ "$app_hosting" == "local" ]; then
+        su - w_${vhost} -c "${sys_dir}/${handler_options}"
+      fi
+    ;;
+
+    libexec/restore-vhost*http://www.webenabled.com/seedapps/*)
+      ${sys_dir}/${handler_options}
+    ;;
+
+    libexec/restore-vhost*)
+      new_vhost_name=`echo ${handler_options}|awk '{print $2}'`
+      old_vhost_name=`echo ${handler_options}|awk -F'/opt/webenabled-data/vhost_archives/' '{print $2}'|awk -F'/' '{print $1}'`
+      vhost="${old_vhost_name}.${hostname_fqdn}"
+
+      if [ `docker ps|grep ${vhost}|wc -l` -gt 0 ]; then
+        app_hosting="docker"
+      fi
+
+      if [ "$app_hosting" == "docker" ]; then
+        # create and run a new container
+        CONTAINER_WEB_ID=`docker ps|grep ${vhost}|awk '{print $1}'`
+        app_container_name="${new_vhost_name}.${hostname_fqdn}"
+        docker commit ${CONTAINER_WEB_ID} ${app_container_name}
+        docker run -d --name=${app_container_name} ${app_container_name}
+        docker exec -i ${app_container_name} ${sys_dir}/${handler_options}
+
+        ini_contents="\
+app.name              = ${new_vhost_name}
+app.hosting           = docker
+app.db_type           = ${app_db_type}
+aws.access_key_id     = ${aws_access_key_id}
+aws.secret_access_key = ${aws_secret_access_key}
+aws.default_region    = ${aws_default_region}
+app.container_name    = ${app_container_name}
+app.clone             = true
+"
+        echo "$ini_contents" | ${sudo} ${sys_dir}/bin/update-ini-file -q -c ${sys_dir}/config/apps/${new_vhost_name}.ini
+
+        # create nginx config
+        domain="${app_container_name}"
+        update_nginx_config
+
+      elif [ "$app_hosting" == "local" ]; then
+        ini_contents="\
+app.name           = ${new_vhost_name}
+app.hosting        = local
+app.clone          = true
+"
+        echo "$ini_contents" | ${sudo} ${sys_dir}/bin/update-ini-file -q -c ${sys_dir}/config/apps/${new_vhost_name}.ini
+        ${sys_dir}/${handler_options}
+      fi
+    ;;
+
+    libexec/config-vhost-names*+*)
+      if [ "$app_hosting" == "docker" ]; then
+        docker exec -i ${app_container_name} ${sys_dir}/${handler_options}
+      elif [ "$app_hosting" == "local" ]; then
+        ${sys_dir}/${handler_options}
+      fi
+      add_domain_to_nginx_config="true"
+    ;;
+
+    libexec/config-vhost-names*-*)
+      if [ "$app_hosting" == "docker" ]; then
+        docker exec -i ${app_container_name} ${sys_dir}/${handler_options}
+      elif [ "$app_hosting" == "local" ]; then
+        ${sys_dir}/${handler_options}
+      fi
+      remove_domain_from_nginx_config="true"
+    ;;
+
+    *)
+      if [ "$app_hosting" == "docker" ]; then
+        docker exec -i ${app_container_name} ${sys_dir}/${handler_options}
+      elif [ "$app_hosting" == "local" ]; then
+        ${sys_dir}/${handler_options}
+      fi
+    ;;
+  esac
+
+  update_nginx_config
+  detect_running_apache_and_patch_configs
+}
 
 operation_create()
 {
@@ -763,5 +730,32 @@ operation_destroy()
   restart_or_reload_nginx
   ${sudo} rm -f ${sys_dir}/config/apps/${domain}.ini
   ${sudo} rm -f ${sys_dir}/config/apps/${vhost}.ini
+}
+
+operation_pentest()
+{
+  if [ -z "$domain" ]; then domain=uiv2.devpanel.com; fi
+  docker_msf ${domain}
+}
+
+operation_convert()
+{
+  read_local_config
+  if [ "$app_hosting" == "docker" ]; then
+    docker exec -t ${app_container_name} ${sys_dir}/libexec/archive-vhost ${app_name} ${app_name}_export_for_convert_ops
+    docker cp ${app_container_name}:${sys_data_dir}/vhost_archives/${app_name}/${app_name}_export_for_convert_ops.tgz ${sys_data_dir}/vhost_archives/
+    ${sys_dir}/libexec/restore-vhost -p $(echo $domain|awk -F'.' '{print $1}') ${sys_data_dir}/vhost_archives/${app_name}_export_for_convert_ops.tgz
+    ${sudo} rm -f ${sys_data_dir}/vhost_archives/${app_name}_export_for_convert_ops.tgz
+    docker exec -t ${app_container_name} rm -f ${sys_data_dir}/vhost_archives/${app_name}_export_for_convert_ops.tgz
+    # set variables for local config
+    servername="${domain}"
+    vhost="${domain}"
+    app_hosting="local"
+    clone_state="true"
+    create_local_config
+    # create nginx config, patch apache config and reload
+    create_nginx_config
+    detect_running_apache_and_patch_configs
+  fi
 }
 
