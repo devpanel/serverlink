@@ -91,8 +91,9 @@ update_nginx_config()
   elif [ "$operation" == "restore" ]; then
     container_name=$CONTAINER_WEB_NAME
   fi
-  hostname_fqdn=`hostname -f`
-  if [ "$operation" == "clone" ]; then domain="${target_vhost}.${hostname_fqdn}"; fi
+  if [ "$operation" == "clone" ]; then
+    domain="${target_vhost}.${hostname_fqdn}"
+  fi
   if [ "$host_type" == "docker" -o "$app_hosting" == "docker" ]; then
     if [ "$app_container_name" ]; then container_name="$app_container_name"; fi
     container_ip_address=`docker inspect -f '{{.Name}} - {{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' $(docker ps -aq)|grep "${container_name}"|awk -F" - " '{print $2}'`
@@ -193,20 +194,35 @@ patch_definition_files_and_build()
 
   cp -f  "$template_file" "$compose_file"
 
-  sed_str="\
-    s/SERVICE_NAME_VAR/${domain}_${app}/;
-    s/CONTAINER_NAME_VAR/${domain}_${app}/;
-    s/NETWORK_NAME_VAR/${domain}_${app}/;
-    s/USER_VAR/${user}/;
-    s/DOMAIN_VAR/${domain_name}/;
-    s/SRC_USER_VAR/${source_user}/;
-    s/SRC_DOMAIN_VAR/${source_domain_name}/;
-    s/APP_VAR/${app}/;"
+  if [ "${operation}" == "clone" -a "${handler_options}" == "convert" ]; then
+    domain_name=${hostname_fqdn}
+    domain=${user}.${hostname_fqdn}
+    sed_str="\
+      s/Dockerfile-web/Dockerfile-convert/;
+      s/SERVICE_NAME_VAR/${domain}/;
+      s/CONTAINER_NAME_VAR/${domain}/;
+      s/NETWORK_NAME_VAR/${domain}/;
+      s/USER_VAR/${user}/;
+      s/DOMAIN_VAR/${domain_name}/;
+      s/SRC_USER_VAR/${source_user}/;
+      s/SRC_DOMAIN_VAR/${source_domain_name}/;
+      s/APP_VAR/${app_name}/;"
+  else
+    sed_str="\
+      s/SERVICE_NAME_VAR/${domain}_${app}/;
+      s/CONTAINER_NAME_VAR/${domain}_${app}/;
+      s/NETWORK_NAME_VAR/${domain}_${app}/;
+      s/USER_VAR/${user}/;
+      s/DOMAIN_VAR/${domain_name}/;
+      s/SRC_USER_VAR/${source_user}/;
+      s/SRC_DOMAIN_VAR/${source_domain_name}/;
+      s/APP_VAR/${app}/;"
 
-  if [ "$app" == "wordpress" ]; then
-    sed_str+="s/SEEDAPP_ARCHIVE_VAR/${app}-v4.tgz/;"
-  elif [ "$app" == "drupal" ]; then
-    sed_str+="s/SEEDAPP_ARCHIVE_VAR/${app}-v7.tgz/;"
+    if [ "$app" == "wordpress" ]; then
+      sed_str+="s/SEEDAPP_ARCHIVE_VAR/${app}-v4.tgz/;"
+    elif [ "$app" == "drupal" ]; then
+      sed_str+="s/SEEDAPP_ARCHIVE_VAR/${app}-v7.tgz/;"
+    fi
   fi
 
   sed -i "$sed_str" "$compose_file"
@@ -700,10 +716,8 @@ operation_destroy()
     docker rm  -f ${app_container_name}
     if [ "$app" == "zabbix" -o "$app" == "hippo" -o "$app" == "msf" ]; then
       docker rmi -f devpanel_${app}:latest
-    elif [[ "$app_clone" == "true" ]]; then
-      docker rmi -f ${app_container_name}
     else
-      docker rmi -f original_${app_container_name}
+      docker rmi -f original_${app_container_name} ${app_container_name}
     fi
     # RDS
     if [ "$app_db_type" == "rds" ]; then
@@ -756,6 +770,20 @@ operation_convert()
     # create nginx config, patch apache config and reload
     create_nginx_config
     detect_running_apache_and_patch_configs
+  else
+    target_vhost="$(echo $domain|awk -F'.' '{print $1}')"
+    # archive local app
+    if [ -z ${app_name} ]; then app_name=$target_vhost; fi
+    ${sys_dir}/libexec/archive-vhost ${app_name} ${app_name}_export_for_convert_ops
+    mv ${sys_data_dir}/vhost_archives/${app_name}/${app_name}_export_for_convert_ops.tgz ${self_dir}/original/
+    # create docker container with app
+    host_type="docker"
+    app_hosting="docker"
+    app_container_name=${target_vhost}.${hostname_fqdn}
+    operation_create
+    # remove used archives
+    ${sudo} rm -f ${self_dir}/original/${app_name}_export_for_convert_ops.tgz
+    docker exec -t ${app_container_name} rm -f ${sys_data_dir}/vhost_archives/${app_name}_export_for_convert_ops.tgz
   fi
 }
 

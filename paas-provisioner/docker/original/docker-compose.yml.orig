@@ -1,8 +1,8 @@
 version: '2'
 services:
-  SERVICE_NAME_VAR_web:
-    container_name: CONTAINER_NAME_VAR_web
-    hostname: USER_VAR-web
+  SERVICE_NAME_VAR:
+    container_name: CONTAINER_NAME_VAR
+    hostname: USER_VAR
     domainname: DOMAIN_VAR
     build:
       context: .
