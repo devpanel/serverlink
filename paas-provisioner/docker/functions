@@ -16,6 +16,7 @@ create_local_config()
     else
       clone_state="false"
     fi
+    if [ "${db_type}" == "" -a "${rds_endpoint_address}" == "" ]; then db_type="mysql"; fi
     docker_get_ids_and_names_of_containers
     ini_contents="\
 app.name                  = ${vhost}
@@ -135,7 +136,7 @@ server {
 EOF
 
   # handle additional domain
-  if [ ! ${handler_options} == "convert" -o ! ${handler_options} == "" ]; then
+  if [ ! "${handler_options}" == "convert" -o ! "${handler_options}" == "" ]; then
     additional_domain=`echo ${handler_options}|awk '{print $NF}'`
     if [ "${add_domain_to_nginx_config}" == "true" ]; then
       cat << EOF > /tmp/${additional_domain}.conf
@@ -550,78 +551,36 @@ operation_stop()
 
 operation_clone()
 {
-  source_vhost=${source_domain}
-  target_vhost=${domain}
+  target_domain=${domain}
+  target_vhost=`echo "${target_domain}" | awk -F'[.]' '{print $1}'`
+  source_vhost=`echo "${source_domain}" | awk -F'[.]' '{print $1}'`
   domain="$source_domain"
   read_local_config
   if [ "$app_hosting" == "docker" ]; then
     # parse variables
-    source_user=`echo "${source_vhost}" | awk -F'[.]' '{print $1}'`
-    source_domain_name=`echo "${source_vhost}" | awk -F"${source_user}." '{print $2}'`
-    user=`echo "${target_vhost}" | awk -F'[.]' '{print $1}'`
-    domain_name=`echo "${target_vhost}" | awk -F"${user}." '{print $2}'`
     docker_get_ids_and_names_of_containers
     # save current state of containers as images
-    docker commit ${CONTAINER_WEB_NAME} ${target_vhost}
+    docker commit ${CONTAINER_WEB_NAME} ${target_vhost}.${hostname_fqdn}
     # get ids of images
-    IMAGE_WEB_NAME=`docker images|grep ${target_vhost}|awk '{print $1}'`
-    docker run -d --name=${target_vhost} ${IMAGE_WEB_NAME}
-    while [ `docker ps|grep ${target_vhost}|wc -l` -eq 0 ]; do
+    IMAGE_WEB_NAME=`docker images|grep ${target_vhost}.${hostname_fqdn}|awk '{print $1}'`
+    docker run -d --name=${target_vhost}.${hostname_fqdn} ${IMAGE_WEB_NAME}
+    while [ `docker ps|grep ${target_vhost}.${hostname_fqdn}|wc -l` -eq 0 ]; do
       echo "WEB container is not running. Waiting its start."
       sleep 1
     done
     # get destination containers ids
-    CONTAINER_WEB_ID=`docker ps|grep ${user}|awk '{print $1}'`
+    CONTAINER_WEB_ID=`docker ps|grep ${target_vhost}|awk '{print $1}'`
 
-    # do symbolic links for old paths
-    docker exec ${CONTAINER_WEB_ID} ln -s /home/clients/websites/w_${source_user} /home/clients/websites/w_${user}
-    docker exec ${CONTAINER_WEB_ID} ln -s /home/clients/databases/b_${source_user} /home/clients/databases/b_${user}
-    docker exec ${CONTAINER_WEB_ID} ln -s /etc/apache2/webenabled-logs/virtwww/w_${source_user} /etc/apache2/webenabled-logs/virtwww/w_${user}
-    docker exec ${CONTAINER_WEB_ID} mv /var/log/apache2/virtwww/w_${source_user} /var/log/apache2/virtwww/w_${user}
-    docker exec ${CONTAINER_WEB_ID} mv /var/log/apache2/virtwww/w_${user}/${source_user}-access_log /var/log/apache2/virtwww/w_${user}/${user}-access_log
-    docker exec ${CONTAINER_WEB_ID} mv /var/log/apache2/virtwww/w_${user}/${source_user}-error_log /var/log/apache2/virtwww/w_${user}/${user}-error_log
-
-    USER=`awk -F'.' '{print $1}' <<< "$source_vhost"`
-    DOMAIN=${source_domain_name}
-    DST_USER=${user}
-    DST_DOMAIN=${domain_name}
-    # update container's apache2 config with new URL
-    docker exec ${CONTAINER_WEB_ID} sed -i "s/${USER}/${DST_USER}/" /etc/apache2/devpanel-virtwww/w_${USER}.conf
-    docker exec ${CONTAINER_WEB_ID} sed -i "s/SuexecUserGroup w_${DST_USER}/SuexecUserGroup w_${USER}/" /etc/apache2/devpanel-virtwww/w_${USER}.conf
-    docker exec ${CONTAINER_WEB_ID} sed -i "s/${USER}-access_log/${DST_USER}-access_log/" /etc/apache2/devpanel-virtwww/w_${USER}.conf
-    docker exec ${CONTAINER_WEB_ID} sed -i "s/${USER}-error_log/${DST_USER}-error_log/" /etc/apache2/devpanel-virtwww/w_${USER}.conf
     docker exec -d ${CONTAINER_WEB_ID} /bin/sh -c "/tmp/startup.sh"
-    docker exec ${CONTAINER_WEB_ID} service apache2 restart
-
-    # replace db data with new URL
-    app="wordpress"
-    PORT=4000
-    LOGIN=`docker exec ${CONTAINER_WEB_ID} grep w_ /home/clients/websites/w_${USER}/.mysql.passwd|tail -1|awk -F ":" '{print $1}'`
-    PASSWORD=`docker exec ${CONTAINER_WEB_ID} grep w_ /home/clients/websites/w_${USER}/.mysql.passwd|tail -1|awk -F ":" '{print $2}'`
-    while [ `docker exec ${CONTAINER_WEB_ID} /bin/sh -c "netstat -ltpn|grep 4000|wc -l"` -eq 0 ]; do
-      echo "DB is not running. Waiting its start."
-      sleep 1
-      docker exec ${CONTAINER_WEB_ID} mysql ${app} -h localhost -P ${PORT} -u ${LOGIN} --password=${PASSWORD} --socket=/home/clients/databases/b_${USER}/mysql/mysql.sock -e \
-        "UPDATE wp_options SET option_value = replace(option_value, 'http://${USER}.${DOMAIN}', 'http://${DST_USER}.${DST_DOMAIN}');"
-    done
-    docker exec ${CONTAINER_WEB_ID} mysql ${app} -h localhost -P ${PORT} -u ${LOGIN} --password=${PASSWORD} --socket=/home/clients/databases/b_${USER}/mysql/mysql.sock -e \
-      "UPDATE wp_options SET option_value = replace(option_value, 'http://${USER}.${DOMAIN}', 'http://${DST_USER}.${DST_DOMAIN}');"
-
-    # check if it was replaced correctly
-    if [ `docker exec ${CONTAINER_WEB_ID} mysql ${app} -h localhost -P ${PORT} -u ${LOGIN} --password=${PASSWORD} --socket=/home/clients/databases/b_${USER}/mysql/mysql.sock -e \
-      "select * from wp_options;"|grep -c ${DST_USER}` -eq 2 ]; then
-        echo "DB cloned correctly."
-    else
-        echo "Error: URL was not replaced correctly in MySQL."
-        exit 1
-    fi
+    docker exec -t ${CONTAINER_WEB_ID} ${sys_dir}/libexec/clone-vhost-local "$source_vhost" "$target_vhost"
+    docker exec -t ${CONTAINER_WEB_ID} ${sys_dir}/libexec/remove-vhost "$source_vhost"
 
     # update host's nginx config with new IP of cloned web container
-    domain="${target_vhost}"
+    domain="${target_vhost}.${hostname_fqdn}"
     app_clone="true"
-    app_container_name="${target_vhost}"
+    app_container_name="${target_vhost}.${hostname_fqdn}"
     create_local_config
-    update_nginx_config ${target_vhost}
+    update_nginx_config
   elif [ "$app_hosting" == "local" ]; then
     # clone_vhost_local||libexec/clone-vhost-local|%source_vhost% %target_vhost%|
     ${sys_dir}/libexec/clone-vhost-local "$source_vhost" "$target_vhost"

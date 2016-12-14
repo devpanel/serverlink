@@ -12,7 +12,7 @@ Options:
                                     status - to show status of container with the application
                                     stop - to stop container with the application
                                     clone - to copy container with new names and replace configuration with new URL
-                                      has option to convert the application from local to docker
+                                      has option to convert the application from local to docker and vice versa
                                     backup - to save current state of existing container
                                     restore - to restore container to previous state
                                     destroy - to remove container with webapp
