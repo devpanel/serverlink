@@ -162,8 +162,18 @@ EOF
   restart_or_reload_nginx
 }
 
+remove_incorrect_configs()
+{
+  for conf in $(ls -l /etc/nginx/sites-enabled/*.conf|awk '{print $NF}'); do
+    if [ $(grep -c 'http://172.' ${conf}) -gt 1 ]; then
+      rm -f conf
+    fi
+  done
+}
+
 restart_or_reload_nginx()
 {
+  remove_incorrect_configs
   # The hash bucket size parameter is aligned to the size that is a multiple of the processor’s cache line size.
   # This speeds up key search in a hash on modern processors by reducing the number of memory accesses.
   # If hash bucket size is equal to one processor’s cache line size then the number of memory accesses during the key search
