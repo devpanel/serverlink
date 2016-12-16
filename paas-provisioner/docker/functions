@@ -4,26 +4,36 @@ create_local_config()
   if [ ! -d ${sys_dir}/config/apps ];then
     ${sudo} mkdir -p ${sys_dir}/config/apps
   fi
+
   vhost=`echo "${domain}" | awk -F'[.]' '{print $1}'`
-  # if [ "$operation" == "start" ]; then vhost="${orig_domain}"; fi
-  if [ "$host_type" == "docker" -o "$app_hosting" == "docker" ]; then
-    # set clone state: true of false
-    if [ "$operation" == "clone" ]; then
-      clone_state="true"
-      source_vhost="${target_vhost}"
-    elif [ "${app_clone}" == "true" ]; then
-      clone_state="true"
-    else
-      clone_state="false"
-    fi
-    if [ "${db_type}" == "" -a "${rds_endpoint_address}" == "" ]; then db_type="mysql"; fi
-    docker_get_ids_and_names_of_containers
-    ini_contents="\
+  if [ "${db_type}" == "" -a "${rds_endpoint_address}" == "" ]; then db_type="mysql"; fi
+  if [ "$operation" == "clone" ]; then
+    clone_state="true"
+    source_vhost="${target_vhost}"
+  elif [ "${app_clone}" == "true" ]; then
+    clone_state="true"
+  else
+    clone_state="false"
+  fi
+  ini_contents="\
 app.name                  = ${vhost}
-app.hosting               = docker
+app.type                  = ${app_type}
 app.db_type               = ${db_type}
-app.container_name        = ${CONTAINER_WEB_NAME}
 app.clone                 = ${clone_state}
+"
+  if [ "$host_type" == "docker" -o "$app_hosting" == "docker" ]; then
+    docker_get_ids_and_names_of_containers
+    ini_contents+="\
+app.hosting               = docker
+app.container_name        = ${CONTAINER_WEB_NAME}
+"
+  else
+    ini_contents+="\
+app.hosting               = local
+"
+  fi
+  if [ ! "${db_type}" == "mysql" ]; then
+    ini_contents+="\
 aws.access_key_id         = ${aws_access_key_id}
 aws.secret_access_key     = ${aws_secret_access_key}
 aws.default_region        = ${aws_default_region}
@@ -31,13 +41,8 @@ rds.endpoint_address      = ${rds_endpoint_address}
 rds.endpoint_port         = ${rds_endpoint_port}
 rds.vpcsecuritygroupid    = ${rds_vpcsecuritygroupid}
 "
-  else
-    ini_contents="\
-app.name           = ${vhost}
-app.hosting        = local
-app.clone          = ${clone_state}
-"
   fi
+
   echo "$ini_contents" | ${sudo} ${sys_dir}/bin/update-ini-file -q -c ${sys_dir}/config/apps/${vhost}.ini
 }
 
@@ -53,10 +58,13 @@ read_local_config()
   else
     app_name=`ini_section_get_key_value ${sys_dir}/config/apps/${vhost}.ini app name`
     app_hosting=`ini_section_get_key_value ${sys_dir}/config/apps/${vhost}.ini app hosting`
+    app_type=`ini_section_get_key_value ${sys_dir}/config/apps/${vhost}.ini app type`
+    app_db_type=`ini_section_get_key_value ${sys_dir}/config/apps/${vhost}.ini app db_type`
     app_clone=`ini_section_get_key_value ${sys_dir}/config/apps/${vhost}.ini app clone`
     if [ "$app_hosting" == "docker" ]; then
       app_container_name=`ini_section_get_key_value ${sys_dir}/config/apps/${vhost}.ini app container_name`
-      app_db_type=`ini_section_get_key_value ${sys_dir}/config/apps/${vhost}.ini app db_type`
+    fi
+    if [ ! "$app_db_type" == "mysql" ]; then
       aws_access_key_id=`ini_section_get_key_value ${sys_dir}/config/apps/${vhost}.ini aws access_key_id`
       aws_secret_access_key=`ini_section_get_key_value ${sys_dir}/config/apps/${vhost}.ini aws secret_access_key`
       aws_default_region=`ini_section_get_key_value ${sys_dir}/config/apps/${vhost}.ini aws default_region`
@@ -754,5 +762,48 @@ operation_convert()
     ${sudo} rm -f ${self_dir}/original/${app_name}_export_for_convert_ops.tgz
     docker exec -t ${app_container_name} rm -f ${sys_data_dir}/vhost_archives/${app_name}_export_for_convert_ops.tgz
   fi
+}
+
+operation_get_app_info()
+{
+  # get variables
+  read_local_config
+  if [ "$app_hosting" == "docker" ]; then
+    app_status=$(if [ `docker ps|grep -c ${app_container_name}` -gt 0 ]; then echo running; else echo stopped; fi)
+  fi
+
+  common_available_tools=''
+  common_available_tools+='app_available_tools[]="clear##cache" '
+  common_available_tools+='app_available_tools[]="reset##application##admin##password" '
+  common_available_tools+='app_available_tools[]="reset##application##admin##email" '
+  common_available_tools+='app_available_tools[]="manage##cron##jobs" '
+  common_available_tools+='app_available_tools[]="file##explorer" '
+  common_available_tools+='app_available_tools[]="phpMyAdmin" '
+  common_available_tools+='app_available_tools[]="clone##/##duplicate##this##app" '
+  common_available_tools+='app_available_tools[]="backup##/##snapshot##this##app##(code,##files##and##database)" '
+  common_available_tools+='app_available_tools[]="restore##from##backups" '
+  common_available_tools+='app_available_tools[]="automated##backups" '
+
+  case "$app_type" in
+    wordpress)
+      app_available_tools=$common_available_tools
+      app_available_tools+='app_available_tools[]="repair##database" '
+    ;;
+    drupal)
+      app_available_tools=$common_available_tools
+      app_available_tools+='app_available_tools[]="repair##database" '
+    ;;
+    *)
+      app_available_tools=$common_available_tools
+    ;;
+  esac
+  # JSON output
+  jo -p \
+    app_name=$app_name \
+    app_hosting=$app_hosting \
+    app_type=$app_type \
+    app_db_type=$app_db_type \
+    app_status=$app_status \
+    $(echo ${app_available_tools})|sed 's/##/ /g'
 }
 

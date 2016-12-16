@@ -207,6 +207,19 @@ if [ ! -f /usr/bin/jq ]; then
   ${sudo} ${installation_tool} jq
 fi
 
+# check for jo installation
+if [ ! -f /usr/bin/jo ]; then
+  if [ -f /usr/bin/apt-get ]; then
+    ${sudo} apt-add-repository ppa:duggan/jo --yes
+    ${sudo} apt-get update -q
+    ${sudo} apt-get install jo
+  else
+    wget https://github.com/jpmens/jo/archive/master.zip && unzip master.zip && cd jo-master && \
+    autoreconf -i && ./configure --prefix=/usr && make check && make install && \
+    cd ../ && rm -fr jo-master master.zip 
+  fi
+fi
+
 
 
 # main logic
@@ -262,8 +275,7 @@ elif [ "$operation" == "pentest" ]; then
   operation_pentest
 
 elif [ "$domain" -a "$read_config" ]; then
-  read_local_config
-  echo "$app_hosting"
+  operation_get_app_info
 
 else
   echo "Error: Unknown arguments." 1>&2
