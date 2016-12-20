@@ -11,7 +11,7 @@ Options:
                                     start - to build and/or start container with the application
                                     status - to show status of container with the application
                                     stop - to stop container with the application
-                                    clone - to copy container with new names and replace configuration with new URL
+                                    clone - to copy container with new names and replace configuration with new URL,
                                       has option to convert the application from local to docker and vice versa
                                     backup - to save current state of existing container
                                     restore - to restore container to previous state
@@ -164,7 +164,7 @@ if [ `ip ad sh|grep -c ' eth'` -gt '0' ]; then
 else
   vps_ip=`ip ad sh|grep ' ens'|tail -1|awk '{print $2}'|awk -F'/' '{print $1}'`
 fi
-hostname_fqdn=`hostname -f`
+hostname_fqdn=`hostname`
 
 
 # check for Docker installation
@@ -225,12 +225,12 @@ fi
 # main logic
 if [ "$app" == "zabbix" -a "$operation" == "start" -a "$domain" -a "$host_type" == "docker" ]; then
   docker_build_or_pull_and_tag zabbix
-  docker run -d -it --name ${domain}_${app}_web devpanel_zabbix:latest
+  docker run -d -it --name ${domain}_${app} devpanel_zabbix:latest
   update_nginx_config
 
 elif [ "$app" == "hippo" -a "$operation" == "start" -a "$domain" -a "$host_type" == "docker" ]; then
   docker_build_or_pull_and_tag hippo
-  docker run -d -it --name ${domain}_${app}_web devpanel_hippo:latest
+  docker run -d -it --name ${domain}_${app} devpanel_hippo:latest
   update_nginx_config
 
 # create app

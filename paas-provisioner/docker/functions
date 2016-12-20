@@ -6,6 +6,7 @@ create_local_config()
   fi
 
   vhost=`echo "${domain}" | awk -F'[.]' '{print $1}'`
+  if [ -z "${app_type}" ]; then app_type="${app}"; fi
   if [ "${db_type}" == "" -a "${rds_endpoint_address}" == "" ]; then db_type="mysql"; fi
   if [ "$operation" == "clone" ]; then
     clone_state="true"
@@ -205,7 +206,8 @@ patch_definition_files_and_build()
   source_user=`echo "${source_domain}" | awk -F'[.]' '{print $1}'`
   source_domain_name=`echo "${source_domain}" | awk -F"${source_user}." '{print $2}'`
   user=`echo "${domain}" | awk -F'[.]' '{print $1}'`
-  domain_name=`echo "${domain}" | awk -F"${user}." '{print $2}'`
+  domain_name=${hostname_fqdn}
+  domain=${user}.${domain_name}
 
   local compose_file="$self_dir/original/docker-compose.yml"
   local template_file="$compose_file.orig"
@@ -214,7 +216,6 @@ patch_definition_files_and_build()
   cp -f  "$template_file" "$compose_file"
 
   if [ "${operation}" == "clone" -a "${handler_options}" == "convert" ]; then
-    domain_name=${hostname_fqdn}
     domain=${user}.${hostname_fqdn}
     sed_str="\
       s/Dockerfile-web/Dockerfile-convert/;
@@ -228,9 +229,9 @@ patch_definition_files_and_build()
       s/APP_VAR/${app_name}/;"
   else
     sed_str="\
-      s/SERVICE_NAME_VAR/${domain}_${app}/;
-      s/CONTAINER_NAME_VAR/${domain}_${app}/;
-      s/NETWORK_NAME_VAR/${domain}_${app}/;
+      s/SERVICE_NAME_VAR/${domain}/;
+      s/CONTAINER_NAME_VAR/${domain}/;
+      s/NETWORK_NAME_VAR/${domain}/;
       s/USER_VAR/${user}/;
       s/DOMAIN_VAR/${domain_name}/;
       s/SRC_USER_VAR/${source_user}/;
@@ -238,7 +239,7 @@ patch_definition_files_and_build()
       s/APP_VAR/${app}/;"
 
     if [ "$app" == "wordpress" ]; then
-      sed_str+="s/SEEDAPP_ARCHIVE_VAR/${app}-v4.tgz/;"
+      sed_str+="s/SEEDAPP_ARCHIVE_VAR/${app}-v4.1.tgz/;"
     elif [ "$app" == "drupal" ]; then
       sed_str+="s/SEEDAPP_ARCHIVE_VAR/${app}-v7.tgz/;"
     fi
@@ -521,7 +522,6 @@ operation_create()
   else
     show_help
   fi
-  app_type=${app}
   create_local_config
 }
 
@@ -617,9 +617,6 @@ operation_backup()
     docker_get_ids_and_names_of_containers
 
     docker exec ${CONTAINER_WEB_ID} ${sys_dir}/libexec/archive-vhost "$vhost" "$backup_name"
-
-    # # save current state of containers as images
-    # docker commit ${CONTAINER_WEB_NAME} ${domain}_${backup_name}_bkp_web
   elif [ "$app_hosting" == "local" ]; then
     # archive_vhost||libexec/archive-vhost|%vhost% %filename%|
     ${sys_dir}/libexec/archive-vhost "$vhost" "$backup_name"
@@ -654,7 +651,7 @@ operation_restore()
     # remove source containers to avoid name conflicts
     docker rm -f ${CONTAINER_WEB_ID}
     # get ids of images
-    IMAGE_WEB_NAME=`docker images|grep ${domain}_${restore_name}_bkp_web|awk '{print $1}'`
+    IMAGE_WEB_NAME=`docker images|grep ${domain}_${restore_name}_bkp|awk '{print $1}'`
     # start backed up containers
     docker run -d --name=${CONTAINER_WEB_NAME} ${IMAGE_WEB_NAME}
     while [ `docker ps|grep ${domain}|wc -l` -eq 0 ]; do
