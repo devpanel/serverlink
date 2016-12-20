@@ -134,9 +134,11 @@ case $i in
     shift # past argument=value
     ;;
     *)
-    echo "Unknown arguments: ${i}"
-    show_help
-          # unknown option
+    unknown_args="${i#*=}"
+    if [ ! "${unknown_args}" == "-p" ]; then
+      echo "Unknown arguments: ${i}"
+      show_help
+    fi
     ;;
 esac
 done

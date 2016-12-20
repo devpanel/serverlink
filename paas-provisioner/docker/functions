@@ -600,7 +600,11 @@ operation_clone()
     update_nginx_config
   elif [ "$app_hosting" == "local" ]; then
     # clone_vhost_local||libexec/clone-vhost-local|%source_vhost% %target_vhost%|
-    ${sys_dir}/libexec/clone-vhost-local "$source_vhost" "$target_vhost"
+    if [ "${unknown_args}" == "-p" ]; then
+      ${sys_dir}/libexec/clone-vhost-local -p "$source_vhost" "$target_vhost"
+    else
+      ${sys_dir}/libexec/clone-vhost-local "$source_vhost" "$target_vhost"
+    fi
     create_local_config
     update_nginx_config ${target_vhost}
   else
