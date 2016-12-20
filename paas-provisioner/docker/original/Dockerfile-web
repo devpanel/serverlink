@@ -1,5 +1,5 @@
 FROM devpanel_cache:latest
-EXPOSE 80 4000
+EXPOSE 80
 
 ARG USER=$USER
 ARG APP=$APP

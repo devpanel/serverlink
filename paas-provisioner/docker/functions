@@ -96,7 +96,7 @@ update_nginx_config()
 {
   # get ip address of web container
   if [ "$operation" == "start" ]; then
-    container_name="${domain}_${app}_web"
+    container_name="${domain}"
   elif [ "$operation" == "restore" ]; then
     container_name=$CONTAINER_WEB_NAME
   fi
@@ -255,10 +255,8 @@ docker_get_ids_and_names_of_containers()
 {
   if   [ "$operation" == "clone" ]; then
     CONTAINER_WEB_ID=`docker ps|grep ${source_vhost}|awk '{print $1}'`
-  elif [ "$operation" == "backup" -o "$operation" == "list_backups" -o "$operation" == "status" -o "$operation" == "stop" -o "$operation" == "scan" -o "$operation" == "convert" ]; then
-    CONTAINER_WEB_ID=`docker ps|grep ${domain}|awk '{print $1}'`
   else
-    CONTAINER_WEB_ID=`docker ps|grep ${domain}_${app}_web|awk '{print $1}'`
+    CONTAINER_WEB_ID=`docker ps|grep ${domain}|awk '{print $1}'`
   fi
   if [ ${CONTAINER_WEB_ID} ]; then CONTAINER_WEB_NAME=`docker inspect -f '{{.Name}}' ${CONTAINER_WEB_ID}|awk -F'/' '{print $2}'`; fi
 }
@@ -523,6 +521,7 @@ operation_create()
   else
     show_help
   fi
+  app_type=${app}
   create_local_config
 }
 
