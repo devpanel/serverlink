@@ -106,16 +106,15 @@ update_nginx_config()
   if [ "$operation" == "clone" ]; then
     domain="${target_vhost}.${hostname_fqdn}"
   fi
-  if [ "$host_type" == "docker" -o "$app_hosting" == "docker" ]; then
-    if [ "$app_container_name" ]; then container_name="$app_container_name"; fi
-    container_ip_address=`docker inspect -f '{{.Name}} - {{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' $(docker ps -aq)|grep "${container_name}"|awk -F" - " '{print $2}'`
-  fi
   if [ "$app" == "hippo" ]; then
     WEB_PORT=8080
   else
     WEB_PORT=80
   fi
-  if [ "${app_hosting}" == "local" ]; then
+  if [ "$host_type" == "docker" -o "$app_hosting" == "docker" ]; then
+    if [ "$app_container_name" ]; then container_name="$app_container_name"; fi
+    container_ip_address=`docker inspect -f '{{.Name}} - {{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' $(docker ps -aq)|grep "${container_name}"|awk -F" - " '{print $2}'`
+  elif [ "$host_type" == "local" -o "$app_hosting" == "local" ]; then
     container_ip_address="localhost"
     WEB_PORT=8080
   fi
@@ -176,7 +175,7 @@ EOF
 remove_incorrect_configs()
 {
   ${sudo} rm -f conf /etc/nginx/sites-enabled/*..conf
-  for conf in $(ls -l -d /etc/nginx/sites-enabled/??????.conf|awk '{print $NF}'); do ${sudo} rm -f ${conf}; done
+  ${sudo} rm -f /etc/nginx/sites-enabled/??????.conf
   for conf in $(ls -l /etc/nginx/sites-enabled/*.conf|awk '{print $NF}'); do
     if [ $(grep -c 'http://172.' ${conf}) -gt 1 ]; then
       ${sudo} rm -f ${conf}
@@ -241,12 +240,6 @@ patch_definition_files_and_build()
       s/SRC_USER_VAR/${source_user}/;
       s/SRC_DOMAIN_VAR/${source_domain_name}/;
       s/APP_VAR/${app}/;"
-
-    if [ "$app" == "wordpress" ]; then
-      sed_str+="s/SEEDAPP_ARCHIVE_VAR/${app}-v4.1.tgz/;"
-    elif [ "$app" == "drupal" ]; then
-      sed_str+="s/SEEDAPP_ARCHIVE_VAR/${app}-v7.tgz/;"
-    fi
   fi
 
   sed -i "$sed_str" "$compose_file"
@@ -503,24 +496,31 @@ operation_create()
       docker exec ${CONTAINER_WEB_ID} killall mysqld
     fi
   elif [ "$host_type" == "local" ]; then
-    #
-    # will be changed to parse /apps.txt in next update
-    #
-    if [ "$app" == "wordpress" ]; then
-      app_arch="wordpress-v4.tgz"
-    elif [ "$app" == "drupal" ]; then
-      app_arch="drupal-v7.tgz"
-    else
-      echo "App not supported."
-      exit 1
-    fi
+    vhost=`echo "${domain}" | awk -F'[.]' '{print $1}'`
+    domain_name=`echo "${domain}" | awk -F"${vhost}." '{print $2}'`
+    ${sudo} ${sys_dir}/libexec/config-vhost-names-default ${domain_name}
+
+    # get seedapps
+    case "$app" in
+      wordpress)
+        app_arch="wordpress-v4.1.tgz"
+      ;;
+      drupal)
+        app_arch="drupal-v7.50.tgz"
+      ;;
+      magento)
+        app_arch="mag1800.tgz"
+      ;;
+      *)
+        echo "App not supported."
+        exit 1
+      ;;
+    esac
     # check for downloaded app
     if [ ! -f ${sys_dir}/${app}/${app_arch} ]; then
       ${sudo} mkdir -p ${sys_dir}/${app} && cd ${sys_dir}/${app} && wget https://www.webenabled.com/seedapps/${app_arch} && tar zxvf ${app_arch}
     fi
-    vhost=`echo "${domain}" | awk -F'[.]' '{print $1}'`
-    domain_name=`echo "${domain}" | awk -F"${vhost}." '{print $2}'`
-    ${sudo} ${sys_dir}/libexec/config-vhost-names-default ${domain_name}
+
     ${sudo} ${sys_dir}/libexec/restore-vhost -F ${vhost} ${sys_dir}/${app}
     detect_running_apache_and_patch_configs
   else
