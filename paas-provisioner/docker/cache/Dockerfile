@@ -23,4 +23,6 @@ RUN apt-get install --force-yes -y quota
 
 # get seedapps
 RUN mkdir /opt/webenabled/wordpress && cd /opt/webenabled/wordpress && wget https://www.webenabled.com/seedapps/wordpress-v4.1.tgz && tar zxvf wordpress-v4.1.tgz
-RUN mkdir /opt/webenabled/drupal && cd /opt/webenabled/drupal && wget https://www.webenabled.com/seedapps/drupal-v7.tgz && tar zxvf drupal-v7.tgz
+RUN mkdir /opt/webenabled/drupal && cd /opt/webenabled/drupal && wget http://www.webenabled.com/seedapps/drupal-v7.50.tgz && tar zxvf drupal-v7.50.tgz
+RUN mkdir /opt/webenabled/drupal8 && cd /opt/webenabled/drupal8 && wget http://www.webenabled.com/seedapps/drupal-v8.1.8.tgz && tar zxvf drupal-v8.1.8.tgz
+RUN mkdir /opt/webenabled/magento && cd /opt/webenabled/magento && wget http://www.webenabled.com/seedapps/mag1800.tgz && tar zxvf mag1800.tgz

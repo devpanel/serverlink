@@ -10,7 +10,8 @@ create_local_config()
   if [ "${db_type}" == "" -a "${rds_endpoint_address}" == "" ]; then db_type="mysql"; fi
   if [ "$operation" == "clone" ]; then
     clone_state="true"
-    source_vhost="${target_vhost}"
+    app_type=`ini_section_get_key_value ${sys_dir}/config/apps/${vhost}.ini app type`
+    vhost="${target_vhost}"
   elif [ "${app_clone}" == "true" ]; then
     clone_state="true"
   else
@@ -78,10 +79,11 @@ read_local_config()
 
 create_nginx_config()
 {
+if [ "${serveraliases}" == "" ]; then serveraliases="${servername}"; fi
 cat << EOF > /tmp/"${servername}".conf
 server {
   listen       80;
-  server_name  ${servername}${serveraliases};
+  server_name  ${serveraliases};
   location / {
     proxy_set_header Host \$host;
     proxy_pass http://localhost:8080;
@@ -173,9 +175,11 @@ EOF
 
 remove_incorrect_configs()
 {
+  ${sudo} rm -f conf /etc/nginx/sites-enabled/*..conf
+  for conf in $(ls -l -d /etc/nginx/sites-enabled/??????.conf|awk '{print $NF}'); do ${sudo} rm -f ${conf}; done
   for conf in $(ls -l /etc/nginx/sites-enabled/*.conf|awk '{print $NF}'); do
     if [ $(grep -c 'http://172.' ${conf}) -gt 1 ]; then
-      rm -f conf
+      ${sudo} rm -f ${conf}
     fi
   done
 }
