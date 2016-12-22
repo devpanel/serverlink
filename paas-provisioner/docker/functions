@@ -297,6 +297,12 @@ docker_build_or_pull_and_tag()
   fi
 }
 
+update_apache_config()
+{
+  sed -i 's/:80/:8080/' /etc/apache2/devpanel-virtwww/w_${target_vhost}.conf
+  ${sudo} service apache2 reload
+}
+
 detect_running_apache_and_patch_configs()
 {
   if [ `ps aux|grep apache2|wc -l` -gt 0 ]; then
@@ -610,6 +616,7 @@ operation_clone()
       ${sys_dir}/libexec/clone-vhost-local "$source_vhost" "$target_vhost"
     fi
     create_local_config
+    update_apache_config ${target_vhost}
     update_nginx_config ${target_vhost}
   else
     show_help
