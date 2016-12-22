@@ -599,7 +599,7 @@ operation_clone()
     CONTAINER_WEB_ID=`docker ps|grep ${target_vhost}|awk '{print $1}'`
 
     docker exec -d ${CONTAINER_WEB_ID} /bin/sh -c "/tmp/startup.sh"
-    docker exec -t ${CONTAINER_WEB_ID} ${sys_dir}/libexec/clone-vhost-local "$source_vhost" "$target_vhost"
+    docker exec -t ${CONTAINER_WEB_ID} ${sys_dir}/libexec/clone-vhost-local "${known_args}" "$source_vhost" "$target_vhost"
     docker exec -t ${CONTAINER_WEB_ID} ${sys_dir}/libexec/remove-vhost "$source_vhost"
 
     # update host's nginx config with new IP of cloned web container
@@ -609,12 +609,7 @@ operation_clone()
     create_local_config
     update_nginx_config
   elif [ "$app_hosting" == "local" ]; then
-    # clone_vhost_local||libexec/clone-vhost-local|%source_vhost% %target_vhost%|
-    if [ "${unknown_args}" == "-p" ]; then
-      ${sys_dir}/libexec/clone-vhost-local -p "$source_vhost" "$target_vhost"
-    else
-      ${sys_dir}/libexec/clone-vhost-local "$source_vhost" "$target_vhost"
-    fi
+    ${sys_dir}/libexec/clone-vhost-local "${known_args}" "$source_vhost" "$target_vhost"
     create_local_config
     update_apache_config ${target_vhost}
     update_nginx_config ${target_vhost}
