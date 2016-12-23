@@ -10,7 +10,7 @@ create_local_config()
   if [ "${db_type}" == "" -a "${rds_endpoint_address}" == "" ]; then db_type="mysql"; fi
   if [ "$operation" == "clone" ]; then
     clone_state="true"
-    app_type=`ini_section_get_key_value ${sys_dir}/config/apps/${vhost}.ini app type`
+    app_type=`ini_section_get_key_value ${sys_dir}/config/apps/${source_vhost}.ini app type`
     vhost="${target_vhost}"
   elif [ "${app_clone}" == "true" ]; then
     clone_state="true"
@@ -251,10 +251,10 @@ patch_definition_files_and_build()
 
 docker_get_ids_and_names_of_containers()
 {
-  if   [ "$operation" == "clone" ]; then
-    CONTAINER_WEB_ID=`docker ps|grep ${source_vhost}|awk '{print $1}'`
-  else
+  if [ -z ${1} ]; then
     CONTAINER_WEB_ID=`docker ps|grep ${domain}|awk '{print $1}'`
+  else
+    CONTAINER_WEB_ID=`docker ps|grep ${1}|awk '{print $1}'`
   fi
   if [ ${CONTAINER_WEB_ID} ]; then CONTAINER_WEB_NAME=`docker inspect -f '{{.Name}}' ${CONTAINER_WEB_ID}|awk -F'/' '{print $2}'`; fi
 }
@@ -587,8 +587,8 @@ operation_clone()
   domain="$source_domain"
   read_local_config
   if [ "$app_hosting" == "docker" ]; then
-    # parse variables
-    docker_get_ids_and_names_of_containers
+    # get source container id
+    docker_get_ids_and_names_of_containers ${source_vhost}
     # save current state of containers as images
     docker commit ${CONTAINER_WEB_NAME} ${target_vhost}.${hostname_fqdn}
     # get ids of images
@@ -598,12 +598,22 @@ operation_clone()
       echo "WEB container is not running. Waiting its start."
       sleep 1
     done
-    # get destination containers ids
-    CONTAINER_WEB_ID=`docker ps|grep ${target_vhost}|awk '{print $1}'`
 
-    docker exec -d ${CONTAINER_WEB_ID} /bin/sh -c "/tmp/startup.sh"
+    # get destination container id
+    docker_get_ids_and_names_of_containers ${target_vhost}
+
+    while [ `docker exec ${CONTAINER_WEB_ID} pgrep -c mysqld` -eq 0 ]; do
+      echo "Source DB is not running. Waiting its start."
+      docker exec -d ${CONTAINER_WEB_ID} mysqld --datadir=/home/clients/databases/b_${source_vhost}/mysql --user=b_${source_vhost} --port=4000 --socket=/home/clients/databases/b_${source_vhost}/mysql/mysql.sock
+      sleep 1
+    done
     docker exec -t ${CONTAINER_WEB_ID} ${sys_dir}/libexec/clone-vhost-local "${known_args}" "$source_vhost" "$target_vhost"
     docker exec -t ${CONTAINER_WEB_ID} ${sys_dir}/libexec/remove-vhost "$source_vhost"
+    while [ `docker exec ${CONTAINER_WEB_ID} pgrep -c mysqld` -eq 0 ]; do
+      echo "Target DB is not running. Waiting its start."
+      docker exec -d ${CONTAINER_WEB_ID} mysqld --datadir=/home/clients/databases/b_${target_vhost}/mysql --user=b_${target_vhost} --port=4000 --socket=/home/clients/databases/b_${target_vhost}/mysql/mysql.sock
+      sleep 1
+    done
 
     # update host's nginx config with new IP of cloned web container
     domain="${target_vhost}.${hostname_fqdn}"

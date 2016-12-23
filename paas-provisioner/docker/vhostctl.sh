@@ -218,12 +218,31 @@ if [ ! -f /usr/bin/jo ]; then
   if [ -f /usr/bin/apt-get ]; then
     ${sudo} apt-add-repository ppa:duggan/jo --yes
     ${sudo} apt-get update -q
-    ${sudo} apt-get install jo
+    ${sudo} apt-get install -y jo
   else
     wget https://github.com/jpmens/jo/archive/master.zip && unzip master.zip && cd jo-master && \
     autoreconf -i && ./configure --prefix=/usr && make check && make install && \
     cd ../ && rm -fr jo-master master.zip 
   fi
+fi
+
+# check for swap
+if [ `free -m|grep Mem|awk '{print $4}'` -lt 130 -a `free -m|grep Swap|awk '{print $4}'` -eq 0 ]; then
+  if [ `df --output=avail /|tail -1` -gt 1024102 ]; then
+    if [ -f /swap ]; then
+      swapon /swap
+    else
+      dd if=/dev/zero of=/swap bs=1024 count=1024102 && mkswap /swap && swapon /swap
+    fi
+  fi
+fi
+# check for available memory
+available_mem=`free -m|grep Mem|awk '{print $4}'`
+available_swap=`free -m|grep Swap|awk '{print $4}'`
+available_memory=`echo "${available_mem} + ${available_swap}" | bc`
+if [ ${available_memory} -lt 130 ]; then
+  echo "Error: Not enough memory!" 1>&2
+  exit 1
 fi
 
 
