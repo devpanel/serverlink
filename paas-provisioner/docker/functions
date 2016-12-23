@@ -492,7 +492,7 @@ operation_create()
       # write db endpoint into webapp's config
       if [ "${app}" == "wordpress" ]; then
         docker exec ${CONTAINER_WEB_ID} sed -i "s/127.0.0.1:4000/${rds_endpoint_address}:${rds_endpoint_port}/" /home/clients/websites/w_${vhost}/public_html/${vhost}/wp-config.php
-      elif [ "${app}" == "drupal" ]; then
+      elif [ "${app}" == "drupal" -o "${app}" == "drupal8" ]; then
         docker exec ${CONTAINER_WEB_ID} sed -i "s/${rds_endpoint_address}/db/" /home/clients/websites/w_${vhost}/public_html/${vhost}/sites/default/settings.php
       fi
       # restore db dump to rds
@@ -513,6 +513,9 @@ operation_create()
       ;;
       drupal)
         app_arch="drupal-v7.50.tgz"
+      ;;
+      drupal8)
+        app_arch="drupal-v8.1.8.tgz"
       ;;
       magento)
         app_arch="mag1800.tgz"
@@ -795,7 +798,7 @@ operation_get_app_info()
       app_available_tools=$common_available_tools
       app_available_tools+='app_available_tools[]="repair##database" '
     ;;
-    drupal)
+    drupal|drupal8)
       app_available_tools=$common_available_tools
       app_available_tools+='app_available_tools[]="repair##database" '
     ;;
