@@ -170,6 +170,10 @@ if [ `ip ad sh|grep -c ' eth'` -gt '0' ]; then
 else
   vps_ip=`ip ad sh|grep ' ens'|tail -1|awk '{print $2}'|awk -F'/' '{print $1}'`
 fi
+while [ `hostname|grep -c devpanel.net` -eq 0 ]; do
+  echo "Waiting for hostname setup..."
+  sleep 1
+done
 hostname_fqdn=`hostname`
 
 
