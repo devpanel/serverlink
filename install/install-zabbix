@@ -34,7 +34,8 @@ patch_zabbix_config()
     s/Server=127.0.0.1/Server=monitoring.devpanel.com/;
     s/ServerActive=127.0.0.1/ServerActive=monitoring.devpanel.com/;
     s/Hostname=Zabbix\ server/Hostname=$ZabbixHostname/;
-    s/# EnableRemoteCommands=0/EnableRemoteCommands=1/;"
+    s/# EnableRemoteCommands=0/EnableRemoteCommands=1/;
+    s/# Timeout=3/Timeout=30/;"
   sed -i "$sed_str" /etc/zabbix/zabbix_agentd.conf
 }
 
