@@ -200,8 +200,8 @@ fi
 # check for Docker Compose binary
 if [ ! -f /usr/local/bin/docker-compose ]; then
   if [ $(uname -m) == "i686" ]; then
-    ${sudo} apt-get install -y python-pip
-    ${sudo} pip install docker-compose
+    ${sudo} curl -L https://github.com/docker/compose/releases/download/1.7.1/run.sh > /usr/local/bin/docker-compose
+    ${sudo} chmod +x /usr/local/bin/docker-compose
   else
     ${sudo} curl -L https://github.com/docker/compose/releases/download/1.7.1/docker-compose-`uname -s`-`uname -m` -o /usr/local/bin/docker-compose
     ${sudo} chmod +x /usr/local/bin/docker-compose
