@@ -2,8 +2,8 @@
 
 # local apps
 IFS=!
-ARRAY=(`find /home/clients/websites/* -maxdepth 0 -type d -printf %f!`)
-for username in ${ARRAY[*]}; do
+LOCAL_APPS_ARRAY=(`find /home/clients/websites/* -maxdepth 0 -type d -printf %f!`)
+for username in ${LOCAL_APPS_ARRAY[*]}; do
   # mem usage
   IFS=$'\n'
   W_RSS_ARR=(`ps -u $username orss|grep -v RSS`)
@@ -24,8 +24,13 @@ done
 
 # docker apps
 if [ $(whereis docker|grep -c /usr) -gt 0 ]; then
-  DOCKER_ARRAY=(`docker ps|tail -n +2|awk '{print $NF}'`)
-  for docker_container in ${DOCKER_ARRAY[*]}; do
+  DOCKER_APPS_ARRAY=(`docker ps|tail -n +2|awk '{print $NF}'`)
+  for docker_container in ${DOCKER_APPS_ARRAY[*]}; do
     docker exec ${docker_container} /opt/webenabled/sbin/check_mem_diskspace_usage.sh
   done
+fi
+
+# throw 0 instead empty data, which will return ZBX_NOTSUPPORTED
+if [ ${#LOCAL_APPS_ARRAY[@]} -eq 0 -a ${#DOCKER_APPS_ARRAY[@]} -eq 0 ]; then
+  echo "0"
 fi
