@@ -24,6 +24,7 @@ done
 
 # docker apps
 if [ $(whereis docker|grep -c /usr) -gt 0 ]; then
+  IFS=$'\n'
   DOCKER_APPS_ARRAY=(`docker ps|tail -n +2|awk '{print $NF}'`)
   for docker_container in ${DOCKER_APPS_ARRAY[*]}; do
     docker exec ${docker_container} /opt/webenabled/sbin/check_mem_diskspace_usage.sh
