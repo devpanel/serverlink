@@ -457,8 +457,10 @@ app.clone          = true
     ;;
   esac
 
-  update_nginx_config
-  detect_running_apache_and_patch_configs
+  if [ ! "${handler_options}" == "bin/list-backups" ]; then
+    update_nginx_config
+    detect_running_apache_and_patch_configs
+  fi
 }
 
 operation_create()
