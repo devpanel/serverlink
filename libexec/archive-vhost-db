@@ -142,7 +142,7 @@ chmod +w "$archive_list" || exit 1
 
 echo Listing the databases...
 list=`$dir/dbmgr-show-databases "$user"` || exit 1
-list=`echo "$list" | egrep -v '^(mysql|performance_schema|information_schema)$'`
+list=`echo "$list" | egrep -v '^(mysql|performance_schema|information_schema|sys)$'`
 echo "$list" >"$archive_list"
 
 echo Checking for .my.cnf...
