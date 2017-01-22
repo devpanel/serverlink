@@ -56,7 +56,15 @@ enter() {
 
   echo "Starting a shell for vhost $vhost (user: $user)..."
   if hash runuser &>/dev/null; then
-    runuser -u "$user" -- /bin/bash --init-file /opt/webenabled/lib/init-shell
+    declare -a run_args=( --init-file "$sys_dir/lib/init-shell" )
+
+    # there are some versions of 'runuser' that don't have the -u option
+    # so detect it and run it with the appropriate args
+    if runuser --help 2>&1 | fgrep -q -- -u; then
+      runuser -u "$user" -- /bin/bash "${run_args[@]}"
+    else
+      runuser -- "$user" "${run_args[@]}"
+    fi
   else
     su -l "$user"
   fi
