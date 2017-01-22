@@ -374,7 +374,23 @@ operation_handle()
       fi
     ;;
 
-    bin/restore-vhost-subsystem*|bin/list-backups*)
+    bin/list-backups*)
+      if [ "$app_hosting" == "docker" ]; then
+        if [ $(docker exec -t ${app_container_name} /bin/sh -c "test -d /opt/webenabled-data/vhost_archives/${vhost}"; echo $?) -eq 1 ]; then
+          docker exec -i ${app_container_name} mkdir -m 2750 /opt/webenabled-data/vhost_archives/${vhost}
+          docker exec -i ${app_container_name} chown root:w_${vhost} /opt/webenabled-data/vhost_archives/${vhost}
+        fi
+        docker exec -i ${app_container_name} su - w_${vhost} -c "${sys_dir}/${handler_options}"
+      elif [ "$app_hosting" == "local" ]; then
+        if [ ! -d "/opt/webenabled-data/vhost_archives/${vhost}" ]; then
+          mkdir -m 2750 /opt/webenabled-data/vhost_archives/${vhost}
+          chown root:w_${vhost} /opt/webenabled-data/vhost_archives/${vhost}
+        fi
+        su - w_${vhost} -c "${sys_dir}/${handler_options}"
+      fi
+    ;;
+
+    bin/restore-vhost-subsystem*)
       if [ "$app_hosting" == "docker" ]; then
         docker exec -i ${app_container_name} su - w_${vhost} -c "${sys_dir}/${handler_options}"
       elif [ "$app_hosting" == "local" ]; then
