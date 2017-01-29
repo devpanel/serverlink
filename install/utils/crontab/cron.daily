@@ -19,6 +19,9 @@ fi
 # distro updates (actual updates depend on configuration)
 "$sys_dir/libexec/distro-updates" run-from-crontab
 
+# fix the permissions of vhost logs dir and files
+"$sys_dir/libexec/fix-vhost-logs-ownshp-n-perms" -y
+
 run-parts "$sys_dir/bin/packages/cron.d/cron.daily"
 
 /bin/true
