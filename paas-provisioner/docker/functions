@@ -359,6 +359,17 @@ operation_handle()
   read_local_config
   handler_options=`echo ${handler_options}|sed 's/##/ /g'`
   case "$handler_options" in
+    libexec/archive-vhost*)
+      filename=$(echo "$handler_options"|awk '{print $NF}')
+      if [ "$app_hosting" == "docker" ]; then
+        docker exec -i ${app_container_name} ${sys_dir}/${handler_options}
+        docker exec -i ${app_container_name} ln -s /opt/webenabled-data/vhost_archives/${vhost}/${filename} /home/clients/websites/w_${vhost}/public_html/gen/archive/${filename}
+      elif [ "$app_hosting" == "local" ]; then
+        ${sys_dir}/${handler_options}
+        ${sudo} ln -s /opt/webenabled-data/vhost_archives/${vhost}/${filename} /home/clients/websites/w_${vhost}/public_html/gen/archive/${filename}
+      fi
+    ;;
+
     libexec/check-logs*-f*)
       vhost=`echo ${handler_options}|awk -F'/var/log/apache2/virtwww/' '{print $2}'|awk -F'/' '{print $1}'|awk -F'w_' '{print $2}'`
       for dc in $(docker ps|grep -v 'NAMES'|awk '{print $NF}'); do
