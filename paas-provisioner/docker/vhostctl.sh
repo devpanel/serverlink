@@ -182,6 +182,7 @@ if [ ! -f /usr/bin/docker ]; then
   # quick install for Ubuntu LTS 14.04 and 16.04 only
   if   [ `lsb_release -c|grep -c xenial` -eq 1 ]; then
     ${sudo} echo "deb https://apt.dockerproject.org/repo ubuntu-xenial main" > /etc/apt/sources.list.d/docker.list
+    ${sudo} systemctl enable rc-local.service
   elif [ `lsb_release -c|grep -c trusty` -eq 1 ]; then
     ${sudo} echo "deb https://apt.dockerproject.org/repo ubuntu-trusty main" > /etc/apt/sources.list.d/docker.list
   else

@@ -401,7 +401,7 @@ operation_handle()
       fi
     ;;
 
-    bin/restore-vhost-subsystem*)
+    bin/restore-vhost-subsystem*|bin/archive-transfer*)
       if [ "$app_hosting" == "docker" ]; then
         docker exec -i ${app_container_name} su - w_${vhost} -c "${sys_dir}/${handler_options}"
       elif [ "$app_hosting" == "local" ]; then
@@ -534,6 +534,10 @@ operation_create()
       docker exec ${CONTAINER_WEB_ID} rm -f /tmp/${app}.sql /tmp/mysql.sock
       docker exec ${CONTAINER_WEB_ID} killall mysqld
     fi
+    # update system startup
+    perl -pe 's/^exit 0\n//' -i /etc/rc.local
+    echo "${sys_dir}/paas-provisioner/docker/vhostctl.sh -C=start -DD=${user}" >> /etc/rc.local
+    echo "exit 0" >> /etc/rc.local
   elif [ "$host_type" == "local" ]; then
     vhost=`echo "${domain}" | awk -F'[.]' '{print $1}'`
     domain_name=`echo "${domain}" | awk -F"${vhost}." '{print $2}'`
@@ -764,6 +768,8 @@ operation_destroy()
         docker rmi -f ${i}
       done
     fi
+    # update system startup
+    perl -ni -e "print unless /${app_name}/" /etc/rc.local
   elif [[ "$app_hosting" == "local" ]]; then
     # remove_vhost||libexec/remove-vhost|%vhost% %filename%|
     ${sys_dir}/libexec/remove-vhost ${vhost}
