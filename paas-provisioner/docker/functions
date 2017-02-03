@@ -785,6 +785,16 @@ operation_destroy()
   ${sudo} rm -f ${sys_dir}/config/apps/${vhost}.ini
 }
 
+operation_reboot()
+{
+  if [ $(docker ps|wc -l) -gt 1 ]; then
+    for dc in $(docker ps|grep -v 'NAMES'|awk '{print $NF}'); do
+      docker commit ${dc} original_${dc}
+    done
+  fi
+  ${sys_dir}/${handler_options} Yes
+}
+
 operation_pentest()
 {
   if [ -z "$domain" ]; then domain=uiv2.devpanel.com; fi

@@ -307,6 +307,9 @@ elif [ "$operation" == "scan" -a "$domain" ]; then
 elif [ "$operation" == "destroy" -a "$domain" ]; then
   operation_destroy
 
+elif [ "$operation" == "handle" -a "$handler_options" == "libexec/server-reboot" ]; then
+  operation_reboot
+
 elif [ "$operation" == "handle" -a "$handler_options" ]; then
   operation_handle
 
