@@ -858,10 +858,28 @@ operation_get_app_info()
 
   case "$app_type" in
     wordpress)
+      app_current_version=$(curl -s ${vhost}.${hostname_fqdn}|grep '<meta name="generator" content="WordPress 4.'|awk -F'WordPress' '{print $NF}'|awk -F'"' '{print $1}'|cut -d ' ' -f2)
+      app_available_version=$(curl -s https://wordpress.org/download/|grep "/latest.zip"|awk -F'WordPress&nbsp;' '{print $NF}'|awk -F'<' '{print $1}')
       app_available_tools=$common_available_tools
       app_available_tools+='app_available_tools[]="repair##database" '
     ;;
-    drupal|drupal8)
+    drupal|drupal7)
+      app_current_version=$(curl -s ${vhost}.${hostname_fqdn}/CHANGELOG.txt|head -2|tail -1|awk -F',' '{print $1}'|awk -F'Drupal ' '{print $NF}')
+      app_available_version=$(curl -s https://raw.githubusercontent.com/drupal/drupal/7.x/CHANGELOG.txt|head -5|tail -1|awk -F',' '{print $1}'|awk -F'Drupal ' '{print $NF}')
+      app_available_tools=$common_available_tools
+      app_available_tools+='app_available_tools[]="repair##database" '
+    ;;
+    drupal8)
+      app_current_version=$(curl -s ${vhost}.${hostname_fqdn}/core/CHANGELOG.txt|head -1|awk -F',' '{print $1}'|awk -F'Drupal ' '{print $NF}')
+      app_available_version=$(curl -s https://raw.githubusercontent.com/drupal/drupal/8.4.x/core/CHANGELOG.txt|head -1|awk -F',' '{print $1}'|awk -F'Drupal ' '{print $NF}')
+      app_available_tools=$common_available_tools
+      app_available_tools+='app_available_tools[]="repair##database" '
+    ;;
+    magento)
+      app_current_version=$(curl -s ${vhost}.${hostname_fqdn}|grep "(ver. 1."|awk -F'</a> ' '{print $NF}'|awk -F'ver. ' '{print $NF}'|awk -F')</p>' '{print $1}')
+      arr=$(curl -s https://magento.com/tech-resources/download|grep "ver 1.9."|awk -F'                                                        ' '{print $2}'|grep -v h3|grep -v later|awk -F'ver ' '{print $NF}')
+      # IFS=$'\n'
+      app_available_version=$(echo "${arr[*]}" | sort -nr | head -n1)
       app_available_tools=$common_available_tools
       app_available_tools+='app_available_tools[]="repair##database" '
     ;;
@@ -874,6 +892,8 @@ operation_get_app_info()
     app_name=$app_name \
     app_hosting=$app_hosting \
     app_type=$app_type \
+    app_current_version=$app_current_version \
+    app_available_version=$app_available_version \
     app_db_type=$app_db_type \
     app_status=$app_status \
     $(echo ${app_available_tools})|sed 's/##/ /g'
