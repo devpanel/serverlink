@@ -4,9 +4,9 @@
   #  @@__USER_INCLUDES__@@
 
   SSLEngine on
-  SSLCipherSuite ALL:!ADH:!EXPORT56:RC4+RSA:+HIGH:+MEDIUM:+LOW:+SSLv2:+EXP:+eNULL
   SSLCertificateFile "@@__DEVPANEL_BASEDIR__@@/config/os/pathnames/etc/ssl/certs/@@__VHOST__@@.@@__VHOST_INTERNAL_NAME__@@.crt"
   SSLCertificateKeyFile "@@__DEVPANEL_BASEDIR__@@/config/os/pathnames/etc/ssl/keys/@@__VHOST__@@.@@__VHOST_INTERNAL_NAME__@@.key"
+  #SSLCipherSuite is set on the global config file
 
   <Directory "@@__PARAM_DOCUMENTROOT__@@">
     SSLOptions +StdEnvVars
