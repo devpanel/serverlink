@@ -1,0 +1,37 @@
+#!/bin/bash
+
+usage() {
+  local prog=$(basename "$0")
+
+  echo "Usage: $prog <remote_spec>
+
+  Sends local vhost database to remote server.
+"
+  exit 1
+}
+
+# main
+[ $# -eq 0 -o -z "$1" ] && usage
+
+self_bin=$(readlink -e "$0")
+self_dir=$(dirname "$self_bin")
+sys_dir=$(readlink -e "$self_dir/..")
+lib_file="$sys_dir/lib/functions"
+
+remote_spec="$1"
+#remote_spec_len=${#remote_spec}
+#if [ "${remote_spec:$(( $remote_spec_len - 1 ))}" != ":" ]; then
+#  remote_spec+=":"
+#fi
+
+if ! source "$lib_file"; then
+  echo "Error: unable to load auxiliary functions from $lib_file" 1>&2
+  exit 1
+fi
+
+tmp_dump_file="${TMPDIR:-/tmp}/dump_${USER}_$(wedp_gen_random_str 20).tar.gz"
+
+"$sys_dir/bin/mysql-dump-split-db-tar-gz" - "$tmp_dump_file" || exit 1
+trap 'rm -f -- "$tmp_dump_file"' EXIT
+
+ssh "$remote_spec" sync-db-from-split-dump < "$tmp_dump_file" || exit 1

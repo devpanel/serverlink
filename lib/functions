@@ -1,0 +1,2131 @@
+#!/bin/bash
+if [ -z "$DEVPANEL_HOME" ]; then
+  tmp_self=$(readlink -e "${BASH_SOURCE[0]}")
+  if [ $? -eq 0 ]; then
+    tmp_self_dir="${tmp_self%/*}"
+    DEVPANEL_HOME=$(readlink -e "$tmp_self_dir/..")
+  fi
+  unset tmp_self tmp_self_dir
+fi
+
+devpanel_php_dir=${devpanel_php_dir:-"$DEVPANEL_HOME/bin/packages/phpbrew/php"}
+
+# avoid a warning on MacOS X because md5sum doesn't exist
+if [ -n "$OSTYPE" ] && [[ "$OSTYPE" =~ ^darwin ]] && hash md5 &>/dev/null; then
+  hash -p $(which md5) md5sum
+fi
+
+error() {
+  local msg="$1"
+  local exit_code="${2:-1}"
+
+  [ -n "$msg" ] && echo "Error: $msg" 1>&2
+  exit $exit_code
+}
+
+wedp_warn() {
+  local msg="$1"
+
+  echo "Warning: $msg" 1>&2
+}
+
+devpanel_auto_detect_distro() {
+  local distro=""
+
+  # can't use local -l below because of systems with bash 3
+  local lsb_distro_str="" lsb_distro_raw=""
+
+  if hash lsb_release &>/dev/null; then
+    lsb_distro_raw=`lsb_release -si 2>/dev/null`
+    lsb_distro_str=`echo -n "$lsb_distro_raw" | tr A-Z a-z`
+  fi
+
+  if [ -n "$lsb_distro_str" ]; then
+    distro="$lsb_distro_str"
+  elif [ -r /etc/debian_version ] && apt-cache show lsb-base | egrep -q '^Maintainer: .+debian\.org>'; then
+    distro=debian
+  elif [ -r /etc/debian_version ] && apt-cache show lsb-base | egrep -q '^Maintainer: .+ubuntu\.com>'; then
+    distro=ubuntu
+  elif hash rpm &>/dev/null && rpm -ql centos-release &>/dev/null; then
+    distro=centos
+  elif hash rpm &>/dev/null && rpm -ql redhat-release-server &>/dev/null; then
+    distro=redhat
+  elif hash rpm &>/dev/null && rpm -ql owl-hier >/dev/null 2>&1; then
+    distro=owl
+  elif [[ "$OSTYPE" =~ ^darwin ]]; then
+    distro=macosx
+  fi
+
+  if [ -n "$distro" ]; then
+    echo "$distro"
+    return 0
+  else
+    return 1
+  fi
+}
+
+wedp_auto_detect_distro() {
+  local distro=""
+
+  # can't use local -l below because of systems with bash 3
+  local lsb_distro_str="" lsb_distro_raw=""
+
+  if hash lsb_release &>/dev/null; then
+    lsb_distro_raw=`lsb_release -si 2>/dev/null`
+    lsb_distro_str=`echo -n "$lsb_distro_raw" | tr A-Z a-z`
+  fi
+
+  if [ -n "$lsb_distro_str" ]; then
+    distro="$lsb_distro_str"
+  elif grep -qis centos /etc/redhat-release; then
+    distro=centos
+  elif grep -qis "Red Hat Enterprise Linux" /etc/redhat-release; then
+    distro=redhat
+  elif grep -qis fedora /etc/redhat-release; then
+    distro=fedora
+  elif rpm -ql owl-hier >/dev/null 2>&1; then
+    distro=owl
+  elif [ -r /etc/debian_version ] && apt-cache show lsb-base | egrep -q '^Maintainer: .+debian\.org>'; then
+    distro=debian
+  elif [ -r /etc/debian_version ] && apt-cache show lsb-base | egrep -q '^Maintainer: .+ubuntu\.com>'; then
+    distro=ubuntu
+  elif [ -r /etc/gentoo-release ]; then
+    distro=gentoo
+  elif [[ "$OSTYPE" =~ ^darwin ]]; then
+    distro=macosx
+  fi
+
+  if [ -n "$distro" ]; then
+    echo "$distro"
+    return 0
+  else
+    return 1
+  fi
+}
+
+wedp_auto_detect_distro_version() {
+  local distro="$1"
+  local version_str="" version_number=""
+
+  if hash lsb_release &>/dev/null; then
+    version_number=`lsb_release -sr`
+    [ $? -ne 0 ] && return 1
+  elif [ "$distro" == "centos" ]; then
+      version_str=$(head -1 "/etc/redhat-release" 2>/dev/null)
+      [ $? -ne 0 ] && return 1
+
+      # the line below is an invalid syntax on older systems with bash 3
+      #if [[ "$version_str" =~ CentOS\ release\ ([0-9]+\.[0-9]+) ]]; then
+      # so we have to pipe fgrep and egrep to have a compatible way on all
+      # systems
+      version_number=`echo "$version_str" | fgrep 'CentOS release' | \
+                       egrep -o '[0-9]+\.[0-9]+' 2>/dev/null`
+  fi
+
+  if [ -n "$version_number" ]; then
+    echo -n "$version_number"
+    return 0
+  else
+    return 1
+  fi
+}
+
+print_quoted_variables() {
+  local line=""
+  local var=""
+
+  for var in "$@"; do
+    line=$(declare -p $var)
+    line=${line#declare -x}
+    echo $line
+  done
+}
+
+escape_sed() {
+  local str="$1"
+  local escaped="$str"
+
+  escaped=${escaped//\'/\\\'}
+  escaped=${escaped//\*/\\*}
+  escaped=${escaped//\;/\\;}
+  escaped=${escaped//\[/\\[}
+  escaped=${escaped//\]/\\]}
+  escaped=${escaped//\\+/+\]}
+  escaped=${escaped//\\\?/\?}
+  escaped=${escaped//\\\(/\(}
+  escaped=${escaped//\\\)/\)}
+  escaped=${escaped//\//\\/}
+  escaped=${escaped//\&/\\\&}
+  escaped=${escaped//$'\n'/\\n}
+
+  echo -n "$escaped"
+}
+
+in_array() {
+  local value="$1"
+  shift
+
+  local v
+
+  [ -z "$*" ] && return 1 # empty list
+
+  for v in "$@"; do
+    if [ "$v" == "$value" ]; then
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+# the function below is a candidate to be removed as it's much better to use
+# variable ${BASH_SOURCE[0]}, though not removing it now because not sure if
+# it's being used by other scripts
+resolve_local_dir() {
+  local base="$1"
+  local bin=""
+  local bin_path=""
+  local dir_name=""
+
+  [ ${#base} -eq 0 ] && return 1
+
+  if [ ${base:0:1} == "/" ]; then
+    echo $(dirname "$base")
+    return 0
+  elif [ ${#base} -gt 2 -a ${base:0:2} == "./" ]; then
+    base=${base#./}
+    dir_name=$(dirname "$base")
+    if [ "$dir_name" == "." ]; then
+      echo "$PWD"
+    else
+      echo "$PWD/$dir_name"
+    fi 
+    return 0
+  elif [ ${#base} -gt 2 -a ${base:0:3} == "../" ]; then
+    echo $(dirname "$PWD/$base")
+  else
+    return 1
+  fi 
+}
+
+wedp_resolve_link() {
+  local source="$1"
+  local target=""
+
+  [ -z "$source" ] && return 1
+
+  target=$(readlink -m "$source")
+  if [ $? -eq 0 ]; then
+    echo "$target"
+    return 0
+  else
+    return 1
+  fi
+}
+
+wedp_gen_random_str() {
+  local length=${1:-40}
+
+  local str=$(head -c $(( $length * 30 )) /dev/urandom | tr -dc 'A-Za-z0-9')
+
+  if [ ${#str} -lt $length ]; then
+    return 1
+  else
+    echo "${str:0:$length}"
+    return 0
+  fi
+}
+
+download_file() {
+  local url="$1"
+  local temp_file="$2"
+  local retries=${3:-3}
+  local wait_before_retry=${4:-20}
+
+  if hash curl &>/dev/null; then
+    curl -L -f --retry $retries --retry-delay $wait_before_retry -s -o "$temp_file" "$url"
+    status=$?
+  elif hash wget &>/dev/null; then
+    wget -t $retries -w $wait_before_retry -nv -O "$temp_file" "$url"
+    status=$?
+  fi
+
+  return $status
+}
+
+get_url_from_cache() {
+  local url="$1"
+  local retries=${3:-3}
+  local wait_before_retry=${4:-5}
+
+  local cache_dir=""
+  if [ -n "$DEVPANEL_HOME" ]; then
+    cache_dir="$DEVPANEL_HOME/var/seedapps_cache"
+  else
+    return 1
+  fi
+
+  local md5_txt=$(echo -n "$url" | md5sum | cut -d' ' -f 1)
+
+  local cache_link="$cache_dir/$md5_txt:etag"
+  if [ ! -L "$cache_link" ]; then
+    return 1
+  fi
+
+  local tmp_headers_f=$(mktemp)
+  if [ $? -ne 0 ]; then
+    echo "$FUNCNAME(): unable to create temporary file" 1>&2
+    return 1
+  fi
+
+  local resp_raw=""
+  resp_raw=$(curl -w "%{http_code}"  -s -I \
+    --retry $retries --retry-delay $wait_before_retry \
+    -D "$tmp_headers_f" -o /dev/null "$url")
+  local curl_st=$?
+
+  code=${resp_raw%%*|}
+  if [ $curl_st -ne 0 -o "$code" != "200"  ]; then
+    rm -f -- "$tmp_headers_f"
+    return 1
+  fi
+
+  local etag_raw=$(egrep -i ^ETAG: "$tmp_headers_f")
+  if [ $? -ne 0 ]; then
+    rm -f -- "$tmp_headers_f"
+    return 1
+  fi
+  local etag_txt="${etag_raw#*: }"
+  etag_txt=${etag_txt//[^a-f0-9-]/}
+
+  rm -f -- "$tmp_headers_f"
+
+  local etag_cached=$(readlink "$cache_link")
+  if [ $? -ne 0 ]; then
+    return 1
+  fi
+
+  if [ "$etag_txt" != "$etag_cached" ]; then
+    return 1
+  fi
+
+  local cached_file="${cache_link%:etag}"
+  if [ -s "$cached_file" ]; then
+    echo -n "$cached_file"
+    return 0
+  else
+    return 1
+  fi
+}
+
+download_url_n_cache() {
+  local url="$1"
+  local temp_file="$2"
+  local retries=${3:-3}
+  local wait_before_retry=${4:-5}
+
+  local tmp_headers_f=$(mktemp)
+  if [ $? -ne 0 ]; then
+    echo "$FUNCNAME(): unable to create temp file" 1>&2
+    return 1
+  fi
+
+  local code="" error_msg="" resp_raw=""
+
+  resp_raw=$(curl -w "%{http_code}"  -sL --retry $retries --retry-delay $wait_before_retry \
+          -D "$tmp_headers_f" -o "$temp_file" "$url")
+  local curl_st=$?
+
+  code=${resp_raw%%*|}
+  if [ $curl_st -ne 0 -o "$code" != "200"  ]; then
+    rm -f -- "$tmp_headers_f"
+    echo "$FUNCNAME(): failed to retrieve url $url" 1>&2
+    return 1
+  fi
+
+  local etag_raw=$(egrep -i ^ETag: "$tmp_headers_f")
+  if [ $? -ne 0 ]; then
+    return 0 # won't cache, but it's fine, the file is downloaded
+  fi
+
+  local etag=${etag_raw#*: }
+  if [ -z "$etag" ]; then
+    return 0 # won't cache, but it's fine, the file is downloaded
+  fi
+  etag=${etag//[^a-f0-9-]/}
+
+  local cache_dir="" mydir="" myfile=""
+  if [ -n "$DEVPANEL_HOME" ]; then
+    cache_dir="$DEVPANEL_HOME/var/seedapps_cache"
+  else
+    return 0
+  fi 
+
+  local md5_str=$(echo -n "$url" | md5sum | cut -d' ' -f 1)
+
+  if [ -d "$cache_dir" ]; then
+    local cache_file="$cache_dir/$md5_str:etag"
+    ln -sf "$etag" "$cache_file"
+    if [ $? -eq 0 ]; then
+      local dest_file="${cache_file%:etag}"
+
+      # the line below does the actual caching
+      cp -f "$temp_file" "$dest_file"
+    fi
+  fi
+
+  return 0
+}
+
+ini_section_get_key_value() {
+  local file="$1"
+  local section=`escape_sed "$2"`
+  local key=`escape_sed "$3"`
+
+  sed -n -e "/^\[$section\]/,/^\[/ {
+    /^\($key\)[[:space:]]*=.*$/ { s/^$key[[:space:]]*=[[:space:]]*//; p; q 0; }
+  } ; $ q 1;" "$file"
+}
+
+ini_section_replace_key_value() {
+  local file="$1"
+  local section=`escape_sed "$2"`
+  local key=`escape_sed "$3"`
+  local value=`escape_sed "$4"`
+
+  local orig_md5 final_md5
+
+  orig_md5=`md5sum "$file"`
+  if [[ "$OSTYPE" =~ ^darwin ]]; then
+    orig_md5=${orig_md5##* }
+  else
+    orig_md5=${orig_md5%% *}
+  fi
+
+  sed -i -e "/^\[$section\]/,/^\[/ {
+    /^\($key\)[[:space:]]*=.*$/ {
+      s/^\($key\)[[:space:]]*=.*$/\1 = $value/g;
+    }
+  }" "$file"
+
+  local status=$?
+  [ $status -ne 0 ] && return $status
+
+  final_md5=`md5sum "$file"`
+  if [[ "$OSTYPE" =~ ^darwin ]]; then
+    final_md5=${final_md5##* }
+  else
+    final_md5=${final_md5%% *}
+  fi
+
+  if [ "$orig_md5" != "$final_md5" ]; then
+    return 0 # file changed, success!
+  else
+    return 1 # file is the same, replace failed
+  fi
+}
+
+ini_section_add_key_value() {
+  local file="$1"
+  local section=`escape_sed "$2"`
+  local key=`escape_sed "$3"`
+  local value=`escape_sed "$4"`
+
+  local orig_md5=`md5sum "$file"`
+  orig_md5=${orig_md5%% *}
+
+  sed -i -e "/^\[$section\]/ {
+    a \
+$key = $value
+}" "$file"
+
+  local final_md5=`md5sum "$file"`
+  final_md5=${final_md5%% *}
+
+  if [ "$orig_md5" != "$final_md5" ]; then
+    return 0 # file changed, success!
+  else
+    return 1 # file is the same, add failed
+  fi
+}
+
+get_sshkey_fingerprint() {
+  local key_text="$1"
+  local tmp_file
+  local key_line
+
+  tmp_file=`mktemp`
+  if [ $? -ne 0 ]; then
+    echo "${FUNCNAME[0]}(): could not create temporary file to store the key" 1>&2
+    return 1
+  fi
+
+  echo "$key_text" >"$tmp_file"
+  if [ $? -ne 0 ]; then
+    echo "${FUNCNAME[0]}(): could not store the key contents into tmpfile '$tmp_file'" 1>&2
+    rm -f "$tmp_file"
+    return 1
+  fi
+
+  key_line=`ssh-keygen -f "$tmp_file" -l`
+  if [ $? -ne 0 ]; then
+    echo "${FUNCNAME[0]}(): uname to calculate key fingerprint" 1>&2
+    rm -f "$tmp_file"
+    return 1
+  fi
+
+  rm -f "$tmp_file"
+
+  local key_size key_fingerprint key_input_text
+  IFS=" " read key_size fingerprint key_input_text <<< "$key_line"
+  if [ -z "$fingerprint" ]; then
+    echo "${FUNCNAME[0]}(): got an empty fingerprint" 1>&2
+    return 1
+  fi
+
+  echo "$fingerprint"
+  return 0
+}
+
+is_sshkey_in_keyfile() {
+  local desired_fp="$1"
+  local key_file="$2"
+  local fp_list
+  local key_line key_mod_size key_fp key_txt
+
+  if ! fp_list=`ssh-keygen -f "$key_file" -l`; then
+    echo "${FUNCNAME[0]}(): could not get the list of fingerprints" 1>&2
+    return 1
+  fi
+
+  while read key_line; do
+    IFS=" " read key_size key_fp key_txt <<< "$key_line"
+    if [ "$key_fp" == "$desired_fp" ]; then
+      return 0
+    fi
+  done <<< "$fp_list"
+
+  return 1
+}
+
+devpanel_download_pkg() {
+  local package="$1"
+  local version="$2"
+  local base_url="$3"
+  local tmp_dir="${4:-/tmp}"
+
+  local pkg_url="$base_url/$pkg_n_version.tar.gz"
+
+  local tmp_pkg_dir="$tmp_dir/pkgs"
+  if [ ! -d "$tmp_pkg_dir" ] && ! mkdir -m 700 "$tmp_pkg_dir"; then
+    echo "$FUNCNAME(): unable to create temp dir '$tmp_pkg_dir'" 1>&2
+    return 1
+  fi
+
+  if ! download_file "$pkg_url" "$tmp_file"; then
+    echo "$FUNCNAME(): unable to download package '$package'" 1>&2
+    return 1
+  fi
+}
+
+devpanel_update_versioned_pkg_version() {
+  local package="$1"
+  local version="$2"
+  local pkg_dir="$3"
+
+  local target_dir="$pkg_dir/$package/$version"
+  local target_link="$pkg_dir/$package/current"
+  local status
+
+  if [ ! -e "$target_dir" ]; then
+    echo "$FUNCNAME(): dir '$target_dir' doesn't seem to exist" 1>&2
+    return 1
+  fi
+
+  if [ ! -L "$target_link" -a -e "$target_link" ]; then
+    echo "$FUNCNAME(): path '$target_link' exists but is not a symbolic link" 1>&2
+    return 1
+  elif [ -L "$target_link" ]; then
+    rm -f "$target_link"
+  fi
+
+  ln -s "$version" "$target_link"
+  status=$?
+  if [ $status -ne 0 ]; then
+    echo "$FUNCNAME(): unable to update target link '$target_link'" 1>&2
+  fi
+
+  return $status
+}
+
+devpanel_update_pkg_link_version() {
+  local package="$1"
+  local serial="$2"
+  local version="$3"
+  local system_dir="$4"
+
+  local target_link="$system_dir/config/packages/$package/version"
+  local serial_link="$system_dir/config/packages/$package/serial"
+  local repo_link="$system_dir/config/packages/$package/repository"
+
+  if [ ! -L "$target_link" -a -e "$target_link" ]; then
+    echo "$FUNCNAME(): path '$target_link' exists but is not a symbolic link" 1>&2
+    return 1
+  elif [ -L "$target_link" ]; then
+    rm -f "$target_link"
+  fi
+
+  ln -s "$version" "$target_link"
+  local status=$?
+  if [ $status -ne 0 ]; then
+    echo "$FUNCNAME(): unable to update target link '$target_link'" 1>&2
+  fi
+
+  ln -sf "$serial" "$serial_link"
+  ln -sf "devpanel" "$repo_link"
+
+  return $status
+}
+
+calc_md5_str() {
+  local str="$1"
+  local md5_str=""
+
+  if [[ "$OSTYPE" =~ ^darwin ]]; then
+    md5_str=`echo -n "$str" | /sbin/md5`
+  else
+    md5_str=`echo -n "$str" | md5sum`
+  fi
+
+  if [ $? -ne 0 ]; then
+    echo "$FUNCNAME(): unable to get md5sum of string" 1>&2
+    return 1
+  fi
+
+  if [[ "$OSTYPE" =~ ^darwin ]]; then
+    md5_str=${md5_str##* }
+  else
+    md5_str=${md5_str%% *}
+  fi
+
+  echo -n "$md5_str"
+
+  return 0
+}
+
+calc_sha512_of_file() {
+  local file="$1"
+
+  if [ ! -e "$file" ]; then
+    echo "$FUNCNAME(): non-existing path $file" 1>&2
+    return 1
+  elif [ ! -f "$file" ]; then
+    echo "$FUNCNAME(): not a regular file $file" 1>&2
+    return 1
+  fi
+
+  local line shastr
+  line=$(sha512sum "$file")
+  if [ $? -eq 0 ]; then
+    shastr="${line%% *}"
+    if [ -n "$shastr" ]; then
+      echo "$shastr"
+      return 0
+    else
+      echo "$FUNCNAME(): got unknown line from sha512sum '$line'" 1>&2
+      return 1
+    fi
+  else
+    echo "$FUNCNAME(): unable to calculate, sha512sum returned non-zero" 1>&2
+    return 1
+  fi
+}
+
+devpanel_get_os_version() {
+  if ! hash lsb_release &>/dev/null; then
+    echo "$FUNCNAME(): error - didn't find lsb_release in PATH" 1>&2
+    return 1
+  fi
+
+  local version=""
+  version=`lsb_release -r 2>/dev/null | egrep -o '[0-9\.]+$'`
+  if [ -z "$version" ]; then
+    echo "$FUNCNAME(): error, unable to get OS version" 1>&2
+    return 1
+  fi
+
+  echo -n "$version"
+}
+
+devpanel_get_os_version_major() {
+  if ! hash lsb_release &>/dev/null; then
+    echo "$FUNCNAME(): error - didn't find lsb_release in PATH" 1>&2
+    return 1
+  fi
+
+  local version="" major=""
+  version=`lsb_release -sr 2>/dev/null`
+  if [ -z "$version" ]; then
+    echo "$FUNCNAME(): error, unable to get OS version" 1>&2
+    return 1
+  fi
+
+  if [[ "$version" =~ ^[0-9]+\. ]]; then
+    major=${version%%.*}
+  else
+    echo "$FUNCNAME(): got string '$version', don't know what to do" 1>&2
+    return 1
+  fi
+
+  echo -n "$major"
+}
+
+devpanel_get_os_version_minor() {
+  if ! hash lsb_release &>/dev/null; then
+    echo "$FUNCNAME(): error - didn't find lsb_release in PATH" 1>&2
+    return 1
+  fi
+
+  local version="" minor=""
+  version=`lsb_release -sr 2>/dev/null`
+  if [ -z "$version" ]; then
+    echo "$FUNCNAME(): error, unable to get OS version" 1>&2
+    return 1
+  fi
+
+  if [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then # X.Y.Z
+    minor=${version#*.}
+    minor=${minor%.*}
+  elif [[ "$version" =~ ^[0-9]+\.[0-9]+$ ]]; then # X.Y
+    minor=${version#*.}
+  else
+    echo "$FUNCNAME(): got string '$version', don't know what to do" 1>&2
+    return 1
+  fi
+
+  echo -n "$minor"
+}
+
+deref_contents() {
+  local path="$1"
+
+  local value=""
+
+  if [ -L "$path" ]; then
+    value=`readlink "$path"`
+  elif [ -f "$path" ]; then
+    value=`cat "$path"`
+  elif [ ! -e "$path" ]; then
+    echo "$FUNCNAME(): path doesn't exist $path" 1>&2
+    return 1
+  else
+    echo "$FUNCNAME(): don't know how to de-reference path $path" 1>&2
+    return 1
+  fi
+
+  echo -n "$value"
+}
+
+deref_contents_or_exit() {
+  local path="$1"
+
+  deref_contents "$path"
+  if [ $? -eq 0 ]; then
+    return 0
+  else
+    echo "Error: unable to de-reference path '$path'" 1>&2
+    exit 1
+  fi
+}
+
+assign_deref_contents_or_exit() {
+  local var="$1"
+  local path="$2"
+  local value=""
+
+  value=`deref_contents "$path"`
+  if [ $? -ne 0 -o -z "$value" ]; then
+    echo "Error: unable to de-reference path '$path'" 1>&2
+    exit 1
+  else
+    eval $var="$value"
+    return $?
+  fi
+}
+
+
+deref_os_prop() {
+  local base_dir="$1"
+  local key_name="$2"
+
+  local os_name="" os_version="" os_major=""
+  local base_path="" key_path="" v="" resolved="" local_value=""
+  local ver_specific="" ver_major="" os_specific="" devpanel_specific=""
+
+  os_version=`devpanel_get_os_version`
+  [ $? -ne 0 ] && return 1
+
+  os_major=`devpanel_get_os_version_major`
+  [ $? -ne 0 ] && return 1
+
+  base_path="$base_dir/config/os"
+
+  ver_specific="$base_path/$os_version/$key_name"
+  ver_major="$base_path/$os_major/$key_name"
+  os_specific="$base_path/$key_name"
+  local_value="$base_dir/config/key_value/local/$key_name"
+  devpanel_specific="$base_dir/config/key_value/$key_name"
+
+  # check in this order:
+  #   config/key_value/local/ -> local custom value
+  #   os/<specific_version>   -> for the specific version
+  #   os/<os_major>           -> for the specific major version
+  #   os/                     -> for the specific distro
+  #   config/key_value/       -> generic devPanel convention
+
+  for v in "$local_value" "$ver_specific" "$ver_major" \
+           "$os_specific" "$devpanel_specific"; do
+
+    if [ -L "$v" -o -f "$v" ]; then
+      key_path="$v"
+      break
+    fi
+  done
+
+  if [ -z "$key_path" ]; then
+    echo "$FUNCNAME(): unable to find key $key_name in $base_dir" 1>&2
+    return 1
+  fi
+
+  deref_contents "$key_path" || return 1
+}
+
+deref_os_prop_or_exit() {
+  local base_dir="$1"
+  local key_name="$2"
+
+  deref_os_prop "$base_dir" "$key_name"
+  [ $? -ne 0 ] && exit 1
+}
+
+assign_deref_os_prop_or_exit() {
+  local var="$1"
+  local base_dir="$2"
+  local key_name="$3"
+
+  local value=""
+
+  value=`deref_os_prop "$base_dir" "$key_name"`
+  if [ $? -ne 0 -o -z "$value" ]; then
+    echo "Error: unable to de-reference key '$key_name'" 1>&2
+    exit 1
+  else
+    eval $var="$value"
+    return $?
+  fi
+}
+
+deref_os_fs_path() {
+  local base_dir="$1"
+  local key_name="$2"
+
+  local orig_value="" value="" value_norm="" key_dir=""
+
+  orig_value=`deref_os_prop "$base_dir" "$key_name"`
+  [ $? -ne 0 -o -z "$orig_value" ] && return 1
+
+  if [ "${orig_value:0:1}" != "/" ]; then
+    key_dir=`dirname "$base_dir/config/os/$key_name"`
+    value="$key_dir/$orig_value"
+  else
+    value="$orig_value"
+  fi
+  
+  # existence of the target path not required
+  value_norm=`readlink -m "$value"`
+
+  echo -n "$value_norm"
+}
+
+deref_os_fs_path_ex() {
+  # the different from deref_os_fs_path() is that this _ex() function
+  # requires the file existence
+  local base_dir="$1"
+  local key_name="$2"
+
+  local orig_value="" value="" value_norm="" key_dir=""
+
+  orig_value=`deref_os_prop "$base_dir" "$key_name"`
+  [ $? -ne 0 -o -z "$orig_value" ] && return 1
+
+  if [ "${orig_value:0:1}" != "/" ]; then
+    key_dir=`dirname "$base_dir/config/os/$key_name"`
+    value="$key_dir/$orig_value"
+  else
+    value="$orig_value"
+  fi
+
+  # requires the existence of the target path
+  value_norm=`readlink -e "$value"`
+  [ $? -ne 0 ] && return 1
+
+  echo -n "$value_norm"
+}
+
+
+deref_os_fs_path_or_exit() {
+  local base_dir="$1"
+  local key_name="$2"
+
+  deref_os_fs_path "$base_dir" "$key_name"
+  [ $? -ne 0 ] && exit 1
+}
+
+deref_os_fs_path_ex_or_exit() {
+  local base_dir="$1"
+  local key_name="$2"
+
+  deref_os_fs_path_ex "$base_dir" "$key_name"
+  [ $? -ne 0 ] && exit 1
+}
+
+assign_deref_os_fs_path_ex_or_exit() {
+  local var="$1"
+  local base_dir="$2"
+  local key_name="$3"
+
+  local value=""
+
+  value=`deref_os_fs_path_ex "$base_dir" "$key_name"`
+  if [ $? -eq 0 -a -n "$value" ]; then
+    eval $var="$value"
+    return $?
+  else
+    echo "Error: unable to dereference path: $key_name" 1>&2
+    exit 1
+  fi
+}
+
+lock_path() {
+  local path="$1"
+  local sleep_n="${2:-0.1}"
+  local -i max_retries="${3:-100}"
+
+  local lock_file=""
+
+  lock_file="`dirname "$path"`/.`basename "$path"`.lock"
+
+  local -i retries=1
+  while [ $retries -le $max_retries ]; do
+    ln -s "pid:$PPID" "$lock_file" 2>/dev/null
+    if [ $? -eq 0 ]; then
+      printf '%s' "$lock_file"
+      return 0
+    else
+      sleep $sleep_n
+    fi
+    retries+=1
+  done
+
+  wedp_warn "unable to lock path '$path', timed out"
+  return 1 # failed
+}
+
+unlock_path() {
+  local path="$1"
+  
+  local lock_file=""
+
+  lock_file="`dirname "$path"`/.`basename "$path"`.lock"
+
+  if [ ! -L "$lock_file" -a ! -e "$lock_file" ]; then
+    wedp_warn "didn't find lock file '$lock_file'"
+    return 0
+  elif [ ! -L "$lock_file" ]; then
+    echo "$FUNCNAME(): path '$lock_file' is not a symlink" 1>&2
+    return 1
+  fi
+
+  rm -f "$lock_file"
+}
+
+rm_rf_safer() {
+  local dir="$1"
+
+  if [ -z "$dir" -o ! -d "$dir" ]; then
+    return 1
+  fi
+
+  local dir_full_path=`readlink -e "$dir"`
+  if [ $? -ne 0 -o -z "$dir_full_path" ]; then
+    echo "$FUNCNAME(): unable to determine full path of '$dir'" 1>&2
+    return 1
+  fi
+
+  if [ "$dir_full_path" == "/" ]; then
+    echo "$FUNCNAME(): can't use dir as /" 1>&2
+    return 1
+  fi
+
+  rm -rf "$dir_full_path"
+}
+
+get_metadata_value() {
+  local dir="$1"
+  local key="`basename "$2"`"
+
+  local user_def_path="$dir/local/$key"
+  local usual_path="$dir/$key"
+  local link_path="" link_value=""
+
+  if [ -L "$user_def_path" ]; then
+    link_path="$user_def_path"
+  elif [ -L "$usual_path" ]; then
+    link_path="$usual_path"
+  else
+    echo "$FUNCNAME(): didn't find key '$2'" 1>&2
+    return 1
+  fi
+
+  link_value="`readlink "$link_path"`"
+  if [ $? -eq 0 ]; then
+    echo "$link_value"
+    return 0
+  else
+    echo "$FUNCNAME(): found, but couldn't read link value on '$link_path'" 1>&2
+    return 1
+  fi
+}
+
+get_apache_metadata_value() {
+  local system_dir="$1"
+  local key="$2"
+
+  local apache_config_dir="$system_dir/config/vhosts"
+
+  local vhost_conf_dir="$apache_config_dir/${USER#w_}"
+
+  if [ ! -d "$vhost_conf_dir" ]; then
+    echo "$FUNCNAME(): missing vhost conf dir $vhost_conf_dir" 1>&2
+    return 1
+  fi
+
+  get_metadata_value "$vhost_conf_dir" "$key"
+}
+
+date_placeholders() {
+  local template_str="$1"
+  local ref_date="${2:-now}"
+
+  if [ -n "$ref_date" ] && ! [[ "$ref_date" =~ ^[A-Za-z0-9\ -]+$ ]]; then
+    echo "$FUNCNAME(): invalid ref_date" 1>&2
+    return 1
+  fi
+
+  # local fmt_str='+%d %b %m %Y %H %M'
+  local fmt_str='+%d %b %m %Y %H %M %W %w %s %j %a %x %X %Z %z'
+
+  # local day month monthn year hour minute
+  local day month_name month_number year hour minute \
+        week_year day_week epoch day_year day_name   \
+        locale_date locale_time timezone_abrev timezone_num
+
+  IFS=" " read day month_name month_number year hour minute \
+               week_year day_week epoch day_year day_name   \
+               locale_date locale_time timezone_abrev timezone_num \
+            <<< $(date -d "$ref_date" "$fmt_str")
+
+  local date_str
+
+  date_str="$template_str"
+  date_str=${date_str//@day@/"$day"}
+  date_str=${date_str//@month_name@/"$month_name"}
+  date_str=${date_str//@month_number@/"$monthn"}
+  date_str=${date_str//@year@/"$year"}
+  date_str=${date_str//@hour@/"$hour"}
+  date_str=${date_str//@minute@/"$minute"}
+  date_str=${date_str//@week_year@/"$week_year"}
+  date_str=${date_str//@day_week@/"$day_week"}
+  date_str=${date_str//@epoch@/"$epoch"}
+  date_str=${date_str//@day_year@/"$day_year"}
+  date_str=${date_str//@day_name@/"$day_name"}
+  date_str=${date_str//@locale_date@/"$locale_date"}
+  date_str=${date_str//@locale_time@/"$locale_time"}
+  date_str=${date_str//@timezone_abrev@/"$timezone_abrev"}
+  date_str=${date_str//@timezone_num@/"$timezone_num"}
+
+  # auxiliary formats for breviety
+  date_str=${date_str//@aux_date_str@/$month_name-$day-$year}
+
+  printf '%s' "$date_str"
+}
+
+get_mysql_version() {
+  if ! hash mysql &>/dev/null; then
+    echo "$FUNCNAME(): missing mysql command" 1>&2
+    return 1
+  fi
+
+  local tmp_str
+  tmp_str=$(mysql -V 2>/dev/null | egrep -o 'Distrib [0-9]\.[0-9]+(\.[0-9]+)?')
+  if [ $? -ne 0 -o -z "$tmp_str" ]; then
+    echo "$FUNCNAME(): unable to get mysql version from mysql command" 1>&2
+    return 1
+  fi
+
+  local junk version_str
+  IFS=" " read junk version_str <<< "$tmp_str"
+
+  echo -n "$version_str"
+}
+
+get_php_version() {
+  if hash php-config &>/dev/null; then
+    php-config --version
+    return $?
+  elif hash php &>/dev/null; then
+    local tmp_str=$(php -v | egrep -o 'PHP [0-9]\.[0-9]+\.[0-9]+')
+    if [ $? -ne 0 -o -z "$tmp_str" ]; then
+      echo "$FUNCNAME(): unable to get version string from php command" 1>&2
+      return 1
+    fi
+    local junk ver_str 
+    IFS=" " read junk ver_str <<< "$tmp_str"
+
+    echo -n "$ver_str"
+    return 0
+  fi
+
+  echo "$FUNCNAME(): php doesn't seem to be installed" 1>&2
+  return 1
+}
+
+run_verbose() {
+    echo "Running command: $@"
+    "$@"
+}
+
+is_valid_mysql_db_or_table_name() {
+  local str="$1"
+
+  [ -z "$str" ] && return 1
+
+  if [[ "$str" =~ ^[A-Za-z0-9_]+$ ]]; then
+    return 0
+  else
+    return 1
+  fi
+}
+
+is_mysql_engine_supported() {
+  local engine="$1"
+
+  local sql_tmpl='SELECT * FROM ENGINES WHERE ENGINE = "%s" 
+                  AND SUPPORT IN("YES", "DEFAULT");'
+
+  sql_line=$(printf "$sql_tmpl" "$engine")
+
+  local output=""
+  output=$(mysql -BN -D information_schema -e "$sql_line")
+  if [ $? -ne 0 ]; then
+    return 1
+  fi
+
+  if [ -n "$output" ]; then
+    return 0
+  else
+    return 1
+  fi
+}
+
+escape_quotes() {
+  local orig="$1"
+  local new="$orig"
+
+  new=${new//\\/\\\\}
+  new=${new//\'/\\\'}
+  new=${new//\"/\\\"}
+
+  printf '%s' "$new"
+}
+
+get_vhost_base_domain() {
+  # returns the real base domain of a vhost
+  local vhost="$1"
+
+  local domain_int base_domain key
+
+  key="apache_vhost:0:_:base_domain"
+
+  domain_int=$(get_vhost_key_value "$key" "$vhost") || return $?
+
+  base_domain=$(get_real_hostname "$domain_int") || return $?
+
+  echo "$base_domain"
+}
+
+get_vhost_default_hostname() {
+  # returns the default hostname of the vhost
+  # (i.e the one used on ServerName and in the app's config
+
+  local vhost="$1"
+  
+  local key="apache_vhost:0:_:ServerName"
+  local hostname
+
+  hostname=$(get_vhost_key_value "$key" "$vhost") || return $?
+  if [ $? -eq 0 ]; then
+    echo "$hostname"
+  else
+    echo "$FUNCNAME(): unable to get default hostname from vhost $vhost" 1>&2
+    return 1
+  fi
+}
+
+set_vhost_default_hostname() {
+  local vhost="$1"
+  local hostname="$2"
+
+  local metadata_str key
+  key="apache_vhost:0:_:ServerName"
+  metadata_str="set $key $hostname"
+
+  echo "$metadata_str" | "$DEVPANEL_HOME/libexec/apache-metadata-handler" \
+                           -q "$vhost"
+
+  if [ $? -eq 0 ]; then
+    return 0
+  else
+    echo "$FUNCNAME(): unable to set default domain for vhost $vhost" 1>&2
+    return 1
+  fi
+}
+
+set_vhost_base_domain() {
+  local vhost="$1"
+  local domain="$2"
+
+  local int_name metadata_str
+
+  if [ -z "$domain" ]; then
+    int_name=$(format_hostname_internal "$vhost") || return $?
+  else
+    int_name=$(format_hostname_internal "$domain") || return $?
+  fi
+
+  metadata_str="set apache_vhost:0:_:base_domain $int_name"
+
+  echo "$metadata_str" | "$DEVPANEL_HOME/libexec/apache-metadata-handler" \
+                           -q "$vhost"
+
+  if [ $? -eq 0 ]; then
+    return 0
+  else
+    echo "$FUNCNAME(): unable to set base domain for vhost $vhost" 1>&2
+    return 1
+  fi
+}
+
+get_server_base_domain() {
+  local system_dir="${1:-$DEVPANEL_HOME}"
+  local domain
+
+  domain=$(deref_os_prop "$system_dir" apache_virtwww_domain)
+  if [ $? -eq 0 ]; then
+    echo "$domain"
+  else
+    echo "$FUNCNAME(): unable to get virtwww base domain" 1>&2
+    return 1
+  fi
+}
+
+format_hostname_internal() {
+  local test_hostname="$1"
+  local force_subdomain="${2:-0}"
+  local base_domain="$3"
+
+  if [ -z "$base_domain" ]; then
+    base_domain=$(get_server_base_domain) || return $?
+  fi
+
+  local test_host_stripped="" final_hostname="" has_dot=""
+
+  if [[ "$test_hostname" =~ \. ]]; then
+   has_dot=1
+  fi
+
+  # remove the server hostname from the end of name
+  if [ "${test_hostname: -1}" == "." ]; then
+    test_host_stripped=${test_hostname%.$base_domain.}
+  else
+    test_host_stripped=${test_hostname%.$base_domain}
+  fi
+
+  if [ "$force_subdomain" == "1" ]; then
+    if [ "${test_hostname: -1}" == "." ]; then
+      # $len_minus_one is a workaround for older bash versions that don't know
+      # negative lengths (e.g. CentOS 6.5 and previous)
+      local len_minus_one=$(( ${#test_hostname} - 1 ))
+      final_hostname="${test_host_stripped:0:$len_minus_one}"
+    else
+      final_hostname="$test_host_stripped"
+    fi
+  else
+    if [ "$test_host_stripped" != "$test_hostname" ]; then
+      # had the server name successfully stripped, so it's a subdomain
+      final_hostname="$test_host_stripped"
+    elif [ "${test_hostname: -1}" == "." ]; then
+      # if the hostname ends with a dot, then take it as fully defined
+      final_hostname="$test_hostname"
+    elif [ -n "$has_dot" ]; then
+      # hostname doesn't end with a dot, but has a dot in the name
+      # so let's guess it's a full domain
+      final_hostname="$test_hostname."
+    else
+      # hostname doesn't end with a dot, doesn't have a dot
+      # consider it a sub domain of the default server domain
+      final_hostname="$test_hostname"
+    fi
+  fi
+
+  echo -n "$final_hostname"
+}
+
+get_real_hostname() {
+  local hostname="$1"
+
+  local host_fmt="" server_base_domain=""
+
+  if [ "${hostname: -1}" == "." ]; then
+    # $len_minus_one is a workaround for older bash versions that don't know
+    # negative lengths (e.g. CentOS 6.5 and previous)
+    local len_minus_one=$(( ${#hostname} - 1 ))
+    host_fmt="${hostname:0:$len_minus_one}" # remove the last dot
+  else
+    server_base_domain=$(get_server_base_domain) || return $?   
+    host_fmt="$hostname.$server_base_domain"
+  fi
+
+  echo -n "$host_fmt"
+}
+
+get_list_of_vhosts() {
+  local vhost_config_dir="$DEVPANEL_HOME/config/vhosts"
+  local vhost vhost_dir
+  local -a vhosts_ar=()
+
+  if [ ! -d "$vhost_config_dir" ]; then
+    echo "$FUNCNAME(): missing config dir $vhost_config_dir" 1>&2
+    return 1
+  fi
+
+  for vhost_dir in "$vhost_config_dir/"*; do
+    [ ! -d "$vhost_dir" ] && continue
+    vhost=${vhost_dir##*/}
+    vhosts_ar+=( "$vhost" )
+  done
+
+  if [ ${#vhosts_ar[*]} -le 0 ]; then
+    return 0
+  else
+    echo "${vhosts_ar[@]}"
+  fi
+}
+
+get_vhost_with_hostname() {
+  local hostname="$1"
+
+  local tst_vhost tst_main tst_conf_dir 
+  local tst_alias_link tst_value tst_base_link tst_link
+  local hostname_fmt
+
+  hostname_fmt=$(format_hostname_internal "$hostname")
+
+  local base_addr="apache_vhost:0:_:base_domain"
+  local default_base="apache_vhost:0:_:ServerName"
+  local alias_base="apache_vhost:0:_:ServerAlias"
+
+  for tst_vhost in $(get_list_of_vhosts); do
+    tst_conf_dir="$DEVPANEL_HOME/config/vhosts/$tst_vhost"
+
+    tst_link="$tst_conf_dir/$alias_base:$hostname_fmt"
+    if [ -L "$tst_link" ]; then
+      echo "$tst_vhost"
+      return 0
+    fi
+
+    tst_base_link="$tst_conf_dir/$base_addr"
+    tst_main_link="$tst_conf_dir/$default_base"
+
+    for tst_link in "$tst_base_link" "$tst_main_link"; do
+      if tst_value=$(deref_contents "$tst_link" 2>/dev/null); then
+        if [ "$tst_value" == "$hostname" ]; then
+          echo "$tst_vhost"
+          return 0
+        fi
+      fi
+    done
+  done
+
+  return 1 # not found in any vhost
+}
+
+get_hostnames_from_vhost() {
+  local vhost="$1"
+
+  local vhost_conf_dir="$DEVPANEL_HOME/config/vhosts/$vhost"
+
+  local base_domain base_domain_real tmp_link tmp_name tmp_fmt_name
+  local -a hosts_ar=()
+
+  base_domain=$(get_vhost_base_domain "$vhost") || return $?
+
+  hosts_ar+=( "$base_domain" )
+
+  for tmp_link in "$vhost_conf_dir/apache_vhost:0:_:ServerAlias:"*; do
+    if [ ! -L "$tmp_link" ]; then
+      continue
+    fi
+
+    # apache_vhost:0:_:ServerAlias:domain.com.
+    tmp_name=${tmp_link##*:}
+    tmp_fmt_name=$(get_real_hostname "$tmp_name") || return $?
+
+    if [ "$tmp_fmt_name" == "$base_domain" ]; then
+      continue
+    fi
+
+    hosts_ar+=( $tmp_fmt_name )
+  done
+
+  local IFS=$'\n'
+  echo "${hosts_ar[*]}"
+}
+
+translate_archive_placeholders() {
+  local orig="$1"
+  local final
+
+  # uses globals $sys_data_dir $vhost_data_dir $vhost $period
+  #              $archive_template_str $removed_vhosts_dir
+
+  final="$orig"
+
+  [ -n "$archive_template_str" ] && \
+    final=${final//@archive_template_str@/$archive_template_str}
+
+  [ -n "$sys_data_dir" ]   && final=${final//@system_data_dir@/$sys_data_dir}
+
+  [ -n "$vhost_archive_dir" ] && \
+    final=${final//@vhost_archive_dir@/$vhost_archive_dir}
+
+  [ -n "$removed_vhosts_dir" ] && \
+    final=${final//@removed_vhosts_dir@/$removed_vhosts_dir}
+
+  [ -n "$vhost" ]        && final=${final//@vhost@/$vhost}
+  [ -n "$frequency" ]    && final=${final//@frequency@/$frequency}
+
+  final=$(date_placeholders "$final") || return 1
+
+  echo "$final"
+}
+
+get_recurring_backup_property() {
+  local period="$1"
+  local unit="$2"
+  local vhost="$3"
+
+  local vhost_config_dir="$DEVPANEL_HOME/config/vhosts/$vhost"
+
+  local link="$vhost_config_dir/config:backup_snapshot:$period:$unit"
+
+  deref_contents "$link"
+}
+
+get_vhost_key_value() {
+  local key="$1"
+  local vhost="$2"
+  local value=""
+
+  if [ -z "$vhost" ]; then
+    if [[ "$USER" == w_* ]]; then
+      vhost="${USER#w_}"
+    else
+      echo "$FUNCNAME(): missing vhost, please specify it" 1>&2
+      return 1
+    fi
+  fi
+
+  local key_link="$DEVPANEL_HOME/config/vhosts/$vhost/$key"
+
+  deref_contents "$key_link"
+}
+
+get_php_version_for_series() {
+  local series="$1"
+  local version
+  local php_version_regex='^[0-9]\.[0-9]\.[0-9]+$'
+
+  local php_dir="$DEVPANEL_HOME/bin/packages/phpbrew/php"
+  if [ ! -d "$php_dir" ]; then
+    echo "$FUNCNAME(): missing PHP base directory $php_dir" 1>&2
+    return 1
+  fi
+
+  # if has a link pointing to a specific version, then use it
+  local link_path="$php_dir/php-$series"
+  if [ -L "$link_path" ]; then
+    version=$(deref_contents "$link_path" 2>/dev/null)
+  else
+    # otherwise get the latest version for the serie by scanning
+    # the phpbrew directory
+    local l_dir
+    local local_dirs=( "$php_dir/php-$series."* )
+    local n_dirs=${#local_dirs[@]}
+
+    if [ ${#local_dirs[@]} -gt 1 ]; then
+      local -i last_n=$(( $n_dirs - 1 ))
+      l_dir=${local_dirs[$last_n]}
+    else
+      if [ $n_dirs -eq 1 -a "${local_dirs[0]}" == "$php_dir/php-$series.*" ]; then
+        echo "$FUNCNAME(): error, no version installed for series $series" 1>&2
+        return 1
+      else
+        l_dir=${local_dirs[0]}
+      fi
+    fi
+
+    if [ ! -d "$l_dir" ]; then
+      echo "$FUNCNAME(): target of '$l_dir' is not a directory" 1>&2
+      return 1
+    fi
+
+    version=${l_dir##*/php-}
+  fi
+
+
+  if [[ "$version" =~ $php_version_regex ]]; then
+    echo "$version"
+    return 0
+  else
+    echo "$FUNCNAME(): found invalid string '$version' as PHP version" 1>&2
+    return 1
+  fi
+}
+
+get_php_version_for_vhost() {
+  local vhost="$1"
+  local php_series php_version ver_str st
+
+  local php_series_regex='^[0-9]\.[0-9]$'
+  local php_version_regex='^[0-9]\.[0-9]\.[0-9][0-9]?$'
+
+  if [ -z "$vhost" -a -z "$USER" ]; then
+    USER=$(id -un)
+  fi
+
+  if [ -z "$vhost" -a "$EUID" != "0" -a "${#USER}" -gt 2 -a "${USER:0:2}" == w_ ]; then
+    vhost=${USER#w_}
+  elif [ -z "$vhost" ]; then
+    echo "$FUNCNAME(): missing vhost argument" 1>&2
+    return 1
+  fi
+
+  ver_str=$(get_vhost_key_value app:0:_:php_version "$vhost" 2>/dev/null)
+  if [ $? -ne 0 ]; then
+    echo "$FUNCNAME(): no specific version set for vhost $vhost" 1>&2
+    return 1
+  fi
+
+  if [[ "$ver_str" =~ $php_version_regex ]]; then
+    php_version=$ver_str
+    echo "$php_version"
+    return 0
+  elif [[ "$ver_str" =~ $php_series_regex ]]; then
+    php_version=$(get_php_version_for_series "$ver_str")
+    if [ $? -eq 0 ]; then
+      echo "$php_version"
+      return 0
+    fi
+  else
+    echo "$FUNCNAME(): unknown string found, $ver_str" 1>&2
+    return 1
+  fi
+}
+
+get_default_php_version_for_system() {
+  local php_dir version l_link
+  php_dir="$DEVPANEL_HOME/bin/packages/phpbrew/php"
+
+  if [ ! -d "$php_dir" ]; then
+    echo "$FUNCNAME(): missing PHP base directory $php_dir" 1>&2
+    return 1
+  fi
+
+  l_link="$php_dir/default"
+  version=$(deref_contents "$l_link" 2>/dev/null)
+  if [ $? -eq 0 ]; then
+    echo "$version"
+    return 0
+  else
+    echo "$FUNCNAME(): unable to get default version of PHP" 1>&2
+    return 1
+  fi
+}
+
+get_php_bin_for_version() {
+  local version="$1"
+  local bin_prefix=${2:-php-cgi}
+
+  local php_dir="$devpanel_php_dir/php-$version"
+  if [ ! -d "$php_dir" ]; then
+    echo "$FUNCNAME(): missing directory for PHP version $version" 1>&2
+    return 1
+  fi
+
+  local bin_file="$php_dir/bin/$bin_prefix"
+
+  if [ -f "$bin_file" -a -x "$bin_file" ]; then
+    echo "$bin_file"
+    return 0
+  else
+    return 1
+  fi
+}
+
+is_known_seedapp_subsystem() {
+  local name="${1##*/}"
+  if [ -z "$name" ]; then
+    echo "$FUNCNAME(): missing subsystem name" 1>&2
+    return 1
+  fi
+
+  local app_dir="$DEVPANEL_HOME/bin/seeds/$name"
+
+  if [ -d "$app_dir" ]; then
+    return 0
+  else
+    return 1
+  fi
+}
+
+has_min_path_matches() {
+  local t_dir="$1"
+  local -i n_min_matches=$2
+  local -i n_matches=0
+
+  if [ $# -lt 3 ]; then
+    echo "$FUNCNAME(): error - missing arguments" 1>&2
+    return 1
+  fi
+
+  shift 2
+
+  local t_path
+
+  while [ -n "$1" ]; do
+    t_path="$t_dir/$1"
+    if [ -e "$t_path" ]; then
+      n_matches+=1
+    fi
+    shift
+
+    if [ $n_matches -ge $n_min_matches ]; then
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+detect_app_type_on_dir() {
+  local t_dir="$1"
+  local min_matches=3
+
+  local app_type
+
+  local -a d6_paths=( includes/bootstrap.inc modules index.php update.php )
+  local -a d7_paths=( includes/bootstrap.inc modules index.php update.php )
+  local -a d8_paths=( core/lib/Drupal autoload.php modules index.php update.php )
+  local -a wordpress_v4_paths=( wp-config.php wp-content wp-includes \
+                                      wp-login.php wp-admin )
+
+
+  if has_min_path_matches "$t_dir" $min_matches "${d6_paths[@]}"; then
+    app_type=drupal
+  elif has_min_path_matches "$t_dir" $min_matches "${d7_paths[@]}"; then
+    app_type=drupal
+  elif has_min_path_matches "$t_dir" $min_matches "${d8_paths[@]}"; then
+    app_type=drupal
+  elif has_min_path_matches "$t_dir" $min_matches "${wordpress_v4_paths[@]}"; then
+    app_type=wordpress
+  else
+    return 1
+  fi
+
+  if [ -n "$app_type" ]; then
+    echo -n "$app_type"
+    return 0
+  else
+    return 1
+  fi
+}
+
+translate_dayname_to_number() {
+  local name="${1,,}"
+  local n
+
+  if [ -z "$name" ]; then
+    echo "$FUNCNAME(): missing name" 1>&2
+    return 1
+  fi
+
+  # could use a global associative array, not using for backwards
+  # compatibility with older bash versions
+
+  case $name in
+    sunday|sun)
+      n=0
+      ;;
+    monday|mon)
+      n=1
+      ;;
+    tuesday|tue)
+      n=2
+      ;;
+    wednesday|wed)
+      n=3
+      ;;
+    thursday|thu)
+      n=4
+      ;;
+    friday|fri)
+      n=5
+      ;;
+    saturday|sat)
+      n=6
+      ;;
+    *)
+      echo "$FUNCNAME(): unknown day" 1>&2
+      return 1
+      ;;
+  esac
+
+  echo "$n"
+}
+
+translate_daynumber_to_name() {
+  local number="$1"
+  local name
+
+  if [ -z "$number" ]; then
+    echo "$FUNCNAME(): missing parameter number" 1>&2
+    return 1
+  elif [[ "$number" == [0-6] ]]; then
+    : # ok
+  else
+    echo "$FUNCNAME(): invalid number, needs to be between 0 and 6" 1>&2
+    return 1
+  fi
+
+  # could use a global associative array, not using for backwards
+  # compatibility with older bash versions
+
+  case $number in
+    0)
+      name=sunday
+      ;;
+    1)
+      name=monday
+      ;;
+    2)
+      name=tuesday
+      ;;
+    3)
+      name=wednesday
+      ;;
+    4)
+      name=thursday
+      ;;
+    5)
+      name=friday
+      ;;
+    6)
+      name=saturday
+      ;;
+    *)
+      echo "$FUNCNAME(): don't know how to translate '$number' to name" 1>&2
+      return 1
+      ;;
+  esac
+
+  echo "$name"
+}
+
+generate_vhost_ini_str() {
+  local vhost="$1"
+
+  local ini_str=""
+  local db_name subsystem daily_snapshots_en weekly_snapshots_en monthly_snapshots_en
+  local daily_hour daily_retention weekly_hour weekly_retention monthly_hour monthly_retention
+  local weekly_day_raw weekly_day monthly_day_raw monthly_day
+  local htpasswd_en php_version table_prefix
+
+  local rec_snap_str="recurring_snapshots"
+
+  db_name=$(get_vhost_key_value app:0:_:db_name "$vhost" 2>/dev/null)
+  table_prefix=$(get_vhost_key_value app:0:_:table_prefix "$vhost" 2>/dev/null)
+  subsystem=$(get_vhost_key_value app:0:_:seed_app "$vhost" 2>/dev/null)
+  htpasswd_en=$(get_vhost_key_value flag:htpasswd_locked "$vhost" 2>/dev/null )
+  php_version=$(get_vhost_key_value app:0:_:php_version "$vhost" 2>/dev/null )
+
+  if [ -n "$db_name" ]; then
+    ini_str+="app.database_name = $db_name"$'\n'
+  fi
+
+  if [ -n "$table_prefix" ]; then
+    ini_str+="app.table_prefix = $table_prefix"$'\n'
+  fi
+
+  if [ -n "$subsystem" ]; then
+    ini_str+="app.subsystem = $subsystem"$'\n'
+  fi
+
+  if [ -n "$htpasswd_en" ]; then
+    ini_str+="vhost.htpasswd = yes"$'\n'
+  fi
+
+  if [ -n "$php_version" ]; then
+    ini_str+="php.version = $php_version"$'\n'
+  fi
+
+  daily_snapshots_en=$(get_vhost_key_value \
+                          config:backup_snapshot:daily:enabled "$vhost" \
+                          2>/dev/null )
+  weekly_snapshots_en=$(get_vhost_key_value \
+                          config:backup_snapshot:weekly:enabled "$vhost" \
+                          2>/dev/null )
+  monthly_snapshots_en=$(get_vhost_key_value \
+                          config:backup_snapshot:monthly:enabled "$vhost" \
+                          2>/dev/null )
+
+  if [ -n "$daily_snapshots_en" ]; then
+    daily_hour=$(get_vhost_key_value config:backup_snapshot:daily:hour \
+                  "$vhost" 2>/dev/null )
+    daily_retention=$(get_vhost_key_value config:backup_snapshot:daily:retention_unit \
+                      "$vhost" 2>/dev/null )
+
+    if [ -n "$daily_hour" -a -n "$daily_retention" ]; then
+      ini_str+="$rec_snap_str.daily_hour = $daily_hour"$'\n'
+      ini_str+="$rec_snap_str.daily_retention = $daily_retention"$'\n'
+    fi
+  fi
+
+  if [ -n "$weekly_snapshots_en" ]; then
+    weekly_hour=$(get_vhost_key_value config:backup_snapshot:weekly:hour \
+                  "$vhost" 2>/dev/null )
+    weekly_day_raw=$(get_vhost_key_value config:backup_snapshot:weekly:day \
+                  "$vhost" 2>/dev/null )
+    weekly_day=$(translate_daynumber_to_name "$weekly_day_raw" 2>/dev/null)
+
+    weekly_retention=$(get_vhost_key_value config:backup_snapshot:weekly:retention_unit \
+                        "$vhost" 2>/dev/null )
+
+    if [ -n "$weekly_day" -a -n "$weekly_hour" -a -n "$weekly_retention" ]; then
+      ini_str+="$rec_snap_str.weekly_day = $weekly_day"$'\n'
+      ini_str+="$rec_snap_str.weekly_hour = $weekly_hour"$'\n'
+      ini_str+="$rec_snap_str.weekly_retention = $weekly_retention"$'\n'
+    fi
+  fi
+
+  if [ -n "$monthly_snapshots_en" ]; then
+    monthly_hour=$(get_vhost_key_value config:backup_snapshot:monthly:hour \
+                    "$vhost" 2>/dev/null )
+    monthly_day_raw=$(get_vhost_key_value config:backup_snapshot:monthly:retention_unit \
+                    "$vhost" 2>/dev/null )
+    monthly_day=$(translate_daynumber_to_name "$monthly_day_raw" 2>/dev/null)
+    monthly_retention=$(get_vhost_key_value config:backup_snapshot:monthly:retention_unit \
+                         "$vhost" 2>/dev/null )
+
+    if [ -n "$monthly_day" -a -n "$monthly_hour" -a -n "$monthly_retention" ]; then
+      ini_str+="$rec_snap_str.monthly_day = $monthly_day"$'\n'
+      ini_str+="$rec_snap_str.monthly_hour = $monthly_hour"$'\n'
+      ini_str+="$rec_snap_str.monthly_retention = $monthly_retention"$'\n'
+    fi
+  fi
+
+  echo -n "$ini_str"
+}
+
+dump_vhost_mysql_db() {
+  local vhost="$1"
+  local database="$2"
+
+  if ! "$DEVPANEL_HOME/libexec/check-vhost-name" archive "$vhost"; then
+    return 1
+  fi
+
+  local temp_my_cnf
+  local mysql_host mysql_port mysql_user mysql_pass
+  mysql_host=$(get_vhost_key_value app:0:_:db_host "$vhost" 2>/dev/null)
+  mysql_port=$(get_vhost_key_value app:0:_:db_port "$vhost" 2>/dev/null)
+  mysql_user=$(get_vhost_key_value app:0:_:db_user "$vhost" 2>/dev/null)
+  mysql_pass=$(get_vhost_key_value app:0:_:db_password "$vhost" 2>/dev/null)
+  
+  if [ -z "$database" ]; then
+    database=$(get_vhost_key_value app:0:_:db_name "$vhost" 2>/dev/null)
+    if [ $? -ne 0 ]; then
+      echo "$FUNCNAME(): unable to get database name for vhost $vhost" 1>&2
+      return 1
+    fi
+  fi
+
+  if ! temp_my_cnf=$(mktemp); then
+    echo "$FUNCNAME(): unable to create temporary file" 1>&2
+    return 1
+  fi
+
+  echo "
+client.host = $mysql_host
+client.port = $mysql_port
+client.user = $mysql_user
+client.password = $mysql_pass
+" | "$DEVPANEL_HOME/bin/update-ini-file" -q -c "$temp_my_cnf"
+  if [ $? -ne 0 ]; then
+    echo "$FUNCNAME(): unable to write ini file '$temp_my_cnf'" 1>&2
+    rm -f "$temp_my_cnf"
+    return 1
+  fi
+
+  local st
+
+  mysqldump --defaults-extra-file="$temp_my_cnf" "$database"
+  st=$?
+
+  rm -f "$temp_my_cnf"
+
+  return $st
+}
+
+translate_dayname_to_number() {
+  local name="${1,,}"
+  local n
+
+  if [ -z "$name" ]; then
+    echo "$FUNCNAME(): missing name" 1>&2
+    return 1
+  fi
+
+  # could use a global associative array, not using for backwards
+  # compatibility with older bash versions
+
+  case $name in
+    sunday|sun)
+      n=0
+      ;;
+    monday|mon)
+      n=1
+      ;;
+    tuesday|tue)
+      n=2
+      ;;
+    wednesday|wed)
+      n=3
+      ;;
+    thursday|thu)
+      n=4
+      ;;
+    friday|fri)
+      n=5
+      ;;
+    saturday|sat)
+      n=6
+      ;;
+    *)
+      echo "$FUNCNAME(): unknown day" 1>&2
+      return 1
+      ;;
+  esac
+
+  echo "$n"
+}
+
+translate_daynumber_to_name() {
+  local number="$1"
+  local name
+
+  if [ -z "$number" ]; then
+    echo "$FUNCNAME(): missing parameter number" 1>&2
+    return 1
+  elif [[ "$number" == [0-6] ]]; then
+    : # ok
+  else
+    echo "$FUNCNAME(): invalid number, needs to be between 0 and 6" 1>&2
+    return 1
+  fi
+
+  # could use a global associative array, not using for backwards
+  # compatibility with older bash versions
+
+  case $number in
+    0)
+      name=sunday
+      ;;
+    1)
+      name=monday
+      ;;
+    2)
+      name=tuesday
+      ;;
+    3)
+      name=wednesday
+      ;;
+    4)
+      name=thursday
+      ;;
+    5)
+      name=friday
+      ;;
+    6)
+      name=saturday
+      ;;
+    *)
+      echo "$FUNCNAME(): don't know how to translate '$number' to name" 1>&2
+      return 1
+      ;;
+  esac
+
+  echo "$name"
+}
+
+bytes_to_human() {
+  local -i n_bytes="$1"
+  local n_bytes_human unit
+
+  local -i kb=1024 mb=$(( 1024 * 1024 )) gb=$(( 1024 * 1024 * 1024 ))
+
+  if [ -z "$n_bytes" ] || ! [[ "$n_bytes" =~ ^[0-9]+$ ]]; then
+    return 1
+  fi
+
+  if [ $n_bytes -gt $gb ]; then
+    unit='gb'
+  elif [ $n_bytes -gt $mb ]; then
+    unit='mb'
+  elif [ $n_bytes -gt $kb ]; then
+    unit='kb'
+  fi
+
+  n_bytes_human=$(echo "scale = 2; $n_bytes / ${!unit}" | bc -l)
+
+  echo -n "$n_bytes_human ${unit^^}"
+}
+
+generate_vhost_ini_str() {
+  local vhost="$1"
+
+  local ini_str=""
+  local db_name subsystem daily_snapshots_en weekly_snapshots_en monthly_snapshots_en
+  local daily_hour daily_retention weekly_hour weekly_retention monthly_hour monthly_retention
+  local weekly_day_raw weekly_day monthly_day_raw monthly_day
+  local htpasswd_en php_version table_prefix
+
+  local rec_snap_str="recurring_snapshots"
+
+  db_name=$(get_vhost_key_value app:0:_:db_name "$vhost" 2>/dev/null)
+  table_prefix=$(get_vhost_key_value app:0:_:table_prefix "$vhost" 2>/dev/null)
+  subsystem=$(get_vhost_key_value app:0:_:seed_app "$vhost" 2>/dev/null)
+  htpasswd_en=$(get_vhost_key_value flag:htpasswd_locked "$vhost" 2>/dev/null )
+  php_version=$(get_vhost_key_value app:0:_:php_version "$vhost" 2>/dev/null )
+
+  if [ -n "$db_name" ]; then
+    ini_str+="app.database_name = $db_name"$'\n'
+  fi
+
+  if [ -n "$table_prefix" ]; then
+    ini_str+="app.table_prefix = $table_prefix"$'\n'
+  fi
+
+  if [ -n "$subsystem" ]; then
+    ini_str+="app.subsystem = $subsystem"$'\n'
+  fi
+
+  if [ -n "$htpasswd_en" ]; then
+    ini_str+="vhost.htpasswd = yes"$'\n'
+  fi
+
+  if [ -n "$php_version" ]; then
+    ini_str+="php.version = $php_version"$'\n'
+  fi
+
+  daily_snapshots_en=$(get_vhost_key_value \
+                          config:backup_snapshot:daily:enabled "$vhost" \
+                          2>/dev/null )
+  weekly_snapshots_en=$(get_vhost_key_value \
+                          config:backup_snapshot:weekly:enabled "$vhost" \
+                          2>/dev/null )
+  monthly_snapshots_en=$(get_vhost_key_value \
+                          config:backup_snapshot:monthly:enabled "$vhost" \
+                          2>/dev/null )
+
+  if [ -n "$daily_snapshots_en" ]; then
+    daily_hour=$(get_vhost_key_value config:backup_snapshot:daily:hour \
+                  "$vhost" 2>/dev/null )
+    daily_retention=$(get_vhost_key_value config:backup_snapshot:daily:retention_unit \
+                      "$vhost" 2>/dev/null )
+
+    if [ -n "$daily_hour" -a -n "$daily_retention" ]; then
+      ini_str+="$rec_snap_str.daily_hour = $daily_hour"$'\n'
+      ini_str+="$rec_snap_str.daily_retention = $daily_retention"$'\n'
+    fi
+  fi
+
+  if [ -n "$weekly_snapshots_en" ]; then
+    weekly_hour=$(get_vhost_key_value config:backup_snapshot:weekly:hour \
+                  "$vhost" 2>/dev/null )
+    weekly_day_raw=$(get_vhost_key_value config:backup_snapshot:weekly:day \
+                  "$vhost" 2>/dev/null )
+    weekly_day=$(translate_daynumber_to_name "$weekly_day_raw" 2>/dev/null)
+
+    weekly_retention=$(get_vhost_key_value config:backup_snapshot:weekly:retention_unit \
+                        "$vhost" 2>/dev/null )
+
+    if [ -n "$weekly_day" -a -n "$weekly_hour" -a -n "$weekly_retention" ]; then
+      ini_str+="$rec_snap_str.weekly_day = $weekly_day"$'\n'
+      ini_str+="$rec_snap_str.weekly_hour = $weekly_hour"$'\n'
+      ini_str+="$rec_snap_str.weekly_retention = $weekly_retention"$'\n'
+    fi
+  fi
+
+  if [ -n "$monthly_snapshots_en" ]; then
+    monthly_hour=$(get_vhost_key_value config:backup_snapshot:monthly:hour \
+                    "$vhost" 2>/dev/null )
+    monthly_day_raw=$(get_vhost_key_value config:backup_snapshot:monthly:retention_unit \
+                    "$vhost" 2>/dev/null )
+    monthly_day=$(translate_daynumber_to_name "$monthly_day_raw" 2>/dev/null)
+    monthly_retention=$(get_vhost_key_value config:backup_snapshot:monthly:retention_unit \
+                         "$vhost" 2>/dev/null )
+
+    if [ -n "$monthly_day" -a -n "$monthly_hour" -a -n "$monthly_retention" ]; then
+      ini_str+="$rec_snap_str.monthly_day = $monthly_day"$'\n'
+      ini_str+="$rec_snap_str.monthly_hour = $monthly_hour"$'\n'
+      ini_str+="$rec_snap_str.monthly_retention = $monthly_retention"$'\n'
+    fi
+  fi
+
+  echo -n "$ini_str"
+}
+
+get_app_type_from_vhost() {
+  local vhost="$1"
+
+  local app
+  
+  app=$(get_vhost_key_value "app:0:_:seed_app" "$vhost" 2>/dev/null)
+  if [ $? -eq 0 ]; then
+    echo -n "$app"
+    return 0
+  else
+    return 1
+  fi
+}

@@ -1,0 +1,55 @@
+#!/bin/bash
+
+TMPDIR="$HOME/tmp"
+TMP_DIR="$TMPDIR"
+export TMPDIR TMP_DIR
+
+if [ ! -d "$TMPDIR" ] && ! mkdir -m 700 "$TMPDIR"; then
+echo "Error: unable to create dir $TMPDIR" 1>&2
+exit 1
+fi
+
+tmp_new_lines=`mktemp "$TMP_DIR/tmp_script.XXXXXX"`
+if [ $? -ne 0 ]; then
+  echo "Error: unable to create temporary file" 1>&2
+  exit 1
+fi
+trap 'rm -f "$tmp_new_lines"' EXIT
+
+tmp_curr_cron=`mktemp "$TMP_DIR/tmp_script.XXXXXX"`
+if [ $? -ne 0 ]; then
+  echo "Error: unable to create temporary file" 1>&2
+  exit 1
+fi
+trap 'rm -f "$tmp_new_lines" "$tmp_curr_cron"' EXIT
+
+cat >"$tmp_new_lines"
+if [ $? -ne 0 ]; then
+  echo "Error: unable to save new cron lines." 1>&2
+  exit 1
+elif [ ! -s "$tmp_new_lines" ]; then
+  echo "Error: received nothing from STDIN." 1>&2
+  exit 1
+fi
+
+crontab -l 2>/dev/null >"$tmp_curr_cron"
+if [ $? -ne 0 ]; then
+  if ! crontab -l 2>&1 | fgrep -q "no crontab for"; then
+    echo "Error: unable to save existing cron lines." 1>&2
+    exit 1
+  fi
+fi
+
+cat "$tmp_new_lines" >> "$tmp_curr_cron"
+if [ $? -ne 0 ]; then
+  echo "Error: unable to merge the two files." 1>&2
+  exit 1
+fi
+
+crontab "$tmp_curr_cron"
+if [ $? -ne 0 ]; then
+  echo "Error: unable to update the live crontab." 1>&2
+  exit 1
+fi
+
+exit 0

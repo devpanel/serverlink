@@ -1,0 +1,45 @@
+#!/bin/bash
+
+omb_get_users() {
+  echo none
+}
+
+omb_genpass() {
+  echo none
+}
+
+omb_encrypt() {
+  echo none
+}
+
+omb_set_password() {
+  echo none
+}
+
+omb_set_email() {
+  echo none
+}
+
+omb_get_email() {
+  echo none
+}
+
+omb_get_admin_user() {
+  echo none
+}
+
+omb_updated_config() {
+  echo "
+     s/^[[:space:]]*define[[:space:]]*([[:space:]]*[\"']DB_USER[\"'].*/define('DB_USER', '$mysql_user');/
+     s/^[[:space:]]*define[[:space:]]*([[:space:]]*[\"']DB_PASSWORD[\"'].*/define('DB_PASSWORD', '$sedphpencoded_mysql_password');/
+     s/^[[:space:]]*define[[:space:]]*([[:space:]]*[\"']DB_HOST[\"'].*/define('DB_HOST', '$mysql_host:$mysql_port');/
+     s/^[[:space:]]*define[[:space:]]*([[:space:]]*[\"']DB_NAME[\"'].*/define('DB_NAME', '$hosting_database');/
+  " | run_ised "$home/public_html/$vhost/config.php"
+}
+
+omb_custom() {
+ if [ -n "$opt_n" ]; then
+   omb_updated_config
+ fi
+}
+

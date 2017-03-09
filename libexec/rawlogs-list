@@ -1,0 +1,19 @@
+#!/bin/bash
+dir=`dirname $0`
+dir_bin="$dir/../bin"
+vhost="$1"
+user="w_$vhost"
+lines="$2"
+
+# using mode archive: it's OK to operate on a locked vhost
+$dir/check-vhost-name archive "$vhost" || exit 1
+
+[ -z "$lines" ] && lines=10
+
+echo ' 'ACCESS
+su -ls /bin/bash $user -c 'tail -n '$lines' ~/logs/'${vhost}'-access_log'
+echo ' 'ERROR
+su -ls /bin/bash $user -c 'tail -n '$lines' ~/logs/'${vhost}'-error_log'
+echo ' 'PHP
+su -ls /bin/bash $user -c 'tail -n '$((lines * 25))' ~/logs/'${vhost}'-error_log | grep '\''] PHP'\'
+exit 0

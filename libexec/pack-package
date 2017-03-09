@@ -1,0 +1,107 @@
+#!/bin/bash
+
+usage() {
+  echo "Usage: ${0##*/} <-s setup_script> <-d ref_dir> <new_file.tar.gz> <path_1> [...] [path_N]
+
+  Packs the specified files and directories into a .tar.gz designed for
+  package installation.
+"
+  exit 1
+}
+
+error() {
+  local msg="$1"
+  local exit_code="${2:-1}"
+
+  [ -n "$msg" ] && echo "Error: $msg" 1>&2
+  exit $exit_code
+}
+
+# main
+
+[ $# -lt 2 ] && usage
+
+unset ref_dir setup_script
+getopt_flags='hd:s:'
+while getopts $getopt_flags OPTN; do
+  case $OPTN in
+    d)
+      ref_dir="$OPTARG"
+      if [ ! -d "$ref_dir" ]; then
+        error "missing ref directory '$ref_dir'"
+      fi
+      ;;
+    h)
+      usage
+      ;;
+    s)
+      if [ -f "$OPTARG" ]; then
+        setup_script="$OPTARG"
+      else
+        error "option -s should receive a regular file as argument"
+      fi
+      ;;
+    *)
+      exit 1
+      ;;
+  esac
+done
+[ $OPTIND -gt 1 ] && shift $(( $OPTIND - 1 ))
+
+[ $# -lt 2 -o -z "$1" ] && usage
+
+archive_file="$1"
+if [ -e "$archive_file" ]; then
+  error "path '$archive_file' already exists."
+fi
+
+self_bin=$(readlink -e "$0")
+if [ $? -ne 0 ]; then
+  echo "Error: unable to detect self path" 1>&2
+  exit 1
+fi
+self_dir=${self_bin%/*}
+sys_dir=${self_dir%/*}
+
+shift # the next args are the file paths to include in the package
+[ $# -lt 1 -o -z "$1" ] && usage
+
+temp_dir=$(mktemp -d)
+if [ $? -ne 0 ]; then
+  error "unable to create temporary directory."
+fi
+
+if ! mkdir "$temp_dir/pkg-files" "$temp_dir/setup"; then
+  error "unable to create directory structure for package."
+fi
+
+setup_bin="$temp_dir/setup/setup-package"
+if [ -n "$setup_script" ]; then
+  cp "$setup_script" "$setup_bin"
+  if [ $? -ne 0 ]; then
+    error "unable to copy setup script $setup_script to $setup_bin"
+  fi
+  chmod 755 "$setup_bin"
+fi
+
+ini_file="$temp_dir/devpanel.ini"
+echo "\
+package.format = 1
+package.vendor = devpanel
+"  | "$sys_dir/bin/update-ini-file" -c "$ini_file"
+if [ $? -ne 0 ]; then
+  error "unable to write ini file $ini_file"
+fi
+
+tar -C "$ref_dir" -cSf - "$@" | tar -C "$temp_dir/pkg-files" --no-same-owner -xpf -
+if [ $? -ne 0 ]; then
+  error "unable to files to temporary directory"
+fi
+
+tar -C "$temp_dir" --no-same-owner -zScf "$archive_file" .
+if [ $? -eq 0 ]; then
+  echo "Successfully created package $archive_file"
+  exit 0
+else
+  error "unable to create package."
+fi

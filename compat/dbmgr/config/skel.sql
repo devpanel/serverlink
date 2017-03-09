@@ -1,0 +1,1 @@
+../../../config/os/pathnames/etc/skel.sql

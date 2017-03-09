@@ -1,0 +1,66 @@
+#!/bin/sh
+umask 027
+dir=`dirname "$0"`
+config_dir="$dir/../../config"
+
+parse_arguments() {
+
+  for arg do
+    case "$arg" in
+      --datadir=*) datadir=`echo "$arg" | sed -e "s;--datadir=;;"` ;;
+      --limits=*) limits=`echo "$arg" | sed -e "s;--limits=;;"` ;;
+      --port=*) port=`echo "$arg" | sed -e "s;--port=;;"` ;;
+      --user=*) user=`echo "$arg" | sed -e "s;--user=;;"` ;;
+      --host=*) host=`echo "$arg" | sed -e "s;--host=;;"` ;;
+      --contact=*) contact=`echo "$arg" | sed -e "s;--contact=;;"` ;;
+      --comment=*) comment=`echo "$arg" | sed -e "s;--comment=;;"` ;;
+      --version=*) version=`echo "$arg" | sed -e "s;--version=;;"` ;;
+      --type=*) type=`echo "$arg" | sed -e "s;--type=;;"` ;;
+      --db-user=*) dbuser=`echo "$arg" | sed -e "s;--db-user=;;"` ;;
+      --db-password=*) dbpasswd=`echo "$arg" | sed -e "s;--db-password=;;"` ;;
+      --db-admin) dbadmin=1 ;;
+
+      *)
+	    echo "Wrong usage: $arg"
+	    exit 1
+        ;;
+    esac
+  done
+}
+
+parse_arguments "$@"
+
+if test -z "$dbuser"; then
+    echo "Cowardly refusing to create a user without name"
+fi
+
+if test ! -S "$datadir/mysql.sock"; then
+    echo "Cannot find socket for the $user daemon residing at $host:$port"
+    exit 1
+fi
+
+if test x"$dbadmin" = x"1"; then
+    admin_grants="
+GRANT RELOAD, PROCESS, SHOW DATABASES, SUPER ON *.* TO '$dbuser' WITH GRANT OPTION;
+GRANT ALL PRIVILEGES ON \`%\`.* TO '$dbuser' WITH GRANT OPTION;
+GRANT SELECT ON \`mysql\`.* TO '$dbuser' WITH GRANT OPTION;
+"
+fi
+
+DB_ROOT=
+DB_PASS=
+SHADOW=$(grep "^$user:$type:$version:${datadir%%/}:$host:$port:" "$config_dir/db-shadow.conf" 2>/dev/null | head -n 1)
+if [ -n "$SHADOW" ]; then
+	DB_ROOT=$(echo "$SHADOW" | cut -d':' -f8)
+	DB_PASS=$(echo "$SHADOW" | cut -d':' -f9)
+	DB_ROOT="--user=${DB_ROOT:-root}"
+	test -n "$DB_PASS" && DB_PASS="--password=$DB_PASS"
+fi
+
+"$config_dir/mysql/$version/bin/mysql" -S "$datadir/mysql.sock" $DB_ROOT $DB_PASS << EOF
+GRANT USAGE ON \`mysql\`.* TO '$dbuser';
+GRANT SHOW DATABASES ON *.* TO '$dbuser';
+SET PASSWORD FOR '$dbuser' = PASSWORD($dbpasswd);
+$admin_grants
+FLUSH PRIVILEGES;
+EOF

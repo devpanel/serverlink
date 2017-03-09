@@ -1,0 +1,37 @@
+CentOS 6.2:
+
+user: apache, group: apache
+suexec: /usr/sbin/suexec
+httpd: /etc/httpd/conf.d /var/log/httpd/
+apachectl: /usr/sbin/apachectl
+php-cgi: /usr/bin/php-cgi
+php-cli: N/A (there's package named php-cli, but no php-cli executable)
+php: /usr/bin/php
+
+CentOS 5.6:
+all values are the same as of 6.2 above
+
+Ubuntu 10.04 LTS:
+
+user: www-data, group: www-data
+suexec: /usr/lib/apache2/suexec
+apache2: /etc/apache2/conf.d /var/log/apache2/
+apachectl: /usr/sbin/apache2ctl
+php-cgi: /usr/bin/php-cgi
+php: /usr/bin/php
+
+Ubuntu 12.04 LTS:
+all values are the same as of 10.04
+
+Debian 6:
+all values are the same as of Ubuntu 10.04
+
+Fedora 17:
+user: apache, group: apache
+suexec: /sbin/suexec
+httpd: /etc/httpd/conf.d /var/log/httpd/
+apachectl: /sbin/apachectl
+php-cgi: /bin/php-cgi
+php-cli: N/A (there's package named php-cli, but no php-cli executable)
+php: /bin/php
+

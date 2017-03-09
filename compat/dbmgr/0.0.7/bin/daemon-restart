@@ -1,0 +1,39 @@
+#!/bin/bash
+
+usage() {
+  echo "Usage: `basename "$0"` <db_name>
+
+  This script restarts the database for the selected db_name
+"
+  exit 1
+}
+
+# main
+[ $# -lt 1 -o -z "$1" ] && usage
+
+db_name="$1"
+db_user="$db_name"
+
+self_bin=`readlink -e "$0"`
+curr_dir="`dirname "$self_bin"`"
+config_file=`readlink -e "$curr_dir/../../config/db-daemons.conf"`
+if [ -z "$config_file" ]; then
+  echo "Error: unable to find the config file" 1>&2
+  exit 1
+fi
+
+if ! egrep -qs "^$db_name:" "$config_file"; then
+  echo "Error: db_name doesn't exist on file '$config_file'" 1>&2
+  exit 1
+fi
+
+if ! getent passwd "$db_name" &>/dev/null; then
+  echo "Error: user '$db_name' doesn't exist" 1>&2
+  exit 1
+fi
+
+if "$curr_dir/ping" "$db_name"; then
+  "$curr_dir/daemon-stop" "$db_name"
+fi
+
+"$curr_dir/daemon-start" --user="$db_user"

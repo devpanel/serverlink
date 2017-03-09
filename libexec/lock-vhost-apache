@@ -1,0 +1,109 @@
+#!/bin/bash
+
+error()
+{
+  echo "ERROR${1+: }$@" >&2
+  exit 1
+}
+
+run()
+{
+  echo "  running $@"
+  "$@"
+}
+
+usage() {
+  echo "Usage: `basename "$0"` <vhost>"
+  exit 1
+}
+
+# main
+[ $# -lt 1 ] && usage
+
+self_bin=`readlink -e "$0"`
+cmd_name=`basename "$0"`
+dir=`dirname "$self_bin"`
+devpanel_dir=`readlink -e "$dir/.."`
+
+vhost="$1"
+user="w_$vhost"
+
+lib_file="$devpanel_dir/lib/functions"
+vars_file="$devpanel_dir/lib/variables"
+for inc_file in "$lib_file" "$vars_file"; do
+  if ! source "$inc_file"; then
+    error "unable to source file '$inc_file'"
+  fi
+done
+
+
+assign_deref_os_fs_path_ex_or_exit apache_config_dir "$devpanel_dir" \
+  pathnames/etc/apache_vhosts
+
+apache_config="$apache_config_dir/$user.conf"
+
+if [ "$cmd_name" == "lock-vhost" ]; then
+  $dir/check-vhost-name lock "$vhost" || exit 1
+elif [ "$cmd_name" == "unlock-vhost" ]; then
+  $dir/check-vhost-name unlock "$vhost" || exit 1
+fi
+
+assign_deref_os_fs_path_ex_or_exit apachectl "$devpanel_dir" \
+  pathnames/sbin/apachectl
+
+hash -p "$apachectl" apachectl
+
+vhost_metadata_dir=`readlink -e "$devpanel_dir/config/vhosts/$vhost"`
+if [ $? -ne 0 ]; then
+  error "couldn't find path '$devpanel_dir/config/vhosts/$vhost'"
+fi
+
+if ! run apachectl configtest;  then
+  error "Apache config seems already broken, won't try to change anything."
+fi
+
+if [ "$cmd_name" == "lock-vhost-apache" ]; then
+
+  [ -r "$apache_config" ] || \
+    error "cannot find apache config file '$apache_config'"
+
+  apache_locked_file="$apache_config.locked"
+  mv -f "$apache_config" "$apache_locked_file"
+  if [ $? -ne 0 ]; then
+    error "unable to move $apache_config to $apache_config.locked"
+  fi
+
+  echo "set $DEVPANEL_VHOST_LOCK_FLAG 1" | \
+    "$dir/apache-metadata-handler" -n "$vhost"
+  if [ $? -ne 0 ]; then
+    mv -f "$apache_locked_file" "$apache_config" # revert back the move
+    error "unable to update apache metadata"
+  fi
+
+  if apachectl configtest;  then
+    apachectl graceful && echo "Successfully locked apache vhost"
+  else
+    echo "Warning: apache vhost was locked, but Apache config is broken" 1>&2
+  fi
+
+  exit 0
+elif [ "$cmd_name" == "unlock-vhost-apache" ]; then
+  metadata_str="rm $DEVPANEL_VHOST_LOCK_FLAG"$'\n'
+  echo "$metadata_str" | "$dir/apache-metadata-handler" -n "$vhost"
+  if [ $? -ne 0 ]; then
+    error "unable to remove locked flag from vhost '$vhost'"
+  fi
+
+  "$dir/config-vhost-apache" "$vhost"
+  status=$?
+  if [ $status -eq 0 ]; then
+    echo "Successfully created apache config on vhost '$vhost'"
+    exit 0
+  else
+    error "failed to unlock apache on vhost '$vhost'"
+  fi
+else
+  error "unknown command (was this file renamed?)"
+fi
+
+

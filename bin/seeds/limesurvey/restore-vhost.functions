@@ -1,0 +1,54 @@
+limesurvey_get_users() {
+  sql_query_result "select users_name from lime_users where users_name <> ''"
+}
+
+limesurvey_genpass() {
+  "$dir/genpass"
+}
+
+limesurvey_encrypt() {
+  local password="$1"
+  echo -n "$password"|"$dir/limesurvey-sha256.php"
+}
+
+limesurvey_set_password() {
+  local user="$1"
+  local encrypted_password="$2"
+  local salt
+ 
+  sql_query "update lime_users set password = '$encrypted_password' where users_name = '$user';"
+}
+
+limesurvey_set_email() {
+  local user="$1"
+  local email="$2"
+
+  sql_query "update lime_users set email = '$email' where users_name = '$user';"
+}
+
+limesurvey_get_email() {
+  local user="$1"
+  sql_query_result "select email from lime_users where users_name = '$user'"
+}
+
+limesurvey_get_admin_user() {
+  sql_query_result "select users_name from lime_users where uid = 1"
+}
+
+limesurvey_update_config()
+{
+  echo "
+   s/^[[:space:]]*\$databaseuser[[:space:]]*=[[:space:]]*.*/    \$databaseuser = '$mysql_user';/
+   s/^[[:space:]]*\$databasepass[[:space:]]*=[[:space:]]*.*/    \$databasepass = '$sedphpencoded_mysql_password';/
+   s/^[[:space:]]*\$databaselocation[[:space:]]*=[[:space:]]*.*/    \$databaselocation = '$mysql_host';/
+   s/^[[:space:]]*\$databaseport[[:space:]]*=[[:space:]]*.*/    \$databaseport = '$mysql_port';/
+   s/^[[:space:]]*\$databasename[[:space:]]*=[[:space:]]*.*/    \$databasename = '$hosting_database';/
+  " | run_ised "$home/public_html/$vhost/config.php"
+}
+
+limesurvey_custom() {
+  if [ -n "$opt_n" ]; then
+    limesurvey_update_config || error "Cannot update config.php"
+  fi
+}
+

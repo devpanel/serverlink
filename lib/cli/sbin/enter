@@ -1,0 +1,71 @@
+#!/bin/bash
+
+set_usage_msg \
+  "Usage: $bin_name $action [opts] [--vhost <vhost>] [--domain <domain>]
+
+  Options:
+    --vhost  <vhost>         the vhost to restore
+    --domain <domain>        enter the vhost associated with the
+                             specified domain
+
+  Starts a shell for the specified vhost.
+"
+
+enter() {
+  local param vhost user domain
+  
+  [ $# -eq 0 -o -z "$1" ] && usage
+
+  while [ -n "$1" ]; do
+    param="$1"
+
+    case $param in
+      --vhost)
+        [ -z "$2" ] && error_missing_value vhost
+        vhost="$2"
+        shift 2
+        ;;
+      --domain)
+        [ -z "$2" ] && error_missing_value domain
+        domain="$2"
+        shift 2
+        ;;
+      --help)
+        usage
+        ;;
+      *)
+        error "unknown parameter: $param"
+        ;;
+    esac
+  done
+
+  if [ -z "$vhost" -a -z "$domain" ]; then
+    error "either --vhost or --domain needs to be specified"
+  fi
+
+  if [ -z "$vhost" ]; then
+    . $sys_dir/lib/functions
+
+    vhost=$(get_vhost_with_hostname "$domain")
+    if [ $? -ne 0 ]; then
+      error "didn't find any vhost with the specified hostname"
+    fi
+  fi
+
+  user="w_$vhost"
+
+  echo "Starting a shell for vhost $vhost (user: $user)..."
+  if hash runuser &>/dev/null; then
+    declare -a run_args=( --init-file "$sys_dir/lib/init-shell" )
+
+    # there are some versions of 'runuser' that don't have the -u option
+    # so detect it and run it with the appropriate args
+    if runuser --help 2>&1 | fgrep -q -- -u; then
+      runuser -u "$user" -- /bin/bash "${run_args[@]}"
+    else
+      runuser -- "$user" "${run_args[@]}"
+    fi
+  else
+    su -l "$user"
+  fi
+}

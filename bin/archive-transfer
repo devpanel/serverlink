@@ -1,0 +1,177 @@
+#!/bin/bash
+
+usage() {
+  local prog=$(basename "$0")
+  msg="$1"
+
+  echo "
+This script transfers an archive to/from a remote server
+
+Usage: $prog [ OPTIONS ]
+
+  Options
+    -u base_url           url where to post data
+    -T token              token to authenticate the request
+    -f file               file to upload
+    -t transfer_type      Accepted values: recv_active, send_active
+    -p host:port          Transfer through a http proxy
+    -P username:password  For proxy username and password
+"
+  [ -n "$msg" ] && echo "Error: $msg" 1>&2
+
+  exit 1
+}
+
+# main
+
+dir=$(dirname "$0")
+
+if ! source "$dir/../lib/functions"; then
+  echo "Error: unable to import functions" 1>&2
+  exit 1
+fi
+
+if ! hash curl &>/dev/null; then
+  error "curl is not installed or not in the PATH"
+fi
+
+tokens_dir="$dir/../var/tokens"
+
+getopt_flags='u:T:f:t:p:P:'
+while getopts $getopt_flags OPTN; do
+  case $OPTN in
+    u)
+      base_url="$OPTARG"
+      ;;
+    T)
+      token="$OPTARG"
+      ;;
+    f)
+      file_to_use="$OPTARG"
+      ;;
+    t)
+      transfer_type="$OPTARG"
+      if [ "$transfer_type" != "recv_active" -a \
+          "$transfer_type" != "send_active" ]; then
+        usage "invalid transfer type (-t)"
+      fi
+      ;;
+    p)
+      http_proxy="$OPTARG"
+      if ! [[ "$http_proxy" =~ ^.+:[0-9]+$ ]]; then
+        usage "invalid proxy format. Should be: host:port"
+      fi
+      ;;
+    P)
+      proxy_credentials="$OPTARG"
+      if ! [[ "$proxy_credentials" =~ .+:.+ ]]; then
+        usage "invalid credentials. Should be username:password"
+      fi
+      ;;
+  esac
+done
+
+if [ -z "$base_url" ]; then
+  usage "missing base url (-u) parameter"
+elif [ -z "$token" ]; then
+  usage "missing token (-T) parameter"
+elif [ -z "$file_to_use" ]; then
+  usage "missing file to send (-f) parameter"
+elif [ -z "$transfer_type" ]; then
+  usage "missing transfer type (-t) parameter"
+fi
+
+if [ "$transfer_type" == "send_active" -a ! -e "$file_to_use" ]; then
+  error "file '$file_to_use' doesn't exist."
+elif [ "$transfer_type" == "send_active" -a -d "$file_to_use" ]; then
+  error "path '$file_to_use' is a directory"
+elif [ "$transfer_type" == "recv_active" -a -e "$file_to_use" ]; then
+  error "file '$file_to_use' already exists"
+fi
+
+token_file="$tokens_dir/${USER#w_}.$transfer_type.$token"
+if [ ! -e "$token_file" ]; then
+  error "token file '$token_file' doesn't exist"
+elif [ ! -f "$token_file" ]; then
+  error "path '$token_file' is not a regular file"
+elif [ ! -s "$token_file" ]; then
+  error "token file '$token_file' seems empty"
+fi
+
+secret_str=$(head -1 "$token_file")
+if [ $? -ne 0 -o -z "$secret_str" ]; then
+  error "unable to read secret string"
+fi
+
+if [ "$transfer_type" == "send_active" ]; then
+  file_size=$(stat -c %s "$file_to_use")
+  status=$?
+  if [ $status -ne 0 ]; then
+    error "unable to get size of file '$file_to_use'. Stat returned $status."
+  fi
+fi
+
+file_basename=$(basename "$file_to_use")
+timestamp=$(date +%s)
+data_to_sign="token=$token&timestamp=$timestamp"
+hmac_sig=$(echo -n "$data_to_sign" | openssl dgst -hex -sha256 -hmac "$secret_str")
+hmac_sig=${hmac_sig#* } # remove any non-sig information
+
+status=$?
+if [ $status -ne 0 ]; then
+  error "unable to generate hmac signature. openssl returned $status"
+fi
+
+# validate the token before for fastness
+# not to waste the time and bandwidth if the token is not recognized by the
+# target server
+
+output=$(curl -s ${http_proxy:+-x $http_proxy} \
+  ${proxy_credentials:+ -U "$proxy_credentials"} \
+  -F "validate=1" -F "token=$token" \
+  $([ "$transfer_type" == "send_active" ] && echo "-F size=$file_size") \
+  -F "timestamp=$timestamp" -F "sig=$hmac_sig" "$base_url" )
+status=$?
+
+if [ $status -ne 0 ]; then
+  error "unable to connect to the url. curl returned: $status"
+elif [ "$output" != "0" ]; then
+  echo "Response: $output"
+  error "unable to proceed with the transfer"
+fi
+
+if [ "$transfer_type" == "send_active" ]; then
+  output=$(curl -s ${http_proxy:+-x $http_proxy} \
+    ${proxy_credentials:+ -U "$proxy_credentials"} -F "token=$token" \
+    -F "size=$file_size" -F "pack=@$file_to_use" \
+    -F "timestamp=$timestamp" -F "sig=$hmac_sig" "$base_url")
+  status=$?
+  [ ! -z "$output" ] && echo -e "Response:\n$output"
+
+  if [ $status -ne 0 ]; then
+    error "unable to upload file. curl returned exit code: $status"
+  fi
+
+  internal_code=${output%%:*}
+
+  if [ -z "$internal_code" ] || ! [[ "$internal_code" =~ ^[0-9]+$ ]]; then
+    error "received an unexpected response format"
+  fi
+
+  if [ "$internal_code" != "0" ]; then
+    error "failed to transfer file"
+  fi
+elif [ "$transfer_type" == "recv_active" ]; then
+  file_basename=$(basename "$file_to_use")
+  # will stick using POST method for privacy (avoid signature being stored in
+  # proxy/server logs)
+  curl -s ${http_proxy:+-x $http_proxy} \
+      ${proxy_credentials:+ -U "$proxy_credentials"} \
+      -F "timestamp=$timestamp" \
+      -F "sig=$hmac_sig" -o "$file_to_use" -F "token=$token" "$base_url"
+  status=$?
+  if [ $status -ne 0 ]; then
+    error "curl returned status: $status"
+    [ -e "$file_to_use" ] && rm -f "$file_to_use"
+  fi
+fi

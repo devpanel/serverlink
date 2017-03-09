@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+
+self_bin=$(readlink -e "$0")
+if [ $? -ne 0 ]; then
+  echo "Error: unable to detect self path" 1>&2
+  exit 1
+fi
+self_dir=${self_bin%/*}
+
+# assuming self_dir = install/utils/interfaces-pre-up
+sys_dir=${self_dir%/*/*/*}
+
+"$sys_dir/libexec/change-iptables-rules" -R
+
+/bin/true

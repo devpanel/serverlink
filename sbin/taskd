@@ -1,0 +1,1591 @@
+#!/usr/bin/perl -w
+use strict;
+use warnings;
+use File::Basename (qw( dirname basename ));
+use IO::Select;
+
+BEGIN {
+  my $local_perl5_lib = dirname(__FILE__) . '/../lib/perl5/';
+  if(-d $local_perl5_lib || -l $local_perl5_lib) {
+    unshift(@INC, $local_perl5_lib);
+  }
+}
+
+use Getopt::Std (qw( getopts ));
+use POSIX;# qw( setsid :signal_h :errno_h :sys_wait_h );
+use Fcntl (qw( :DEFAULT :flock ));
+use Cloudenabled::Constants (qw( :DEFAULT %CE_TASKS_MSG_TYPES %CE_OP_ST_MAP ));
+use Cloudenabled::Util;
+use Cloudenabled::Tasks::Util;
+use Storable (qw( freeze thaw ));
+use Config::Tiny;
+
+use constant CE_TASKD_VERSION => '1.2.4.1';
+
+use constant CE_TASKD_WARN          =>  1;
+use constant CE_TASKD_ERR           =>  2;
+use constant CE_TASKD_DEBUG         =>  4;
+use constant CE_TASKD_STD           =>  8;
+use constant CE_TASKD_RAW           => 16;
+use constant CE_TASKD_WARN_STDOUT   => 32;
+
+use constant CE_TASKD_MAX_OUTPUT_SIZE => 1024 * 1024;
+
+our $config_file;
+our $profile;
+our $debug          = 0;
+
+our $program  = basename($0);
+
+our %v = ();
+
+our $n_childs   = 0;
+
+our @report_failed      = ();
+our @set_running_failed = ();
+
+our @waiting_report = ();
+
+our $conf = {};
+our($http_child_pid);
+our $child_status  = {};
+our $report_status = {};
+our $exec_status   = {};
+
+our $master_io;
+
+our %config_defaults = (
+  scripts_dir   => '/opt/webenabled',
+  max_exec_child => 5,
+  work_dir       => ($> == 0 ? "/var/log/webenabled" : "$ENV{HOME}/.devpanel/var"),
+  unpriv_user    => "devpanel",
+  unpriv_group   => "devpanel",
+);
+
+sub usage {
+  print "Usage: $0 [ options ]
+
+  Options:
+    -d                      Print debug messages
+    -c config_file.conf     Use an alternate config file
+    -P profile_name         Use the specified profile name
+    -T                      Test config file and exit
+    -F                      Foreground, don't daemonize
+    -l log_file             Use the specified file as log file
+    -h                      Help. Displays this message.
+";
+  exit(1);
+}
+
+sub initializeVariables {
+  my($conf, $config_defaults, $v) = @_;
+
+  if(!defined($conf) || !ref($conf) || ref($conf) ne 'HASH') {
+    warn 'initializeVariables(): error - empty conf parameter';
+    return 0;
+  } elsif(!defined($config_defaults) || !ref($config_defaults) || ref($config_defaults) ne 'HASH') {
+    warn 'initializeVariables(): error - empty config_defaults parameter';
+    return 0;
+  }
+
+  foreach my $k (keys %$config_defaults) {
+    if(ce_is_hash_key_empty($conf, $k)) {
+      $conf->{$k} = $v->{$k} = $config_defaults->{$k};
+    } else {
+      $v->{$k} = $conf->{$k}; # is set in %$config, copy to %$v
+    }
+  }
+
+  $v->{n_exec_child}      =  0;
+  $v->{error_retry_intvl} = 30;
+  $v->{set_running}       = [];
+  $v->{can_run}           = 0;
+
+  $v->{work_dir}    =~ s#/$##g;
+  $v->{scripts_dir} =~ s#/$##g;
+
+  $v->{output_tmp_dir} = sprintf("%s/%s_output", $v->{work_dir}, $v{p_profile});
+  $v->{lock_file} = ($> == 0 ? "/var/run/.$v{p_profile}.lock" :
+                      sprintf("%s/%s.lock", $v->{work_dir}, $v{p_profile}));
+
+  $v->{log_file} = ce_is_hash_key_empty($v, 'log_file') ? 
+                   sprintf("%s/%s.log", $v->{work_dir}, $v{p_profile}) : $v->{log_file};
+
+  $v->{pid_file} = ($> == 0 ? "/var/run/$v{p_profile}.pid" :
+                    sprintf("%s/%s.pid", $v->{work_dir}, $v{p_profile}));
+
+  $v->{max_output_size} = ce_is_hash_key_empty($conf, 'max_output_size') ?
+                        CE_TASKD_MAX_OUTPUT_SIZE : $conf->{max_output_size};
+
+  if(!ce_is_hash_key_empty($conf, 'local_ip_in_dns') && (my $ip = get_local_interface_ip())) {
+    $v->{local_ip_address} = $ip;
+  }
+
+  my(@usr_ar, @grp_ar);
+  if($> == 0 && !ce_is_hash_key_empty($conf, "unpriv_user")) {
+    if(@usr_ar = getpwnam($conf->{unpriv_user})) {
+      $v->{unpriv_user} = $conf->{unpriv_user};
+      $v->{unpriv_uid}  = $usr_ar[2];
+    } else {
+      $v->{unpriv_user} = undef;
+    }
+  }
+
+  if($> == 0 && !ce_is_hash_key_empty($conf, "unpriv_group")) {
+    if(@grp_ar = getgrnam($conf->{unpriv_group})) {
+      $v->{unpriv_group} = $conf->{unpriv_group};
+      $v->{unpriv_gid}   = $grp_ar[2];
+    } else {
+      $v->{unpriv_group} = undef;
+    }
+  }
+
+  return 1;
+}
+
+sub fix_directories_struct_perms {
+  my($v) = @_;
+
+  my $op_perm_dec = 2770;
+  my $op_perm_oct = oct($op_perm_dec);
+
+  foreach my $dir (qw( work_dir output_tmp_dir )) {
+    if(! -e $v->{$dir} && !mkdir($v->{$dir})) {
+      warn "Error: unable to create directory '$v->{$dir}: $!'.\n";
+      return 0;
+    }
+
+    if(-d $v->{$dir}) {
+      my($d_mode_oct, $d_gid) = (stat($v->{$dir}))[2,5];
+      my $d_mode_dec = sprintf("%04o", $d_mode_oct & 07777);
+
+      if($> == 0 && exists($v->{unpriv_gid}) && defined($v->{unpriv_gid}) &&
+         $v->{unpriv_gid} != $d_gid) {
+         taskd_log(undef, "fixing the ownership of directory $v->{$dir} (setting gid $v->{unpriv_gid}, was $d_gid)");
+         if(!chown(0, $v->{unpriv_gid}, $v->{$dir})) {
+           taskd_log(CE_TASKD_ERR, "unable to set directory permissions $v->{$dir}: $!");
+           return 0;
+         }
+      }
+
+      if($> == 0 && $d_mode_dec != $op_perm_dec) {
+        taskd_log(undef, "fixing permissions of directory $v->{$dir}, setting to $op_perm_dec (was $d_mode_dec)");
+
+        if(!chmod($op_perm_oct, $v->{$dir})) {
+          taskd_log(CE_TASKD_ERR, "unable to set permissions directory '$dir': $!\n");
+          return 0;
+        }
+      }
+    }
+  }
+
+  return 1;
+}
+
+sub _has_missing_config_directives {
+  my $conf = shift || return 0;
+
+  my @required_directives = (qw(
+    api_url uuid key
+  ));
+
+  foreach my $p (@required_directives) {
+    if(ce_is_hash_key_empty($conf, $p)) {
+      taskd_log(CE_TASKD_RAW, "Error: Parameter '$p' not set in config file.");
+      return 1;
+    }
+  }
+
+  return 0;
+}
+
+sub validate_config {
+  my($conf, $v) = @_;
+  my $f = 'validate_config()';
+
+  if(!ce_is_hash_key_empty($v, 'max_exec_child') && $v->{max_exec_child} !~ /^\d+$/) {
+    taskd_log(CE_TASKD_RAW,
+      "Invalid value for parameter: max_exec_child. Should be numeric\n");
+    return 0;
+  }
+
+  if($> == 0 && !ce_is_hash_key_empty($conf, 'unpriv_user') &&
+      ce_is_hash_key_empty($v, 'unpriv_user')) {
+
+    taskd_log(CE_TASKD_RAW,
+              "Error: couldn't resolve unpriv_user: $conf->{unpriv_user}");
+    return 0;
+  }
+
+  if($> == 0 && !ce_is_hash_key_empty($conf, 'unpriv_group') &&
+      ce_is_hash_key_empty($v, 'unpriv_group')) {
+
+    taskd_log(CE_TASKD_RAW,
+              "Error: couldn't resolve unpriv_group: $conf->{unpriv_group}");
+    return 0;
+  }
+
+
+  return 1;
+}
+
+sub validate_file_permissions {
+  my($v) = @_;
+
+  foreach my $dir (qw( work_dir output_tmp_dir scripts_dir )) {
+    if(!-e $v->{$dir}) {
+      taskd_log(CE_TASKD_RAW | CE_TASKD_WARN_STDOUT,
+        "Error: directory '$v->{$dir}' ($dir) doesn't exist.\n");
+      return 0;
+    } elsif(! -d $v->{$dir}) {
+      taskd_log(CE_TASKD_RAW | CE_TASKD_WARN_STDOUT,
+        "Error: path '$v->{$dir}' ($dir) is not a directory.\n");
+      return 0;
+    }
+  }
+
+  foreach my $dir (qw( output_tmp_dir )) {
+    if(!-w $v->{$dir}) {
+      taskd_log(CE_TASKD_RAW | CE_TASKD_WARN_STDOUT, 
+        "Error: directory '$v->{$dir}' ($dir) is not writable.\n");
+      return 0;
+    }
+  }
+
+  return 1;
+}
+
+sub _encode_file_base64 {
+  my $file = shift;
+  my $buf;
+  my $n = 0;
+  my $nr;
+  my $b64_str = '';
+
+  if(!open(F, $file)) {
+    return undef;
+  }
+
+  while($nr = read(F, $buf, 70*57) && $n <= CE_TASK_MAX_OUTPUT_LEN) {
+    $n += $nr;
+    $b64_str .= encode_base64($buf);
+  }
+  close(F);
+
+  # warn sprintf("b64 = %s\n", $b64_str);
+  return $b64_str;
+}
+
+sub _set_autoflush_noblock {
+  my $fd = shift;
+
+  my $prev_fd = select();
+  select($fd);
+  fcntl($fd, F_SETFL, O_NONBLOCK);
+  $| = 1;
+
+  select($prev_fd);
+}
+
+sub exec_drop_privs {
+  my($username, $group) = @_;
+
+  my(@user_fields, $uid, $gid);
+  if(!(@user_fields = getpwnam($username))) {
+    taskd_log(CE_TASKD_ERR, "user '$username' doesn't exist.");
+    return 0;
+  }
+  $uid = $user_fields[2];
+
+  if(!defined($group) && length($gid = ce_get_user_gids($username)) == 0) {
+    taskd_log(CE_TASKD_ERR, "couldn't get list of gids for user '$username'");
+    return 0;
+  } elsif(defined($group) && !($gid = getgrnam($group))) {
+    taskd_log(CE_TASKD_ERR, "group '$group' doesn't exist.");
+    return 0;
+  }
+
+  if(ce_drop_gid($gid)) {
+    $debug and taskd_log(CE_TASKD_DEBUG, "successfully dropped privs to gid(s): $gid");
+  } else {
+    taskd_log(CE_TASKD_ERR, "unable to drop gid to '$gid'");
+    return 0;
+  }
+
+  if(ce_drop_uid($uid)) {
+    $debug and taskd_log(CE_TASKD_DEBUG, "successfully dropped privs to uid: $uid");
+  } else {
+    taskd_log(CE_TASKD_ERR, "unable to drop privileges to uid '$uid'");
+    return 0;
+  }
+
+  # set the variables appropriately
+  undef(%ENV);
+  $ENV{'USER'} = $ENV{'LOGNAME'} = $username;
+  $ENV{'HOME'} = $user_fields[7];
+  if(-d $ENV{'HOME'}) {
+    chdir($ENV{'HOME'});
+  }
+
+  $debug and debug_log(sprintf("Dropped privs to user '%s' (uid: %d) and group '%s' (gid: %s)", 
+         $username, $uid, (defined($group) ? $group : '(all)'), $gid));
+
+  return 1;
+}
+
+sub sig_term_main {
+  my $sig_name = shift;
+
+  my %sig_map = (
+    INT     =>  2,
+    TERM    => 15,
+    default => 15,
+  );
+
+  taskd_log(undef, "received SIG${sig_name} - shutting down");
+
+  if(exists($v{http_pid})) {
+    my $sig_n = exists($sig_map{$sig_name}) ? $sig_map{$sig_name} : $sig_map{default};
+    kill($sig_n, $v{http_pid});
+    flock(LOCK_FILE, LOCK_UN);
+  }
+
+  exit(0);
+}
+
+sub sig_hup_main {
+  my $tmp;
+  
+  # if($tmp = cloudenabled_parse_conf($default_config)) {
+  #  %v = %$tmp;
+  #  $debug and ce_log("Reloaded with data = " . Dumper(\%v));
+  #  ce_log("Received HUP. Successfully reloaded config.");
+  # } else {
+  #  ce_log("Received HUP. But config file has problems, config not reloaded.");
+  # }
+}
+
+sub master_sig_chld {
+  my @report_ar = ();
+
+  while((my $pid = waitpid(-1, WNOHANG)) > 0) {
+    my $ret = $? >> 8;
+
+    if($pid eq $v{http_pid}) {
+      taskd_log(CE_TASKD_ERR, "http child died (had pid: $v{http_pid})");
+      $master_io->remove(*FROM_CHILD);
+      close(FROM_CHILD);
+      close(TO_CHILD);
+      delete($v{http_pid});
+      return;
+    }
+
+    my $task_id;
+    if(!($task_id = $v{"pid:$pid:task"})) {
+      taskd_log(CE_TASKD_ERR, "SIG_CHLD - No known task for pid $pid");
+      return 0;
+    }
+
+    # it's an exec child
+
+    $v{n_exec_child}--;
+
+    my $task_ref    = $v{"task:$task_id"};
+   
+    taskd_log(CE_TASKD_STD,
+      sprintf('Finished execution of task %d (pid %d, activity %d, attempt %d), exit code: %d',
+                                $task_id, $pid, $task_ref->{activity_id},
+                                $task_ref->{attempt_id}, $ret));
+
+    push(@report_ar, 
+                        {
+                               T => $task_id,
+                               e => time(),
+                               r => $ret,
+                               f => $v{"task:$task_id:flags"},
+                        }
+    );
+
+    delete($v{"pid:$pid:task"});
+    delete($v{"activity:" . $task_ref->{activity_id} . ":pid"});
+    delete($v{"task:$task_id"});
+    undef($task_ref);
+  }
+
+  if($#report_ar >= 0) {
+    freeze_and_send(\*TO_CHILD, {
+                         __op           => 'report',
+                         tasks          => \@report_ar,
+                         n_exec_child   => $v{n_exec_child} 
+    });
+  }
+
+  $SIG{CHLD} = \&master_sig_chld;
+};
+
+sub report_task {
+  my($msg) = @_;
+
+  my $task_id    = $msg->{T};
+  my $ret        = $msg->{r};
+  my $end_time   = $msg->{e};
+  my $task_flags = $msg->{f};
+
+  my $out_file = sprintf('%s/%d', $v{output_tmp_dir}, $task_id);
+
+  if(!open(OUTPUT_F, $out_file)) {
+    taskd_log(CE_TASKD_ERR,
+      "unable to open output file '$out_file' for task $task_id: $!");
+    return 0;
+  }
+
+  my $default_buf_len = 8192;
+  my($read_len, $n);
+  $read_len = $n = 0;
+  my $output_str = '';
+  my $pre_buf = "";
+  my $params_found_r = {};
+
+  while($read_len <= $v{max_output_size} &&
+    defined($n = sysread(OUTPUT_F, my $buf, $default_buf_len - length($pre_buf))) && $n > 0) {
+    $debug and debug_log("read $n characters from file '$out_file'");
+
+    # if the task is marked to search for parameters in output, then search for it
+    if($task_flags & CE_TASK_FL_SEARCH_FOR_OUTPUT_PARAMS) {
+      my $full_str = $pre_buf . $buf;
+      my $pos_i = 0;
+      my $full_str_len = length($full_str);
+
+      while($pos_i < $full_str_len) {
+        my $pos_m = index($full_str, "\n", $pos_i);
+
+        if($pos_m > -1 && $pos_m == $pos_i) {
+          # matched, but are consecutive \n's, just read again to
+          # find more lines
+          $pre_buf = "";
+          $pos_i = $pos_m + 1;
+          next;
+        } elsif($pos_m > - 1) {
+          my $line = substr($full_str, $pos_i, $pos_m);
+          if(my($param, $value) = extract_param_from_line($line)) {
+            ce_add_to_hash($params_found_r, $param, $value);
+          }
+          $pre_buf = "";
+          $pos_i = $pos_m + 1;
+        } elsif($pos_m == -1 && $pos_i != $pos_m) {
+          # there isn't a \n here, it means a partial line
+          # copy the remaining characters to $pre_buf to use later when the
+          # new line comes
+          if(length($pre_buf) == $default_buf_len) {
+            # read a very big line and didn't find a \n, don't store this
+            # line
+            $pre_buf = "";
+          } else {
+            $pre_buf = substr($full_str, $pos_i);
+          }
+
+          last; # skip, wait for the next reading cycle
+        } elsif($pos_m == -1 && $pos_i == $pos_m) {
+          # didn't match and got to the end of the string
+          # just end this search cycle
+          $pre_buf = "";
+          last;
+        }
+      }
+    }
+
+    $output_str .= $buf;
+    $read_len   += $n;
+  }
+  close(OUTPUT_F);
+
+  my $output_base64 = eval { encode_base64($output_str); };
+  if($@) {
+    taskd_log(CE_TASKD_ERR,
+    "unable to encode to base64 the output of file '$out_file' (task $task_id)");
+    return 0;
+  }
+
+  my $req_r = {
+      __api_url => $conf->{api_url},
+          __key => $conf->{key},
+       __method => 'post',
+             op => CE_TASK_OP_REPORT,
+             _S => $v{session_id},
+              T => $task_id,
+              o => $output_base64,
+              r => $ret,
+              e => $end_time,
+  };
+
+
+  if($task_flags & CE_TASK_FL_SEARCH_FOR_OUTPUT_PARAMS && $params_found_r) {
+    my $pi = 1;
+    $req_r->{pn} = scalar(keys(%$params_found_r));
+    foreach my $p (keys(%$params_found_r)) {
+      $req_r->{"p$pi"} = $p;
+      $req_r->{"v$pi"} = $params_found_r->{$p};
+      $pi++;
+    }
+  }
+
+  my $ht_ret = ce_tasks_http_request($req_r);
+
+  undef($output_base64);
+  undef($output_str);
+
+  if(ce_task_was_successful($ht_ret)) {
+    taskd_log(undef, "successfully reported execution of task $task_id");
+    freeze_and_send(\*TO_PARENT, { __op => 'rm_task_log',
+                                  'task_id' => $task_id });
+    return 1;
+  } else {
+    taskd_log(CE_TASKD_ERR, "failed to report the execution of task ". 
+      "$task_id. server returned: " .  ce_map_op_st_str($ht_ret->{_s}) .
+      (exists($ht_ret->{_e}) ? '. Error msg: ' . $ht_ret->{_e} : ''));
+    return 0;
+  }
+}
+
+sub exec_child {
+  my($def) = @_;
+
+  $debug and debug_log("attempting to parse task definition:", $def);
+
+  my($task_id, $flags, $attempt_id, $activity_id) = split(/,/, $def->{props});
+
+  if(exists($v{"activity:$activity_id:pid"})) {
+    my $msg = "skipping task %d. There's another pid (%d) running for the activity %d";
+    taskd_log(CE_TASKD_WARN, sprintf($msg, $task_id, $v{"activity:$activity_id:pid"}, $activity_id));
+    return 0; # there's already another task running for this activity
+  }
+
+  if(exists($v{"task:$task_id:pid"})) {
+    taskd_log(CE_TASKD_WARN, "there's another process executing this task (!?!?). Skipping");
+    return 0;
+  }
+
+  if($flags & CE_TASK_FL_DROP_PRIVS && !exists($def->{exec_user})) {
+    taskd_log(CE_TASKD_ERR, "missing parameter exec_user in task $task_id");
+    return 0;
+  }
+
+  if($flags & CE_TASK_FL_READ_STDIN && !exists($def->{stdin_data})) {
+    taskd_log(CE_TASKD_ERR, "missing stdin_data in task $task_id");
+    return 0;
+  } elsif($flags & CE_TASK_FL_READ_STDIN) {
+    $debug and debug_log("task $task_id expects data from stdin");
+    pipe(EXEC_READ_FD, EXEC_WRITE_FD);
+    ce_set_autoflush_noblock(\*EXEC_READ_FD);
+    ce_set_autoflush_noblock(\*EXEC_WRITE_FD);
+
+    if($flags & CE_TASK_FL_STDIN_BASE64) {
+      # loading only the required function, to save memory
+      use MIME::Base64 (qw( decode_base64 ));
+      $debug and debug_log("stdin for task $task_id is based64, decoding...");
+      my $stdin_data = eval { decode_base64($def->{stdin_data}); };
+      if($@) {
+        taskd_log(CE_TASKD_ERR, "unable to decode base64 stdin of task $task_id");
+        return 0;
+      } else {
+        $def->{stdin_data} = $stdin_data;
+        undef($stdin_data);
+      }
+    }
+  }
+
+  my $pid = fork();
+
+  if(!defined($pid)) {
+    taskd_log(CE_TASKD_ERR, "unable to fork exec child. $!");
+    return 0;
+  } elsif($pid) {
+    my $task_ref = {
+      activity_id => $activity_id,
+      pid         => $pid,
+      attempt_id  => $attempt_id,
+    };
+
+    $v{"task:$task_id"}             = $task_ref;
+    $v{"task:$task_id:flags"}       = $flags;
+    $v{"pid:$pid:task"}             = $task_id;
+    $v{"activity:$activity_id:pid"} = $pid;
+
+    $v{n_exec_child}++;
+
+    if($flags & CE_TASK_FL_READ_STDIN) {
+      close(EXEC_READ_FD);
+      $debug and debug_log("printing data to exec client: " .
+                              $def->{stdin_data});
+      print EXEC_WRITE_FD $def->{stdin_data};
+      close(EXEC_WRITE_FD);
+    }
+
+    $debug and 
+      debug_log("forked child to run task $task_id, pid $pid", $task_ref);
+
+    push(@{ $v{set_running} }, $task_id);
+
+    undef($def); # release the $def struct that can be big
+    return 1;
+  }
+
+  # now the exec child
+
+  sleep(1); # wait a bit for the parent to set itself (above)
+
+  $0 = sprintf("%s-task-%d-exec-child", $v{p_profile}, $task_id);
+
+  my $errmsg;
+
+  # open the log file, just before dropping privileges
+  my $outfile = sprintf('%s/%d', $v{output_tmp_dir}, $task_id);
+  if(!open(EXEC_LOG, ">$outfile")) {
+    $errmsg = "Error: unable to open output file. $!";
+    goto ERR_BEFORE_EXEC;
+  }
+
+  if($flags & CE_TASK_FL_READ_STDIN) {
+    close(EXEC_WRITE_FD);
+    if(!open(STDIN, '<&=', fileno(EXEC_READ_FD))) {
+      $errmsg = "Error: unable to redirect stdin. $!";
+      goto ERR_BEFORE_EXEC;
+    }
+  }
+
+  taskd_log(CE_TASKD_STD,
+    "Preparing to run task $task_id, attempt $attempt_id, activity " .
+      $activity_id);
+
+  # task requests to drop privileges
+  if($flags & CE_TASK_FL_DROP_PRIVS) {
+    my $user  = $def->{exec_user};
+    my $group = exists($def->{exec_group}) ? $def->{exec_group} : undef;
+    if(!exec_drop_privs($user, $group)) {
+      goto ERR_BEFORE_EXEC;
+    }
+  } else {
+    # set the variables for the current user
+    # undef(%ENV);
+    my @user_info = getpwuid($>);
+    if(!@user_info) {
+      taskd_log(CE_TASKD_ERR,
+                  "unable to get info about the current user");
+
+      goto ERR_BEFORE_EXEC;
+    }
+
+    $ENV{'USER'} = $ENV{'LOGNAME'} = $user_info[0];
+    $ENV{'HOME'} = $user_info[7];
+    if(-d $ENV{'HOME'}) {
+      chdir($ENV{'HOME'});
+    }
+  }
+
+  # set the environment variables defined in the command (if any)
+  my $i=1;
+  while(exists($def->{"e${i}n"})) {
+    $ENV{$def->{"e${i}n"}} = $def->{"e${i}v"};
+    $i++;
+  }
+
+  # if the command has no arguments (i.e. a single string), then make it an
+  # array anyway
+  if(!ref($def->{cmd})) {
+    $def->{cmd} = [ $def->{cmd} ];
+  }
+
+  # the command path
+  my @cmd = ($v{scripts_dir} . '/' . shift(@{ $def->{cmd} }));
+
+  # the command arguments
+  if($#{ $def->{cmd} } > -1) {
+    push(@cmd, @{ $def->{cmd} });
+  }
+
+  $debug and 
+    debug_log("Executing task $task_id, activity $activity_id, command: " .
+      join(' ', @cmd));
+
+  open(STDOUT, '>&EXEC_LOG');
+  open(STDERR, '>&STDOUT');
+
+  umask(022);
+  if(!exec(@cmd)) {
+    $errmsg = "Failed to execute task $task_id, attempt $attempt_id, " .
+              "activity $activity_id: $!\n";
+  }
+
+ERR_BEFORE_EXEC:
+  $errmsg and taskd_log(CE_TASKD_ERR, $errmsg);
+  $errmsg and print $errmsg; # save in the command output
+  if(defined(fileno('EXEC_LOG'))) {
+    close(EXEC_LOG);
+  }
+  exit(127);
+}
+
+sub taskd_log {
+  my($flag, $msg) = @_;
+
+  if(!defined($flag)) {
+    $flag = CE_TASKD_STD;
+  }
+
+  my $prep = "[$$] " . $program;
+  if($flag & CE_TASKD_ERR) {
+    $prep .= ' - error: ';
+  } elsif($flag & CE_TASKD_WARN) {
+    $prep .= ' - warning: ';
+  } elsif($flag & CE_TASKD_DEBUG) {
+    $prep .= ' - debug: ';
+  } elsif($flag & CE_TASKD_STD) {
+    $prep .= ': ';
+  } elsif($flag & CE_TASKD_RAW) {
+    $prep = '';
+  }
+
+  if(substr($msg, length($msg) - 1) ne "\n") {
+    $msg .= "\n";
+  }
+
+  if($flag & CE_TASKD_WARN_STDOUT) {
+    warn $msg;
+  }
+
+  ce_log(\*STDOUT, $prep . $msg);
+}
+
+sub debug_log {
+  my($msg, $ref) = @_;
+
+  if(defined($ref)) {
+    $msg .= ' ' . Dumper($ref);
+  }
+
+  taskd_log(CE_TASKD_DEBUG, $msg);
+}
+
+sub log_msg_err {
+  my($msg_str, $ret) = @_;
+
+  my $st = exists($ret->{status}) ? $ret->{status} :
+           exists($ret->{_s})     ? $ret->{_s}     : '';
+
+  my $err = exists($ret->{errmsg}) ? $ret->{errmsg} :
+            exists($ret->{_e})     ? $ret->{_e}     : '';
+
+  taskd_log(CE_TASKD_ERR, $msg_str . ' '.  ce_map_op_st_str($st) .  '. ' . $err);
+}
+
+sub start_session {
+  my $params = {
+    __api_url => $conf->{api_url},
+    __method  => 'post',
+    __key     => $conf->{key},
+     U => $conf->{uuid},
+    op => CE_TASK_OP_HELLO,
+    v  => CE_TASKD_VERSION,
+    t  => time(),
+  };
+
+  if(exists($conf->{local_ip_in_dns}) && exists($v{local_ip_address})) {
+    $params->{l} = $v{local_ip_address};
+  }
+
+  return ce_tasks_http_request($params);
+}
+
+sub retrieve_msgs {
+  my $params = {
+    __api_url => $conf->{api_url},
+    __method  => 'get',
+    __key     => $conf->{key},
+    _S        => $v{session_id},
+    op        => CE_TASK_OP_GET_MSGS,
+    N         => $v{can_run},
+  };
+
+  return ce_tasks_http_request($params);
+}
+
+sub set_running {
+  my($tasks) = @_;
+
+  my $task_str;
+  if(ref($tasks)) {
+    $task_str = join(', ', @{ $tasks });
+  } else {
+    $task_str = $tasks;
+  }
+
+  my $params = {
+    __api_url => $conf->{api_url},
+    __method  => 'post',
+    __key     => $conf->{key},
+    _S        => $v{session_id},
+     T        => $tasks,
+    op        => CE_TASK_OP_SET_RUNNING,
+  };
+
+  my $ht_ret = ce_tasks_http_request($params);
+
+  if(!ce_task_was_successful($ht_ret)) {
+    taskd_log(CE_TASKD_WARN, "failed to notify about running tasks: " .
+                                                                $task_str);
+    taskd_log(CE_TASKD_WARN, "server returned: " .
+                  ce_map_op_st_str($ht_ret->{_s}) .
+                  (exists($ht_ret->{_e}) ? '. Error msg: ' . $ht_ret->{_e} : ''));
+
+    return 0;
+  } elsif($debug) {
+    debug_log("successfully notified about running tasks: $task_str");
+  }
+
+  return 1;
+}
+
+sub ran_internal {
+  my($msg_id) = @_;
+
+  my $params = {
+    __api_url => $conf->{api_url},
+    __method  => 'post',
+    __key     => $conf->{key},
+    _S        => $v{session_id},
+     I        => $msg_id,
+    op        => CE_TASK_OP_RAN_INTERNAL,
+  };
+
+  my $ht_ret = ce_tasks_http_request($params);
+
+  if(!ce_task_was_successful($ht_ret)) {
+    taskd_log(CE_TASKD_WARN, "failed to notify about internal task run: " .
+                              "msg_id: $msg_id");
+
+    taskd_log(CE_TASKD_WARN, "server returned: " .
+                  ce_map_op_st_str($ht_ret->{_s}) .
+                  (exists($ht_ret->{_e}) ? '. Error msg: ' . $ht_ret->{_e} : ''));
+
+    return 0;
+  } elsif($debug) {
+    debug_log("successfully notified about internal task run, msg_id: $msg_id");
+  }
+
+  return 1;
+}
+
+sub controlled_write {
+  my($fd, $content_ref, $write_len) = @_;
+
+  my $func = "controlled_write()";
+
+  if(!defined($write_len)) {
+    $write_len = 4096;
+  }
+
+  my $fd_no = fileno($fd);
+
+  my($w_in, $e_in) = '' x 3;
+  vec($w_in, fileno($fd), 1) = 1;
+  $e_in = $w_in;
+
+  my($w_out, $e_out);
+
+  my $content_length = length($$content_ref);
+
+  $debug and debug_log("$func: received $content_length bytes of content");
+
+  my $n_written = 0;
+  my $n_sel     = 1;
+
+  while($n_written < $content_length) {
+    $n_sel = select(undef, $w_out = $w_in, $e_out = $e_in, undef);
+    if($n_sel == -1) {
+      taskd_log(CE_TASKD_ERR, "$func: $!");
+      return 0;
+    }
+
+    if(vec($e_out, $fd_no, 1)) {
+      # how to precisely describe this error?
+      taskd_log(CE_TASKD_ERR, "$func: error on file handle");
+      return 0;
+    }
+
+    if(!vec($w_out, $fd_no, 1)) {
+      # not ready for writing!?!
+      next;
+    }
+
+    if($n_written == 0) {
+      my $hdr_ret = syswrite($fd, pack("I", $content_length), 4);
+      if(!defined($hdr_ret)) {
+        taskd_log(CE_TASKD_ERR, "$func: unable to send the header: $!");
+        return 0;
+      }
+    }
+
+    # now ready for writing
+    my $missing = $content_length - $n_written;
+    my $this_write_len = ($missing > $write_len) ? $write_len : $missing;
+    my $current_content = substr($$content_ref, $n_written, $this_write_len);
+
+    my $n_res = syswrite($fd, $current_content, $this_write_len);
+
+    if(defined($n_res)) {
+      $n_written += $n_res;
+    } else {
+      taskd_log(CE_TASKD_ERR, "$func: $!");
+      return 0;
+    }
+  }
+
+  $debug and debug_log("$func: wrote $n_written bytes");
+
+  return 1;
+}
+
+sub freeze_and_send {
+  my($fd, $msg, $len) = @_;
+
+  if(!defined($len)) {
+    $len = 4096;
+  }
+
+  my $freezed_msg = eval { freeze($msg); };
+  if($@) {
+    taskd_log(CE_TASKD_ERR, "unable to freeze msg to send");
+  } else {
+    controlled_write($fd, \$freezed_msg, $len);
+  }
+}
+
+sub read_freezed_msg {
+  my($io_obj, $peer_name, $exec_func, $timeout, $read_len) = @_;
+
+  if(!defined($read_len)) {
+    $read_len = 4096;
+  }
+
+  my $buf;
+  my $buf_acum     = "";
+  my $msg_len      =  0;
+  my $total_bytes  =  0;
+  my $msg;
+  my $accepted_errs = &EINTR | &EWOULDBLOCK | &EAGAIN;
+
+  while(my @fhs = $io_obj->can_read($timeout)) {
+    my $n_cicle = 0;
+    while(my $n_read = sysread($fhs[0], $buf, $read_len)) {
+      $n_cicle++;
+      if(!defined($n_read) && ($! & $accepted_errs)) {
+        next;
+      } elsif(!defined($n_read)) {
+        taskd_log(CE_TASKD_ERR, "reading from $peer_name: $!");
+        goto RESET_BUFFERS;
+      } elsif($n_read > 0) {
+        $buf_acum .= $buf;
+        $total_bytes += $n_read;
+      } elsif($n_read == 0) {
+        taskd_log(CE_TASKD_ERR, "file descriptor from $peer_name closed");
+        goto RESET_BUFFERS;
+      }
+
+      $debug and debug_log("read cicle($n_cicle) buf of size: $n_read bytes from $peer_name");
+      if($total_bytes <= 4) {
+        next; # didn't read enough yet
+      } elsif($total_bytes >= 4 && $msg_len == 0) {
+        $msg_len = unpack("I", $buf_acum);
+         $debug and debug_log("read msg_len $msg_len bytes from $peer_name");
+      }
+
+      if($total_bytes > CE_TASKD_MAX_OUTPUT_SIZE) {
+        taskd_log(CE_TASKD_ERR, "buffer reached maximum size. Ignoring request from $peer_name");
+        goto RESET_BUFFERS;
+      }
+
+      if($total_bytes < $msg_len) {
+        next;
+      }
+
+      # if($total_bytes >= $msg_len + 4) {
+      while($total_bytes >= $msg_len + 4) {
+        $msg = eval { thaw(substr($buf_acum, 4, $msg_len)); };
+        if($@) {
+          taskd_log(CE_TASKD_ERR, "unable to parse msg from $peer_name: $@");
+        } else {
+          $debug and debug_log("received from $peer_name: ", $msg);
+          $debug and debug_log("read $total_bytes bytes in previous request from $peer_name");
+          &$exec_func($msg);
+        }
+
+        if(length($buf_acum) > $msg_len + 4) {
+          # has more than one message in the buffer
+          $buf_acum = substr($buf_acum, $msg_len + 4);
+          $total_bytes = length($buf_acum);
+
+          if($msg_len = unpack("I", $buf_acum)) {
+            next;
+          } else {
+            # couldn't get the msg_len from the additional data
+            $msg_len = 0;
+            goto RESET_BUFFERS; # additional data is junk,
+                                # just reset the buffers
+          }
+        } else {
+          last;
+        }
+      }
+
+      RESET_BUFFERS:
+        $buf_acum    = "";
+        $total_bytes =  0;
+        $msg_len     =  0;
+        return $msg;
+    }
+  }
+
+    return;
+}
+
+sub http_child {
+  pipe(FROM_CHILD,  TO_PARENT);
+  pipe(FROM_PARENT, TO_CHILD);
+
+  _set_autoflush_noblock(\*FROM_CHILD);
+  _set_autoflush_noblock(\*FROM_PARENT);
+  _set_autoflush_noblock(\*TO_PARENT);
+  _set_autoflush_noblock(\*TO_CHILD);
+
+  my $pid = fork();
+  if(!defined($pid)) {
+    taskd_log(CE_TASKD_ERR, "unable to fork http_child: $!");
+    return 0;
+  } elsif($pid) {
+    close(FROM_PARENT);
+    close(TO_PARENT);
+    taskd_log(undef, "forked http child, pid = $pid");
+    $v{http_pid} = $pid;
+    $master_io->add(*FROM_CHILD);
+    return $pid;
+  }
+
+  # child process
+  local $SIG{CHLD} = 'IGNORE';
+
+  close(FROM_CHILD);
+  close(TO_CHILD);
+
+  my $child_io = IO::Select->new();
+  $child_io->add(\*FROM_PARENT);
+
+  $program .= "-http";
+  $0 = sprintf("%s-http", $v{p_profile});
+
+  setsid();
+
+  if(!ce_is_hash_key_empty(\%v, 'unpriv_gid') && $v{unpriv_gid} != $)) {
+    if(ce_drop_gid($v{unpriv_gid})) {
+      taskd_log(undef, "successfully drop privs to gid(s): $v{unpriv_gid}");
+    } else {
+      taskd_log(CE_TASKD_RAW, "Error: unable to change group id\n");
+      exit(1);
+    }
+  }
+
+  if(!ce_is_hash_key_empty(\%v, 'unpriv_uid') && $v{unpriv_uid} != $>) {
+    if(ce_drop_uid($v{unpriv_uid})) {
+      taskd_log(undef, "successfully drop privs to uid: $v{unpriv_uid}");
+    } else {
+      taskd_log(CE_TASKD_RAW,
+        "Error: unable to drop privileges to uid: $v{unpriv_uid}.\n");
+      exit(1);
+    }
+  }
+
+  $v{can_run} = $v{max_exec_child} - $v{n_exec_child};
+  taskd_log(undef, "starting");
+
+  # loading only the basic required to save memory
+  use MIME::Base64 (qw( encode_base64 ));
+
+  while(1) {
+    my $fetch_immediately = 0;
+
+    if(!exists($v{session_id})) {
+      my $sess = start_session();
+      $debug and debug_log("sess = ", $sess);
+      ce_convert_task_ret($sess);
+      if(ce_was_successful($sess)) {
+        taskd_log(CE_TASKD_STD, "started session " . $sess->{_S});
+        $v{session_id}        = $sess->{_S};
+        $v{session_last_used} = time();
+        $v{session_poll_intvl}        = $v{poll_interval}     = $sess->{P};
+        $v{session_error_retry_intvl} = $v{error_retry_intvl} = $sess->{E};
+      } else {
+        log_msg_err("Unable to create session. Server returned:", $sess);
+        $debug and debug_log("sleeping for $v{error_retry_intvl} seconds");
+        sleep($v{error_retry_intvl});
+        next;
+      }
+    }
+
+    if($v{can_run} > 0) {
+      my $msg = retrieve_msgs();
+      $debug and debug_log("Received msg = ", $msg);
+      exists($msg->{_w}) and taskd_log(CE_TASKD_WARN, "server warned: ". $msg->{_w});
+      my $status = $msg->{_s};
+
+      if(!ce_task_was_successful($msg)) {
+        log_msg_err("Unable to retrieve messages. Server returned:", $msg);
+        delete($v{session_id}) if(exists($v{session_id}));
+        delete($v{session_last_used}) if(exists($v{session_last_used}));
+
+        $debug and debug_log("Sleeping for $v{error_retry_intvl} seconds");
+        sleep($v{error_retry_intvl});
+        next;
+      }
+
+      if(!exists($msg->{_M})) {
+        taskd_log(CE_TASKD_ERR, "message type missing in request. Probably a server problem");
+        goto REPORT_AND_WAIT;
+      } elsif(!exists($CE_TASKS_MSG_TYPES{$msg->{_M}})) {
+        taskd_log(CE_TASKD_ERR, "unknown message type '$msg->{_M}'. taskd is probably outdated");
+        goto REPORT_AND_WAIT;
+      }
+
+      my $msg_type = $msg->{_M};
+      if($msg_type == CE_TASK_MSG_RUN_TASKS) {
+        $msg->{n} == 0 and goto REPORT_AND_WAIT;
+        $msg->{__op} = 'run_tasks';
+        $v{can_run} -= $msg->{n};
+        freeze_and_send(\*TO_PARENT, $msg);
+      } elsif($msg_type == CE_TASK_MSG_CHANGE_POLL) {
+        if(!exists($v{poll_expires}) ||
+             (exists($v{poll_expires}) && $msg->{P} <= $v{poll_interval})) {
+          # only change the poll interval if not inside a timed one
+          # or if it's inside a time interval and the new one has a poll
+          # interval <= the current interval
+          $v{poll_interval}        = $msg->{P};
+          $v{error_retry_intvl} = $msg->{E};
+          taskd_log(undef, "changing poll interval to $v{poll_interval} seconds"
+                      . (exists($msg->{e}) ? " for $msg->{e} seconds" : ""));
+          if(exists($msg->{e})) {
+            $v{poll_expires} = time() + $msg->{e};
+          }
+        }
+
+        ran_internal($msg->{_I}); # notify as run in all cases
+      } elsif($msg_type == CE_TASK_MSG_RUN_SHUTDOWN) {
+        ran_internal($msg->{_I}); # notify as run in all cases
+        freeze_and_send(\*TO_PARENT, { __op => 'shutdown' });
+        taskd_log(undef, "received shutdown msg. Shutting down...");
+        exit(0);
+      } elsif($msg_type == CE_TASK_MSG_NO_MESSAGES && $debug) {
+        debug_log("No messages available. Doing nothing.");
+      }
+    }
+      
+  REPORT_AND_WAIT:
+    if($#set_running_failed >= 0) {
+      if(set_running(\@set_running_failed)) {
+        taskd_log(undef, "successfully re-reported previously running " .
+          "tasks: " . join(', ', @set_running_failed));
+        @set_running_failed = ();
+      } else {
+        taskd_log(CE_TASKD_ERR,
+          "failed to retry notifying the controller about running tasks");
+      }
+    }
+
+    if($#report_failed >= 0) {
+      for(my $i=0; $i <= $#report_failed; $i++) {
+        my $task_r = $report_failed[$i];
+        taskd_log(undef, "retrying to report task " . $task_r->{T});
+        if(report_task($task_r)) {
+          taskd_log(undef, "successfully retried the report of task " .
+            $task_r->{T});
+          splice(@report_failed, $i, 1);
+          $fetch_immediately = 1;
+        } else {
+          taskd_log(CE_TASKD_ERR,
+            "failed retrying reporting task " . $task_r->{T});
+        }
+      }
+    }
+
+    if(exists($v{poll_expires}) && $v{poll_expires} <= time() ) {
+      $v{poll_interval}     = $v{session_poll_intvl};
+      $v{error_retry_intvl} = $v{session_error_retry_intvl};
+      taskd_log(undef, "returning poll interval to $v{session_poll_intvl} seconds");
+      delete($v{poll_expires});
+    }
+
+    if(!$fetch_immediately) {
+      my $fetch_time = time() + $v{poll_interval}; 
+      while(time() < $fetch_time && !$fetch_immediately) {
+        my $timeout = $fetch_time - time();
+        $debug and debug_log("sleeping for $timeout seconds");
+        $0 = sprintf("%s - sleeping for %d seconds", $v{p_profile}, $timeout);
+
+        # block for $timeout (might receive msgs from master)
+        # before trying the next fetch cycle
+        read_freezed_msg($child_io, "master", \&child_parse_n_execute, $timeout);
+        $fetch_immediately = 1;
+      }
+    }
+  }
+}
+
+sub master_parse_n_execute {
+  my $msg = shift;
+
+  if(!exists($msg->{__op})) {
+    taskd_log(CE_TASKD_ERR, "missing op instruction in msg received");
+    return 0;
+  }
+
+  my $op = $msg->{__op};
+
+  if($op eq 'run_tasks') {
+    my $can_run = $v{max_exec_child} - $v{n_exec_child};
+    if($can_run <= 0) {
+      taskd_log(CE_TASKD_WARN, "received tasks to run, but already ".
+                             "executing the maximum number of tasks allowed");
+      return 0;
+    }
+
+    for(my $n=1; $n <= $msg->{n}; $n++) {
+      if(!exists($msg->{"t${n}"})) {
+        taskd_log(CE_TASKD_ERR, "missing task definition for index $n");
+        next;
+      } elsif(!exists($msg->{"c${n}"})) {
+        taskd_log(CE_TASKD_ERR, "missing command definition for index $n");
+        next;
+      }
+
+      my $def = {
+        props => $msg->{"t${n}"},
+        cmd   => $msg->{"c${n}"},
+      };
+
+      if(exists($msg->{"s${n}"})) {
+        $def->{stdin_data} = $msg->{"s${n}"};
+      }
+      if(exists($msg->{"u${n}"})) {
+        $def->{exec_user} = $msg->{"u${n}"};
+      }
+      if(exists($msg->{"g${n}"})) {
+        $def->{exec_group} = $msg->{"g${n}"};
+      }
+
+      my $i=1;
+      while(exists($msg->{"e${n}n${i}"}) && exists($msg->{"e${n}v${i}"})) {
+        $def->{"e${i}n"} = $msg->{"e${n}n${i}"};
+        $def->{"e${i}v"} = $msg->{"e${n}v${i}"};
+        $i++;
+      }
+
+      exec_child($def);
+      undef($def);
+    }
+
+    if($#{ $v{set_running} } >= 0) {
+      my $notify_r = { __op       => 'set_running',
+                       task_id    => $v{set_running},
+                       can_run    => $v{max_exec_child} - $v{n_exec_child}, 
+                     };
+
+      $debug and debug_log("notifying http client about running tasks " .
+                  join(', ', @{ $v{set_running} }) . ' ' . Dumper($notify_r));
+
+      freeze_and_send(\*TO_CHILD, $notify_r);
+      delete($v{set_running});
+      undef($notify_r);
+    }
+  } elsif($op eq 'rm_task_log') {
+    my $task_id = $msg->{task_id};
+    if($task_id !~ /^\d+$/) {
+      taskd_log(CE_TASKD_ERR, "task_id '$task_id' has an invalid format.  Refusing to remove.");
+      return 0;
+    }
+
+    my $log_file = sprintf('%s/%d', $v{output_tmp_dir}, $task_id);
+    if(! -e $log_file) {
+      taskd_log(CE_TASKD_ERR, "log file '$log_file' for task $task_id doesn't exist\n");
+      return 0;
+    }
+
+    if(unlink($log_file)) {
+      $debug and 
+        taskd_log(undef, "removed log file '$log_file' for task '$task_id'");
+    } else {
+      taskd_log(CE_TASKD_ERR, "unable to remove log file '$log_file' for task $task_id");
+    }
+  } elsif($op eq 'shutdown') {
+    taskd_log(undef, "received shutdown request from http child. " .
+                     "Shutting down...");
+    exit(0);
+  } else {
+    taskd_log(CE_TASKD_ERR, "unknown operation requested");
+    return 0;
+  }
+
+}
+
+sub child_parse_n_execute {
+  my($msg) = @_;
+
+  if(!defined($msg)) {
+    return 0;
+  }
+
+  $debug and debug_log("received message: ", $msg);
+  if(!exists($msg->{__op})) {
+    taskd_log(CE_TASKD_ERR, "missing op instruction in msg received");
+    return 0;
+  }
+
+  my $op = $msg->{__op};
+
+  if($op eq 'set_running') {
+    if(set_running($msg->{task_id})) {
+      $v{can_run} = $msg->{can_run};
+    } elsif(ref($msg->{task_id}) eq 'ARRAY') {
+      push(@set_running_failed, @{ $msg->{task_id} });
+    } else {
+      push(@set_running_failed, $msg->{task_id});
+    }
+  } elsif($op eq 'report') {
+    $v{n_exec_child} = $msg->{n_exec_child};
+    $v{can_run}      = $v{max_exec_child} - $v{n_exec_child};
+
+    foreach my $task (@{ $msg->{tasks} }) {
+      if(!report_task($task)) {
+        push(@report_failed, $task);
+      }
+    }
+  } else {
+    taskd_log(CE_TASKD_ERR, "unknown operation requested");
+    return 0;
+  }
+
+  return 1;
+}
+
+sub get_local_interface_ip {
+  my $route_n = `/sbin/route -n`;
+  my $if;
+
+  if($route_n =~ /^0\.0\.0\.0(?:\s+[\w\.]+){6}\s+(\w+)$/m) {
+    $if = $1;
+  } else {
+    return 0;
+  }
+
+  my $ifconfig_str = `/sbin/ifconfig $if`;
+  my $ip;
+  if($ifconfig_str =~ /\s+inet addr:([\d\.]+) /) {
+    $ip = $1;
+    return $ip;
+  } else {
+    return 0;
+  }
+}
+
+sub extract_param_from_line {
+  my($line) = @_;
+
+  my $start_str = '@devpanel_param';
+  my $start_str_len = length($start_str);
+
+  if(length($line) <= $start_str_len) {
+    return ();
+  }
+
+  if(substr($line, 0, $start_str_len) ne $start_str) {
+    return ();
+  }
+
+  if($line !~ /^\Q$start_str\E ([A-Za-z0-9_-]+) (.+)/) {
+    return ();
+  }
+
+  my($param, $value) = ($1, $2);
+
+  return ($param, $value);
+}
+
+sub send_params_found {
+  my($params_r) = @_;
+
+  $debug and log_params_found($params_r);
+
+  return 1;
+}
+
+sub log_params_found {
+  my($params_r) = @_;
+
+  my $log_str = "found parameter %s = %s";
+  my $value;
+
+  foreach my $p (keys(%$params_r)) {
+    if(ref($params_r->{$p}) eq "ARRAY") {
+      $value = join(", ", @{ $params_r->{$p} });
+    } elsif(!ref($params_r->{$p})) {
+      $value = $params_r->{$p};
+    } else {
+      $value = "";
+    }
+
+    debug_log(sprintf($log_str, $p, $value));
+  }
+}
+
+# main()
+
+umask(007);
+
+my $getopt_flags = 'dhTFc:l:P:';
+my %opts;
+
+if(!getopts($getopt_flags, \%opts)) {
+  warn "For more command line options, please use the -h option.\n";
+  exit(1);
+}
+
+if(exists($opts{'h'})) {
+  usage();
+}
+
+if(exists($opts{'c'})) {
+  $config_file = $opts{'c'};
+} else {
+  $config_file = ($> == 0 ? '/opt/webenabled/etc/devpanel.conf' :
+                               "$ENV{HOME}/.devpanel/etc/devpanel.conf");
+}
+$v{config_file} = $config_file;
+
+if(exists($opts{'d'})) {
+  eval { use Data::Dumper; };
+  if($@) {
+    warn("Error: unable to enter in debug mode: $@\n");
+    exit(1);
+  }
+  $debug = 1;
+}
+
+if(exists($opts{l})) {
+  $v{log_file} = $opts{l};
+}
+
+my $config_raw;
+if(! -e $config_file) {
+  warn "Error: config file '$config_file' doesn't exist.\n";
+  exit(1);
+} elsif(! -f $config_file) {
+  warn "Error: path '$config_file' is not a regular file.\n";
+  exit(1);
+} elsif(!($config_raw = Config::Tiny->read($config_file))) {
+  warn "Error: ", Config::Tiny::errstr(), "\n";
+  exit(1);
+}
+
+if(exists($opts{'P'})) {
+  $v{profile} = $opts{'P'};
+  $v{p_profile} = sprintf("%s-%s", $program, $v{profile});
+} elsif(!defined($v{profile}) && exists($config_raw->{_}->{taskd_profile})) {
+  $v{profile} = $config_raw->{_}->{taskd_profile};
+  $v{p_profile} = sprintf("%s-%s", $program, $v{profile});
+} else {
+  $v{profile} = $v{p_profile} = "taskd";
+}
+
+if(!exists($config_raw->{$v{profile}})) {
+  warn("Error: missing profile '$v{profile}' in config file '$config_file'.\n");
+  exit(1);
+}
+$conf = $config_raw->{$v{profile}};
+
+if(_has_missing_config_directives($conf)) {
+  exit(1);
+}
+
+initializeVariables($conf, \%config_defaults, \%v);
+
+if(!validate_config($conf, \%v)) {
+  warn "Error: found problem validating configuration. Exiting.\n";
+  exit(1);
+}
+
+if(exists($opts{T})) {
+  print "Successfully validated configuration file. Exiting.\n";
+  exit(0);
+}
+
+if(!fix_directories_struct_perms(\%v)) {
+  exit(1);
+}
+
+if(!validate_file_permissions(\%v)) {
+  exit(1);
+}
+
+if(!open(LOCK_FILE, '>', $v{lock_file})) {
+  warn "Error: unable to open lock file '$v{lock_file}' for writing. $!\n";
+  exit(1);
+}
+
+if(!flock(LOCK_FILE, LOCK_EX | LOCK_NB)) {
+  warn "Error: there's already another instance running. Exiting.\n";
+  close(LOCK_FILE);
+  exit(1);
+}
+
+if(exists($opts{F})) { # run in foreground
+  open(TASKD_LOG, '>&STDOUT') or die "Error: can't dup stdout to log file. $!\n";
+  open(STDERR, '>&STDOUT') or die "Error: can't dup stderr to stdout. $!\n";
+} else {
+  cloudenabled_daemonize($v{log_file});
+}
+
+if(!open(PID_FILE, '>', $v{pid_file})) {
+  warn "Error: couldn't open pid file '$v{pid_file}': $!\n";
+  flock(LOCK_FILE, LOCK_UN);
+  close(LOCK_FILE);
+  exit(1);
+}
+
+if(!(print PID_FILE $$, "\n")) {
+  warn "Error: unable to write pid to pid_file '$v{pid_file}': $!\n";
+  flock(LOCK_FILE, LOCK_UN);
+  close(LOCK_FILE);
+  exit(1);
+}
+close(PID_FILE);
+
+local $SIG{CHLD} = \&master_sig_chld;
+local $SIG{HUP}  = \&sig_hup_main;
+local $SIG{TERM} = $SIG{INT} = \&sig_term_main;
+
+$0 = sprintf("%s-master", $v{p_profile});
+
+taskd_log(CE_TASKD_STD, "started");
+
+$master_io = IO::Select->new();
+
+while(1) {
+  if(!exists($v{http_pid})) {
+    my $pid = http_child();
+    if(!$pid) {
+      taskd_log(CE_TASKD_ERR, "no http child available. Exiting.");
+      exit(1);
+    }
+  }
+
+  # block to receive msgs from http client
+  read_freezed_msg($master_io, "http client", \&master_parse_n_execute);
+}
+
+close(TASKD_LOG);

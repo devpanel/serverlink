@@ -1,0 +1,71 @@
+#!/bin/bash
+
+set_usage_msg \
+  "Usage: $bin_name $action $object [opts] --vhost <vhost> [--ca-file <ca_file>]
+                          --cert-file <file> --priv-key-file <priv_key_file>
+
+  Options:
+    --vhost          <vhost>             name of the vhost
+    --ca-file        <ca_file>           file with the CA bundle certificates
+    --cert-file      <cert_file>         file with the main certificate
+    --priv-key-file  <priv_key_file>     file with the private key
+
+
+  Configures SSL for the specified vhost.
+"
+
+# main
+ssl_configure() {
+  [ $# -eq 0 -o -z "$1" ] && usage
+
+  local name vhost source
+  local -a cmd_args=()
+
+  while [ -n "$1" ]; do
+    name="$1"
+    case "$name" in
+      --vhost)
+        [ -z "$2" ] && error_missing_value vhost
+        vhost="$2"
+        shift 2
+        ;;
+      --ca-file)
+        [ -z "$2" ] && error_missing_value ca-file
+        ca_file="$2"
+        cmd_args+=( -C "$ca_file" )
+        shift 2
+        ;;
+      --cert-file)
+        [ -z "$2" ] && error_missing_value cert-file
+        cert_file="$2"
+        cmd_args+=( -c "$cert_file" )
+        shift 2
+        ;;
+      --priv-key-file)
+        [ -z "$2" ] && error_missing_value priv-key-file
+        priv_key_file="$2"
+        cmd_args+=( -k "$priv_key_file" )
+        shift 2
+        ;;
+      --help)
+        usage
+        ;;
+      --[A-Za-z0-9_-]*)
+        error "unknown argument $name"
+        ;;
+      *)
+        # pass unknown arguments/options to the original command
+        cmd_args+=( "$name" )
+        shift
+        ;;
+
+    esac
+  done
+
+  local param
+  for param in vhost cert_file priv_key_file; do
+    [ -z "${!param}" ] && error_missing_param $param
+  done
+
+  "$sys_dir/libexec/store-ssl-file" "${cmd_args[@]}" $vhost
+}

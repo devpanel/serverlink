@@ -1,0 +1,39 @@
+#!/bin/bash
+
+usage() {
+  echo "Usage: `basename "$0"` [ OPTIONS ]
+
+  Options:
+    -h          displays this help screen
+
+
+  This script is intended to be run from a Docker server, to start the
+  services of a devPanel instance.
+"
+  exit 1
+}
+
+[ -n "$1" -a "$1" == "-h" ] && usage
+
+curr_dir="`dirname "${BASH_SOURCE[0]}"`"
+taskd_bin="`readlink -e "$curr_dir/../../sbin/taskd"`"
+
+if ! "$taskd_bin"; then
+  echo "Error: unable to start taskd" 1>&2
+  exit 1
+fi
+
+/etc/init.d/apache2 start
+
+/etc/init.d/devpanel-dbmgr start
+
+ssh_privsep_dir=/var/run/sshd
+[ ! -d "$ssh_privsep_dir" ] && mkdir -m 750 "$ssh_privsep_dir"
+/usr/sbin/sshd
+
+fifo_file=/var/run/devpanel.docker.persist
+[ ! -e "$fifo_file" ] && mkfifo "$fifo_file"
+
+chmod 700 "$fifo_file"
+
+read nothing < "$fifo_file"

@@ -1,0 +1,15 @@
+#!/bin/bash
+self_bin=`readlink -e "$0"`
+dir=`dirname "$self_bin"`
+dir_bin=`readlink -e "$dir/../bin"`
+vhost="$1"
+user="w_$vhost"
+cmd="$2"
+options="$3"
+
+# using mode archive: it's OK to operate on a locked vhost
+$dir/check-vhost-name archive "$vhost" || exit 1
+
+su -ls /bin/bash $user -c 'cd ~/public_html/'$vhost'; '$dir_bin'/.path/drush -y en update' &> /dev/null
+su -ls /bin/bash $user -c 'cd ~/public_html/'$vhost'; echo -n '$options' | '$dir_bin'/.path/drush --we-serialize '$cmd
+exit 0

@@ -1,0 +1,192 @@
+#!/bin/bash
+
+usage() {
+  local prog=`basename "$0"`
+
+  echo "Usage: $prog <options> <vhost>
+  
+  Options:
+    -C <file>   CA certificate file
+    -c <file>   site certificate file
+    -k <file>   secret key file
+    -i ip_addr  specific address to bind the vhost to
+
+  This script sets the CA certificate, site certificate and site private key
+  to the specified vhost.
+
+  The files need to be already written and verified by store-ssl-certs
+  script.
+
+  This script will be used mostly to switch the cert for an already
+  configured SSL environment. To configure a vhost without SSL use
+  store-ssl-files script.
+
+  Example:
+
+  # $prog -C CA_bundle_file.crt -c cert_file.crt -k key_file.key vhost
+
+"
+  
+  exit 1
+}
+
+error() {
+  local msg="$1"
+  local ex=${2:-1}
+
+  echo "Error: $msg" 1>&2
+  exit $ex
+}
+
+# main
+
+unset skip_CA previous_buffer backup_existing quiet
+unset orig_ca_bundle_file orig_cert_file orig_key_file from_stdin
+
+[ $# -lt 2 ] && usage
+
+getopt_flags='C:c:k:i:'
+unset ca_bundle_file cert_file key_file ip_addr
+while getopts $getopt_flags OPTN; do
+  case "$OPTN" in
+    C)
+      ca_bundle_file="$OPTARG"
+      ;;
+    c)
+      cert_file="$OPTARG"
+      ;;
+    k)
+      key_file="$OPTARG"
+      ;;
+    i)
+      ip_addr="$OPTARG"
+      ;;
+    *)
+      usage
+      ;;
+  esac
+done
+[ $OPTIND -gt 1 ] && shift $(( $OPTIND - 1 ))
+
+[ -z "$1" ] && usage
+
+vhost="$1"
+
+self_bin=`readlink -e "$0"`
+curr_dir=`dirname "$self_bin"`
+we_base_dir=`readlink -e "$curr_dir/.."`
+
+lib_file="$we_base_dir/lib/functions"
+if ! source "$lib_file"; then
+  error "unable to source lib file $lib_file"
+fi
+
+if ! "$curr_dir/check-vhost-name" archive "$vhost"; then
+  error "Invalid vhost name"
+fi
+
+assign_deref_os_fs_path_ex_or_exit ssl_cert_dir "$we_base_dir" \
+  pathnames/etc/ssl/certs
+
+assign_deref_os_fs_path_ex_or_exit ssl_key_dir "$we_base_dir" \
+  pathnames/etc/ssl/keys
+
+assign_deref_os_prop_or_exit ssl_template_basename "$we_base_dir" \
+  names/apache_vhost_ssl_template
+
+umask 077
+
+if [ -z "$cert_file" ]; then
+  error "missing cert file (please specify it with -c)"
+elif [ -z "$key_file" ]; then
+  error "missing key file (please specify it with -k)"
+elif [ ! -f "$cert_file" ]; then
+  error "missing certificate file '$cert_file'"
+elif [ ! -f "$key_file" ]; then
+  error "missing key file '$key_file'"
+elif [ -n "$ca_bundle_file" -a ! -f "$ca_bundle_file" ]; then
+  error "missing CA bundle file '$ca_bundle_file'"
+fi
+
+cert_modulus=`openssl x509 -noout -modulus -in "$cert_file"`
+if [ $? -ne 0 ]; then
+  error "unable to get the modulus of the certificate"
+fi
+cert_modulus=${cert_modulus#*=}
+
+key_modulus=`openssl rsa -noout -modulus -in "$key_file"`
+if [ $? -ne 0 ]; then
+  error "unable to calculate key modulus"
+fi
+key_modulus=${key_modulus#*=}
+
+if [ "$cert_modulus" != "$key_modulus" ]; then
+  error "certificate and key mistach. Certificate modulus ($cert_modulus) "\
+"doesn't match key modulus ($key_modulus)"
+fi
+
+# need to get the full path of the files to use in the links below
+cert_file_full_path=$(readlink -e "$cert_file")
+if [ $? -ne 0 ]; then
+  error "unable to determine full path of file '$cert_file'"
+fi
+
+key_file_full_path=$(readlink -e "$key_file")
+if [ $? -ne 0 ]; then
+  error "unable to determine full path of file '$key_file'"
+fi
+
+if [ -n "$ca_bundle_file" ]; then
+  ca_bundle_file_full_path=$(readlink -e "$ca_bundle_file")
+  if [ $? -ne 0 ]; then
+    error "unable to determine full path of file '$ca_bundle_file'"
+  fi
+fi
+
+vhost_prefix="apache_vhost:3"
+vhost_internal_name="default_ssl"
+
+cert_link="$ssl_cert_dir/$vhost.$vhost_internal_name.crt"
+key_link="$ssl_key_dir/$vhost.$vhost_internal_name.key"
+
+ln -sf "$cert_file_full_path" "$cert_link"
+ln -sf "$key_file_full_path" "$key_link"
+
+ca_bundle_link="$ssl_cert_dir/CA-bundle.$vhost.$vhost_internal_name.crt"
+if [ -n "$ca_bundle_file" ]; then
+  ln -sf "$ca_bundle_file_full_path" "$ca_bundle_link"
+else
+  if [ -L "$ca_bundle_link" ]; then
+    # CA bundle not provided, delete the link to CA file
+    rm -f "$ca_bundle_link"
+  fi
+fi
+
+metadata_op=""
+metadata_op+="set $vhost_prefix $vhost_internal_name"$'\n'
+metadata_op+="set apache_vhost:_:name:$vhost_internal_name 3"$'\n'
+metadata_op+="set $vhost_prefix:_:replicate devpanel_main"$'\n'
+metadata_op+="set $vhost_prefix:_:template $ssl_template_basename"$'\n'
+
+if [ -n "$ip_addr" ]; then
+  metadata_op+="set $vhost_prefix:_:IP $ip_addr"$'\n'
+fi
+
+if [ -n "$ca_bundle_file" ]; then
+  metadata_op+="set $vhost_prefix:param:2:SSLCACertificateFile $ca_bundle_link"$'\n'
+fi
+
+echo "$metadata_op" | "$curr_dir/apache-metadata-handler" "$vhost"
+if [ $? -ne 0 ]; then
+  error "failed to set vhost metadata links"
+fi
+
+"$curr_dir/config-vhost-apache" "$vhost"
+if [ $? -eq 0 ]; then
+  echo
+  echo "Successfully applied SSL configuration for vhost $vhost"
+  exit 0
+else
+  echo
+  error "failed to apply SSL configuration for vhost $vhost"
+fi

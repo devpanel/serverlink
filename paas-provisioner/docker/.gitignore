@@ -1,0 +1,7 @@
+*~
+/original/*_volume/
+/clone/*_volume/
+/clone_info
+/backup_info
+/test.sh
+/index.php

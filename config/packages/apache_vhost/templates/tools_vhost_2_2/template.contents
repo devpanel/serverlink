@@ -1,0 +1,6 @@
+# Template: @@__TEMPLATE_FILE__@@
+<VirtualHost @@__PARAM_IP__@@:@@__PARAM_PORT__@@>
+  # @@__PARAMS__@@
+  # @@__SYSTEM_INCLUDES__@@
+  # @@__USER_INCLUDES__@@
+</VirtualHost>

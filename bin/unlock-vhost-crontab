@@ -1,0 +1,16 @@
+#!/bin/sh
+
+run()
+{
+  echo "  running $@"
+  "$@"
+}
+
+locked_crontab=~/.crontab.locked
+run crontab "$locked_crontab" || exit 1
+if ! [ -s "$locked_crontab" ]
+then
+  echo "removing empty crontab"
+  run crontab -r || exit 0
+fi
+run rm "$locked_crontab" || exit 1

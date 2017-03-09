@@ -1,0 +1,135 @@
+#!/bin/bash
+# Usage: export-vhost -s SUBSYSTEM VHOST
+#
+error()
+{
+  echo "ERROR${1+: }$@" >&2
+  exit 1
+}
+
+subsystem=""
+
+while getopts "s:" OPTOPT
+do
+  case "$OPTOPT" in
+    s) subsystem="$OPTARG";;
+    *) exit 1;;
+  esac
+done
+shift `expr $OPTIND - 1`
+
+[ -z "$subsystem" ] && error "invalid subsystem"
+
+dir=`dirname "$0"`
+dir_bin="$dir/../bin"
+vhost="$1"
+user_web="w_$vhost"
+vhost_config_dir=.webenabled/private
+run()
+{
+  echo "  Running $@"
+  "$@"
+}
+run2()
+{
+  echo "  Running $@" >&2
+  "$@"
+}
+run_su()
+{
+  echo "  running su -l -c '$@' $user_web" >&2
+  su -l -c "$*" "$user_web"
+}
+
+$dir/check-vhost-name archive "$vhost" || usage
+home="`eval \"echo ~$user_web\"`" || error
+
+config="`cat`"
+
+setvar()
+{
+  local config_var="$1"
+  local optional="$2"
+  local value=
+  if ! value="`echo \"$config\" | grep \"^$config_var=\"`" 
+  then
+    if [ o"$optional" = o"1" ]
+    then
+      value=""
+    else
+      error "setvar:$config_var"
+    fi
+  else
+    value="${value#"$config_var="}"
+  fi
+  value="${value#"$config_var="}"
+  local env_var="WEBENABLED_HOSTING_LINK_`echo \"$config_var\"|tr a-z A-Z`"
+  export "$env_var"="$value"
+}
+
+echo "Export stage 1: final configuration"
+
+setvar mysql_user
+setvar mysql_password
+setvar mysql_host
+setvar mysql_port
+setvar mysql_database
+setvar rewrite_base 1
+setvar php_force_db_driver 1
+echo "$config"|run_su $dir_bin/restore-vhost-subsystem-env -n -s "$subsystem" || exit 1
+
+rewrite_base_sed_script=":a
+s|^[[:space:]]*RewriteBase[[:space:]]*.*|RewriteBase $WEBENABLED_HOSTING_LINK_REWRITE_BASE|
+tb
+\$a\\
+RewriteBase $WEBENABLED_HOSTING_LINK_REWRITE_BASE
+n
+ba
+:b
+{
+n
+bb
+}
+"
+
+if [ -n "$WEBENABLED_HOSTING_LINK_REWRITE_BASE" ]
+then
+    echo "$rewrite_base_sed_script" | run_su "$dir_bin/ised" -p -I -L -f - -- "public_html/$vhost/.htaccess" || exit 1
+fi
+
+cat <<EOF | run_su "mv .my.cnf .my.cnf.backup && cat >.my.cnf" || error
+[client]
+host=$WEBENABLED_HOSTING_LINK_MYSQL_HOST
+port=$WEBENABLED_HOSTING_LINK_MYSQL_PORT
+user=$WEBENABLED_HOSTING_LINK_MYSQL_USER
+password=$WEBENABLED_HOSTING_LINK_MYSQL_PASSWORD
+database=$WEBENABLED_HOSTING_LINK_MYSQL_DATABASE
+EOF
+
+
+
+trap 'echo "Removing temporary archive $TMPFILE"; rm -f -- "$TMPFILE"' \
+  EXIT HUP INT QUIT ILL TRAP ABRT BUS FPE KILL SEGV PIPE STOP ALRM TERM
+
+config_size=`echo "$config" | wc -l` || error
+echo "Export stage 2 & 3: archive-vhost | hosting_link"
+set -o pipefail
+if ! (
+echo "Lines: $config_size"
+echo "$config"
+echo "end"
+if ! $dir/archive-vhost "$vhost" - 2>/dev/null
+then
+  # NOTE: archive-vhost will fail if hosting_link fails (because of SIGPIPE?),
+  #       so we cannot differentiate between archive-vhost and archive-vhost
+  #       failures here
+  #echo WARNING adding garbage to stdout to signal a broken archive >&2
+  echo adding garbage to stdout to signal a broken archive
+  false
+fi ) | tee /grg.export |
+su -lc 'bin/hosting_link export' 'export'
+then
+  run_su "mv .my.cnf.backup .my.cnf" 2>/dev/null
+  error
+fi
+run_su "mv .my.cnf.backup .my.cnf" 2>/dev/null

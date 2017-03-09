@@ -1,0 +1,148 @@
+#!/bin/bash
+
+usage() {
+  echo "Usage: ${0##*/} -y [vhost1] [...] [vhostN]
+
+  Options:
+    -y            required when no vhost is specified (to confirm that
+                  it's really intended to go through all vhosts)
+
+  Fixes the ownership and permissions of vhost log directory and files.
+"
+  exit 1
+}
+
+# main
+exp_logs_dir_perms="2750"
+exp_log_file_perms="640"
+exp_logs_dir_owner="root"
+exp_log_file_owner="root"
+
+unset confirmed
+
+[ -z "$1" ] && usage
+
+getopt_flags='y'
+while getopts $getopt_flags OPTN; do
+  case $OPTN in
+    y)
+      confirmed=1
+      ;;
+    *)
+      exit 1
+      ;;
+  esac
+done
+[ $OPTIND -gt 1 ] && shift $(( $OPTIND - 1 ))
+
+self_bin=$(readlink -e "$0")
+if [ $? -ne 0 ]; then
+  echo "Error: unable to determine self path" 1>&2
+  exit 1
+fi
+
+self_dir="${self_bin%/*}"
+sys_dir="${self_dir%/*}"
+
+lib_file="$sys_dir/lib/functions"
+if ! . "$lib_file"; then
+  echo "Error: unable to source lib file $lib_file" 1>&2
+  exit 1
+fi
+
+declare -a vhost_ar=()
+if [ -z "$1" -a -n "$confirmed" ]; then
+  vhost_ar=$( get_list_of_vhosts )
+  if [ $? -ne 0 ]; then
+    error "unable to get the list of vhosts"
+  fi
+
+  if [ ${#vhost_ar[@]} -eq 0 ]; then
+    echo "Warning: found 0 vhosts on this server." 1>&2
+    exit 0
+  fi
+elif [ -z "$1" ]; then
+  usage
+elif [ -n "$1" ]; then
+  vhost_ar=("$@")
+else
+  echo "Error: unknown condition in vhost parsing" 1>&2
+  exit 1
+fi
+
+assign_deref_os_prop_or_exit logs_dir "$sys_dir" pathnames/var/log/apache_vhosts
+
+for vhost in ${vhost_ar[*]}; do
+  if ! "$self_dir/check-vhost-name" name-only "$vhost"; then
+    echo "Warning: Invalid vhost name '$vhost'. Skipping..." 1>&2
+    continue
+  fi
+
+  vhost_user="w_$vhost"
+  if ! getent passwd "$vhost_user" &>/dev/null; then
+    echo "Warning: couldn't find user '$vhost_user'. Skipping..." 1>&2
+    continue
+  fi
+
+  vhost_log_dir="$logs_dir/$vhost_user"
+  if [ ! -d "$vhost_log_dir" ]; then
+    mkdir -m "$exp_logs_dir_perms" "$vhost_log_dir"
+    if [ $? -ne 0 ]; then
+      echo "Warning: unable to create dir '$vhost_log_dir'" 1>&2
+      continue
+    fi
+  fi
+
+  exp_owner="$exp_logs_dir_owner"
+  exp_group="$vhost_user"
+
+  dir_info=$(stat -c '%U/%G/%a' "$vhost_log_dir")
+  if [ $? -ne 0 ]; then
+    echo "Warning: unable to get information about dir $vhost_log_dir." \
+          "Skipping..."
+    continue
+  fi
+
+  IFS=/ read curr_dir_owner curr_dir_group curr_dir_perms <<< "$dir_info"
+
+  if [ "$curr_dir_owner" != "$exp_owner" ]; then
+    chown -v -- "$exp_owner" "$vhost_log_dir"
+  fi
+
+  if [ "$curr_dir_group" != "$exp_group" ]; then
+    chgrp -v -- "$exp_group" "$vhost_log_dir"
+  fi
+
+  if [ "$curr_dir_perms" != "$exp_logs_dir_perms" ]; then
+    chmod -v -- "$exp_logs_dir_perms" "$vhost_log_dir"
+  fi
+
+  for log_file in "$vhost_log_dir"/*; do
+    if [ -f "$log_file" ]; then
+      exp_f_owner="$exp_log_file_owner"
+      exp_f_group="$vhost_user"
+      exp_f_perms="$exp_log_file_perms"
+
+      file_info=$(stat -c '%U/%G/%a' "$log_file")
+      if [ $? -eq 0 ]; then
+        IFS=/ read curr_f_owner curr_f_group curr_f_perms <<< "$file_info"
+        if [ "$curr_f_owner" != "$exp_f_owner" ]; then
+          chown -v -- "$exp_f_owner" "$log_file"
+        fi
+
+        if [ "$curr_f_group" != "$exp_f_group" ]; then
+          chgrp -v -- "$exp_f_group" "$log_file"
+        fi
+
+        if [ "$curr_f_perms" != "$exp_f_perms" ]; then
+          chmod -v -- "$exp_f_perms" "$log_file"
+        fi
+      else
+        echo "Warning: unable to get information about file '$log_file'"
+        continue
+      fi
+    fi
+  done # // for file in
+done # // for vhost in
+
+exit 0

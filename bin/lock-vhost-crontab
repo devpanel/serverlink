@@ -1,0 +1,28 @@
+#!/bin/sh
+
+backup()
+{ 
+  local filename="$1"
+  if [ -f "$filename" ]
+  then
+     TMP=`mktemp "$filename.renamed.XXXXXXXX"` || exit 1
+     cat "$filename" >$TMP || exit 1
+     rm "$filename" || exit 1
+  fi
+}
+
+run()
+{
+  echo "  running $@"
+  "$@"
+}
+
+locked_crontab=~/.crontab.locked
+backup "$locked_crontab"
+if crontab_contents=`crontab -l` 2>&1
+then
+  echo "$crontab_contents" | sed '/^#/{1d;2d;3d}' |run tee "$locked_crontab" || exit 1
+  run crontab -r
+else
+  touch "$locked_crontab" || exit 1
+fi

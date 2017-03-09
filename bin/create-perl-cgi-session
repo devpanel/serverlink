@@ -1,0 +1,90 @@
+#!/usr/bin/env perl
+use strict;
+use warnings;
+use Cwd;
+use FindBin (qw( $RealBin ));
+use File::Basename;
+use Getopt::Long;
+
+unshift(@INC, dirname($RealBin) . "/lib/perl5");
+
+use CGI::Session;
+
+sub usage {
+  print "Usage: $0 [ options ]
+
+  Options:
+    -i session_id         the session_id to be used for the new session
+                          (otherwise a new one is created)
+    -d directory          directory where to create the file
+    -P <name=value>       set parameters inside the session
+    -e expire_time        set the expire time (shortcuts available, e.g.
+                          +1h, +1m, +1d)
+    -o                    display the session id to stdout before exiting
+    -O string             at the end, output the specified string. The 
+                          placeholder %%session_id%% is allowed.
+    -h                    show this usage message
+
+";
+  exit(1);
+}
+
+# main
+
+
+if($#ARGV < 0) {
+  usage();
+}
+
+my %recvd_opts = ( session_params => [] );
+my %getopt_def = (
+  'd=s'       => \$recvd_opts{dir},
+  'P=s'       => $recvd_opts{session_params},
+  'e=s'       => \$recvd_opts{expire_time},
+  'o'         => \$recvd_opts{to_stdout},
+  'O=s'       => \$recvd_opts{output_str},
+  'i=s'       => \$recvd_opts{session_id},
+);
+
+Getopt::Long::Configure("no_ignore_case");
+
+if(!GetOptions(%getopt_def)) {
+  exit(1);
+}
+
+if(!defined($recvd_opts{dir})) {
+  $recvd_opts{dir} = "$ENV{HOME}/.tmp";
+}
+
+my $session_obj = CGI::Session->new(undef, undef,
+                                    { Directory => $recvd_opts{dir} });
+
+
+foreach my $p_pair (@{ $recvd_opts{session_params} }) {
+  my($p_name, $p_value) = split(q'=', $p_pair, 2);
+  $session_obj->param($p_name, $p_value);
+}
+
+if(defined($recvd_opts{expire_time})) {
+  $session_obj->expires($recvd_opts{expire_time});
+}
+
+if(defined($recvd_opts{session_id})) {
+  my $data_r = $session_obj->dataref();
+  $data_r->{_SESSION_ID} = $recvd_opts{session_id};
+}
+
+if(!$session_obj->flush()) {
+  die "Error: unable to save session: $!\n";
+}
+
+my $session_id = $session_obj->id();
+if(defined($recvd_opts{output_str})) {
+  my $output_str;
+  ($output_str = $recvd_opts{output_str}) =~ s/%%session_id%%/$session_id/g;
+  printf "%s\n", $output_str;
+} elsif(defined($recvd_opts{to_stdout})) {
+  printf "%s\n", $session_id;
+}
+
+exit(0);

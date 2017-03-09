@@ -1,0 +1,29 @@
+#!/bin/sh
+
+run()
+{
+  echo "  running $@"
+  "$@"
+}
+
+backup()
+{ 
+  local filename="$1"
+  if [ -f "$filename" ]
+  then
+     TMP=`mktemp "$filename.renamed.XXXXXXXX"` || return 1
+     cat "$filename" >$TMP || return 1
+     rm "$filename" || return 1
+  fi
+}
+
+locked_authorized_keys=~/.ssh/authorized_keys.locked
+if [ -r "$locked_authorized_keys" ]
+then
+  # may fail if over quota; ignore
+  if ! backup ~/.ssh/authorized_keys
+  then
+    echo "backup ~/.ssh/authorized_keys failed (ignored)"
+  fi
+  run mv "$locked_authorized_keys" ~/.ssh/authorized_keys || exit 1
+fi

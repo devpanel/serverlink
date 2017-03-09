@@ -1,0 +1,79 @@
+#!/bin/bash
+
+dir=`dirname "$0"`
+config_dir="$dir/../../config"
+mysqld_bin='mysqld_safe'
+
+declare -i n=1
+
+parse_arguments() {
+
+  for arg do
+    case "$arg" in
+      # these get passed explicitly to mysqld
+      --datadir=*) datadir=`echo "$arg" | sed -e "s;--datadir=;;"` ;;
+      --limits=*) limits=`echo "$arg" | sed -e "s;--limits=;;"` ;;
+      --port=*) port=`echo "$arg" | sed -e "s;--port=;;"` ;;
+      --user=*) user=`echo "$arg" | sed -e "s;--user=;;"` ;;
+      --host=*) host=`echo "$arg" | sed -e "s;--host=;;"` ;;
+      --contact=*) contact=`echo "$arg" | sed -e "s;--contact=;;"` ;;
+      --password=*) password=`echo "$arg" | sed -e "s;--password=;;"` ;;
+      --version=*) version=`echo "$arg" | sed -e "s;--version=;;"` ;;
+      --type=*) type=`echo "$arg" | sed -e "s;--type=;;"` ;;
+
+      *)
+	    echo "Wrong usage: $arg"
+	    exit 1
+        ;;
+    esac
+  done
+}
+
+parse_arguments "$@"
+
+umask 027
+
+su - -c "if [ -z \"\$TMPDIR\" -o ! -d \"\$TMPDIR\" -o ! -w \"\$TMPDIR\" ]; then \
+		TMPDIR=\"${datadir%/*/}/tmp\" ; \
+		if [ ! -d \"\$TMPDIR\" ]; then \
+			mkdir -m0700 -- \"\$TMPDIR\" || exit 1 ; \
+		fi ; \
+	fi ; \
+	$mysqld_bin \
+	'--bind-address=$host'				\
+	'--datadir=$datadir'				\
+	'--log-error=$datadir/error.log'		\
+	'--pid-file=$datadir/mysql.pid'			\
+	'--port=$port'					\
+	'--socket=$datadir/mysql.sock'			\
+	'--tmpdir=$tmpdir'				\
+	\"--tmpdir=\$TMPDIR\"				\
+	--myisam-recover=BACKUP,FORCE			\
+	--skip-external-locking					\
+	--skip-name-resolve				\
+> /dev/null 2>&1 &" -s /bin/sh "$user"
+
+#	--skip-show-database 				\
+#	"--log-bin=$datadir/binary"			\
+#	"--log=$logdir/query.log"			\
+while [ $n -le 20 ]; do
+  if [ ! -S "$datadir/mysql.sock" ]; then
+    echo Waiting for mysql socket...
+    sleep 2
+    n+=1
+  else
+    break
+  fi
+done
+
+su - -c "mysql			\
+	'--socket=$datadir/mysql.sock'			\
+	'--user=root'					\
+	'--password=$password'				\
+	-e 'SHOW DATABASES' >/dev/null 2>&1 ||		\
+	mysql			\
+	'--socket=$datadir/mysql.sock'			\
+	'--user=root'					\
+	-e \"SET PASSWORD=PASSWORD('$password')\"	\
+> ~/check.root 2>&1" -s /bin/sh "$user"
+

@@ -1,0 +1,99 @@
+#!/bin/bash
+
+usage() {
+  echo "Usage: `basename "$0"` [options] <target_db_name> <dump_file>
+
+  Options:
+    -i my_cnf_file            path to an alternate cnf file
+    -s vhost_name             the vhost name (used to figured the my_cnf
+                              file automatically)
+  
+"
+  exit 1
+}
+
+error() {
+  local msg="$1"
+  local exit_code="${2:-1}"
+
+  [ -n "$msg" ] && echo "Error: $msg" 1>&2
+  exit $exit_code
+}
+
+# main
+[ $# -lt 2 ] && usage
+
+self_bin=`readlink -e "$0"`
+curr_dir=`dirname "$self_bin"`
+we_base_dir=`readlink -e "$curr_dir/../.."`
+
+getopt_flags='i:s:'
+
+while getopts $getopt_flags OPTN; do
+  case $OPTN in
+    i)
+      my_cnf_file="$OPTARG"
+      ;;
+    s)
+      site_name="$OPTARG"
+      ;;
+    *)
+      usage
+      ;;
+  esac
+done
+
+[ $OPTIND -gt 1 ] && shift $(( $OPTIND - 1 ))
+
+template_my_cnf="$we_base_dir/etc/aws-rds--my_cnf.ini"
+if [ -z "$my_cnf_file" -a -z "$site_name" ]; then
+  my_cnf_file=${my_cnf_file:-"$template_my_cnf"}
+elif [ -z "$my_cnf_file" -a -n "$site_name" ]; then
+  target_my_cnf="$we_base_dir/etc/aws-rds--my_cnf-${site_name}.ini"
+  cp -f "$template_my_cnf" "$target_my_cnf"
+  my_cnf_file="$target_my_cnf"
+fi
+
+if [ -z "$my_cnf_file" ]; then
+  error "please specify the ini with the remote db configuration (option -i)"
+elif [ ! -e "$my_cnf_file" ]; then
+  error "file '$my_cnf_file' doesn't exist"
+elif [ ! -f "$my_cnf_file" ]; then
+  error "path '$my_cnf_file' is not a regular file"
+elif [ ! -r "$my_cnf_file" ]; then
+  error "file '$my_cnf_file' is not readable"
+fi
+
+target_db_name="$1"
+dump_file="$2"
+
+if [ ! -e "$dump_file" ]; then
+  error "file '$dump_file' doesn't exist."
+elif [ ! -f "$dump_file" ]; then
+  error "path '$dump_file' is not a regular file"
+fi
+
+if mysql --defaults-file="$my_cnf_file" -BN -D "$target_db_name" -e "SHOW TABLES;" >/dev/null; then
+
+  if ! mysql --defaults-file="$my_cnf_file" -e "DROP DATABASE $target_db_name; CREATE DATABASE $target_db_name;"; then
+    error "unable to DROP and CREATE database $target_db_name"
+  fi
+else
+  if ! mysql --defaults-file="$my_cnf_file" -e "CREATE DATABASE $target_db_name;" >/dev/null; then
+    error "unable to create database $target_db_name"
+  fi
+fi
+
+mysql --defaults-file="$my_cnf_file" -D "$target_db_name" < "$dump_file"
+if [ $? -ne 0 ]; then
+  error "unable to import dump file"
+fi
+
+if [ -n "$site_name" ]; then
+  echo "client.database = $target_db_name" | \
+  "$we_base_dir/bin/update-ini-file" "$my_cnf_file"
+
+  "$curr_dir/update-drupal-settings" "$site_name"
+fi
+
+exit 0

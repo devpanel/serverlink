@@ -1,0 +1,42 @@
+#!/bin/sh
+#
+# chkconfig: 2345 51 49
+# description: \
+
+# Source function library.
+[ -r /etc/rc.d/init.d/functions ] && . /etc/rc.d/init.d/functions
+
+OWL_STARTUP_ENABLE=1
+
+error()
+{
+  echo "ERROR${*+: }$*" >&2
+  exit 1
+}
+
+case "$1" in
+start)
+        if ! id we_ssh >/dev/null 2>&1
+        then
+          useradd -m we_ssh || error
+        fi
+        su -lc "/opt/webenabled/compat/shellinabox/shellinaboxd -b -p 2222" we_ssh || error
+	;;
+stop)
+	killall shellinaboxd.x86_64
+	killall shellinaboxd.i386
+	sleep 5
+	;;
+restart)
+	$0 stop
+	$0 start
+	;;
+status)
+	ps axuww|grep '/opt/webenabled/compat/shellinabox/shellinabox[d]'
+	;;
+*)
+	echo "Usage: shellinabox {start|stop|restart|status}"
+	exit 1
+esac
+
+exit $?

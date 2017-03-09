@@ -1,0 +1,48 @@
+#!/bin/bash
+
+set_usage_msg \
+  "Usage: $bin_name $action $object token --vhost <vhost> --tool <tool>
+
+  Options:
+    --vhost <vhost>             the vhost
+    --tool  <tool>              the name of the tool (e.g. phpmyadmin,
+                                extplorer, etc)
+
+  Returns a one time token to login on the specified app.
+"
+
+tool_get_token() {
+  [ $# -eq 0 -o -z "$1" ] && usage
+
+  local name vhost tool
+
+  local -a cmd_args=()
+  local -a opts_ar=( )
+
+  while [ -n "$1" ]; do
+    name="$1"
+    case "$name" in
+      --vhost)
+        [ -z "$2" ] && error_missing_value vhost
+        vhost="$2"
+        shift 2
+        ;;
+      --tool)
+        [ -z "$2" ] && error_missing_value tool
+        tool="$2"
+        shift 2
+        ;;
+      --help)
+        usage
+        ;;
+      *)
+        usage
+        ;;
+    esac
+  done
+
+  [ -z "$vhost" ] && error_missing_param vhost
+  [ -z "$tool"  ] && error_missing_param tool
+
+  "$sys_dir/libexec/gen-app-tool-token" "$vhost" "$tool"
+}

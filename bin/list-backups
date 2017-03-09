@@ -1,0 +1,69 @@
+#!/bin/bash
+
+usage() {
+  echo "Usage: `basename "$0"` [ options ] [ directory ]
+
+  Options:
+    -m <max_depth>        specify the maximum number of directories allowed to
+                          recurse (default: 1)
+
+    -h                    display this usage msg
+"
+  exit 1
+}
+
+# main
+max_depth=1
+getopt_flags='m:h'
+while getopts $getopt_flags OPTN; do
+  case $OPTN in
+    m)
+      if [[ "$OPTARG" =~ ^[0-9]+$ ]]; then
+        max_depth="$OPTARG"
+      else
+        echo "Error: max_depth should be numeric" 1>&2
+				exit 1
+      fi
+      ;;
+    h)
+      usage
+      ;;
+    *)
+      exit 1
+      ;;
+  esac
+done
+[ -n "$OPTIND" -a $OPTIND -gt 1 ] && shift $(( $OPTIND - 1 ))
+
+self_bin=`readlink -e "$0"`
+if [ $? -ne 0 ]; then
+  echo "Error: unable to get self path" 1>&2
+  exit 1
+fi
+
+self_dir="${self_bin%/*}"
+sys_dir="${self_dir%/*}"
+
+lib_f="$sys_dir/lib/functions"
+if ! . "$lib_f"; then
+  echo "Error: unable to import $lib_f" 1>&2
+  exit 1
+fi
+
+if [ -n "$1" ]; then
+  backups_dir="$1"
+elif [ -z "$1" -a ${#USER} -gt 2 -a "${USER:0:2}" == "w_" ]; then
+  assign_deref_os_prop_or_exit data_dir "$sys_dir" data_dir
+
+  vhost="${USER#w_}"
+  backups_dir="$data_dir/vhost_archives/$vhost"
+elif [ -z "$1" ]; then
+  error "unable to auto detect directory. Please specify it manually (see usage, use argument -h)."
+fi
+
+if [ ! -d "$backups_dir" ]; then
+  error "couldn't find directory '$backups_dir'"
+fi
+
+find_printf_fmt='%Ts/%s/%f\n'
+find "$backups_dir" -maxdepth $max_depth -type f \( -iname \*.tgz -o -iname \*.zip \) -printf "$find_printf_fmt" 2>/dev/null

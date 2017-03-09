@@ -1,0 +1,62 @@
+#!/bin/bash
+#set -x
+dir=`dirname $0`
+[ "$dir" == "." ] && dir="$PWD"
+dir_bin="$dir/../bin"
+
+usage() {
+  local prog=$(basename "$0")
+cat << EOF
+
+Edit the contents of the crontab of vhost.
+
+Usage: $prog <vhost>"
+
+  *WARNING*: crontab contents must be passed via STDIN
+
+EOF
+  exit 1
+}
+
+# main()
+
+[ $# -lt 1 ] && usage
+
+vhost="$1"
+user="w_$vhost"
+# using mode archive: it's OK to operate on a locked vhost
+$dir/check-vhost-name archive "$vhost" || exit 1
+
+temp_file=$(su -l -c 'export TMPDIR=${TMPDIR:-/tmp}; mktemp -p "$TMPDIR" cron_edit.XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX' "$user")
+status=$?
+if [ $status -ne 0 ]; then
+  echo "Error: unable to create temp file. mktemp returned $status" 1>&2
+  exit $status
+fi
+
+su -l -c '
+exec 6>"'"$temp_file"'"
+
+while read LINE; do
+  # use shell builtin, not to run external /bin/echo everytime
+  builtin echo "$LINE" 1>&6
+done
+
+# close temp file
+exec 6>&-
+' "$user"
+status=$?
+if [ $status -ne 0 ]; then
+  echo "Error: unable to copy contents from stdin to temp file. shell returned $status" 1>&2
+  exit $status
+fi
+
+su -l -c "crontab $temp_file" "$user"
+status=$?
+if [ $status -eq 0 ]; then
+  echo "Crontab sucessfully modified for user '$user'." 1>&2
+else
+  echo "Error: unable to modify crontab for user '$user'." 1>&2
+fi
+
+exit $status

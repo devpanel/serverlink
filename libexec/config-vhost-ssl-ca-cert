@@ -1,0 +1,21 @@
+#!/bin/bash
+error() { echo "ERROR${@+: }$@" >&2; exit 1; }
+while getopts "i" OPTOPT
+do
+  case "$OPTOPT" in
+    i) ;;
+    *) exit 1;;
+  esac
+done
+shift `expr $OPTIND - 1`
+dir=`dirname "$0"`
+vhost="$1"
+ip="$2"
+[ -z "$ip" ] && error "No IP"
+user="w_$vhost"
+shift
+$dir/check-vhost-name archive "$vhost" || error
+config_dir="/opt/webenabled/config/vhosts/$vhost"
+fqdn=$vhost.`$dir/list-vhost-names-default` || error
+rm -f /opt/webenabled/config/os/pathnames/etc/ssl/certs/$ip.$fqdn.intermediate
+cat >/opt/webenabled/config/os/pathnames/etc/ssl/certs/$ip.$fqdn.intermediate || error

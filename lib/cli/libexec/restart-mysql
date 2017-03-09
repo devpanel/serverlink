@@ -1,0 +1,100 @@
+#!/bin/bash
+
+set_usage_msg \
+  "Usage: $bin_name $action [opts] [--vhost <vhost>] [--domain <domain>]
+
+  Options:
+    --vhost  <vhost>         the vhost
+    --domain <domain>        find the vhost associated with the
+                             specified domain
+
+  Restarts mysqld associated with the specified domain or vhost.
+"
+
+mysql_restart() {
+  local param vhost user user_home domain
+  
+  [ $# -eq 0 -o -z "$1" ] && usage
+
+  while [ -n "$1" ]; do
+    param="$1"
+
+    case $param in
+      --vhost)
+        [ -z "$2" ] && error_missing_value vhost
+        vhost="$2"
+        shift 2
+        ;;
+      --domain)
+        [ -z "$2" ] && error_missing_value domain
+        domain="$2"
+        shift 2
+        ;;
+      --help)
+        usage
+        ;;
+      *)
+        error "unknown parameter: $param"
+        ;;
+    esac
+  done
+
+  if [ -z "$vhost" -a -z "$domain" ]; then
+    error "either --vhost or --domain needs to be specified"
+  fi
+
+  if [ -z "$vhost" ]; then
+    . $sys_dir/lib/functions
+
+    vhost=$(get_vhost_with_hostname "$domain")
+    if [ $? -ne 0 ]; then
+      error "didn't find any vhost with the specified hostname"
+    fi
+  fi
+
+  user="b_$vhost"
+
+  user_home=$(eval echo -n \~$user)
+  if [ -z "$user_home" ]; then
+    error "unable to get home directory for user $user"
+  fi
+
+  if [ ! -d "$user_home" ]; then
+    error "missing home directory $user_home"
+  fi
+
+  local mysql_known_file="$user_home/mysql/mysql/user.MYD"
+  local killed
+  if fuser -s "$mysql_known_file"; then
+    fuser -s -k "$mysql_known_file"
+    echo "Stopping mysql..."
+    for i in {1..30}; do
+      if fuser -s -k "$mysql_known_file"; then
+        if [ $i -gt 0 -a $(($i % 10)) == 0 ]; then
+          echo "Waiting a bit more for mysql to stop..." 1>&2
+        fi
+        sleep 0.5
+      else
+        killed=1
+        break
+      fi
+    done
+
+    if [ -z "$killed" ]; then
+      if [ -n "$force" ]; then
+        if fuser -s "$mysql_known_file"; then
+          echo "Couldn't kill mysql with TERM signal, doing a KILL now..." 1>&2
+          fuser -k -KILL "$mysql_known_file"
+        fi
+      else
+        error "couldn't kill mysql, it seems dead stuck. Try running with --force"
+      fi
+    fi
+  else
+    echo "Warning: mysql not running, trying to start..." 1>&2
+  fi
+      
+  echo "Starting mysql for vhost $vhost..."
+  echo -n "  "
+  "$sys_dir/compat/dbmgr/current/bin/daemon-start" --user="$user"
+}

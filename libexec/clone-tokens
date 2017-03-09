@@ -1,0 +1,136 @@
+#!/bin/bash
+
+token_length=50
+
+usage() {
+  local prog=$(basename "$0")
+  echo "
+This script creates tokens to be used for cloning vhosts through HTTP
+
+Usage: $prog [ OPTIONS ] <vhost>
+
+  Options:
+    -n number         number of characters of the token
+    -t type           Type of the clone. Accepted types: recv or send
+    -T token          use the specified token (instead of generating a
+                      random one)
+    -r                remove the token specified in option -T
+"
+  exit 1
+}
+
+# main
+
+[ $# -lt 1 ] && usage
+
+dir=$( dirname "$0" )
+if ! source "$dir/../lib/functions"; then
+  echo "Error: unable to import auxiliary functions." >&2
+  exit 1
+fi
+token_dir="$dir/../../var/clone_tokens/"
+if [ ! -e "$token_dir" ]; then
+  error "token dir '$token_dir' doesn't exist."
+elif [ ! -d "$token_dir" ]; then
+  error "path '$token_dir' is not a directory"
+fi
+
+delete_token=0
+unset token_str
+getopt_flags='rn:t:T:'
+while getopts $getopt_flags OPTN; do
+  case $OPTN in
+    n)
+      if ! [[ "$OPTARG" =~ ^[0-9]+$ ]]; then
+        error "the argument passed to -n should be numeric"
+      elif [ $OPTARG -lt 20 ]; then
+        error "the argument passed to -n should be greater than 20"
+      else
+        token_length=$OPTARG
+      fi
+      ;;
+    t)
+      if [ "$OPTARG" != "recv" -a "$OPTARG" != "send" ]; then
+        error "invalid type. Accepted values: recv or send"
+      else
+        clone_type="$OPTARG"
+      fi
+      ;;
+    T)
+      if [ ${#OPTARG} -eq $token_length ]; then
+        token_str="$OPTARG"
+      else
+        error "the specified token doesn't match the required token length ($token_length)"
+      fi
+      ;;
+    r)
+      delete_token=1
+      ;;
+    *)
+      usage
+      ;;
+  esac
+done
+[ $OPTIND -gt 1 ] && shift $(( $OPTIND - 1 ))
+
+# missing vhost name
+[ $# -lt 1 -o ${#1} -lt 1 ] && usage
+
+if [ -z "$clone_type" ]; then
+  error "please specify clone type (-t)"
+fi
+
+vhost="$1"
+if [ $delete_token -eq 1 -a -z "$token_str" ]; then
+  error "requested token deletion (-r), but token string is missing (-T)"
+elif [ $delete_token -eq 1 ]; then
+  token_file="$token_dir/$vhost.$clone_type.$token_str"
+  if [ ! -e "$token_file" ]; then
+    wedp_warn "token file doesn't exist"
+    exit 0 # exit 0, not important here
+  fi
+
+  rm -f "$token_file"
+  if [ $? -eq 0 ]; then
+    exit 0
+  else
+    error "unable to delete token file '$token_file'"
+  fi
+fi
+
+if ! getent passwd "w_$vhost" ; then
+  wedp_warn "vhost 'w_$vhost' doesn't exist yet (this is just a warning)"
+fi
+
+if [ -z "$token_str" ]; then
+  for n in {1..5}; do
+    if token_str=$( wedp_gen_random_str $token_length ); then
+      token_file="$token_dir/$vhost.$clone_type.$token_str"
+      if [ -e "$token_file" ]; then
+        wedp_warn "token_file '$token_file' already exists. Trying again"
+      else
+        break
+      fi
+    else
+      continue
+    fi
+    token_file=""
+  done
+else
+  token_file="$token_dir/$vhost.$clone_type.$token_str"
+fi
+
+if [ -z "$token_file" ]; then
+  error "unable to generate token file. Exceeded max number of attempts"
+fi
+
+if [ -e "$token_file" ]; then
+  wedp_warn "token already exists (this is just a warning)"
+  exit 0
+fi
+
+touch "$token_file"
+status=$?
+if [ $status -ne 0 ]; then
+  error "unable to create token file. touch returned exit code: $status"
+fi

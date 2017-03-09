@@ -1,0 +1,97 @@
+#!/bin/bash
+dir=`dirname $0`
+dir_bin="$dir/../bin"
+opt_u=0
+
+
+error()
+{
+  echo "ERROR${1+: }$@" >&2
+  exit 1
+}
+
+while getopts "u:" OPTOPT
+do
+  case "$OPTOPT" in
+    u) opt_u=1
+       vhost="$OPTARG"
+       user_web="w_$vhost"
+       ;;
+    *) exit 1;
+  esac
+done
+shift `expr $OPTIND - 1`
+tar_output_file="$1"
+
+create_file()
+{
+  local file="$1"
+  set -C
+  echo -n >"$file"
+  local status=$?
+  set +C
+  return $status
+}
+
+write_to_file()
+{
+  local file="$1"
+  if [ "$opt_u" = 0 ]
+  then
+    mkdir -p `dirname $file` || return 1
+    create_file "$file" || return 1
+    chmod +w "$file" || return 1
+    cat >"$file" || return 1
+  else
+    (echo "$file"; cat) | su -l -c '
+    read -r file;
+    mkdir -p `dirname "$file"` || exit 1
+    set -C
+    echo -n > "$file" || exit 1
+    set +C
+    chmod +w "$file" || exit 1
+    cat >"$file" || exit 1
+    # /usr/local/bin/fixwebperms.sh `dirname "$file"` >/dev/null 2>&1 || exit 1
+     ' "$user_web" || return 1
+  fi
+}
+
+write_tar_output()
+{
+  case "$tar_output_file"
+  in
+  "-")
+    cat;;
+  *.tgz)
+   write_to_file "$tar_output_file" || error
+   basename=`echo "$tar_output_file"|sed 's/\.tgz$//'`
+   if [ $opt_u = 1 ]
+   then
+     sha1sum=`sha1sum "$tar_output_file"` || error
+     md5sum=`md5sum "$tar_output_file"` || error
+     echo "$sha1sum" | cut -d ' ' -f1 | write_to_file "$basename.sha1" || error
+     echo "$md5sum" | cut -d ' ' -f1  | write_to_file "$basename.md5" || error
+   fi
+  ;;
+   *) error "write_tar_output: will only write to - or .tgz";;
+  esac
+}
+
+# using mode archive: it's OK to operate on a locked vhost
+[ -n "$tar_output_file" ] || error "no label"
+if [ $opt_u = 1 ]
+then
+  $dir/check-vhost-name archive "$vhost" || exit 1
+  home="`eval \"echo ~$user_web\"`" || error
+  [ -d "$home" ] || error "Home dir $home does not exist"
+  check_archive_pathname_options="${check_archive_pathname_options+ }-u$vhost"
+  [ o"`dirname \"$tar_output_file\"`" = o"." ] || error "basename without path must be specified with the -u option"
+  [ o"`basename \"$tar_output_file\"`" = o"$tar_output_file" ] || error "basename without path must be specified with the -u option"
+  case "$tar_output_file" in
+  *.tgz);;
+  *) error "$tar_output_file: only .tgz is allowed with the -u option"
+  esac
+  tar_output_file="$home/public_html/gen/archive/$tar_output_file"
+fi
+if [ o"$tar_output_file" != o"-" ]; then  $dir/check-archive-pathname $check_archive_pathname_options archive "$tar_output_file" || error; fi
+write_tar_output  || error

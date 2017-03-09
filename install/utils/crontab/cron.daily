@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+
+self_bin=$(readlink -e "$0")
+if [ $? -ne 0 ]; then
+  echo "Error: unable to detect self path" 1>&2
+  exit 1
+fi
+self_dir=${self_bin%/*}
+
+# assuming self_dir = install/utils/crontab
+sys_dir=${self_dir%/*/*/*}
+lib_file="$sys_dir/lib/functions"
+
+if ! source "$lib_file"; then
+  echo "Error: unable to source file $lib_file"
+  exit 1
+fi
+
+# distro updates (actual updates depend on configuration)
+"$sys_dir/libexec/distro-updates" run-from-crontab
+
+# fix the permissions of vhost logs dir and files
+"$sys_dir/libexec/fix-vhost-logs-ownshp-n-perms" -y
+
+run-parts "$sys_dir/bin/packages/cron.d/cron.daily"
+
+/bin/true

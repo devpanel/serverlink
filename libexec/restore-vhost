@@ -1,0 +1,368 @@
+#!/bin/bash
+
+error()
+{
+  echo "ERROR${1+: }$@" >&2
+  exit 1
+}
+
+run()
+{
+  echo "  Running $@"
+  "$@"
+}
+run2()
+{
+  echo "  Running $@" >&2
+  "$@"
+}
+run_su()
+{
+  echo "  running su -l -c '$@' $user_web" >&2
+  su -s /bin/bash -l -c "$*" "$user_web"
+}
+
+get_param_from_db_output() {
+  # get param="value" from the output and extract only the value
+  local user="$1"
+  local param="$2"
+  local output="$3"
+
+  local tmp_out value
+  tmp_out="$(printf '%s' "$output" | \
+    egrep "^added: .+user=[\'\"]$user[\'\"]" | \
+    egrep -o -m 1 "$param=[\'\"][^\'\"]+[\'\"]")"
+
+  [ $? -ne 0 ] && return 1
+
+  value=${tmp_out#$param=[\'\"]}
+  value=${value%[\'\"]}
+
+  printf '%s' "$value"
+}
+
+detect_subsystem() {
+  local tmp_sub_dir seed_file subsystem
+
+  for tmp_sub_dir in "$we_base_dir/bin/seeds/"*
+  do
+    seed_file="$tmp_sub_dir/restore-vhost.functions"
+    [ ! -d "$tmp_sub_dir" -o ! -e "$seed_file" ] && continue
+    subsystem="${tmp_sub_dir##*/}"
+
+    if egrep -q "^$subsystem\$" "$archive_dir/db/databases"; then
+      echo "$subsystem"
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+usage()
+{
+  echo "
+Usage: restore-vhost [ OPTIONS ] VHOST ARCHIVE_LABEL
+
+  Options:
+
+    -P                replicate w_* user's password
+    -p                do not reset web application passwords
+    -i                pass mysql passwd via stdin
+    -n                do not activate apache vhost (used for hosting_link)
+    -S files|db|all   sync
+    -s subsystem      name of the subsystem
+    -N                don't create a new vhost user
+    -H                when syncing get the archive from the users vhost
+    -F                initial restore. Indicates to the
+                      restore-vhost-subsystem that this is the initial 
+                      deployment of the app
+    -O name=value     subsystem values
+
+  VHOST is the 6 characters of after w_ of the linux username to be used
+  ARCHIVE_LABEL can be any of: .tgz file, a directory, or a http/https/ftp url of a .tgz file
+" >&2
+
+  exit 1
+}
+
+cleanup()
+{
+  local tmpdir="$1"
+  if [ -n "$tmpdir" ] && [ -d "$tmpdir" ]
+  then
+    echo "Removing temporary archive $tmpdir"
+    rm -rf "$tmpdir"
+  fi
+}
+
+# main
+
+options=""
+subsystem_options="-F"
+app_cmd_options=""
+opt_i=0 opt_p=0
+try_archive_in_user_home=0
+create_vhost=1
+
+while getopts "NHPpinFS:O:s:" OPTOPT
+do
+  case "$OPTOPT" in
+    P) options="$options${options+ }-P";;
+    p) opt_p=1; subsystem_options="$subsystem_options${subsystem_options+ }-n";;
+    i) opt_i=1;;
+    n) options="$options${options+ }-n";;
+    S)
+       sync_type="$OPTARG"
+       if [ "$sync_type" != "files" -a "$sync_type" != "db" \
+            -a "$sync_type" != all ]; then
+         error "invalid sync_type argument (argument of option -S)"
+       fi
+       ;;
+    H)
+      try_archive_in_user_home=1
+       ;;
+    N)
+      create_vhost=0
+      ;;
+    F)
+      initial_deployment=1
+      subsystem_options="$subsystem_options${subsystem_options+ }-$OPTOPT"
+      ;;
+    O)
+      app_cmd_options+=" -O "`printf '%q' "$OPTARG"`""
+      ;;
+    s)
+      subsystem="$OPTARG"
+      ;;
+    *) exit 1;
+  esac
+done
+[ $OPTIND -gt 0 ] && shift `expr $OPTIND - 1`
+
+[ $# -lt 2 ] && usage
+
+vhost="$1"
+archive_label="$2"
+
+self_bin=$(readlink -e "$0")
+dir=`dirname "$self_bin"`
+we_base_dir=`readlink -e "$dir/.."`
+dir_bin="$we_base_dir/bin"
+export DEVPANEL_HOME="$we_base_dir"
+
+metadata_bin="$DEVPANEL_HOME/libexec/apache-metadata-handler"
+config_dir="$we_base_dir/config/vhosts/$vhost"
+user_web="w_$vhost"
+home="`eval \"echo ~$user_web\"`" || error "unable to get \$HOME of user $user_web"
+user_db="b_$vhost"
+vhost_config_dir=.webenabled/private
+shift
+shift
+
+if [ $create_vhost -eq 1 ]; then
+  $dir/check-vhost-name restore "$vhost" || usage
+elif [ $create_vhost -eq 0 ] && ! user_info=$(getent passwd "$user_web" 2>/dev/null); then
+  error "user '$user_web' must exist"
+fi
+
+aux_lib_file="$we_base_dir/lib/functions"
+if ! source "$aux_lib_file"; then
+  error "unable to load auxiliary functions from $aux_lib_file"
+fi
+
+assign_deref_os_prop_or_exit sys_datadir "$we_base_dir" data_dir
+
+if [ -n "$subsystem" ]; then
+  if ! is_known_seedapp_subsystem "$subsystem"; then
+    error "unknown subsystem name specified"
+  fi
+fi
+
+password="";
+if [ $opt_i = 1 ]
+then
+  read -r password || exit 1
+  [ -n "$password" ] || error "couldn't read a password."
+fi
+
+TMPDIR=""
+
+unset archive_file download_archive archive_dir
+if [ "$archive_label" == "-" ]; then
+  archive_file="-"
+elif [ ${#archive_label}  -gt 10 -a "${archive_label:0:7}" == "http://" \
+     -o ${#archive_label} -gt 10 -a "${archive_label:0:8}" == "https://" \
+     -o ${#archive_label} -gt 10 -a "${archive_label:0:6}" == "ftp://"   \
+     -o ${#archive_label} -gt  8 -a "${archive_label:0:5}" == "we://" ]; then
+
+  if [[ "$archive_label" == we://* ]]; then
+    assign_deref_os_prop_or_exit seedapp_base_url "$we_base_dir" \
+      webenabled_seedapps_base_url
+
+    archive_url=${archive_label//we:\/\//$seedapp_base_url}
+    if ! [[ "$archive_url" == *.tgz ]]; then
+      archive_url+=".tgz"
+    fi
+  else
+    archive_url="$archive_label"
+  fi
+
+  file_in_cache=$(get_url_from_cache "$archive_url")
+  if [ $? -eq 0 ]; then
+    echo "Found application in cache, re-using from file $file_in_cache..."
+    archive_file="$file_in_cache"
+  else
+    download_archive=1
+  fi
+elif [ ! -e "$archive_label" -a $create_vhost -eq 0 \
+  -a $try_archive_in_user_home -eq 1 \
+  -a "${archive_label:0:1}" != "/" -a "${archive_label:0:2}" != "./" \
+  -a "${archive_label:0:3}" != "../" ]; then
+
+  user_home_dir=$(echo "$user_info" | cut -d: -f 6)
+  base_label=$(basename "$archive_label")
+  path_in_home="$user_home_dir/public_html/gen/archive/$base_label"
+  path_in_sysdir="$sys_datadir/vhost_archives/$vhost/$base_label"
+
+  if [ -f "$path_in_sysdir" ]; then
+    archive_file="$path_in_sysdir"
+  elif [ -f "$path_in_home" ]; then
+    archive_file="$path_in_home"
+  else
+    error "unable to find file '$archive_label' in common locations"
+  fi
+elif [ -f "$archive_label" ]; then
+  archive_file="$archive_label"
+elif [ -d "$archive_label" ]; then
+  # no need to extract
+  archive_dir="$archive_label"
+elif [ ! -e "$archive_label" ]; then
+  error "unable to find '$archive_label' (assuming it was a file or directory)"
+else
+  error "unable to identify the type of archive label '$archive_label'. It's type is probably incompatible with this script."
+fi
+
+if [ -z "$archive_dir" ]; then
+  TMPDIR=`$dir/archive-mktemp restore-vhost` || \
+    error "unable to create temporary directory to extract the files"
+  archive_dir="$TMPDIR"
+
+  trap 'cleanup "$TMPDIR"' HUP INT QUIT ILL TRAP ABRT BUS FPE KILL SEGV PIPE STOP ALRM TERM EXIT
+fi
+
+if [ -n "$download_archive" ]; then
+  tmp_down=$(mktemp "$TMPDIR/archive.tar.gz.XXXXXXXXXXXXX")
+  if [ $? -ne 0 ]; then
+    error "unable to create temporary file to store the download"
+  fi
+
+  echo "Trying to download app from URL $archive_url ..."
+  download_url_n_cache "$archive_url" "$tmp_down"
+  if [ $? -eq 0 ]; then
+    archive_file="$tmp_down" 
+  else
+    error "unable to download archive file"
+  fi
+fi
+
+# there's an archive file to extract (i.e. the archive_label was not a dir)
+if [ -n "$archive_file" ]; then
+  tar -C "$TMPDIR" -zxpf "$archive_file"  || error "unable to extract archive file '$archive_file'"
+  archive_dir="$TMPDIR"
+fi
+
+if [ -z "$subsystem" ]; then
+  # subsystem was not specified, try to detect it from the extracted dir
+  subsystem=$(detect_subsystem)
+  if [ $? -ne 0 ]; then
+    error "unable to detect subsystem for the application"
+  fi
+fi
+
+web_options="$options"
+if [ "$sync_type" == "all" -o "$sync_type" == "files" ]; then
+  web_options="$web_options${web_options+ }-S"
+fi
+
+[ $create_vhost -eq 0 ] && \
+    web_options="$web_options${web_options+ }-N"
+
+echo Processing web...
+run $0-web $web_options "$vhost" "$archive_dir/web" "$@" || exit 1
+
+if ! [ -d "$archive_dir/db" ]
+then
+  echo "Skipping db (not present in the archive)"
+  exit 0
+fi
+
+if [ "$sync_type" == "files" ]; then
+  echo "Only syncing files. Skipping db." 1>&2
+  exit 0
+fi
+
+db_options="$options"
+echo Processing db...
+if [ $opt_i = 1 ]
+then
+  output=`echo "$password" | run $0-db $db_options -i "$vhost" "$archive_dir/db" 2>&1`
+  status=$?
+else
+  output=`run $0-db $db_options "$vhost" "$archive_dir/db" 2>&1`
+  status=$?
+fi
+
+echo "$output"
+[ $status = 0 ] || exit $status
+
+mysql_host_port=$(get_param_from_db_output "w_$vhost" host "$output")
+mysql_host=${mysql_host_port%:*}
+mysql_port=${mysql_host_port#*:}
+mysql_user=$(get_param_from_db_output "w_$vhost" user "$output")
+mysql_password=$(get_param_from_db_output "w_$vhost" password "$output")
+
+# write the ~/.my.cnf file
+{ printf 'client.host = %s\nclient.port = %s\nclient.user = %s\n' \
+    "$mysql_host" "$mysql_port" "$mysql_user" ;
+  printf 'client.password = %s\n' "$mysql_password";
+} | run_su "$we_base_dir/bin/update-ini-file" -c "~/.my.cnf"
+
+echo "Updating .mysql.passwd"
+admin_password=$(get_param_from_db_output admin password "$output")
+{
+  echo "admin:$admin_password";
+  echo "$mysql_user:$mysql_password";
+} | run_su "cat >$vhost_config_dir/.mysql.passwd"
+
+run_su "ln -snf $vhost_config_dir/.mysql.passwd .mysql.passwd"
+
+
+run_su $dir_bin/phpMyAdmin.fix -f
+run_su $dir_bin/vhost-archive.fix -f
+
+metadata_str="
+set app:_:default app:0
+set app:0:_:db_host $mysql_host
+set app:0:_:db_port $mysql_port
+set app:0:_:db_user $mysql_user
+set app:0:_:db_password $mysql_password
+set app:0:_:seed_app $subsystem
+set app:0:_:db_name $subsystem
+"
+
+echo "$metadata_str" | "$metadata_bin" -q "$vhost"
+
+if ! run_su "$dir_bin/restore-vhost-subsystem" \
+  $subsystem_options $app_cmd_options -n -s "$subsystem"; then
+
+  error "unable to update app configuration files"
+fi
+
+run_su 'restore_script="$HOME/etc/rc.webenabled.restore";
+        [ -f "$restore_script" -a -x "$restore_script"  ] && "$restore_script"'
+
+run_su 'local_script="$HOME/etc/rc.webenabled.local"
+        [ -f "$local_script" -a -x "$local_script" ] && "$local_script"'
+
+exit 0

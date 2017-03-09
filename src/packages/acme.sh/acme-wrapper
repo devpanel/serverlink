@@ -1,0 +1,158 @@
+#!/bin/bash
+
+usage() {
+  local op="$1"
+
+  local -A msgs=(
+  [default]="
+Usage: ${0##*/} <op> [args]
+
+  Known operations:
+    issue
+    cron
+"
+
+  [issue]="
+Usage: ${0##*/} $op <vhost> <domain1> [domainN]
+
+  Issue a new certificate for the specified vhost with the specified
+  domains.
+"
+
+  )
+
+  if [ -z "$op" ]; then
+    echo "${msgs[default]}"
+  elif [ -n "${msgs[$op]}" ]; then
+    echo "${msgs[$op]}"
+  else
+    echo "Error: unknown operation" 1>&2
+  fi
+
+  exit 1
+}
+
+
+# main
+[ -z "$1" ] && usage
+
+declare -a acme_args
+
+self_bin=`readlink -e "$0"`
+if [ $? -ne 0 ]; then
+  echo "Error: unable to get self path" 1>&2
+  exit 1
+fi
+
+self_dir="${self_bin%/*}"
+sys_dir="${self_dir%/*/*/*}"
+
+lib_f="$sys_dir/lib/functions"
+if ! . "$lib_f"; then
+  echo "Error: unable to import $lib_f" 1>&2
+  exit 1
+fi
+
+config_home="$sys_dir/config/packages/acme.sh/certs_registry"
+
+acme_bin="$self_dir/acme.sh"
+if [ ! -f "$acme_bin" -a -x "$acme_bin" ]; then
+  error "missing executable binary file at $acme_bin"
+fi
+
+hash -p "$acme_bin" acme.sh
+
+acme_args+=( --home "$config_home" )
+
+op="$1"
+shift
+
+# unfortunately some Let's Encrypt clients don't care about making
+# private keys 700 [*], and sometimes that includes the top
+# directory where all certificates are stored, so let's use a 077 umask here
+# and make only the certificates world readable (644)
+#
+# [*] reported upstream but author won't fix it
+# umask 077
+
+case "$op" in
+  issue)
+    [ $# -lt 2 -o -z "$1" -o -z "$2" ] && usage "$op"
+
+    declare -a domain_args
+
+    vhost="$1"
+    shift
+
+    if ! "$sys_dir/libexec/check-vhost-name" archive "$vhost"; then
+      exit 1
+    fi
+
+    if [ ! -d "$config_home" ]; then
+      if ! mkdir -m 711 "$config_home"; then
+        error "unable to create directory $config_home"
+      fi
+    fi
+
+    public_dir=$(eval echo -n \~w_$vhost/public_html/$vhost)
+    if [ ! -d "$public_dir" ]; then
+      error "public directory not found: $public_dir"
+    fi
+
+    # the first domain on command line is the one used as the name of the
+    # directory that stores the certificates
+    domain_cn="$1"
+    cert_dir="$config_home/$domain_cn"
+    ca_file="$cert_dir/ca.cer"
+    ca_bundle_file="$cert_dir/fullchain.cer"
+    csr_file="$cert_dir/$domain_cn.csr"
+    cert_file="$cert_dir/$domain_cn.cer"
+    priv_key_file="$cert_dir/$domain_cn.key"
+
+    while [ -n "$1" ]; do
+      tmp_domain="$1"
+
+      tmp_vhost_with=$(get_vhost_with_hostname "$tmp_domain")
+      if [ $? -ne 0 -o -z "$tmp_vhost_with" ]; then
+        error "unable to verify that domain '$tmp_domain' is with vhost $vhost"
+      elif [ -n "$tmp_vhost_with" -a "$tmp_vhost_with" != "$vhost" ]; then
+        error "domain '$tmp_domain' is not on vhost $vhost"
+      fi
+
+      domain_args+=( -d "$tmp_domain" )
+      shift
+    done
+
+    if [ ! -d "$cert_dir" ]; then
+      if ! mkdir -m 700 "$cert_dir"; then
+        error "unable to create dir $cert_dir"
+      fi
+    fi
+
+    acme.sh --issue "${acme_args[@]}" \
+         -w "$public_dir" "${domain_args[@]}"
+
+    if [ $? -eq 0 ]; then
+      if chmod 600 "$priv_key_file"; then
+        chmod 711 "$cert_dir"
+      fi
+
+      chmod 644 "$ca_file" "$ca_bundle_file" "$csr_file" "$cert_file"
+    else
+      error "unable to generate certificate"
+    fi
+
+    echo
+    echo "Configuring certificates on Apache..."
+     
+    "$sys_dir/libexec/apply-ssl-config" -C "$ca_bundle_file" \
+      -c "$cert_file" -k "$priv_key_file" "$vhost"
+    ;;
+
+  cron)
+    acme.sh --cron "${acme_args[@]}"
+    ;;
+  *)
+    usage
+    ;;
+esac

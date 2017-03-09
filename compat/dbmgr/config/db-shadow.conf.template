@@ -1,0 +1,21 @@
+# /etc/db-users.conf
+# ==================
+#
+# Every dashed line is a comment and will be ignored, empty lines are ignored
+# too.
+#
+# Format:
+# -------
+# user:type:vers:datadir:ip:port:limits:contact:root_passwd
+#  |    |     |        |     |     |       |       |
+#  |    |     |        |     |     |       |       +---- db root password
+#  |    |     |        |     |     |       +------------ contact person email
+#  |    |     |        |     |     +-------------------- limits for this daemon
+#  |    |     |        |     |                           (ex. disk=10M)
+#  |    |     |        |     +-------------------------- daemon port
+#  |    |     |        +-------------------------------- dir, where data is
+#  |    |     +----------------------------------------- dbase version (use *
+#  |    |                                                to allow automatic
+#  |    |                                                upgrades to current
+#  |    +----------------------------------------------- type of database
+#  +---------------------------------------------------- system user account

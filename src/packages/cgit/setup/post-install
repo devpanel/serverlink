@@ -1,0 +1,56 @@
+#!/bin/bash
+usage() {
+  echo "Usage: `basename "$0"` <pkg_name> <pkg_ver> <system_dir>"
+  exit 1
+}
+
+[ $# -ne 3 ] && usage
+
+self_bin=$(readlink -e "$0")
+curr_dir=`dirname "$self_bin"`
+
+pkg_name="$1"
+pkg_ver="$2"
+
+system_dir=`readlink -e "$3"`
+if [ $? -ne 0 ]; then
+  echo "Error: unable to resolve address of '$system_dir'" 1>&2
+  exit 1
+fi
+
+lib_file="$system_dir/lib/functions"
+if ! source "$lib_file"; then
+  echo "Error: unable to source lib file '$lib_file'"
+fi
+
+assign_deref_os_prop_or_exit git_vhost_template "$system_dir" \
+  names/git_vhost_template
+
+apache_include_dir="$system_dir/compat/apache_include"
+git_vhost_file="$apache_include_dir/global-includes/cgit.conf"
+"$system_dir/bin/template-tool" -o "$git_vhost_file" \
+  "$apache_include_dir/$git_vhost_template"
+
+if [ $? -ne 0 ]; then
+  echo "Error: unable to update the server hostname on template '$git_vhost_template'" 1>&2
+  exit 1
+fi
+
+arch=`uname -m`
+cgit_curr="$system_dir/bin/utils.$arch/$pkg_name/current"
+cgit_cgi_bin="$system_dir/bin/utils.$arch/$pkg_name/current/cgi-bin"
+www_curr="$system_dir/compat/w_/public_html/$pkg_name/current"
+
+rm -f -- "$cgit_curr"
+ln -sf "$pkg_ver"  "$cgit_curr"
+ln -sf "$cgit_cgi_bin" "$www_curr"
+
+hash -p "$system_dir/config/os/pathnames/sbin/apachectl" apachectl
+if apachectl configtest; then
+  apachectl graceful
+else
+  echo "Error: invalid apache configuration!!! This is an unknown error. You need to open a support ticket" 1>&2
+  exit 1
+fi
+
+exit 0

@@ -1,0 +1,124 @@
+#!/bin/bash
+
+usage() {
+  local prog=`basename "$0"`
+
+  echo "Usage: $prog <service_name> <action>"
+  
+  if [ $EUID -ne 0 ]; then
+    echo
+    echo "This program requires ROOT privileges to run"
+  fi
+
+  exit 1
+}
+
+ubuntu_service_action() {
+  local service="$1"
+  local action="$2"
+
+  if hash status &>/dev/null && status "$service" &>/dev/null; then
+    $action $service
+  elif hash service &>/dev/null; then
+    service "$service" "$action"
+  else
+    echo "$FUNCNAME(): don't know how to run '$action' on '$service'" 1>&2
+    return 1
+  fi
+}
+
+centos_service_action() {
+  local service="$1"
+  local action="$2"
+
+  if hash initctl &>/dev/null && \
+     initctl status "$service" &>/dev/null; then
+
+    # for CentOS 6 and RHEL 6 if initctl status "$service" &>/dev/null; then
+    initctl "$action" "$service"
+  else
+    service "$service" "$action"
+  fi
+}
+
+redhat_service_action() {
+  centos_service_action "$@"
+}
+
+redhatenterpriseserver_service_action() {
+  centos_service_action "$@"
+}
+
+debian_service_action() {
+  local service="$1"
+  local action="$2"
+  
+  service "$service" "$action"
+}
+
+macosx_service_action() {
+  local service="$1"
+  local action="$2"
+
+  local macos_action=""
+  local service_path="/System/Library/LaunchDaemons/com.devpanel.$service.plist"
+
+  if [ "$action" == "start" ]; then
+    macos_action="load"
+  elif [ "$action" == "stop" ]; then
+    macos_action="unload"
+  elif [ "$action" == "status" ]; then
+    local output=""
+    if output=`launchctl list 2>/dev/null | fgrep "$service" | tail -1`; then
+      if [[ "$output" =~ ^[0-9]+[[:space:]] ]]; then
+        echo "Service $service is RUNNING"
+        return 0;
+      else
+        echo "Service $service is STOPPED"
+        return 1;
+      fi
+    else
+      echo "Unknown service '$service' to launchctl list" 2>&1
+      return 1
+    fi
+  else
+    echo "$FUNCNAME(): unknown action" 1>&2
+    return 1
+  fi
+
+  launchctl "$macos_action" "$service_path"
+}
+
+# main
+
+[ $# -lt 2 ] && usage
+
+current_dir=`dirname "${BASH_SOURCE[0]}"`
+if ! source "$current_dir/../lib/functions"; then
+  echo "Error: unable to import auxiliary functions from '$current_dir/../lib/functions'" 1>&2
+  exit 1
+fi
+
+if [ $EUID -ne 0 ]; then
+  error "this program requires ROOT privileges to run"
+fi
+
+service="$1"
+action="$2"
+
+if [ -z "$service" ]; then
+  error "missing service name"
+elif [ -z "$action" ]; then
+  error "missing action name"
+fi
+
+distro=$(wedp_auto_detect_distro)
+if [ $? -ne 0 ]; then
+  error "unable to detect the linux distribution of this server"
+fi
+
+if ! type -t "${distro}_service_action" >/dev/null; then
+  error "couldn't find function ${distro}_service_action"
+fi
+
+${distro}_service_action "$service" "$action"

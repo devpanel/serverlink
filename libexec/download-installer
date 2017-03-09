@@ -1,0 +1,58 @@
+#!/bin/bash
+download_file() {
+  local url="$1"
+  local temp_file="$2"
+  local retries=${3:-3}
+  local wait_before_retry=${4:-20}
+
+  if hash curl &>/dev/null; then
+    curl -L -f --retry $retries --retry-delay $wait_before_retry -s \
+      -o "$temp_file" "$url"
+    status=$?
+  elif hash wget &>/dev/null; then
+    wget -t $retries -w $wait_before_retry -nv -O "$temp_file" "$url"
+    status=$?
+  fi
+
+  return $status
+}
+
+usage() {
+  local prog=$(basename "$0")
+  local msg="$1"
+
+  echo "
+Usage: $prog <installer_url>
+"
+
+  [ -n "$msg" ] && echo "Error: $msg" 1>&2
+
+  exit 1
+}
+
+[ $# -eq 0 ] && usage "missing url argument"
+
+url="$1"
+
+tmp_installer=$(mktemp)
+status=$?
+if [ $status -ne 0 ]; then
+  echo "Error: unable to create temp directory. mktemp returned: $status" 1>&2
+  exit 1
+fi
+trap 'rm -f "$tmp_installer"' EXIT INT TERM HUP
+
+if ! download_file "$url" "$tmp_installer"; then
+  echo "Error: unable to download installer from url '$url'"
+  exit 1
+fi
+
+chmod 700 "$tmp_installer"
+"$tmp_installer"
+status=$?
+
+if [ $status -ne 0 ]; then
+  echo "Error: installer execution returned status: $status" 1>&2
+fi
+
+exit $status

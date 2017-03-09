@@ -1,0 +1,23 @@
+version: '2'
+services:
+  SERVICE_NAME_VAR:
+    container_name: CONTAINER_NAME_VAR
+    hostname: USER_VAR
+    domainname: DOMAIN_VAR
+    build:
+      context: .
+      dockerfile: Dockerfile-web
+      args:
+        USER: USER_VAR
+        DOMAIN: DOMAIN_VAR
+        APP: APP_VAR
+        SEEDAPP_ARCHIVE: SEEDAPP_ARCHIVE_VAR
+    environment:
+      USER: USER_VAR
+      DOMAIN: DOMAIN_VAR
+      APP: APP_VAR
+    networks:
+      - NETWORK_NAME_VAR_net
+
+networks:
+  NETWORK_NAME_VAR_net:

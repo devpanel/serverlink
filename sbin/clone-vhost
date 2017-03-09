@@ -1,0 +1,157 @@
+#!/bin/sh
+# multi-server version
+# local version is renamed to clone-vhost-local
+# Options:
+#   -P replicate w_* user's password
+#   -p do not reset web application passwords
+#   -i pass mysql passwd via stdin
+#   -n do not activate apache vhost (used for hosting_link)
+
+options=""
+opt_i=0 opt_n=0
+
+target_options=""
+
+while getopts "Ppin" OPTOPT
+do
+  case "$OPTOPT" in
+    P) options="${options+ }-P";;
+    p) target_options="$target_options${target_options+ }-p";;
+    i) opt_i=1; target_options="$target_options${target_options+ }-i";;
+    n) opt_n=1; target_options="$target_options${target_options+ }-n";;
+    *) exit 1;
+  esac
+done
+shift `expr $OPTIND - 1`
+
+if [ $opt_i = 1 ]
+then
+  read -r password || error "$0 Cannot read password"
+  [ -n "$password" ] || error "Empty password"
+fi
+
+
+source_server=localhost
+target_server=localhost
+[ -n "$WEBENABLED_SERVER" ] && source_server=$WEBENABLED_SERVER
+[ -n "$WEBENABLED_SERVER" ] && target_server=$WEBENABLED_SERVER
+[ -n "$WEBENABLED_SOURCE_SERVER" ] && source_server=$WEBENABLED_SOURCE_SERVER
+[ -n "$WEBENABLED_TARGET_SERVER" ] && target_server=$WEBENABLED_TARGET_SERVER
+unset WEBENABLED_SERVER
+
+dir=`dirname "$0"`
+source="$1"
+target="$2"
+target_supports_auth_tmp=0
+source_supports_auth_tmp=0
+key=""
+key2=""
+shift
+shift
+run()
+{
+  echo "  Running $@"
+  "$@"
+}
+
+error()
+{
+  echo "ERROR${1+: }$@" >&2
+  exit 1
+}
+
+usage()
+{
+  echo "Usage: clone-vhost SOURCE_VHOST TARGET_VHOST" >&2
+  exit 1
+}
+
+remove_auth_tmp_private()
+{
+  if [ $target_supports_auth_tmp  = 1 ] && [ -n "$key" ]
+  then
+    #echo remove_auth_tmp_private
+    echo "$key"|WEBENABLED_SERVER="$target_server" $dir/remove-auth-tmp-private || echo "failed (ignoring)"
+  fi
+}
+
+remove_auth_tmp_authorized_keys()
+{
+  if [ $source_supports_auth_tmp  = 1 ] && [ -n "$key2" ]
+  then
+    #echo remove_auth_tmp_authorized_keys
+    #echo "$key2" | WEBENABLED_SERVER="$source_server" $dir/remove-auth-tmp-authorized_keys || echo "failed (ignoring)"
+    :
+  fi
+}
+
+
+if target_webenabled_version=`WEBENABLED_SERVER="$target_server" $dir/webenabled-version` &&
+   [ -n "$target_webenabled_version" ] &&
+   expr "$target_webenabled_version" '>=' 2010-12-31-grg >/dev/null
+then
+  echo target_supports_clone_vhost_proxy=1
+  target_supports_clone_vhost_proxy=1
+else
+  echo target_supports_clone_vhost_proxy=0
+  target_supports_clone_vhost_proxy=0
+fi
+
+if [ $target_supports_clone_vhost_proxy = 1 ] && key=`WEBENABLED_SERVER="$target_server" $dir/config-auth-tmp-keygen`
+then
+  echo target_supports_auth_tmp=1
+  target_supports_auth_tmp=1
+  trap 'remove_auth_tmp_private' \
+    EXIT HUP INT QUIT ILL TRAP ABRT BUS FPE KILL SEGV PIPE STOP ALRM TERM
+else
+  echo target_supports_auth_tmp=0
+fi
+
+if [ $target_supports_auth_tmp = 1 ]
+then
+  key2="command=\"archive-vhost $options $source -\",no-port-forwarding,no-X11-forwarding,no-agent-forwarding,no-pty $key"
+  if echo "$key2" | WEBENABLED_SERVER="$source_server" $dir/config-auth-tmp-authorized_keys
+  then
+    echo source_supports_auth_tmp=1
+    source_supports_auth_tmp=1
+    trap 'remove_auth_tmp_private; remove_auth_tmp_authorized_keys' \
+      EXIT HUP INT QUIT ILL TRAP ABRT BUS FPE KILL SEGV PIPE STOP ALRM TERM
+  else
+    echo source_supports_auth_tmp=0
+  fi
+fi
+
+  
+if [ $target_supports_clone_vhost_proxy = 1 ] && [ $source_supports_auth_tmp = 1 ] && [ $target_supports_auth_tmp = 1 ]
+then
+  echo Cloning stage 0: direct transfer between $source_server and $target_server using tmp auth
+  ([ $opt_i = 1 ] && echo "$password"; echo "$key") | 
+    WEBENABLED_SERVER="$target_server" $dir/clone-vhost-proxy -I -S"$source_server" $target_options $options "$source" "$target" || error
+else
+
+  if ! TMPFILE="`mktemp -t clone_vhost.XXXXXXXXXX`"
+  then
+    echo "ERROR: mktemp failed";
+    exit 1
+  fi
+  
+  trap 'echo "Removing temporary archive $TMPFILE"; rm -f -- "$TMPFILE"' \
+    EXIT HUP INT QUIT ILL TRAP ABRT BUS FPE KILL SEGV PIPE STOP ALRM TERM
+
+  if [ $opt_i = 1 ]
+  then
+    echo "$password" >$TMPFILE || error
+  fi
+  
+  echo "Cloning stage 1: archive $source to $TMPFILE"
+  if ! WEBENABLED_SERVER="$source_server" $dir/archive-vhost $options "$source" - >>"$TMPFILE"
+  then
+    echo ERROR >&2
+    exit 1
+  fi
+    
+  echo "Cloning stage 2: restore $target from $TMPFILE"
+  WEBENABLED_SERVER="$target_server" $dir/restore-vhost $options $target_options "$target" - "$@" <"$TMPFILE" || error
+fi
+
+echo Done

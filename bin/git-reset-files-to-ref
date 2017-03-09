@@ -1,0 +1,61 @@
+#!/bin/bash
+
+usage() {
+  echo "Usage: `basename "$0"` [ options ] <ref>
+
+  Options:
+    -d git_dir      git directory
+    -f              fetch updates before reseting
+"
+
+  exit 1
+}
+
+error() {
+  local msg="$1"
+
+  echo "Error: $msg" 1>&2
+
+  exit 1
+}
+
+[ $# -eq 0 ] && usage
+
+getopt_flags='d:f'
+unset fetch
+while getopts $getopt_flags OPTNAME; do
+  case "$OPTNAME" in
+    d)
+      git_dir="$OPTARG"
+      if [ ! -e "$git_dir" ]; then
+        error "path '$git_dir' doesn't exist"
+      elif [ ! -d "$git_dir" ]; then
+        error "path '$git_dir' is not a directory"
+      fi
+      ;;
+    f)
+      fetch=1
+      ;;
+    *)
+      usage
+      ;;
+  esac
+done
+shift $(( $OPTIND - 1 ))
+
+ref="$1"
+if [ -z "$ref" ]; then
+  error "missing branch argument"
+fi
+
+if ! cd "$git_dir"; then
+  error "unable to enter into '$git_dir'"
+fi
+
+if [ -n "$fetch" ] && ! git fetch -a ; then
+  error "command failed: git fetch -a"
+fi
+
+if ! git reset --hard "$ref"; then
+  error "unable to: git reset --hard '$ref'"
+fi

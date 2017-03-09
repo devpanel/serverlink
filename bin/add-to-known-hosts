@@ -1,0 +1,72 @@
+#!/bin/bash
+
+usage() {
+  echo "Usage: `basename "$0"` [ options ] address
+
+  Options:
+    -a alias_str      add an alias in addition to the address (use multiple
+                      addresses should be separated by comma)
+    -f file           add the addresses to the specified file
+"
+  exit 1
+}
+
+# main
+
+getopt_flags='a:f:'
+while getopts $getopt_flags OPTF; do
+  case $OPTF in
+    a)
+      aliases="$OPTARG"
+      ;;
+    f)
+      known_hosts_file="$OPTARG"
+      ;;
+    *)
+      exit 1
+      ;;
+  esac
+done
+
+[ $OPTIND -gt 1 ] && shift $(( $OPTIND - 1 ))
+
+[ $# -lt 1 ] && usage
+addr="$1"
+
+if [ $EUID -eq 0 ]; then
+  known_hosts_file="/etc/ssh/ssh_known_hosts"
+else
+  known_hosts_file="$HOME/.ssh/known_hosts"
+fi
+
+output=`ssh-keyscan "$addr" 2>/dev/null`
+if [ $? -ne 0 -o -z "$output" ]; then
+  echo "Error: unable to get keys from address '$addr'" 1>&2
+  exit 1
+fi
+
+declare -i n_keys=0
+keys_str=""
+while read line; do
+  [ "${#line}" -eq 0 ] && continue
+  [ "${line:0:1}" == "#" ] && continue
+
+  read hosts key_type key_contents <<< "$line"
+
+  [ -n "$aliases" ] && hosts+=",$aliases"
+  keys_str+="$hosts $key_type $key_contents"$'\n'
+  n_keys+=1
+done <<< "$output"
+
+if [ ${#keys_str} -gt 0 ]; then
+  echo -n "$keys_str" >> "$known_hosts_file"
+  if [ $? -eq 0 ]; then
+    echo "Successfully added $n_keys keys to $known_hosts_file"
+    exit 0
+  else
+    echo "Error: unable to update $known_hosts_file" 1>&2
+    exit 1
+  fi
+else
+  echo "Error: didn't find any key." 1>&2
+fi

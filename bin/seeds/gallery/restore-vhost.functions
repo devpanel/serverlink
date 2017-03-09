@@ -1,0 +1,66 @@
+#!/bin/sh
+
+gallery_get_users()
+{
+  sql_query_result "select name from users where name <> ''"
+}
+
+gallery_genpass()
+{
+  "$dir/genpass"
+}
+
+gallery_encrypt()
+{
+  local password="$1"
+  echo "$password" | "$home/public_html/$vhost/modules/user/lib/gallery-crypt.php"
+}
+
+gallery_set_password()
+{ 
+  local user="$1" encrypted_password="$2"
+  local token salt
+
+  sql_query "UPDATE users SET password = '$encrypted_password' WHERE name = '$user';"
+}
+
+gallery_set_email()
+{
+  local user="$1" email="$2"
+  sql_query "UPDATE users SET email = '$email' WHERE name = '$user';"
+}
+
+
+gallery_get_email()
+{
+  local user="$1"
+  sql_query_result "select email from users where name = '$user';"
+}
+
+gallery_get_admin_user()
+{
+  sql_query_result "select name from users where name = 'admin'"
+  cp -f $dir/mantis-crypt.php $home/public_html/$vhost/modules/user/lib/gallery-crypt.php
+}
+
+gallery_update_php_config()
+{
+  /bin/echo "
+    s/^[[:space:]]*[\"']user[\"'][[:space:]]*=>[[:space:]]*[\"']\\([^'\"]*\\)[\"'][[:space:]]*,/    'user'     => '$mysql_user',/
+    s/^[[:space:]]*[\"']pass[\"'][[:space:]]*=>[[:space:]]*[\"']\\([^'\"]*\\)[\"'][[:space:]]*,/    'pass'     => '$mysql_password',/
+    s/^[[:space:]]*[\"']host[\"'][[:space:]]*=>[[:space:]]*[\"']\\([^'\"]*\\)[\"'][[:space:]]*,/    'host'     => '$mysql_host',/
+    s/^[[:space:]]*[\"']port[\"'][[:space:]]*=>[[:space:]]*[\"']\\([^'\"]*\\)[\"'][[:space:]]*,/    'port'     => '$mysql_port',/
+    s/^[[:space:]]*[\"']database[\"'][[:space:]]*=>[[:space:]]*[\"']\\([^'\"]*\\)[\"'][[:space:]]*,/    'database'     => '$hosting_database',/
+
+" | run_ised "$home/public_html/$vhost/var/database.php"
+  status=$?
+  return $status
+}
+
+gallery_custom()
+{
+    mysql -B -D "$hosting_database" -e 'DELETE FROM failed_auths;'
+    echo "Updating database.php"
+    gallery_update_php_config || error "Cannot update database.php"
+}
+

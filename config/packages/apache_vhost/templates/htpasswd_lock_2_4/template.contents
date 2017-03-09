@@ -1,0 +1,11 @@
+  <Directory @@__PARAM_DOCUMENTROOT__@@>
+      AllowOverride AuthConfig FileInfo Indexes Limit Options
+      AuthUserFile "@@__VHOST_USER_HOME__@@/.htpasswd"
+      AuthType Basic
+      AuthBasicProvider file
+      AuthName "@@__VAR_HTTP_AUTH_REALM__@@"
+      Require valid-user
+      Satisfy any
+      Order Deny,Allow
+      Deny from all
+  </Directory>

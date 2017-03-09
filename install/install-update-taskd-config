@@ -1,0 +1,99 @@
+#!/bin/bash
+#set -x
+
+config_file="/opt/webenabled/compat/taskd/taskd.conf"
+
+get_entry_line() {
+  local file="$1"
+  local entry="$2"
+  local status=
+
+  sed -n -e 's/^'"$entry"' *= *\([^ \t]\+\)/\1/p' "$file"
+  status=$?
+
+  return $status
+}
+
+append_entry() {
+  local file="$1"
+  local entry="$2"
+  local value="$3"
+
+  cat << EOF >>"$file"
+$entry = $value
+EOF
+  return $?
+}
+
+replace_entry_value() {
+  local file="$1"
+  local entry="$2"
+  local value="$3"
+
+  sed -i -e 's/^'"$entry"' *= *\([^ \t]\+\)/'"$entry"' = '"$value"'/' "$file"
+}
+
+usage() {
+  echo "Usage: $0 [ -c config_file ] < -u server_uuid > < -k server_key >"
+  exit 1
+}
+
+[ $# -lt 2 ] && usage
+
+getopt_flags='c:u:k:'
+
+while getopts $getopt_flags OPT; do
+  case "$OPT" in
+    c)
+      config_file="$OPTARG"
+      ;;
+    u)
+      server_uuid="$OPTARG"
+      ;;
+    k)
+      server_key="$OPTARG"
+      ;;
+    *)
+      exit 1
+  esac
+done
+[ -n $OPTIND -a $OPTIND -gt 1 ] && shift $(( $OPTIND - 1 ))
+
+if [ ! -e "$config_file" ]; then
+  printf "Error: config file '%s' doesn't exist.\n" "$config_file"
+  exit 1
+elif [ ! -f "$config_file" ]; then
+  printf "Error: config file '%s' exists but is not a regular file.\n" "$config_file"
+  exit 1
+fi
+
+if [ -z "$server_uuid" -a -n "$WEBENABLED_SERVER_UUID" ]; then
+  server_uuid="$WEBENABLED_SERVER_UUID"
+fi
+if [ -z "$server_key" -a -n "$WEBENABLED_SERVER_SECRET_KEY" ]; then
+  server_key="$WEBENABLED_SERVER_SECRET_KEY"
+fi
+
+if [ -z "$server_uuid" ]; then
+  echo "Error: missing server uuid. Please provide it through the option -u"
+  exit 1
+elif [ -z "$server_key" ]; then
+  echo "Error: missing server key. Please provide it through the option -k"
+  exit 1
+fi
+
+conf_uuid=$(get_entry_line "$config_file" uuid)
+status=$?
+if [ $status -ne 0 -o -z "$conf_uuid" ]; then # uuid not present
+  append_entry "$config_file" uuid "$server_uuid"
+elif [ "$conf_uuid" != "$server_uuid" ]; then # uuid line is there
+  replace_entry_value "$config_file" uuid "$server_uuid"
+fi
+
+conf_key=$(get_entry_line "$config_file" key)
+status=$?
+if [ $status -ne 0 -o -z "$conf_key" ]; then # key not present
+  append_entry "$config_file" key "$server_key"
+elif [ "$conf_key" != "$server_key" ]; then # key line is there
+  replace_entry_value "$config_file" key "$server_key"
+fi

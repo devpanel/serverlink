@@ -1,0 +1,237 @@
+#!/bin/bash
+WEBENABLED_BASE_DIR=${WEBENABLED_BASE_DIR:-/opt/webenabled}
+
+run()
+{
+  echo "  running $@"
+  "$@"
+}
+run_su()
+{
+  echo "  running su -l -c '$@' $user" >&2
+  su -l -c "$*" "$user"
+}
+
+usage() {
+  echo "
+Usage: $0 [ OPTIONS ] VHOST ARCHIVE_DIR
+
+  Options:
+  
+    -P          replicate shadow
+    -n          do not activate apache vhost (used for hosting_link)
+    -S          sync the files (don't create a vhost, just sync the files)
+    -H          search for the archive in the users HOME dir
+                public_html/gen/archive
+    -N          don't create a vhost user
+    -F          initial deployment - this is the first time that the app is
+                being configured
+
+    VHOST is the target vhost to be created or sync'ed
+    ARCHIVE_DIR is the dir where the archive files reside in
+"
+  exit 1
+}
+
+locked()
+{
+  egrep -q '^Use[[:space:]]+Vhost-[^[:space:]]+-locked\>' "$archive_conf"
+}
+
+abort_if_not_exist()
+{
+  local file="$1"
+  if ! [ -r "$file" ]
+  then
+    echo "$file does not exist" >&2
+    exit 1
+  fi
+}
+
+
+# main
+
+opt_P=0 options="" sync=0 search_in_users_home=0
+create_vhost=1
+
+while getopts "NPnSHF" OPTOPT
+do
+  case "$OPTOPT" in
+    P) opt_P=1;;
+    n) options="$options${options+ }-n";;
+    S) sync=1 ;;
+    H) search_in_users_home=1 ;;
+    N) create_vhost=0 ;;
+    F) initial_deployment=1 ;;
+    *) exit 1;;
+  esac
+done
+[ $OPTIND -gt 0 ] && shift `expr $OPTIND - 1`
+
+[ $# -lt 2 ] && usage
+
+dir=`dirname "$0"`
+bin_dir="$dir/../bin"
+vhost="$1"
+user="w_$vhost"
+archive_label="$2"
+
+we_base_dir=`readlink -e "$dir/.."`
+lib_file="$we_base_dir/lib/functions"
+if ! source "$lib_file" ; then
+  echo "Error: unable to load auxiliary functions from '$lib_file'" 1>&2
+  exit 1
+fi
+
+if [ $create_vhost -eq 1 ] && getent passwd "$user" &>/dev/null; then
+  error "vhost '$vhost' already exists"
+elif [ $create_vhost -eq 0 ] && ! user_info=$(getent passwd "$user" 2>/dev/null); then
+  error "vhost '$vhost' doesn't exist"
+fi
+
+
+if [ $create_vhost -eq 0 -a $search_in_users_home -eq 1 \
+  -a ! -e "$archive_label" -a "${archive_label:0:1}" != "/" \
+  -a "${archive_label:0:2}" != "./" \
+  -a "${archive_label:0:3}" != "../" ]; then
+
+  user_home_dir=$(echo "$user_info" | cut -d: -f 6)
+  test_archive="$user_home_dir/public_html/gen/archive/$archive_label"
+  [ -f "$test_archive" ] && archive_label="$test_archive"
+fi
+
+if [ ! -e "$archive_label" ] ; then
+  error "path '$archive_label' doesn't exist"
+elif [ -d "$archive_label" ]; then
+  archive_dir="$archive_label"
+elif [ -f "$archive_label" ]; then
+  tmp_extract=`run_su mktemp -d`
+  run_su tar -zxf "$archive_label" -C "$tmp_extract"
+  if [ $? -ne 0 ]; then
+    error "unable to extract file '$archive_label'"
+  fi
+  archive_dir="$tmp_extract/web"
+fi
+
+# one directory up the archive dir (the root of the tarball)
+tarball_root_dir=$(readlink -e $archive_dir/..)
+
+archive_id="$archive_dir/id"
+if ! old_vhost=`head -1 "$archive_id"` || [ -z "$old_vhost" ]; then
+  echo "Cannot read $archive_id" >&2
+  exit 1
+fi
+
+old_user="w_$old_vhost"
+date=`date  +'%Y%m%d'`
+archive_file="$archive_dir/$old_user.tgz"
+
+assign_deref_os_fs_path_ex_or_exit apache_config_dir "$we_base_dir" pathnames/etc/apache_vhosts
+assign_deref_os_fs_path_ex_or_exit chcgi "$we_base_dir" pathnames/sbin/chcgi
+assign_deref_os_fs_path_ex_or_exit apache_logs_dir  "$we_base_dir" pathnames/var/log/apache_vhosts
+
+assign_deref_os_prop_or_exit apache_group "$we_base_dir" names/apache.group
+assign_deref_os_prop_or_exit home_prefix  "$we_base_dir" apache_virtwww_homedir
+
+conf="$apache_config_dir/$user.conf"
+archive_conf="$archive_dir/apache_$old_vhost.conf"
+logs_dir="$apache_logs_dir/$user"
+archive_logs="$archive_dir/logs_$old_vhost.tgz"
+archive_shadow="$archive_dir/$old_user.shadow"
+archive_crontab="$archive_dir/crontab"
+
+config_dir="$WEBENABLED_BASE_DIR/config/vhosts/$vhost"
+
+if [ ! -e "$archive_file" ]; then
+  error "missing archive file '$archive_file'"
+elif [ ! -f "$archive_file" ]; then
+  error "archive file is not a regular file"
+elif [ $create_vhost -eq 1 -a ! -e "$archive_conf" ]; then
+  error "missing apache config file '$archive_conf'"
+fi
+
+if [ $create_vhost -eq 1 ] && \
+  ! default_domain=`deref_os_prop "$we_base_dir" apache_virtwww_domain`; then
+  error "Unable to get apache domain for virtualhosts"
+elif [ $create_vhost -eq 1 ] && \
+  ! echo -e "n\nn\ny"| run $dir/create-virtwww $options "$vhost" "$vhost.$default_domain"; then
+  error "unable to create vhost"
+elif [ $create_vhost -eq 0 ] && locked; then
+  echo "Restoring the locked state of apache cofig"
+  if ! run $dir/lock-vhost-apache "$vhost"; then
+    error "Cannot restore apache config in locked state"
+  fi
+fi
+
+home="`eval \"echo ~$user\"`"
+if [ $create_vhost -eq 1 ]; then
+  echo "Restoring $home from $archive_file"
+  if [ ! -d "$home" ] && ! run mkdir "$home"; then
+    error "unable to create site dir"
+  fi
+
+  if ! run chown "$user":"$apache_group" "$home"; then
+    error "unable to chmod home dir '$home' to '$user:$apache_group'"
+  fi
+
+  run "$chcgi" "$user" +2
+  run "$chcgi" "$user" +7
+fi
+
+ini_file="$tarball_root_dir/devpanel.ini"
+if [ -f "$ini_file" ]; then
+  php_ver=$(ini_section_get_key_value "$ini_file" php version)
+  if [ $? -eq 0 ]; then
+    "$dir/set-php-version-for-vhost" set "$vhost" "$php_ver"
+  fi
+fi
+
+if ! run_su tar -C "$home" \
+  $([ $sync -eq 1 ] && echo -n --exclude='settings.php') \
+  --exclude ./logs \
+  $([ $sync -eq 1 ] && echo -n --exclude='default.settings.php') -zxpf - <"$archive_file"; then
+  error "unable to extract files"
+fi
+
+if [ "$vhost" != "$old_vhost" ]; then
+  if [ ! -e "$home/public_html/$old_vhost" ]; then
+    error "missing previous vhost dir 'public_html/$old_vhost'"
+  elif [ -e "$home/public_html/$vhost" ]; then
+    run_su mv "$home/public_html/$vhost" "$home/public_html/$vhost".$(date +%s)
+  fi
+
+  if ! run_su mv "$home/public_html/$old_vhost" "$home/public_html/$vhost"; then
+    error "unable to move 'public_html/$old_vhost' to 'public_html/$vhost'"
+  fi
+
+  [ -d "$home/public_html/$old_vhost-usage" ] && \
+    run_su mv "$home/public_html/$old_vhost-usage" "$home/public_html/$vhost-usage"
+fi
+
+#FIXME: 
+#restoring crontab of a locked vhost doesn't work
+#It's better to get rid of automatic crontab modifications in all cases
+if [ -f "$archive_crontab" ]; then
+  echo "Restoring crontab from $archive_crontab"
+  run_su crontab - < "$archive_crontab"
+  crontab_status=$?
+  if [ $crontab_status -eq 0 ]; then
+    if ! run_su "$bin_dir/update-vhost-crontab"; then
+      echo "webenabled_warning: unable to adjust crontab dates" 1>&2
+    fi
+  else 
+    echo "webenabled_warning: unable to restore crontab contents" 1>&2
+  fi
+elif [ ! -e "$archive_crontab" ]; then
+  echo "Skipping crontab restore: crontab archive is missing" 1>&2
+fi
+
+if [ $opt_P -eq 1 -a ! -e "$archive_shadow" ]; then
+  echo "webenabled_warning: missing shadow file '$archive_shadow'" 1>&2
+elif [ $opt_P -eq 1 -a -s "$archive_shadow" ]; then
+  echo "Restoring the password from $archive_shadow"
+  password=`cut -d: -f2 "$archive_shadow"`
+  if [ -n "$password" ] && ! echo "$user:$password" | chpasswd -e; then
+    echo "webenabled_warning: unable to restore the shell password" 1>&2
+  fi
+fi

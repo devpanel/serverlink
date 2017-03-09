@@ -1,0 +1,75 @@
+#!/bin/bash
+
+set_usage_msg \
+  "Usage: $bin_name $action $object [opts] --vhost <vhost>
+
+  Options:
+    --vhost <vhost>         the vhost to restore
+
+  Lists the backup files available for the specified vhost.
+"
+
+backups_list() {
+  [ $# -eq 0 -o -z "$1" ] && usage
+
+  local name vhost file
+
+  while [ -n "$1" ]; do
+    name="$1"
+    case "$name" in
+      --vhost)
+        [ -z "$2" ] && error_missing_value vhost
+        vhost="$2"
+        shift 2
+        ;;
+      *)
+        error "unknown option $name"
+        ;;
+    esac
+  done
+
+  local param
+  for param in vhost; do
+    [ -z "${!param}" ] && error_missing_param $param
+  done
+
+  . $sys_dir/lib/functions
+
+  local sys_bkp_dir bkp_src_dir archive_file
+  assign_deref_os_prop_or_exit sys_bkp_dir "$sys_dir" data_dir
+
+  bkp_src_dir="$sys_bkp_dir/vhost_archives/$vhost"
+
+  if [ ! -d "$bkp_src_dir" ]; then
+    echo "No backups for vhost (backup dir $bkp_src_dir is missing)" 1>&2
+    exit 0
+  fi
+
+  local has_bc
+  if hash bc &>/dev/null; then
+    has_bc=1
+  fi
+
+  local last_mod_e stat_output f_bname last_mod_friendly
+  local size_bytes size_txt
+
+  for archive_file in $bkp_src_dir/*.tgz; do
+    [ ! -f "$archive_file" ] && continue
+    f_bname=${archive_file##*/}
+
+    stat_output=$(stat --printf='%Y\t%s' "$archive_file")
+    IFS=$'\t' read last_mod_e size_bytes <<< "$stat_output"
+    last_mod_friendly=$(date -d@$last_mod_e +'%b %d %Y %H:%M')
+
+    if [ -n "$has_bc" ]; then
+      size_txt="$(bytes_to_human "$size_bytes")"
+    else
+      size_txt="$size_bytes bytes"
+    fi
+
+    printf '%s\t%s (%s)\n' \
+      "$last_mod_friendly" "$f_bname" "$size_txt"
+
+  done
+
+}

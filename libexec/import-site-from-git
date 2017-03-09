@@ -1,0 +1,325 @@
+#!/bin/bash
+
+usage() {
+  echo "Usage: ${0##*/} <options> <vhost> <git_url>
+
+  Imports a site from git.
+
+  Options:
+    -b branch_name            clone from the following branch name
+
+    -d db_file.sql            the mysqldump file of the database (must be
+                              either .sql, .zip or .gz). If it's .zip the
+                              file inside it must be named database.sql.
+
+    -t type_of_db_file        type of database file. Can be either: sql, zip
+                              or gz (it's required when the database file is
+                              a URL).
+
+    -s subsystem              the subsystem type of the app (e.g. drupal,
+                              wordpress, magento, etc)
+
+    -I profile                install with the following Drupal profile
+
+    -p pack_file.tgz          create a new archive file ready to be imported,
+                              but don't actually create the vhost. Only use
+                              this option if you want to generate an archive
+                              in the right format, but to be used later.
+
+    -O name=value             options to pass to restore-vhost (e.g
+                              site_title, site_email,etc)
+"
+  exit 1
+}
+
+create_import_dirs() {
+  local base_dir="$1"
+  local vhost="$2"
+  local subsystem="$3"
+
+  mkdir "$base_dir/db"
+
+  mkdir "$base_dir/web"
+
+  touch "$base_dir/web/apache_$vhost.conf"
+
+  echo "$subsystem" >"$base_dir/db/databases"
+
+  echo "$vhost" >"$base_dir/web/id"
+}
+
+get_db_file_type() {
+  local filename="$1"
+
+  case "$filename" in
+    *.[Ss][Qq][Ll])
+      echo -n sql
+      return 0
+      ;;
+    *.[Gg][Zz])
+      echo -n gz
+      return 0
+      ;;
+    *.[Zz][Ii][Pp])
+      echo -n zip
+      return 0
+      ;;
+    @@*)
+      echo -n sql
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+
+  return 1
+}
+
+cleanup() {
+  [ -d "$temp_dir" ] && rm_rf_safer "$temp_dir"
+}
+
+# main
+[ $# -eq 0 -o -z "$1" -o -z "$2" ] && usage
+
+declare -a git_args=()
+
+self_bin=$(readlink -e "$0")
+if [ $? -ne 0 ]; then
+  echo "Error: unable to identify the script path" 1>&2
+  exit 1
+fi
+self_dir=${self_bin%/*}
+sys_dir=$(readlink -m $self_dir/..)
+lib_file="$sys_dir/lib/functions"
+
+if ! source "$lib_file"; then
+  error "unable to source file $lib_file"
+fi
+
+getopt_flags='hb:d:s:p:I:t:O:'
+unset orig_archive_file subsystem
+unset db_dump_type db_dump_file orig_db_dump_file
+unset temp_dir just_pack pack_file clone_vhost_db ref_vhost_db
+unset install_profile db_url download_db
+declare -a restore_args=()
+while getopts $getopt_flags OPTN; do
+  case $OPTN in
+    b)
+      branch_name="$OPTARG"
+      git_args+=( -b "$branch_name" )
+      ;;
+    d)
+      if [ ${#OPTARG} -gt 2 -a "${OPTARG:0:2}" == "@@" ]; then
+        ref_vhost_db=${OPTARG#@@}
+        if ! "$self_dir/check-vhost-name" archive "$ref_vhost_db"; then
+          exit 1
+        fi
+      elif [ ! -f "$OPTARG" ] && [[ "$OPTARG" == [a-z]*://* ]]; then
+        download_db=1
+        orig_db_dump_file="$OPTARG"
+      elif [ ! -f "$OPTARG" ]; then
+        error "missing file $OPTARG"
+      elif [ -f "$OPTARG" ]; then
+        orig_db_dump_file="$OPTARG"
+        db_dump_file="$orig_db_dump_file"
+      else
+        error "don't how to handle database file (unknown condition)"
+      fi
+
+      ;;
+    s)
+      subsystem="$OPTARG"
+      ;;
+    p)
+      if [ -f "$OPTARG" ]; then
+        error "file $OPTARG already exists."
+      fi
+
+      just_pack=1
+      pack_file="$OPTARG"
+      ;;
+    I)
+      install_profile="$OPTARG"
+      ;;
+    t)
+      if ! db_dump_type=$(get_db_file_type "abc.$OPTARG"); then
+        error "unknown DB dump type. Valid ones are: sql, zip and gz"
+      fi
+      ;;
+    O)
+      restore_args+=( -O "$OPTARG" )
+      ;;
+    h)
+      usage
+      ;;
+    *)
+      exit 1
+      ;;
+  esac
+done
+[ $OPTIND -gt 1 ] && shift $(( $OPTIND - 1 ))
+
+[ $# -eq 0 -o -z "$1" -o -z "$2" ] && usage
+vhost="$1"
+git_url="$2"
+
+if [ -n "$just_pack" ]; then
+  vhost_check="name-only"
+else
+  vhost_check=restore
+fi
+
+if [ -n "$install_profile" -a -n "$orig_db_dump_file" ]; then
+  error "can't use option install_profile with a database dump."
+fi
+
+if ! "$self_dir/check-vhost-name" $vhost_check "$vhost"; then
+  exit 1
+fi
+
+if [ -n "$subsystem" ] && ! is_known_seedapp_subsystem "$subsystem"; then
+  error "unknown subsystem: $subsystem"
+fi
+
+if [ "$db_dump_type" == zip ]; then
+  if ! hash unzip &>/dev/null; then
+    error "missing command: unzip. Please install it."
+  fi
+fi
+
+temp_dir=$(mktemp -d)
+if [ $? -ne 0 ]; then
+  error "unable to create temporary directory"
+fi
+trap 'cleanup' EXIT
+
+app_dir_dist="$temp_dir/app_files_dist"
+db_dir_dist="$temp_dir/db_files_dist"
+pack_dir="$temp_dir/pack_dir"
+public_html_dir="$app_dir_dist/public_html/$vhost"
+
+for dir in "$app_dir_dist" "$db_dir_dist" "$pack_dir" "$public_html_dir"; do
+  if ! mkdir -p "$dir"; then
+    error "unable to create directory: $dir"
+  fi
+done
+
+create_import_dirs "$pack_dir" "$vhost" "$subsystem"
+
+
+if [ -n "$download_db" ]; then
+  db_dump_file="$temp_dir/downloaded_db_file"
+  if ! download_file "$orig_db_dump_file" "$db_dump_file"; then
+    error "unable to download database file"
+  fi
+fi
+
+# handle database file if specified
+if [ -n "$db_dump_file" ]; then
+  if [ -z "$db_dump_type" ]; then
+    if ! db_dump_type=$(get_db_file_type "$orig_db_dump_file"); then
+      error "unable to get database type from filename."
+    fi
+  fi
+
+  db_dumped_archive="$pack_dir/db/$subsystem.sql.gz"
+  if [ "$db_dump_type" == sql ]; then
+    # dump database from $ref_vhost_db
+    if [ -n "$ref_vhost_db" ]; then
+      db_dump_file="$db_dir_dist/$subsystem.sql"
+      echo "Dumping database from vhost $ref_vhost_db..."
+      dump_vhost_mysql_db "$ref_vhost_db" >"$db_dump_file"
+      if [ $? -ne 0 ]; then
+        exit 1
+      fi
+    fi
+
+    gzip -c "$db_dump_file" >"$db_dumped_archive"
+    if [ $? -ne 0 ]; then
+      error "unable to create $db_dumped_archive"
+    fi
+  elif [ "$db_dump_type" == gz ]; then
+    # validate whether it's a valid .gz or not
+    zcat "$db_dump_file" >/dev/null
+    if [ $? -ne 0 ]; then
+      error "db dump file '$db_dump_file' is not a valid gzip file."
+    fi
+
+    cp -a "$db_dump_file" "$db_dumped_archive"
+    if [ $? -ne 0 ]; then
+      error "unable to copy '$db_dump_file' to '$db_dumped_archive'"
+    fi
+  elif [ "$db_dump_type" == zip ]; then
+    unzip -q "$db_dump_file" database.sql -d "$db_dir_dist"
+    if [ $? -ne 0 ]; then
+      error "unable to extract $db_dump_file (or missing database.sql)"
+    fi
+
+    gzip -c "$db_dir_dist/database.sql" >"$db_dumped_archive"
+    if [ $? -ne 0 ]; then
+      error "unable to gzip database.sql to $db_dumped_archive"
+    fi
+  elif [ -z "$db_dump_type" ]; then
+    # if no db file was specified, just create an empty one
+    touch "${db_dumped_archive%.*}"
+    gzip  "${db_dumped_archive%.*}"
+  else
+    error "unknown database dump type"
+  fi
+fi
+
+echo "Cloning '$git_url'..."
+git clone "${git_args[@]}" "$git_url" "$public_html_dir"
+if [ $? -ne 0 ]; then
+  error "unable to clone git url $git_url"
+fi
+
+if [ -z "$subsystem" ]; then
+  subsystem=$(detect_app_type_on_dir "$public_html_dir")
+  if [ $? -eq 0 ]; then
+    echo "Automatically detected app as: $subsystem"
+  else
+    err_msg="app type not specified, and unable to guess it"
+    err_msg+=" from the directory structure"
+    error "$err_msg"
+  fi
+fi
+
+web_archive_file="$pack_dir/web/w_$vhost.tgz"
+tar -zSpcf "$web_archive_file" -C "$app_dir_dist" .
+if [ $? -ne 0 ]; then
+  error "unable to pack web dir $app_dir_dist"
+fi
+
+if [ -n "$just_pack" ]; then
+  final_archive_file="$pack_file"
+else
+  final_archive_file="$temp_dir/${vhost}_imported.tar.gz"
+fi
+
+tar -zSpcf "$final_archive_file" -C "$pack_dir" .
+if [ $? -ne 0 ]; then
+  error "unable to pack web dir $pack_dir"
+fi
+
+if [ -n "$just_pack" ]; then
+  echo "Successfully created archive file $final_archive_file."
+  exit 0
+fi
+
+if [ -z "$db_dump_type" -o -n "$install_profile" ]; then
+  restore_args+=( -O config_function="setup_from_git" )
+fi
+
+"$self_dir/restore-vhost" "${restore_args[@]}" -s "$subsystem" \
+  ${install_profile:+-O install_profile="$install_profile"} \
+  "$vhost" "$final_archive_file"
+if [ $? -eq 0 ]; then
+  echo
+  echo "Successfully imported files and created vhost $vhost"
+else
+  echo
+  error "failed to import vhost $vhost"
+fi

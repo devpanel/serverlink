@@ -1,0 +1,151 @@
+#!/bin/bash
+
+# This script is used to check the error and access logs of the application within the user directory
+
+usage(){
+echo "This script is used to check the error and access logs of the application within the user directory"
+echo ""
+echo "Usage: ./check-logs -l <error/access> -u <user>"
+echo "Example: ./check-logs -l error -u john"
+
+echo "Options: "
+echo "    -h     Show this help message"
+echo "    -a     Show list of all available logs of all users"
+echo "    -S     check server logs"
+echo "    -u     Select user"
+echo "    -l     Select current log error/access"
+echo "              Example: ./check-logs -l error -u john"
+echo "    -s     Show logs available "
+echo "              Example: ./check-logs -s john"
+echo "    -f     Force fire read"
+echo "              Example: ./check-logs -f /path/to/file"
+echo
+exit 1
+}
+
+checkserverlogs(){
+find /var/log/ -maxdepth 1 -type f -name "*"
+}
+
+#This method will read the logs from the desired user
+readlog(){
+ERRLOGPATH=$virtwww_log_dir/w_$VHOST/$VHOST-error_log
+ACCLOGPATH=$virtwww_log_dir/w_$VHOST/$VHOST-access_log
+if [ "$READLOG" == "error" ]; then
+        cat "$ERRLOGPATH"
+
+elif [ "$READLOG" == "access" ];then
+        cat "$ACCLOGPATH"
+else 
+        echo "Error in the command, see the usage for more information"
+fi
+}
+
+#Method to list all logs of all users
+checkavaillogs(){
+find $virtwww_log_dir/w_*/*_log* 2>/dev/null || echo "No logs Available"
+exit 1
+}
+
+# This method will read a specific given log (just the name of the file)
+readspecific(){
+
+FILETYPE=$(file $SPECLOG)
+
+if [ ! -f $SPECLOG ];then
+        echo "The file does not exist, see the usage for more information"
+        exit 1
+fi
+
+if [[ $FILETYPE =~ .*gzip.* ]];then
+        zcat $SPECLOG | tail -100
+
+elif [[ $FILETYPE =~ .*ASCII.* ]];then
+        cat $SPECLOG  | tail -100
+fi
+}
+
+# This method will show how many error and access logs are available to see
+showavaillogs(){
+ERRAVAIL=$(find "$virtwww_log_dir/w_$VHOST/" -name "$VHOST-error_log*" \
+            2>/dev/null)
+ACCAVAIL=$(find "$virtwww_log_dir/w_$VHOST/" -name "$VHOST-access_log*" \
+            2>/dev/null)
+
+if [ -n "$ERRAVAIL" ]; then
+  if [ -n "$has_tty" ]; then
+    echo "[error logs]"
+  fi
+
+  echo "$ERRAVAIL"
+fi
+
+if [ -n "$ACCAVAIL" ]; then
+  if [ -n "$has_tty" ]; then
+    if [ -n "$ERRAVAIL" ]; then
+      echo
+    fi
+
+    echo "[access logs]"
+  fi
+
+  echo "$ACCAVAIL"
+fi
+}
+
+
+# Parse Options
+
+[ $# -eq 0 ] && usage
+
+unset has_tty
+self_bin=$(readlink -e "$0")
+if [ $? -ne 0 ]; then
+  echo "Error: unable to get self executable path." 1>&2
+  exit 1
+fi
+self_dir=${self_bin%/*}
+sys_dir=${self_dir%/*}
+lib_file="$sys_dir/lib/functions"
+
+if ! source "$lib_file"; then
+  echo "Error: unable to load lib file '$lib_file'"
+  exit 1
+fi
+
+assign_deref_os_prop_or_exit virtwww_log_dir "$sys_dir" \
+  pathnames/var/log/apache_vhosts
+
+if tty -s; then
+  has_tty=1
+fi
+
+while getopts ":l: :u: :s: :f: a S" opt ; do
+  case $opt in
+
+    l)
+        READLOG="$OPTARG"
+        ;;
+    a)
+        checkavaillogs
+        ;;
+    u)
+        VHOST="$OPTARG"
+        readlog
+        ;;
+    f)
+        SPECLOG="$OPTARG"
+        readspecific
+        ;;
+    s)
+        VHOST="$OPTARG"
+        showavaillogs
+        ;;
+    S)  
+        checkserverlogs
+        ;;
+    *)
+        usage
+        ;;
+  esac
+done

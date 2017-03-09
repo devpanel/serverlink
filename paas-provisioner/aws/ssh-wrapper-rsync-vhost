@@ -1,0 +1,36 @@
+#!/bin/bash
+
+usage() {
+  :
+}
+
+# main
+
+unset repo_name web_server_ip
+umask 022
+
+self=`readlink -e "${BASH_SOURCE[0]}"`
+dir=`dirname "$self"`
+we_base_dir=`readlink -e "$dir/../.."`
+
+if [ -z "$SSH_ORIGINAL_COMMAND" ]; then
+  echo "Error: missing variable SSH_ORIGINAL_COMMAND. Are you running through SSH?" 1>&2
+  exit 1
+fi
+
+lib_file="$we_base_dir/lib/functions"
+if ! source "$lib_file"; then
+  echo "Error: unable to source lib file '$lib_file'" 1>&2
+  exit 1
+fi
+
+read tmp_vhost_name web_server_ip <<< "$SSH_ORIGINAL_COMMAND"
+if [ -z "$tmp_vhost_name" -o -z "$web_server_ip" ]; then
+  echo "Usage: `basename $0` <vhost_name> <web_server_ip>" 1>&2
+  exit 1
+fi
+vhost=$(basename "$tmp_vhost_name")
+
+repo_name=$(deref_os_prop "$we_base_dir" "aws_cluster:vhost:$vhost:repo")
+
+SSH_ORIGINAL_COMMAND="$repo_name $web_server_ip" "$dir/git-hook-rsync-cluster-webservers"

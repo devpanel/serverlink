@@ -1,0 +1,40 @@
+#!/bin/bash
+usage() {
+  local prog=$(basename "$0")
+cat << EOF
+
+Gets the contents of the crontab installed for the vhost and prints to stdout.
+
+Usage: $prog <vhost>
+
+EOF
+  exit 1
+} 
+
+# main()
+[ $# -lt 1 ] && usage
+
+dir=`dirname $0`
+[ "$dir" == "." ] && dir="$PWD"
+dir_bin="$dir/../bin"
+
+vhost="$1"
+user="w_$vhost"
+# using mode archive: it's OK to operate on a locked vhost
+$dir/check-vhost-name archive "$vhost" || exit 1
+
+temp_file=$(su -l -c 'export TMPDIR=${TMPDIR:-/tmp}; mktemp -p "$TMPDIR" cron_get.XXXXXXXXXXXXXXXXXXXXXXXX' "$user")
+trap 'rm -f -- "$temp_file"' EXIT
+
+su -l -c "crontab -l >$temp_file" "$user"
+status=$?
+if [ $status -ne 0 ]; then
+  echo "Error: unable to get crontab contents. crontab returned $status." 1>&2
+  exit $status
+fi
+
+su -l -c "sed -i -e '/^# DO NOT EDIT/d; /^# (Cron version/d; /^# (\/tmp\/.private\//d;' \
+  $temp_file ; cat $temp_file" "$user"
+
+status=$?
+exit $status

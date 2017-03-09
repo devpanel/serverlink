@@ -1,0 +1,19 @@
+#!/bin/bash
+dir=`dirname $0`
+dir_bin="$dir/../bin"
+option="$1"
+vhost="$2"
+user="$vhost"
+
+# using mode archive: it's OK to operate on a locked vhost
+$dir/check-vhost-name archive "$vhost" || exit 1
+
+if [ "$option" = "-g" ]; then
+  $dir_bin/quota-scripts/get-disk-quota.sh w_$user
+  $dir_bin/quota-scripts/get-disk-quota.sh b_$user
+elif [ "$option" = "-s" ]; then
+  w_quota="$3"
+  b_quota="$4"
+  $dir_bin/quota-scripts/set-disk-quota.sh w_$user $3
+  $dir_bin/quota-scripts/set-disk-quota.sh b_$user $4
+fi

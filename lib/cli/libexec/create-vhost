@@ -1,0 +1,109 @@
+#!/bin/bash
+
+set_usage_msg \
+  "Usage: $bin_name $action $object [opts] --vhost <vhost> --from <source>
+
+  Options:
+    --vhost <vhost>           name of the vhost
+    --from  <source>          source from where to create the app
+
+    --title <site_title>      sets the website title for the apps that
+                              support it
+
+    --branch <branch>         when the source type is git, clone the
+                              specified branch
+
+
+  Creates a new vhost from the specified source.
+"
+
+# main
+vhost_create() {
+  [ $# -eq 0 -o -z "$1" ] && usage
+
+  local name vhost from source_type title
+  local branch
+  local -a cmd_args=()
+
+  # by default let's assume the source is a file
+  local def_source_type=file
+
+  while [ -n "$1" ]; do
+    name="$1"
+    case "$name" in
+      --vhost)
+        [ -z "$2" ] && error_missing_value vhost
+        vhost="$2"
+        shift 2
+        ;;
+      --from)
+        [ -z "$2" ] && error_missing_value from
+        from="$2"
+        shift 2
+        ;;
+      --branch)
+        [ -z "$2" ] && error_missing_value branch
+        branch="$2"
+        cmd_args+=( -b "$branch" )
+        shift 2
+        ;;
+      --title)
+        [ -z "$2" ] && error_missing_value title
+        title="$2"
+        cmd_args+=( -O "site_title=$title" )
+        shift 2
+        ;;
+      --help)
+        usage
+        ;;
+      --[A-Za-z0-9_-]*)
+        error "unknown argument $name"
+        ;;
+      *)
+        # pass unknown arguments/options to the original command
+        cmd_args+=( "$name" )
+        shift
+        ;;
+
+      # --database)
+      #   got_r[database]="$2"
+      #   shift 2
+      #   ;;
+      # --engine)
+      #   got_r[engine]="$2"
+      #   shift 2
+      #   ;;
+      # --name)
+      #   got_r[vhost]="$2"
+      #   shift 2
+      #   ;;
+
+    esac
+  done
+
+  [ -z "$vhost" ]  && error_missing_param vhost
+  [ -z "$from" ]   && error_missing_param from
+
+  # detect the source type
+  # e.g. github://drupal/serverlink , we://drupal-v7
+  if [[ "$from" =~ ^([a-z0-9]+)://.+$ ]]; then
+    source_type=${BASH_REMATCH[1]}
+  else
+    source_type="$def_source_type"
+  fi
+
+  if [ "$source_type" == "github" -o "$source_type" == "git" ]; then
+
+    # replace github://name/repo with https://github.com/name/repo.git
+    if [ "$source_type" == "github" ]; then
+      from=${from//$source_type:\/\//https:\/\/github.com\/}
+      if ! [[ "$from" == *.git ]]; then
+        from+=.git
+      fi
+    fi
+
+    "$sys_dir/libexec/import-site-from-git" "${cmd_args[@]}" "$vhost" "$from"
+  else
+    "$sys_dir/libexec/restore-vhost" "${cmd_args[@]}" $vhost "$from"
+  fi
+}

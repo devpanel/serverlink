@@ -1,0 +1,6 @@
+<IfModule mod_fcgid.c>
+	FCGIWrapper /opt/httpd/helpers/fastcgi .php
+
+	# Uncomment the below line to enable APC/FastCGI globally
+	# AddHandler fcgid-script .php
+</IfModule>

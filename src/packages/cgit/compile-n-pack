@@ -1,0 +1,198 @@
+#!/bin/bash
+
+usage() {
+  local prog=$(basename "$0")
+
+  echo "Usage: $prog <source_dir> <target_file>
+
+  Compiles cgit from the specified source_dir and creates a packaged tar
+  ball into target_file.
+"
+  exit 1
+}
+
+error() {
+  local msg="$1"
+  local exit_code="${2:-1}"
+
+  [ -n "$msg" ] && echo "Error: $msg" 1>&2
+  exit $exit_code
+}
+
+cleanup() {
+  [ -f "$tmp_target" ] && rm -f "$tmp_target"
+
+  [ -L "$lock_file" ] && rm -f "$lock_file"
+}
+
+get_distro_name() {
+  local distro_raw=$(lsb_release -i)
+  local distro=${distro_raw##*:}
+  # distro=${distro// /} # why this doesn't work?
+  distro=${distro//[^a-zA-Z]/}
+  distro_lc=${distro,,}
+
+  if [ -n "$distro_lc" ]; then
+    echo "$distro_lc"
+    return 0
+  else
+    echo "$FUNCNAME(): unable to get linux distro name" 1>&2
+    return 1
+  fi
+}
+
+install_pre_reqs() {
+  local distro=$(get_distro_name)
+  local st=$?
+  [ $st -ne 0 ] && return $st
+
+  if [ "$distro" == "centos" ]; then
+    yum -y install openssl-devel zlib-devel gcc gcc-c++
+    return $?
+  elif [ "$distro" == "debian" ]; then
+    apt-get update && apt-get -y install gcc g++ make libssl-dev zlib1g-dev
+    return $?
+  elif [ "$distro" == "ubuntu" ]; then
+    apt-get update && apt-get -y install gcc g++ make libssl-dev zlib1g-dev
+    return $?
+  else
+    echo "$FUNCNAME(): unknown linux distro" 1>&2
+    return 1
+  fi
+}
+
+install_lsb_release() {
+  # install lsb_release to more precisely detect distro
+  if hash apt-get &>/dev/null; then
+    export DEBIAN_FRONTEND='noninteractive'
+    apt-get -y install lsb-release
+    return $?
+  elif hash yum &>/dev/null; then
+    yum -y install redhat-lsb-core
+    return $?
+  else
+    echo "$FUNCNAME(): don't know how to install" 1>&2
+    return 1
+  fi
+}
+
+# main
+
+[ $# -lt 2 -o -z "$1" -o -z "$2" ] && usage
+
+self_bin=$(readlink -e "$0")
+self_dir=$(dirname "$self_bin")
+CGIT_CONF=${CGIT_CONF:-"$self_dir/cgit.$(uname -m).conf"}
+CGIT_CONF=$(readlink -m "$CGIT_CONF")
+
+source_dir=$(readlink  -m "$1")
+target_file=$(readlink -m "$2")
+
+if [ -e "$target_file" ]; then
+  error "target file already exists $target_file"
+fi
+
+if ! cd "$source_dir"; then
+  error "unable to chdir to $source_dir"
+fi
+
+if [ ! -f "$CGIT_CONF" ]; then
+  error "unable to find cgit.conf in $CGIT_CONF"
+fi
+
+lock_file=$(readlink -m ".compiling.lock")
+if ! ln -s /dev/null "$lock_file"; then
+  error "unable to create lock file. Is there another compilation running?"
+fi
+trap 'cleanup' EXIT
+
+# DO: install lsb-release
+if ! hash lsb_release &>/dev/null && ! install_lsb_release; then
+  error "failed to install lsb-release, it's required to properly detect the linux distribution"
+fi
+
+if ! install_pre_reqs; then
+  error "unable to install compilation pre-requisite packages"
+fi
+
+if ! make clean; then
+  error "failed to make clean"
+fi
+
+tmp_target=$(mktemp)
+if [ $? -ne 0 ]; then
+  error "unable to create temporary file"
+fi
+
+if ! cp "$CGIT_CONF" "$source_dir/cgit.conf"; then
+  error "unable to copy file $CGIT_CONF to $source_dir/cgit.conf"
+fi
+
+if ! make get-git; then
+  error "unable to get git source code"
+fi
+
+if ! make; then
+  error "make failed"
+fi
+
+pkg_root=$(readlink -m install-dir)
+[ -d "$pkg_root" ] && rm -rf "$pkg_root"
+
+umask 022
+
+pkg_files_root="$pkg_root/pkg-files"
+pkg_setup_dir="$pkg_root/setup"
+
+if ! mkdir "$pkg_root" "$pkg_files_root" "$pkg_setup_dir"; then
+  error "unable to create package directories"
+fi
+
+if ! make install DESTDIR="$pkg_files_root"; then
+  error "make install failed"
+fi
+
+# link files from opt/webenabled/. to the pkg-files/ dir
+# later we remove opt/webenabled/ to remove the absolute paths
+we_root="$pkg_files_root/opt/webenabled"
+we_root_one_up=$(readlink -m "$we_root/..")
+
+if ! cp -al "$we_root/." "$pkg_files_root"; then
+  error "unable to copy files to $pkg_files_root"
+fi
+
+if ! rm -rf "$we_root_one_up"; then
+  error "unable to remove absolute directory $we_root_one_up"
+fi
+
+cgit_public_html="$pkg_files_root/compat/w_/public_html/cgit"
+if mkdir -p "$cgit_public_html"; then
+  echo '*' >"$cgit_public_html/.gitignore"
+else
+  error "unable to create dir $cgit_public_html"
+fi
+
+pkg_post_install_script="$self_dir/setup/post-install"
+pkg_post_update_script="$self_dir/setup/post-update"
+
+for file in "$pkg_post_install_script" "$pkg_post_update_script"; do
+  if ! cp -af "$file" "$pkg_setup_dir"; then
+    error "unable to copy file '$file' to dir $pkg_setup_dir"
+  fi
+done
+
+tar -zScpf "$tmp_target" -C "$pkg_root" .
+if [ $? -eq 0 ]; then
+  if ! mv -n "$tmp_target" "$target_file"; then
+    error "unable to move temp file to $target_file"
+  fi
+else
+  error "unable to create tar ball"
+fi
+
+chmod 0644 "$target_file"
+
+echo
+echo "Successfully saved compilation in $target_file"
+
+exit 0

@@ -1,0 +1,730 @@
+#!/bin/bash
+
+declare -a just_handled_ar
+
+usage() {
+  echo "Usage: `basename "$0"`"
+
+  exit 1
+}
+
+is_installed() {
+  local pkg="$1"
+  local ver="$2"
+  local system_dir="$3"
+
+  if [ -L "$system_dir/config/packages/$pkg/version" ]; then
+    return 0
+  else
+    return 1
+  fi
+}
+
+has_config_link() {
+  local pkg="$1"
+  local link="$2"
+  local system_dir="${3:-$system_dir}"
+
+  if [ -L "$system_dir/config/packages/$pkg/$link" ]; then
+    return 0
+  else
+    return 1
+  fi
+}
+
+is_to_skip_install() {
+  local pkg="$1"
+  local system_dir="${2:-$system_dir}"
+
+  has_config_link "$pkg" dont_install "$system_dir"
+}
+
+is_to_skip_updates() {
+  local pkg="$1"
+  local system_dir="${2:-$system_dir}"
+
+  has_config_link "$pkg" dont_update "$system_dir" 
+}
+
+needs_update() {
+  local pkg="$1"
+  local serial="$2"
+  local system_dir="${3:-$system_dir}"
+
+  local curr_serial
+  local serial_file="$system_dir/config/packages/$pkg/serial"
+
+  # return 2 == internal error
+  # return 1 == no update needed
+
+  curr_serial=$(deref_contents "$serial_file") || return 2
+
+  if [ $serial -gt $curr_serial ]; then
+    return 0
+  else
+    return 1
+  fi
+}
+
+remove_leftover_files() {
+  local package="$1"
+  local old_list="$2"
+  local new_list="$3"
+  local system_dir=${4:-$system_dir}
+
+  if [ $# -ne 3 -o -z "$1" -o -z "$2" -o -z "$3" ]; then
+    echo "$FUNCNAME(): missing arguments" 1>&2
+    return 1
+  fi
+
+  local tmp_pkg_dir="$tmp_dir/$package"
+
+  local old_list_sorted_txt="$tmp_pkg_dir/old_list_sorted.txt"
+  local new_list_sorted_txt="$tmp_pkg_dir/new_list_sorted.txt"
+
+  sort -u "$old_list" >"$old_list_sorted_txt"
+  if [ $? -ne 0 ]; then
+    echo "$FUNCNAME(): unable to sort file $old_list" 1>&2
+    return 1
+  fi
+
+  sort -u "$new_list" >"$new_list_sorted_txt"
+  if [ $? -ne 0 ]; then
+    echo "$FUNCNAME(): unable to sort file $new_list" 1>&2
+    return 1
+  fi
+
+  local only_in_old_txt="$tmp_pkg_dir/only_in_old.txt"
+  comm -23 "$old_list_sorted_txt" "$new_list_sorted_txt" >"$only_in_old_txt"
+  if [ $? -ne 0 ]; then
+    echo "$FUNCNAME(): unable to get files only in previous pkg" 1>&2
+    return 1
+  fi
+
+  local file full_file_path
+  local old_dirs_txt="$tmp_pkg_dir/old_dirs.txt"
+  local old_others_txt="$tmp_pkg_dir/old_others.txt"
+
+  while read file; do
+    full_file_path=$(readlink -m "$system_dir/$file")
+    if [ $? -ne 0 ]; then
+      echo "$FUNCNAME(): unable to get full path of file $file" 1>&2
+      return 1
+    fi
+
+    if [ ! -e "$full_file_path" ]; then
+      continue # skip files that have been removed
+    elif [ -d "$full_file_path" ]; then
+      echo "$full_file_path" >>"$old_dirs_txt"
+    else
+      echo "$full_file_path" >>"$old_others_txt"
+    fi
+  done < "$only_in_old_txt"
+
+  # first remove all files (and symlinks, etc)
+  if [ -s "$old_others_txt" ]; then
+    [ -n "$verbose" ] && echo "Removing left over files..."
+    while read file; do
+      if is_inside_system_dir "$file"; then
+        [ -n "$verbose" ] && echo "  $file"
+        rm -f "$file"
+      else
+        echo "  Warning: file $file is outside directory $system_dir, skipping..." 1>&2
+        sleep 1
+      fi
+    done < "$old_others_txt"
+  fi
+
+  # now remove directories of the package
+  if [ -s "$old_dirs_txt" ]; then
+
+    # for directory removal the file needs to be reverse sorted because
+    # directories need to be removed in an inverse order
+    # e.g. /a /a/b  /a/b/c needs  to be removed first as /a/b/c then
+    # /a/b and only then /a
+    local old_dirs_rev_txt="$old_dirs_txt.rev"
+    sort -r -u "$old_dirs_txt" >"$old_dirs_rev_txt"
+    if [ $? -ne 0 ]; then
+      error "unable to sort-reverse file $old_dirs_txt"
+    fi
+
+    [ -n "$verbose" ] && echo "Removing left over directories..."
+
+    local dir_name
+    while read dir_name; do
+      if is_inside_system_dir "$dir_name"; then
+        n_entries=$(stat -c '%h' "$dir_name")
+        if [ $? -ne 0 ]; then
+          echo "Warning: unable to get number of entries in dir $dir_name." 1>&2
+          continue
+        fi
+
+        if [ $n_entries -eq 2 ]; then
+          [ -n "$verbose" ] && echo "  $dir_name/"
+          # using rmdir to remove only empty directories (as files have been
+          # removed in the previous step). Not using rm -rf $dir_name not to
+          # remove system dirs (e.g. bin/ ) that are common to all packages
+          #
+          # By using rmdir it'll remove only non-empty directories.
+
+          rmdir "$dir_name" 2>/dev/null
+        else
+          [ -n "$verbose" ] && echo "  $dir_name (keeping, not empty)"
+        fi
+      else
+        echo "  Warning: directory $dir_name is outside directory $system_dir, skipping..." 1>&2
+        sleep 1
+      fi
+    done < "$old_dirs_rev_txt"
+  fi
+
+  return 0
+}
+
+devpanel_install_pkg() {
+  local package="$1"
+  local serial="$2"
+  local version="$3"
+  local file="$4"
+  local exp_sha="$5"
+  local system_dir="$6"
+
+  local tmp_pkg_dir="$tmp_dir/$package/pkg-extracted"
+  if [ ! -d "$tmp_pkg_dir" ] && ! mkdir -p "$tmp_pkg_dir" ; then
+    echo "$FUNCNAME(): unable to create temp dir '$tmp_pkg_dir'" 1>&2
+    return 1
+  fi
+
+  local raw_files_list="$tmp_pkg_dir/pkg_raw_files.txt"
+  extract_raw_file_list "$file" >"$raw_files_list"
+  if [ $? -ne 0 ]; then
+    echo "$FUNCNAME(): unable to extract the list of files in the package" 1>&2
+    return 1
+  fi
+
+  local calc_sha
+  calc_sha=$(calc_sha512_of_file "$file")
+  if [ $? -ne 0 ]; then
+    return 1
+  fi
+
+  if [ "$calc_sha" != "$exp_sha" ]; then
+    printf "%s(): skipping $package, mismatch in sha512 of file %s, expected %s got %s\n" \
+      $FUNCNAME "$file" "$exp_sha" "$calc_sha"
+    return 1
+  fi
+
+  local filtered_file_list="$tmp_pkg_dir/pkg_filtered_files.txt"
+  filter_pkg_files "$raw_files_list" >"$filtered_file_list"
+  if [ $? -ne 0 ]; then
+    echo "$FUNCNAME(): filter_pkg_files failed" 1>&2
+    return 1
+  fi
+
+  local pkg_register_dir="$system_dir/config/packages/$package"
+  if [ ! -d "$pkg_register_dir" ] && ! mkdir "$pkg_register_dir"; then
+    echo "$FUNCNAME(): unable to create package dir '$pkg_register_dir'" 1>&2
+    return 1
+  fi
+
+  tar --no-same-owner -zxf "$file" -C "$tmp_pkg_dir" ./setup/
+  if [ $? -ne 0 ]; then
+    echo "$FUNCNAME(): unable to extract package setup files for package '$package-$version'" 1>&2
+    return 1
+  fi
+
+  # old exec logic (to be removed after all packages are migrated)
+  local pre_install_script="$tmp_pkg_dir/setup/pre-install"
+  local post_install_script="$tmp_pkg_dir/setup/post-install"
+  if [ -f "$pre_install_script" -a -x "$pre_install_script" ]; then
+    "$pre_install_script" "$package" "$version" "$system_dir"
+  fi
+
+  # new exec logic
+  local has_setup_script=""
+  local setup_bin="$tmp_pkg_dir/setup/setup-package"
+  if [ -f "$setup_bin" -a -x "$setup_bin" ]; then
+    has_setup_script=1
+  fi
+
+  if [ -n "$has_setup_script" ]; then
+    DEVPANEL_HOME="$DEVPANEL_HOME"       \
+    DEVPANEL_PKG_NAME="$package"         \
+    DEVPANEL_PKG_SERIAL="$serial"        \
+    DEVPANEL_PKG_VERSION="$version"      \
+      "$setup_bin" install pre-install
+  fi
+
+  tar --no-same-owner -zxf "$file" -C "$system_dir" --strip-components 2 ./pkg-files/
+  if [ $? -eq 0 ]; then
+    local final_file_list="$pkg_register_dir/filelist.txt"
+    cp "$filtered_file_list" "$final_file_list"
+    if [ $? -ne 0 ]; then
+      echo "$FUNCNAME(): warning, failed to copy list of files" 1>&2
+    fi
+  else
+    echo "$FUNCNAME(): unable to extract package files" 1>&2
+    return 1
+  fi
+
+  # old exec logic (to be removed after all packages are migrated)
+  if [ -f "$post_install_script" -a -x "$post_install_script" ]; then
+    "$post_install_script" "$package" "$version" "$system_dir"
+  fi
+
+  # new exec logic
+  if [ -n "$has_setup_script" ]; then
+    DEVPANEL_HOME="$DEVPANEL_HOME"       \
+    DEVPANEL_PKG_NAME="$package"         \
+    DEVPANEL_PKG_SERIAL="$serial"        \
+    DEVPANEL_PKG_VERSION="$version"      \
+      "$setup_bin" install post-install
+  fi
+
+  devpanel_update_pkg_link_version "$package" "$serial" "$version" "$system_dir"
+  if [ $? -ne 0 ]; then
+    return 1
+  fi
+
+  return 0
+}
+
+devpanel_upgrade_pkg() {
+  local package="$1"
+  local serial="$2"
+  local version="$3"
+  local file="$4"
+  local exp_sha="$5"
+  local system_dir="$6"
+
+  local pkg_reg_dir="$system_dir/config/packages/$package"
+  if [ ! -d "$pkg_reg_dir" ]; then
+    echo "$FUNCNAME(): cannot upgrade, missing pkg info dir $pkg_reg_dir" 1>&2
+    return 1
+  fi
+
+  local tmp_pkg_dir="$tmp_dir/$package"
+  if [ ! -d "$tmp_pkg_dir" ] && ! mkdir -p "$tmp_pkg_dir" ; then
+    echo "$FUNCNAME(): unable to create temp dir '$tmp_pkg_dir'" 1>&2
+    return 1
+  fi
+
+  local tmp_pkg_extracted_dir="$tmp_pkg_dir/pkg-extracted"
+  if [ ! -d "$tmp_pkg_extracted_dir" ]; then
+    if ! mkdir -p "$tmp_pkg_extracted_dir"; then
+      echo "$FUNCNAME(): unable to create temp dir '$tmp_pkg_extracted_dir'" 1>&2
+      return 1
+    fi
+
+    tar --no-same-owner -zxf "$file" -C "$tmp_pkg_extracted_dir" ./setup/
+    if [ $? -ne 0 ]; then
+      echo "$FUNCNAME(): unable to extract package setup files for package '$package-$version'" 1>&2
+      return 1
+    fi
+  fi
+
+  local curr_serial serial_file version_file previous_version
+  serial_file="$pkg_reg_dir/serial"
+  version_file="$pkg_reg_dir/version"
+  curr_serial=$(deref_contents "$serial_file")       || return 2
+  previous_version=$(deref_contents "$version_file") || return 2
+
+  if [ "$serial" == "$curr_serial" ]; then
+    echo "$FUNCNAME(): cannot upgrade, serial number is the same ($serial)" 1>&2
+    return 1
+  fi
+  
+  local file_list="$pkg_reg_dir/filelist.txt"
+  local prev_files_list="$tmp_pkg_dir/prev_ver_files.txt"
+
+  if ! cp "$file_list" "$prev_files_list"; then
+    echo "$FUNCNAME(): unable to copy list of existing files" 1>&2
+    return 1
+  fi
+
+  [ -n "$verbose" ] && \
+    echo "Upgrading $package, pre-installing serial $serial, version $version"
+
+  local has_setup_script=""
+  local setup_bin="$tmp_pkg_extracted_dir/setup/setup-package"
+  if [ -f "$setup_bin" -a -x "$setup_bin" ]; then
+    has_setup_script=1
+  fi
+
+  if [ -n "$has_setup_script" ]; then
+    DEVPANEL_HOME="$DEVPANEL_HOME"                          \
+    DEVPANEL_PKG_NAME="$package"                            \
+    DEVPANEL_PKG_SERIAL="$serial"                           \
+    DEVPANEL_PKG_SERIAL_PREVIOUS="$curr_serial"             \
+    DEVPANEL_PKG_VERSION="$version"                         \
+    DEVPANEL_PKG_VERSION_PREVIOUS="$previous_version"       \
+      "$setup_bin" update pre-update
+  fi
+
+  devpanel_install_pkg "$@"
+  if [ $? -ne 0 ]; then
+    echo "$FUNCNAME(): failed to pre-install package $package" 1>&2
+    return 1
+  fi
+
+  if [ -n "$has_setup_script" ]; then
+    DEVPANEL_HOME="$DEVPANEL_HOME"                          \
+    DEVPANEL_PKG_NAME="$package"                            \
+    DEVPANEL_PKG_SERIAL="$serial"                           \
+    DEVPANEL_PKG_SERIAL_PREVIOUS="$curr_serial"             \
+    DEVPANEL_PKG_VERSION="$version"                         \
+    DEVPANEL_PKG_VERSION_PREVIOUS="$previous_version"       \
+      "$setup_bin" update post-update
+  fi
+
+  remove_leftover_files "$package" "$prev_files_list" "$file_list"
+
+  if [ -n "$has_setup_script" ]; then
+    DEVPANEL_HOME="$DEVPANEL_HOME"                          \
+    DEVPANEL_PKG_NAME="$package"                            \
+    DEVPANEL_PKG_SERIAL="$serial"                           \
+    DEVPANEL_PKG_SERIAL_PREVIOUS="$curr_serial"             \
+    DEVPANEL_PKG_VERSION="$version"                         \
+    DEVPANEL_PKG_VERSION_PREVIOUS="$previous_version"       \
+      "$setup_bin" update post-cleanup
+  fi
+
+  return 0
+}
+
+assemble_pkg_url() {
+  local base_url="$1"
+  local pkg_name="$2"
+  local pkg_version="$3"
+  local distro="$4"
+  local distro_version="$5"
+  local arch="$6"
+
+  local url
+  local relative_url
+
+  relative_url="$pkg_name/${pkg_name}-${pkg_version}"
+  if [ -n "$distro" -a "$distro" != "-" ]; then
+    relative_url+="-$distro"
+  fi
+
+  if [ -n "$distro_version" -a "$distro_version" != "-" ]; then
+    relative_url+="-$distro_version"
+  fi
+
+  if [ -n "$arch" -a "$arch" != "-" ]; then
+    relative_url+="-$arch"
+  fi
+
+  local previous_url="$base_url" stripped_url=""
+  while echo "$previous_url" | egrep -q '^[a-z0-9A-Z]+://[^/]+/'; do
+    # recursively remove the /path/some/other/nested/path from the URL 
+    # until all paths are removed and remains only the proto/host
+    stripped_url=${previous_url%/*}
+    if [ "$stripped_url" != "$previous_url" ]; then
+      previous_url="$stripped_url"
+    else
+      break
+    fi
+  done
+
+  url="$stripped_url/$relative_url.tar.gz"
+
+  echo "$url"
+}
+
+assemble_pkg_filename() {
+  local pkg_name="$1"
+  local pkg_version="$2"
+  local distro="$3"
+  local distro_version="$4"
+  local arch="$5"
+
+  local filename
+
+  filename="${pkg_name}-${pkg_version}"
+  if [ -n "$distro" -a "$distro" != "-" ]; then
+    filename+="-$distro"
+  fi
+
+  if [ -n "$distro_version" -a "$distro_version" != "-" ]; then
+    filename+="-$distro_version"
+  fi
+
+  if [ -n "$arch" -a "$arch" != "-" ]; then
+    filename+="-$arch"
+  fi
+
+  filename+=".tar.gz"
+
+  echo "$filename"
+}
+
+extract_raw_file_list() {
+  local file="$1"
+
+  if [ $# -lt 1 -o -z "$1" ]; then
+    echo "$FUNCNAME(): missing arguments" 1>&2
+    return 1
+  fi
+
+  if tar -ztf "$file"; then
+    return 0
+  else
+    echo "$FUNCNAME(): unable to extract list of files from $file" 1>&2
+    return 1
+  fi
+}
+
+filter_pkg_files() {
+  local input_file="$1"
+
+  if [ $# -lt 1 -o -z "$1" ]; then
+    echo "$FUNCNAME(): missing arguments" 1>&2
+    return 1
+  fi
+
+  sed -e '
+    /^[[:space:]]*\/\+/d; # remove lines starting in: space /
+    /^\.\/pkg-files\//!d; # remove anything not starting in ./pkg-files/
+    s/^\.\/pkg-files\///; # remove ./pkg-files/ prefix from files
+    /^[[:space:]]*$/d;    # remove empty lines
+  ' "$input_file"
+}
+
+usage() {
+  echo "Usage: `basename "$0"` [ options ] -y
+
+  Options:
+    -y            effectively update
+    -h            show this usage msg
+"
+  exit 1
+}
+
+cleanup() {
+  unlock_path "$lock_file"
+
+  [ -d "$tmp_dir" ] && rm -rf "$tmp_dir"
+}
+
+is_inside_system_dir() {
+  local path="$1"
+  local system_dir="${2:-$system_dir}"
+
+  if [ "${path#$system_dir/}" == "$path" ]; then
+    return 1
+  else
+    return 0
+  fi
+}
+
+# main
+
+declare -i verbose=0
+getopt_flags='hyv'
+unset yes_sure_update
+while getopts $getopt_flags OPTN; do
+  case $OPTN in
+    y)
+      yes_sure_update=1
+      ;;
+    v)
+      verbose+=1
+      ;;
+    h|*)
+      usage
+      ;;
+  esac
+done
+[ $OPTIND -gt 1 ] && shift $(( $OPTIND - 1 ))
+
+if [ -z "$yes_sure_update" ]; then
+  usage
+fi
+
+self_bin=`readlink -e "$0"`
+curr_dir=`dirname "$self_bin"`
+system_dir=`readlink -e "$curr_dir/.."`
+lib_file="$system_dir/lib/functions"
+lock_file="$system_dir/var/lock/${0##*/}"
+
+if ! source "$lib_file"; then
+  echo "Error: unable to source file '$lib_file'" 1>&2
+  exit 1
+fi
+
+assign_deref_os_prop_or_exit packages_url "$system_dir" packages_url
+if deref_os_prop "$system_dir" no_package_updates &>/dev/null; then
+  error "this system is configured not to have automated updates."
+fi
+
+if ! lock_path "$lock_file" >/dev/null; then
+  error "unable to lock. There's probably another instance running."
+fi
+
+# should not use /tmp here because the need to execute post-install and
+# post-update scripts, and it breaks if /tmp is mounted with noexec
+if ! tmp_dir=`mktemp -d "$system_dir/var/tmp/tmp.XXXXXX"`; then
+  error "unable to create temporary directory"
+fi
+trap 'exit 1' INT HUP TERM QUIT
+trap 'cleanup' EXIT
+
+updates_file="$tmp_dir/updates_$base_channel.txt"
+
+if ! download_file "$packages_url" "$updates_file"; then
+  error "unable to download update file"
+fi
+
+linux_distro=$(wedp_auto_detect_distro)
+if [ $? -ne 0 -o -z "$linux_distro" ]; then
+  error "unable to detect the linux distribution of this server"
+fi
+
+distro_version=$(wedp_auto_detect_distro_version)
+if [ $? -ne 0 ]; then
+  error "unable to detection version of current distro"
+fi
+
+distro_major=${distro_version%%.*}
+
+linux_arch=$(uname -m)
+if [ $? -ne 0 -o -z "$linux_arch" ]; then
+  error "unable to detect the machine architecture"
+fi
+
+declare -i n_updated=0 n_failed_update=0 n_installed=0 n_failed_install=0
+declare -i line_n=0
+while read update_line; do
+  line_n+=1
+  # ignore: empty lines, line with only spaces or lines starting with "#"
+  if [ -z "$update_line" ] || [[ "$update_line" =~ ^\ +$ ]] || \
+    [[ "$update_line" =~ ^\ *# ]]; then
+    continue
+  fi
+
+  unset v_installed v_needs_update
+
+  declare -a fields_ar=( package serial latest_version pkg_distro \
+                         pkg_distro_version arch sha512_str flags )
+
+  IFS=$'\t' read "${fields_ar[@]}" <<< "$update_line"
+
+  for field in "${fields_ar[@]}"; do
+    if [ -z "${!field}" ]; then
+      echo "Warning: missing field $field on line $line_n" 1>&2
+      sleep 1
+      continue
+    fi
+  done
+
+  # this avoids a package from being installed or updated more than once
+  # when there are multiple rules (e.g. a package with specific distro versions and
+  # versions without a distro specification)
+  if in_array "$package" ${just_handled_ar[*]}; then
+    continue
+  fi
+ 
+  # skip if the package is for a specific distro that not the current one
+  if [ "$pkg_distro" != "-" -a "$pkg_distro" != "$linux_distro" ]; then
+    continue
+  fi
+
+  # skip if it's for an architecture other than this one
+  if [ "$arch" != "-" -a "$arch" != "$linux_arch" ]; then
+    continue
+  fi
+
+  # skip if the package is specific for a distro version not equal to the
+  # current one
+  if [ "$pkg_distro_version" != "-" \
+    -a "$pkg_distro_version" != "$distro_version" \
+    -a "$pkg_distro_version" != "$distro_major" ]; then
+
+    continue
+  fi
+
+  if is_installed "$package" "$latest_version" "$system_dir"; then
+    v_installed=1
+  fi
+
+  if [ -z "$v_installed" ] && is_to_skip_install "$package"; then
+    [ $verbose -gt 0 ] && echo "Skipping $package, configured not to install"
+    continue # not installed, and configured not to install
+  elif [ -n "$v_installed" ] && is_to_skip_updates "$package"; then
+    [ $verbose -gt 0 ] && echo "Skipping $package, configured not to update"
+    continue # installed but configured not to update
+  elif [ -n "$v_installed" ] && needs_update "$package" "$serial"; then
+    v_needs_update=1 # installed and needs update
+  elif [ -n "$v_installed" -a -z "$v_needs_update" ]; then
+    continue # is installed and doesn't need update
+  fi
+
+  if [ -z "$v_installed" -o -n "$v_needs_update" ]; then
+    pkg_file="$tmp_dir/"
+
+    pkg_url=`assemble_pkg_url "$packages_url" "$package" "$latest_version" \
+      "$pkg_distro" "$pkg_distro_version" "$arch"`
+
+    pkg_file+=`assemble_pkg_filename "$package" "$latest_version" \
+      "$pkg_distro" "$pkg_distro_version" "$arch"`
+
+    echo "Downloading $package $latest_version from $pkg_url..." 1>&2
+    just_handled_ar+=( "$package" )
+    if ! download_file "$pkg_url" "$pkg_file"; then
+      echo "Warning: failed download for package '$package' version '$latest_version' from URL '$pkg_url'" 1>&2
+      n_failed_update+=1
+      continue
+    fi
+  fi
+
+  if [ -z "$v_installed" ]; then
+    echo "Installing $package version $latest_version..."
+    devpanel_install_pkg "$package" "$serial" "$latest_version" \
+                         "$pkg_file" "$sha512_str" "$system_dir"
+    if [ $? -eq 0 ]; then
+      n_installed+=1
+    else
+      n_failed_install+=1
+    fi
+    just_handled_ar+=( "$package" )
+  elif [ -n "$v_needs_update" ]; then
+    echo "Updating $package ... (new serial: $serial, new version: $latest_version)"
+    devpanel_upgrade_pkg "$package" "$serial" "$latest_version" \
+                         "$pkg_file" "$sha512_str" "$system_dir"
+    if [ $? -eq 0 ]; then
+      n_updated+=1
+    else
+      n_failed_update=1
+    fi
+    just_handled_ar+=( "$package" )
+  fi
+done < "$updates_file"
+
+if [ $n_failed_update -eq 0 -a $n_failed_install -eq 0 \
+  -a $n_updated -eq 0 -a $n_installed -eq 0 ]; then
+
+  echo "Everything up to date."
+  exit 0
+fi
+
+if [ $n_failed_update -gt 0 ]; then
+  echo "Failed to update $n_failed_update packages."
+fi
+
+if [ $n_failed_install -gt 0 ]; then
+  echo "Failed to install $n_failed_install packages."
+fi
+
+if [ $n_updated -gt 0 ]; then
+  echo "Updated $n_updated packages."
+fi
+
+if [ $n_installed -gt 0 ]; then
+  echo "Installed $n_installed packages."
+elif [ $n_installed -eq 0 -a $n_updated -eq 0 ]; then
+  echo "No packages were updated."
+fi
+
+exit 0

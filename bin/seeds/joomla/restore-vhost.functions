@@ -1,0 +1,71 @@
+table_prefix=${table_prefix:-"jos_"}
+
+joomla_get_users() {
+  sql_query_result "select username from ${table_prefix}users where username <> ''"
+}
+
+joomla_genpass() {
+  "$dir/genpass"
+  return $?
+}
+
+joomla_encrypt() {
+  local password="$1"
+
+  echo -n "$password"|"$dir/joomla-crypt.php"
+  return $?
+}
+
+joomla_set_password() {
+  local user="$1"
+  local encrypted_password="$2"
+  local salt
+
+  sql_query "update ${table_prefix}users set password = '$encrypted_password' where username = '$user';"
+}
+
+joomla_set_email() {
+  local user="$1"
+  local email="$2"
+
+  sql_query "update ${table_prefix}users set email = '$email' where username = '$user';"
+}
+
+joomla_get_email() {
+  local user="$1"
+
+  sql_query_result "select email from ${table_prefix}users where username = '$user'"
+}
+
+joomla_update_php_config()
+{
+
+  echo "
+   s/^\([[:space:]]*\)\(var\|public\)[[:space:]]\{1,\}\\\$sitename[[:space:]]\{1,\}=.*/\1\2\\\$sitename = '$fqdn';/
+   s/^\([[:space:]]*\)\(var\|public\)[[:space:]]\{1,\}\\\$host[[:space:]]\{1,\}=.*/\1\2 \\\$host = '$mysql_host:$mysql_port';/
+   s/^\([[:space:]]*\)\(var\|public\)[[:space:]]\{1,\}\\\$user[[:space:]]\{1,\}=.*/\1\2 \\\$user = '$mysql_user';/
+   s/^\([[:space:]]*\)\(var\|public\)[[:space:]]\{1,\}\\\$mysql_password[[:space:]]\{1,\}=.*/\1\2 \\\$mysql_password = '$sedphpencoded_mysql_password';/
+   s/^\([[:space:]]*\)\(var\|public\)[[:space:]]\{1,\}\\\$password[[:space:]]\{1,\}=.*/\1\2 \\\$password = '$sedphpencoded_mysql_password';/
+   s/^\([[:space:]]*\)\(var\|public\)[[:space:]]\{1,\}\\\$db[[:space:]]\{1,\}=.*/\1\2 \\\$db = '$hosting_database';/
+   s/^\([[:space:]]*\)\(var\|public\)[[:space:]]\{1,\}\\\$dbprefix[[:space:]]\{1,\}=.*/\1\2 \\\$dbprefix = '$table_prefix';/
+   s/^\([[:space:]]*\)\(var\|public\)[[:space:]]\{1,\}\\\$log_path[[:space:]]\{1,\}=.*/\1\2 \\\$log_path = '\/home\/clients\/websites\/w_$vhost\/public_html\/$vhost\/logs';/
+   s/^\([[:space:]]*\)\(var\|public\)[[:space:]]\{1,\}\\\$tmp_path[[:space:]]\{1,\}=.*/\1\2 \\\$tmp_path = '\/home\/clients\/websites\/w_$vhost\/public_html\/$vhost\/tmp';/" \
+   | run_ised "$home/public_html/$vhost/configuration.php"
+
+  if [ -n "$WEBENABLED_HOSTING_LINK_BASE_URL" ]; then
+  echo "
+   s|^\([[:space:]]*\)\(var\|public\)[[:space:]]\{1,\}\\\$live_site[[:space:]]\{1,\}=.*|\1\2 \\\$live_site = '$WEBENABLED_HOSTING_LINK_BASE_URL';|" | \
+   run_ised "public_html/$vhost/configuration.php"
+  fi
+}
+
+joomla_get_admin_user() {
+  sql_query_result "select username from ${table_prefix}users where username = 'admin'"
+}
+
+joomla_custom()
+{
+  echo "Updating configuration.php"
+  joomla_update_php_config || error "Cannot update configuration.php"
+}
+

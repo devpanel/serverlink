@@ -1,0 +1,43 @@
+#!/bin/bash
+dir=`dirname "$0"`
+
+run()
+{
+  echo "  running $@"
+  "$@"
+}
+
+vhost="$1"
+archive_dir="$2"
+user="b_$vhost"
+home="`eval \"echo ~$user\"`"
+date=`date  +'%Y%m%d'`
+
+if ! `id -u "$user" 2>/dev/null >/dev/null`
+then
+  echo "No such user: $user" >&2
+  exit 1
+fi
+
+if [ -z "$archive_dir" ]
+then
+  echo "Usage: $0 vhost archive_dir" >&2
+  exit 1
+fi
+
+if ! $dir/archive-vhost-db "$vhost" "$archive_dir"
+then
+  echo "Cannot archive $vhost to $archive_dir, will not remove anything"
+  exit 1
+fi
+
+file1=$dir/../config/os/pathnames/opt/dbmgr/config/db-daemons.conf
+file2=$dir/../config/os/pathnames/opt/dbmgr/config/db-shadow.conf
+echo "Commenting out the entries in db-daemons.conf and db-shadow.conf:"
+run sed -i.old "s/^$user:/#&/" $file1
+#grep "$user" $file1 | sed 's/^/  /'
+run sed -i.old "s/^$user:/#&/" $file2
+
+"$dir/remove-user" "$user" || exit 1
+
+echo "All done"

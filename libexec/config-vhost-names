@@ -1,0 +1,357 @@
+#!/bin/bash
+error() { echo "ERROR${@+: }$@" >&2; exit 1; }
+
+usage() {
+  local prog=`basename "$0"`
+
+  echo "
+  Usage: $prog vhost-name [ options ]  {*|+|-} [domain-name ...]
+
+  Options:
+    -s                      force the name to be a subdomain of the main
+                            server domain
+
+    -i ip_address           Add/remove to the specified IP address
+
+    -n                      don't add the www prefix to aliases when adding
+                            or removing a hostname
+
+  This script adds or removes hostnames to/from the specified virtual host.
+"
+  exit 1
+}
+
+format_to_apache() {
+  local server_hostname="$1"
+  local local_hostname="$2"
+  local hostname_stripped="" new_hostname=""
+
+  local host_fmt=""
+
+  if [ "${local_hostname: -1}" == "." ]; then
+    # $len_minus_one is a workaround for older bash versions that don't know
+    # negative lengths (e.g. CentOS 6.5 and previous)
+    local len_minus_one=$(( ${#local_hostname} - 1 ))
+    host_fmt="${local_hostname:0:$len_minus_one}" # remove the last dot
+  else
+    host_fmt="$local_hostname.$server_hostname"
+  fi
+
+  echo -n "$host_fmt"
+}
+
+generate_serveralias() {
+  local base="$1"
+  local server_hostname="$2"
+
+  local alias_link="$base:param:1:ServerAlias"
+  local alias_hostname="" aliases_str="" hostname_fmt=""
+
+  if [ "$vhost_base_domain" != "$server_hostname" ]; then
+    # add the base hostname to the list of aliases
+    aliases_str+="$vhost_base_domain"
+  fi
+
+  for alias_host in "$base":_:ServerAlias:*; do
+    if [ "$alias_host" == "$base:_:ServerAlias:*" ]; then
+      if [ -L "$alias_link" ]; then
+        rm -f "$alias_link" && return 0 || return 1
+      fi
+    fi
+
+    alias_hostname="${alias_host##*:}"
+    if [ -z "$alias_hostname" ]; then
+      continue # just ignore an empty
+    fi
+
+    [ -n "$aliases_str" ] && aliases_str+=" "
+
+    hostname_fmt=`format_to_apache "$server_hostname" "$alias_hostname"`
+
+    aliases_str+="$hostname_fmt"
+  done
+
+  if [ -n "$aliases_str" ]; then
+    if [ -L "$alias_link" ]; then
+      # can't use ln -sf  here because ln tries to dereference first and it
+      # returns error when the ref string is longer than 256 chars, so using
+      # rm -f to remove existing file
+      rm -f "$alias_link"
+    fi
+
+    ln -sf "$aliases_str" "$alias_link"
+    if [ $? -eq 0 ]; then
+      return 0
+    else
+      echo "$FUNCNAME(): unable to update link '$alias_link'" 1>&2
+      return 1
+    fi
+  fi
+
+  return 1 # unknown condition
+}
+
+# main
+[ $# -eq 0 -o -z "$1" ] && usage
+
+prefix_with_www=1
+force_subdomain=0
+getopt_flags='nsi:'
+
+unset ip
+while getopts $getopt_flags OPTOPT
+do
+  case "$OPTOPT" in
+    i)
+      ip="$OPTARG"
+      ;;
+    s)
+      force_subdomain=1
+      ;;
+    n)
+      unset prefix_with_www
+      ;;
+    *)
+      exit 1
+      ;;
+  esac
+done
+[ $OPTIND -gt 1 ] && shift `expr $OPTIND - 1`
+
+[ -z "$1" ] && usage
+
+self_bin=`readlink -e "$0"`
+if [ $? -ne 0 ]; then
+  echo "Error: unable to get self path" 1>&2
+  exit 1
+fi
+
+dir=`dirname "$self_bin"`
+
+we_dir=`readlink -e "$dir/.."`
+
+lib_file="$we_dir/lib/functions"
+vars_file="$we_dir/lib/variables"
+
+for inc_file in "$lib_file" "$vars_file"; do
+  if ! source "$inc_file"; then
+    error "unable to source file '$inc_file'"
+  fi
+done
+
+vhost="$1"
+if ! "$dir/check-vhost-name" name-only "$vhost"; then
+  error "vhost argument is in an invalid format"
+fi
+user="w_$vhost"
+
+if [ -z "$ip" ]; then
+  ip='*'
+fi
+
+sys_vhost_config_dir="$we_dir/config/vhosts"
+config_dir="$sys_vhost_config_dir/$vhost"
+
+server_hostname=`get_server_base_domain`
+if [ $? -ne 0 ]; then
+  error "unable to get base domain name for apache virtual hosts"
+fi
+
+if get_metadata_value "$config_dir" "$DEVPANEL_VHOST_LOCK_FLAG" &>/dev/null; then
+  error "vhost $vhost is locked. Can't work on a locked vhost."
+fi
+
+# second check-vhost-name validation, to validate homedir, etc
+if ! "$dir/check-vhost-name" archive "$vhost"; then
+  exit 1
+fi
+mode=""
+
+vhost_config_prefix_str="apache_vhost:0"
+vhost_base="$config_dir/$vhost_config_prefix_str"
+
+# administrative base domain
+vhost_base_domain=$(get_vhost_base_domain "$vhost") || exit $?
+
+# default name that is on ServerName and in the app configs
+default_name=$(get_vhost_default_hostname "$vhost" 2>/dev/null) 
+
+unset changed
+alias_base="$vhost_base:param:1:ServerAlias"
+alias_priv="$vhost_base:_:ServerAlias"
+
+shift # remove the last argument and leave only the options on $*
+
+# note: can't use 'for i in' style here, because when i=* it'll expand 
+# to list all local files. Using this contracted form it doesn't expand.
+for i; do
+
+  case "$i" in
+    +|-|'*')
+    mode="$i"
+    continue
+    ;;
+  esac
+
+  [ -n "$mode" ] || error "Usage: $0 VHOST {*|+|-} name [name ...]"
+  case $mode   in
+    '*')
+        new_name="$i"
+
+        new_default_name=`format_hostname_internal "$new_name" $force_subdomain`
+
+        default_name_fmt="$new_default_name" # to check later in the '+' if present
+        default_name_apache=`format_to_apache "$server_hostname" "$new_default_name"`
+
+        tst_vhost=$(get_vhost_with_hostname "$new_name")
+        if [ $? -eq 0 ]; then
+          if [ "$tst_vhost" != "$vhost" ]; then
+            error "hostname $new_name is already on vhost $tst_vhost"
+          fi
+        fi
+
+        previous_name="$default_name"
+
+        if [ -n "$previous_name" ]; then
+          # saving the previous name into the aliases
+          previous_name_cut=${previous_name%.$server_hostname}
+          if [ "$previous_name" == "$default_name_apache" ]; then
+            echo "Warning: the default name hasn't changed..." 1>&2
+            continue
+          fi
+
+          alias_fmt_hn=`format_hostname_internal "$previous_name_cut"`
+          alias_file="$alias_base:$previous_name_cut"
+          alias_file_previous="$alias_priv:$alias_fmt_hn"
+
+          if [ -L "$alias_file_previous" ]; then
+            echo "Warning: default file is already on the list of aliases" 1>&2
+          else
+            if ! ln -sf "$alias_fmt_hn" "$alias_file_previous"; then
+              error "unable to move the default name to an alias"
+            fi
+
+            if [ -n "$prefix_with_www" ]; then
+              www_alias_link="$alias_priv:www.$alias_fmt_hn"
+              if ! ln -sf "$previous_name" "$www_alias_link"; then
+                error "unable to save www alias to default name"
+              fi
+            fi
+          fi
+        fi
+
+        # overwriting the existing value
+        set_vhost_default_hostname "$vhost" "$default_name_apache" || exit $?
+
+        if [ -n "$prefix_with_www" ]; then
+          www_alias_link="$alias_priv:www.$new_default_name"
+          if ! ln -sf "www.$new_default_name" "$www_alias_link"; then
+            error "unable to set www alias to default name"
+          fi
+        fi
+
+        # if this same name is already a domain alias, then remove it
+        if [ -L "$alias_file" ]; then
+          echo "Removing old alias to this name..."
+          rm -f "$alias_file"
+        fi
+
+        if ! chfn -f "$default_name_apache" "$user"; then
+          echo "Warning: unable to chfn the vhost..." 1>&2
+        fi
+
+        echo "Successfully set the ServerName to $default_name_apache"
+
+        changed=1
+        ;;
+    '+')
+        this_hostname="$i"
+
+        this_hostname_fmt=`format_hostname_internal "$this_hostname" $force_subdomain`
+        this_name_apache=`format_to_apache "$server_hostname" "$this_hostname_fmt" $force_subdomain`
+
+        if [ "$this_name_apache" == "$default_name" ]; then
+          echo "Warning: this hostname is equal to the default hostname.  Skipping..." 1>&2
+          break;
+        fi
+
+        tst_vhost=$(get_vhost_with_hostname "$this_hostname")
+        if [ $? -eq 0 ]; then
+          if [ "$tst_vhost" == "$vhost" ]; then
+            echo "Warning: name $this_hostname is already set, skipping..." 1>&2
+            continue
+          else
+            error "hostname ${this_name_apache} already in vhost $tst_vhost"
+          fi
+        fi
+
+        name_file="$alias_priv:$this_hostname_fmt"
+
+        if ! ln -sf /dev/null "$name_file"; then
+          error "unable to add hostname $this_hostname"
+        fi
+
+        if [ -n "$prefix_with_www" ]; then
+          www_name_file="$alias_priv:www.$this_hostname_fmt"
+          if ! ln -sf /dev/null "$www_name_file"; then
+            error "unable to add hostname www.$this_hostname"
+          fi
+        fi
+
+        echo "Successfully added alias hostname $this_name_apache"
+
+        changed=1
+        ;;
+    '-')
+        this_hostname="$i"
+
+        this_hostname_fmt=`format_hostname_internal "$this_hostname" $force_subdomain`
+        this_real_hostname=$(get_real_hostname "$this_hostname_fmt")
+
+        if [ "$this_real_hostname" == "$vhost_base_domain" ]; then
+          err_msg="host '$this_real_hostname' is the administrative hostname"
+          err_msg+=" for this vhost. Can't remove it."
+          error "$err_msg"
+        fi
+ 
+        [ "$default_name" = "$this_real_hostname" ] && \
+          error "Cannot remove the default name $this_hostname; change the default name first"
+       
+        name_file="$alias_priv:$this_hostname_fmt"
+        if [ ! -L "$name_file" ]; then
+          printf "Warning: name %s doesn't exist for vhost %s and IP %s\n" \
+            "$this_hostname" "$vhost" "$ip" 1>&2
+          continue
+        else
+          rm -f "$name_file"
+        fi
+
+        if [ -n "$prefix_with_www" ]; then
+          www_name_file="$alias_priv:www.$this_hostname_fmt"
+          if [ ! -L "$www_name_file" ]; then
+            printf "Warning: name %s doesn't exist for vhost %s and IP %s\n" \
+              "www.$this_hostname" "$vhost" "$ip" 1>&2
+            continue
+          else
+            rm -f "$www_name_file"
+          fi
+        fi
+
+        changed=1
+        ;;
+      *)
+        error "unknown mode '$mode'"
+        ;;
+   esac
+done
+
+if [ -z "$changed" ]; then
+  echo "Nothing changed."
+  exit 0
+fi
+
+if ! generate_serveralias "$vhost_base" "$server_hostname"; then
+  error "unable to regenerate the ServerAlias entry"
+fi
+
+"$dir/config-vhost-apache" "$vhost" || exit 1

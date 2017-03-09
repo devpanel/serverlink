@@ -1,0 +1,71 @@
+#!/bin/bash
+
+usage() {
+  local self=${0%%*/}
+
+  echo "Usage: $self <vhost>
+  
+  Disables SSL configuration for the specified vhost.
+"
+  exit 1
+}
+
+# main
+
+[ $# -eq 0 -o -z "$1" ] && usage
+vhost="$1"
+
+self_bin=$(readlink -e "$0")
+if [ $? -ne 0 ]; then
+  echo "Error: unable to get self executable path." 1>&2
+  exit 1
+fi
+
+sys_dir=${self_bin%/*/*}
+
+aux_lib="$sys_dir/lib/functions"
+if ! source "$aux_lib"; then
+  echo "Error: unable to import functions from $aux_lib" 1>&2
+  exit 1
+fi
+
+if ! "$sys_dir/libexec/check-vhost-name" name-only "$vhost"; then
+  exit 1
+fi
+
+vhost_metadata_dir="$sys_dir/config/vhosts/$vhost"
+vhost_internal_name="default_ssl"
+
+vhost_number_key="apache_vhost:_:name:$vhost_internal_name"
+vhost_int_number=$(get_metadata_value "$vhost_metadata_dir" $vhost_number_key)
+if [ -z "$vhost_int_number" ]; then
+  echo "Warning: vhost doesn't have SSL configured." 1>&2
+  exit 0
+fi
+
+if ! [[ "$vhost_int_number" =~ ^[0-9]+$ ]]; then
+  error "invalid value on vhost number: $vhost_int_number"
+fi
+
+key_prefix="apache_vhost:$vhost_int_number"
+
+metadata_op_str=""
+metadata_op_str+="rm $key_prefix"$'\n'
+metadata_op_str+="rm $vhost_number_key"$'\n'
+metadata_op_str+="rm $key_prefix:_:replicate"$'\n'
+metadata_op_str+="rm $key_prefix:_:template"$'\n'
+metadata_op_str+="rm $key_prefix:param:2:SSLCACertificateFile"$'\n'
+metadata_op_str+="rm $key_prefix:_:IP"$'\n'
+
+"$sys_dir/libexec/apache-metadata-handler" "$vhost" <<< "$metadata_op_str"
+if [ $? -eq 0 ]; then
+  "$sys_dir/libexec/config-vhost-apache" "$vhost"
+  if [ $? -eq 0 ]; then
+    echo "Successfully disabled SSL configuration for vhost $vhost"
+  else
+    echo "Warning: disabled SSL configuration, but failed to restart Apache" 1>&2
+  fi
+  exit 0
+else
+  error "unable to disable SSL configuration for vhost $vhost"
+fi

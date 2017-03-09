@@ -1,0 +1,59 @@
+#!/bin/bash
+
+usage() {
+  local prog=`basename "$0"`
+
+  echo "Usage: $prog <-d git_bare_dir> <brach_name> <starting_point>
+
+  Options:
+    -d dir          use the specified dir as the bare git dir
+    -e              just exit successfully if the branch already exists
+"
+  exit 1
+}
+
+# main
+
+getopt_flags='ed:'
+commit_id="HEAD"
+unset git_dir exit_if_existing
+while getopts $getopt_flags OPTN; do
+  case $OPTN in
+    d)
+      git_dir="$OPTARG"
+      if [ ! -e "$git_dir" ]; then
+        echo "Error: path '$git_dir' doesn't exist." 1>&2
+        exit 1
+      elif [ ! -d "$git_dir" ]; then
+        echo "Error: path '$git_dir' is not a directory" 1>&2
+        exit 1
+      fi
+      ;;
+    e)
+      exit_if_existing=1
+      ;;
+    *)
+      usage
+      ;;
+  esac
+done
+[ $OPTIND -gt 1 ] && shift $(( $OPTIND - 1 ))
+
+[ $# -eq 0 -o -z "$1" -o -z "$2" ] && usage
+
+branch_name="$1"
+starting_point="$2"
+
+if [ -e "$git_dir/refs/heads/$branch_name" -a -n "$exit_if_existing" ]; then
+  echo "Branch '$branch_name' already exists. Exiting successfully." 1>&2
+  exit 0
+fi
+  
+GIT_DIR="$git_dir" git branch "$branch_name" "$starting_point"
+if [ $? -eq 0 ]; then
+  echo "Successfully created branch '$branch_name' from '$starting_point'"
+  exit 0
+else
+  echo "Error: unable to create branch '$branch_name' from '$starting_point'" 1>&2
+  exit 1
+fi

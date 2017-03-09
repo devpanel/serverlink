@@ -1,0 +1,56 @@
+#!/bin/bash
+
+usage() {
+  echo "Usage: `basename "$0"` [ options ] <branch>
+
+  Options:
+    -d git_dir      git directory
+"
+
+  exit 1
+}
+
+error() {
+  local msg="$1"
+
+  echo "Error: $msg" 1>&2
+
+  exit 1
+}
+
+[ $# -eq 0 ] && usage
+
+getopt_flags='d:'
+while getopts $getopt_flags OPTNAME; do
+  case "$OPTNAME" in
+    d)
+      git_dir="$OPTARG"
+      if [ ! -e "$git_dir" ]; then
+        error "path '$git_dir' doesn't exist"
+      elif [ ! -d "$git_dir" ]; then
+        error "path '$git_dir' is not a directory"
+      fi
+      ;;
+    *)
+      usage
+      ;;
+  esac
+done
+shift $(( $OPTIND - 1 ))
+
+branch="$1"
+if [ -z "$branch" ]; then
+  error "missing branch argument"
+fi
+
+if ! cd "$git_dir"; then
+  error "unable to enter into '$git_dir'"
+fi
+
+if ! git checkout -f; then
+  error "unable to: git checkout -f"
+fi
+
+if ! git pull origin "$branch"; then
+  error "failed while: git pull origin '$branch'"
+fi

@@ -1,0 +1,13 @@
+*~
+.*.sw[op]
+/etc/devpanel.conf
+/config/packages/*
+/config/iptables*
+!/config/packages/apache_vhost
+/bin/gitolite.d/
+/bin/utils
+/compat/w_/public_html/
+!/compat/w_/public_html/cgi/cgit.cgi
+/config/os
+/var/lock/
+/lib/nodejs/node_modules

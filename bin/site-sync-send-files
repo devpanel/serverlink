@@ -1,0 +1,43 @@
+#!/bin/bash
+
+usage() {
+  local prog=$(basename "$0")
+
+  echo "Usage: $prog <remote_spec>
+
+  Sends local vhost files to remote server.
+"
+  exit 1
+}
+
+# main
+[ $# -eq 0 -o -z "$1" ] && usage
+
+self_bin=$(readlink -e "$0")
+self_dir=$(dirname "$self_bin")
+sys_dir=$(readlink -e "$self_dir/..")
+lib_file="$sys_dir/lib/functions"
+
+remote_spec="$1"
+remote_spec_len=${#remote_spec}
+if [ "${remote_spec:$(( $remote_spec_len - 1 ))}" != ":" ]; then
+  remote_spec+=":"
+fi
+
+if ! source "$lib_file"; then
+  echo "Error: unable to load auxiliary functions from $lib_file" 1>&2
+  exit 1
+fi
+
+vhost_dir="$HOME/public_html/${USER#w_}"
+if [ ! -e "$vhost_dir" ]; then
+  error "missing vhost dir $vhost_dir"
+fi
+
+if ! cd "$vhost_dir"; then
+  error "unable to chdir to $vhost_dir"
+fi
+
+rsync -a --partial -q --rsync-path=site_sync_recv_files \
+  --exclude=.git --exclude=.svn \
+ ./ "$remote_spec"

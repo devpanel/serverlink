@@ -1,0 +1,75 @@
+#!/bin/sh
+
+sugarcrm_get_users()
+{
+  sql_query_result "SELECT user_name FROM users WHERE user_name <> ''"
+}
+
+sugarcrm_genpass()
+{
+  "$dir/genpass"
+}
+
+sugarcrm_encrypt()
+{
+  local password="$1"
+  local encrypted=$(echo -n "$password" | md5sum)
+  encrypted=${encrypted%% *}
+
+  echo "$encrypted"
+}
+
+sugarcrm_set_password()
+{ 
+  local user="$1" encrypted_password="$2"
+  local token salt
+
+  sql_query "UPDATE users SET user_hash = '$encrypted_password', system_generated_password = 0, pwd_last_changed = CURRENT_TIMESTAMP WHERE user_name = '$user';"
+}
+
+sugarcrm_set_email()
+{
+  local user="$1" email="$2"
+  # sql_query "UPDATE users SET email = '$email' WHERE user_name = '$user';"
+  return 1
+}
+
+
+sugarcrm_get_email()
+{
+  local user="$1"
+  # sql_query_result "select email from users where user_name = '$user';"
+  echo "support@webenabled.com"
+}
+
+sugarcrm_get_admin_user()
+{
+  sql_query_result "select user_name from users where user_name = 'admin'"
+}
+
+sugarcrm_update_php_config()
+{
+  echo "
+    s/^[[:space:]]*[\"']db_host_name[\"'][[:space:]]*=>[[:space:]]*[\"']\\([^'\"]*\\)[\"'][[:space:]]*,/    'db_host_name' => '$mysql_host:$mysql_port',/;
+    s/^[[:space:]]*[\"']db_user_name[\"'][[:space:]]*=>[[:space:]]*[\"']\\([^'\"]*\\)[\"'][[:space:]]*,/    'db_user_name' => '$mysql_user',/;
+    s/^[[:space:]]*[\"']db_password[\"'][[:space:]]*=>[[:space:]]*[\"']\\([^'\"]*\\)[\"'][[:space:]]*,/    'db_password' => '$mysql_password',/;
+    s/^[[:space:]]*[\"']db_name[\"'][[:space:]]*=>[[:space:]]*[\"']\\([^'\"]*\\)[\"'][[:space:]]*,/    'db_name' => '$hosting_database',/;
+    s/^[[:space:]]*[\"']db_type[\"'][[:space:]]*=>[[:space:]]*[\"']\\([^'\"]*\\)[\"'][[:space:]]*,/    'db_type' => 'mysql',/;
+    s/^[[:space:]]*[\"']host_name[\"'][[:space:]]*=>[[:space:]]*[\"']\\([^'\"]*\\)[\"'][[:space:]]*,/    'host_name' => '$fqdn',/;
+    s/^[[:space:]]*[\"']site_url[\"'][[:space:]]*=>[[:space:]]*[\"']\\([^'\"]*\\)[\"'][[:space:]]*,/    'site_url' => 'http:\/\/$fqdn',/;
+    s/^[[:space:]]*[\"']generatepasswordtmpl[\"'][[:space:]]*=>[[:space:]]*[\"']\\([^'\"]*\\)[\"'][[:space:]]*,/    'generatepasswordtmpl' => '$(uuidgen)',/;
+    s/^[[:space:]]*[\"']lostpasswordtmpl[\"'][[:space:]]*=>[[:space:]]*[\"']\\([^'\"]*\\)[\"'][[:space:]]*,/    'lostpasswordtmpl' => '$(uuidgen)',/;
+
+" | run_ised "$home/public_html/$vhost/config.php"
+  status=$?
+
+  return $status
+}
+
+sugarcrm_custom()
+{
+  if [ -n "$opt_n" ]; then
+    echo "Updating config.php"
+  fi
+    sugarcrm_update_php_config || error "Cannot update config.php"
+}

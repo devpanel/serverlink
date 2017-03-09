@@ -1,0 +1,182 @@
+#!/bin/bash
+
+usage() {
+  local cmd=${0##*/}
+
+  echo "Usage: $cmd <options> <vhost>
+
+  Imports a site from the specified archive files.
+
+  Options:
+    -f type:url_of_file      the URL of the file containing the website
+                             public content. The 'type' is the format of file,
+                             must be either: zip or tar.gz
+
+    -d type:url_of_file      the URL of the file containing the mysqldump file
+                             with the database contents. The 'type' is the
+                             format of the file, must be either: sql, zip or
+                             gz. If it's zip it should contain a file named
+                             database.sql at the root.
+
+    -s subsystem             the subsystem type of the app (e.g. drupal,
+                              wordpress, magento, etc)
+
+    -p pack_file.tgz         create a new archive file ready to be imported,
+                             but don't actually create the vhost. Only use
+                             this option if you want to generate an archive
+                             in the right format, but to be used later.
+
+    Example usage:
+    
+    # $cmd -f tar.gz:https://someurl.com/download/asdfasdfasdf \\
+           -d zip:https://someurl.com/download/sql-file-whatever.zip \\
+           -s drupal d71
+"
+  exit 1
+}
+
+cleanup() {
+  [ -d "$temp_dir" ] && rm_rf_safer "$temp_dir"
+}
+
+# main
+[ $# -eq 0 -o -z "$1" ] && usage
+
+self_bin=$(readlink -e "$0")
+if [ $? -ne 0 ]; then
+  echo "Error: unable to identify the script path" 1>&2
+  exit 1
+fi
+self_dir=${self_bin%/*}
+sys_dir=$(readlink -m $self_dir/..)
+lib_file="$sys_dir/lib/functions"
+
+if ! source "$lib_file"; then
+  error "unable to source file $lib_file"
+fi
+
+unset archive_file_url archive_file_url_raw
+unset db_dump_file_url db_dump_file_url_raw
+unset subsystem temp_dir just_pack pack_file
+
+declare -a cmd_args=()
+
+getopt_flags='f:d:s:p:h'
+while getopts $getopt_flags OPTN; do
+  case $OPTN in
+    f)
+      archive_file_url_raw="$OPTARG"
+      ;;
+    d)
+      db_dump_file_url_raw="$OPTARG"
+      ;;
+    s)
+      subsystem="$OPTARG"
+
+      cmd_args+=( -$OPTN "$OPTARG" )
+      ;;
+    p)
+      if [ -f "$OPTARG" ]; then
+        error "file $OPTARG already exists."
+      fi
+
+      just_pack=1
+      pack_file="$OPTARG"
+      
+      cmd_args+=( -$OPTN "$OPTARG" )
+      ;;
+    h)
+      usage
+      ;;
+    *)
+      exit 1
+      ;;
+  esac
+done
+[ $OPTIND -gt 1 ] && shift $(( $OPTIND - 1 ))
+
+[ -z "$1" ] && usage
+vhost="$1"
+
+if [ -n "$just_pack" ]; then
+  vhost_check="name-only"
+else
+  vhost_check=restore
+fi
+
+if ! "$self_dir/check-vhost-name" $vhost_check "$vhost"; then
+  exit 1
+fi
+
+if [ -z "$archive_file_url_raw" ]; then
+  error "missing archive file URL. Please specify it with option -f"
+fi
+
+if [ -z "$subsystem" ]; then
+  error "missing subsystem. Please specify it with option -s"
+elif ! is_known_seedapp_subsystem "$subsystem"; then
+  error "unknown subsystem: $subsystem"
+fi
+
+if [ -z "$db_dump_file_url_raw" ]; then
+  error "missing database dump file. Please specify it with option -d"
+fi
+
+archive_file_type_orig=${archive_file_url_raw%%:*}
+case $archive_file_type_orig in
+  [Zz][Ii][Pp])
+    archive_file_type=zip
+    ;;
+  [Tt][Aa][Rr].[Gg][Zz])
+    archive_file_type=tar.gz
+    ;;
+  $archive_file_url_raw)
+    error "malformed value passed to option -f"
+    ;;
+  *)
+    error "unknown type received on option -f: '$archive_file_type_orig'"
+    ;;
+esac
+archive_file_extension="$archive_file_type"
+
+archive_file_url=${archive_file_url_raw#$archive_file_type_orig:}
+
+db_file_type_orig=${db_dump_file_url_raw%%:*}
+case "$db_file_type_orig" in
+  [Ss][Qq][Ll])
+    db_dump_type=sql
+    ;;
+  [Gg][Zz])
+    db_dump_type=gz
+    ;;
+  [Zz][Ii][Pp])
+    db_dump_type=zip
+    ;;
+  $db_dump_file_url_raw)
+    error "malformed value passed to option -d"
+    ;;
+  *)
+    error "unknown type received on option -d: '$db_file_type_orig'"
+    ;;
+esac
+db_file_extension="$db_dump_type"
+db_dump_file_url=${db_dump_file_url_raw#$db_file_type_orig:}
+
+temp_dir=$(mktemp -d)
+if [ $? -ne 0 ]; then
+  error "unable to create temporary directory"
+fi
+trap 'cleanup' EXIT
+
+public_files="$temp_dir/public_files.$archive_file_extension"
+db_dump_file="$temp_dir/databases.$db_file_extension"
+
+if ! download_file "$archive_file_url" "$public_files"; then
+  error "failed to download URL $archive_file_url to $public_files"
+elif ! download_file "$db_dump_file_url" "$db_dump_file"; then
+  error "failed to download URL '$db_dump_file_url' to $db_dump_file"
+fi
+
+cmd_args+=( -f "$public_files" -d "$db_dump_file" )
+
+"$self_dir/import-site-from-files" "${cmd_args[@]}" "$vhost"

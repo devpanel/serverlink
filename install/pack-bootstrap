@@ -1,0 +1,188 @@
+#!/bin/bash
+
+usage() {
+  local prog=$(basename "$0")
+  echo "
+Usage: $prog <-d source_directory> <-f target.tar>
+
+  Options
+    -d source_dir         Source directory where to get the scripts from
+    -f target_file        Tar file where to store the scripts
+
+This program packs the bootstrap files in a .tar file for unattendenly
+installing a new DP server
+"
+  exit 1
+}
+
+error() {
+  local msg="$1"
+  local exit_code=${2:-1}
+
+  [ -n "$msg" ] && echo "Error: $msg" 1>&2
+
+  exit $exit_code
+}
+
+# main
+
+declare -a bootstrap_files=( \
+  'lib/functions' \
+  'lib/perl5/' \
+  'sbin/taskd' \
+  'libexec/system-services' \
+  'bin/update-ini-file' \
+  'bin/run-vhost-shell' \
+  'bin/devpanel' \
+  'libexec/run-root-shell' \
+  'libexec/download-installer' \
+  'install/uninstall.sh' \
+  'install/uninstall.macosx.sh'
+)
+
+[ $# -lt 2 ] && usage
+
+[ $EUID -ne 0 ] && error "this script needs to be run with ROOT privileges"
+
+getopt_flags='d:f:'
+unset source_dir target_file queue_source_dir version_str
+while getopts $getopt_flags OPTN; do
+  case $OPTN in
+    d)
+      source_dir="$OPTARG"
+      ;;
+    f)
+      target_file="$OPTARG"
+      ;;
+  esac
+done
+
+if [ -z "$source_dir" ]; then
+  error "missing source_dir, option -d"
+elif [ -z "$target_file" ]; then
+  error "missing target_file, option -t"
+fi
+
+if [ ! -d "$source_dir" ]; then
+  error "unable to find source directory '$source_dir'"
+fi
+
+if [ "${source_dir:0:1}" != "/" ]; then
+  source_dir="$PWD/$source_dir"
+fi
+source_dir="${source_dir%/.}"
+
+if [ -e "$target_file" ]; then
+  error "target file '$target_file' already exists."
+fi
+
+# initially checking for errors...
+for file in "${bootstrap_files[@]}"; do
+  file_path="$source_dir/$file"
+  if [ ! -e "$file_path" ]; then
+    error "file '$file' doesn't exist in dir '$source_dir'"
+  fi
+done
+
+tmp_pack_dir=$(mktemp -d)
+status=$?
+if [ $status -ne 0 ]; then
+  error "unable to create temporary pack directory. mktemp returned $status"
+fi
+
+trap 'rm -rf "$tmp_pack_dir"' EXIT INT TERM
+
+internal_pack_dir="$tmp_pack_dir/bootstrap"
+mkdir "$internal_pack_dir"
+if [ $? -ne 0 ]; then
+  error "unable to create dir '$internal_pack_dir'"
+fi
+
+echo "Starting copy of files to temp dir '$internal_pack_dir'"
+
+internal_root_dir="$internal_pack_dir/root"
+if ! mkdir "$internal_root_dir"; then
+  error "unable to create dir '$internal_root_dir'"
+fi
+
+mkdir "$internal_root_dir/config"
+if [ $? -ne 0 ]; then
+  error "unable to create directory '$internal_root_dir/config'"
+fi
+
+mkdir "$internal_root_dir/etc"
+if [ $? -ne 0 ]; then
+  error "unable to create directory '$internal_root_dir/etc'"
+fi
+
+if ! cp "$source_dir/install/config/devpanel.conf.template" \
+  "$internal_root_dir/etc/devpanel.conf"; then
+  error "unable to copy file '$source_dir/install/config/devpanel.conf.template'"
+fi
+
+cp -a "$source_dir/install/bootstrap/install.sh" "$internal_pack_dir"
+if [ $? -ne 0 ]; then
+  error "unable to copy '$source_dir/bootstrap/install.sh' to '$internal_pack_dir'"
+fi
+
+cp -a "$source_dir/install/bootstrap/bootstrap"*.sh "$internal_pack_dir"
+if [ $? -ne 0 ]; then
+  error "unable to copy files install/bootstrap/bootstrap*.sh"
+fi
+
+cp -a "$source_dir/install/skel" "$internal_pack_dir"
+if [ $? -ne 0 ]; then
+  error "unable to copy dir '$source_dir/install/skel' to '$internal_pack_dir'"
+fi
+
+for file in "${bootstrap_files[@]}"; do
+  file_path="$source_dir/$file"
+  internal_path=`dirname "$file_path"`
+  internal_path=${internal_path##$source_dir}
+
+  target_dir="$internal_root_dir/$internal_path"
+  if [ -e "$target_dir" -a -d "$file_path" ]; then
+    cp -a "$file_path" "$target_dir"
+    status=$?
+  elif [ -f "$file_path" -o -L "$file_path" -a ! -d "$target_dir" ]; then
+    mkdir -p "$target_dir"
+    cp -a "$file_path" "$target_dir"
+    status=$?
+  elif [ -d "$target_dir" ]; then
+    cp -a "$file_path" "$target_dir"
+    status=$?
+  elif [ ! -d "$target_dir" ]; then
+    mkdir -p "$target_dir"
+    if [ $? -ne 0 ]; then
+      error "unable to create dir '$target_dir' while copying '$file_path'"
+    fi
+    cp -a "$file_path" "$target_dir"
+  else
+    error "unknown condition when packing file '$file_path'"
+  fi
+
+  if [ $status -ne 0 ]; then
+    error "unable to copy '$file_path' to dest dir '$internal_root_dir'"
+  fi
+done
+
+chown -R 0:0 "$tmp_pack_dir"
+status=$?
+if [ $status -ne 0 ]; then
+  error "unable to chown -R 0:0 files in pack directory '$tmp_pack_dir'."\
+" chown returned $status"
+fi
+
+# checking again to see if the file has not been created meanwhile
+if [ -e "$target_file" ]; then
+  error "target file '$target_file' already exists."
+fi
+
+echo "Started packing .tar file '$target_file'"
+tar --exclude='*~' --exclude='*.sw[opq]' -C "$tmp_pack_dir" -cpf "$target_file" .
+status=$?
+if [ $status -ne 0 ]; then
+  error "unable to create target file '$target_file'. tar returned $status"
+fi
+
+echo "Successfully created pack file '$target_file'"

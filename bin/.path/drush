@@ -1,0 +1,97 @@
+#!/bin/bash
+
+# this script tries to select the 'best' drush version available to be run
+
+if [ $EUID -eq 0 ]; then
+  echo "Error: refusing to run with ROOT privileges." 1>&2
+  exit 1
+fi
+
+unset drush_bin
+
+self_bin=`readlink -e "$0"`
+if [ $? -ne 0 ]; then
+  echo "Error: unable to detect self executable path" 1>&2
+  exit 1
+fi
+
+self_dir=${self_bin%/*}
+devpanel_dir=${self_dir%/*/*}
+
+lib_file="$devpanel_dir/lib/functions"
+source "$lib_file" 2>/dev/null
+
+# preferred locations for drush:
+#   if any of the paths below is found it's used
+home_1_drush="$HOME/.drush/drush"
+home_2_drush="$HOME/.drush/drush/drush"
+
+# fallback version
+devpanel_drush="$devpanel_dir/bin/packages/drush-7/drush"
+
+public_dir="$HOME/public_html/${USER#w_}"
+
+# first check for drush on the user directory
+# if not found, and there isn't another drush in PATH, fallback to
+#  ...the drush version shipped with devPanel
+if [ -f "$home_1_drush" -a -x "$home_1_drush" ]; then
+  drush_bin="$home_1_drush"
+elif [ -f "$home_2_drush" -a -x "$home_2_drush" ]; then
+  drush_bin="$home_2_drush"
+else
+  # check if there's a specific version of drush defined for this vhost
+  drush_version=$(get_vhost_key_value "app:0:_:drush_version" 2>/dev/null)
+  if [ $? -eq 0 ]; then
+    tmp_drush_bin="$devpanel_dir/bin/packages/drush-$drush_version/drush"
+    if [ -f "$tmp_drush_bin" -a -x "$tmp_drush_bin" ]; then
+      drush_bin="$tmp_drush_bin"
+    else
+      echo "Warning: drush version $drush_version specified but binary is missing" 1>&2
+    fi
+  else
+    # there's no specific version set, try to detect Drupal version
+    . "$devpanel_dir/bin/seeds/drupal/restore-vhost.functions"
+    drupal_major_ver=$(drupal_detect_version_from_dir "$public_dir")
+    if [ $? -eq 0 ]; then
+      drush_bin="$devpanel_dir/bin/packages/drush-$drupal_major_ver/drush"
+    fi
+  fi
+fi
+
+if [ -n "$drush_bin" ]; then
+  hash -p "$drush_bin" drush
+else
+  if [ -x "$devpanel_drush" ]; then
+    hash -p "$devpanel_drush" drush
+  else
+    echo "Error: drush not found" 1>&2
+    exit 1
+  fi
+fi
+
+php_home_bin="$HOME/bin/php-cgi"
+if [ -f "$php_home_bin" -a -x "$php_home_bin" ]; then
+  # if the user has a ~/bin/php-cgi link on $HOME
+  if [ -L "$php_home_bin" ]; then
+    real_php_bin=$(readlink -e "$php_home_bin")
+    real_php_dir="${real_php_bin%/*}"
+
+    # check if there's a php-cli and php respectively on the real PHP dir
+    # and use the first one found
+    php_cli="$real_php_dir/php-cli"
+    php_bin="$real_php_dir/php"
+    if [ -f "$php_cli" -a -x "$php_cli" ]; then
+      php_exec_bin="$php_cli"
+    elif [ -f "$php_bin" -a -x "$php_bin" ]; then
+      php_exec_bin="$php_bin"
+    fi
+  else
+    php_exec_bin="$php_home_bin"
+  fi
+fi
+    
+if [ -n "$php_exec_bin" ]; then
+  export DRUSH_PHP="$php_exec_bin"
+fi
+
+drush "$@"

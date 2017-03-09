@@ -1,0 +1,72 @@
+#!/bin/bash
+
+error()
+{
+  echo "ERROR${1+: }$@" >&2
+  exit 1
+}
+
+exists()
+{
+  id "$1" >/dev/null 2>&1
+  return $?
+}
+
+home()
+{
+  local user="$1"
+  perl -le '@a=getpwnam $ARGV[0] or die "no such user $ARGV[0]\n"; print $a[7]'  "$user"
+}
+
+locked()
+{
+  get_metadata_value "$vhost_meta_dir" "$DEVPANEL_VHOST_LOCK_FLAG" &>/dev/null
+}
+
+# main
+
+mode="$1"
+[ $# = 2 ] && case "$mode" in archive|restore|lock|unlock|config|name-only) true;; *) false;; esac || 
+  error "Usage: $0 [archive|restore|lock|unlock|config|name-only] basename"
+
+self_bin=`readlink -e "$0"`
+dir=`dirname "$self_bin"`
+devpanel_dir=`readlink -e "$dir/.."`
+
+lib_file="$devpanel_dir/lib/functions"
+vars_file="$devpanel_dir/lib/variables"
+for inc_file in "$lib_file" "$vars_file"; do
+  if ! source "$inc_file"; then
+    error "unable to source file '$inc_file'"
+  fi
+done
+
+vhost="$2"
+w_user="w_$vhost"
+b_user="b_$vhost"
+
+(echo "$vhost"|egrep -q '^[-_a-z0-9]{1,6}$')||error "invalid vhost name '$vhost'"
+
+assign_deref_os_fs_path_ex_or_exit apache_config_dir "$devpanel_dir" \
+  "pathnames/etc/apache_vhosts"
+
+apache_config="$apache_config_dir/$w_user.conf"
+vhost_meta_dir="$devpanel_dir/config/vhosts/$vhost" # needed by locked() function
+
+if [ "$mode" == "name-only" ]; then
+  exit 0
+elif [ $mode = restore ]; then
+  exists "$w_user" && error "$w_user must not exist"
+  exists "$b_user" && error "$b_user must not exist"
+else
+  exists "$w_user" || error "$w_user must exist"
+  home=`home "$w_user"` || error "cannot get $w_user's home dir"
+  [ -d "$home" ] || error "home dir $home must exist"
+  owner=`stat --format %U "$home"` || error
+  [ o"$owner" = o"$w_user" ] || error "$home must be owned by $w_user"
+  [ $mode != unlock -a $mode != archive -a ! -r "$apache_config" ] && error "$apache_config must exist"
+  [ $mode = lock -o $mode = config ] && locked && error "$vhost must not be locked"
+  [ $mode = unlock ] && ! locked && error "$home must be locked"
+  # it's ok to archive both locked and unlocked vhosts
+fi
+exit 0

@@ -1,0 +1,87 @@
+magento_get_users() {
+  sql_query_result "select username from admin_user where username <> ''"
+}
+
+magento_genpass() {
+  "$dir/genpass"
+}
+
+magento_encrypt() {
+  local password="$1"
+  echo -n "$password"|"$dir/magento-crypt.php"
+}
+
+magento_set_password() {
+  # magento_note: remember that the user must be in the 'administrators'
+  # role for the user to login
+  # i.e a valid user and password doesn't guarantee access
+  local user="$1"
+  local encrypted_password="$2"
+  local salt
+
+  sql_query "update admin_user set password = '$encrypted_password' where username = '$user';"
+}
+
+magento_set_email() {
+  local user="$1"
+  local email="$2"
+
+  sql_query "update admin_user set email = '$email' where username = '$user';"
+}
+
+magento_get_email() {
+  local user="$1"
+
+  sql_query_result "select email from admin_user where username = '$user'"
+}
+
+magento_get_admin_user() {
+  sql_query_result "select username from admin_user where username = 'admin'"
+}
+
+magento_set_sitename()
+{
+   sql_query "update core_config_data set value='http://$fqdn/' where path='web/unsecure/base_url'"
+   sql_query "update core_config_data set value='http://$fqdn/' where path='web/secure/base_url'"
+}
+
+magento_update_config()
+{
+  echo "
+   s/^\([[:space:]]*\)\(<host>.*<\/host>\)/\1<host><![CDATA[$mysql_host:$mysql_port]]><\/host>/;
+   s/^\([[:space:]]*\)\(<username>.*<\/username>\)/\1<username><![CDATA[$mysql_user]]><\/username>/;
+   s/^\([[:space:]]*\)\(<password>.*<\/password>\)/\1<password><![CDATA[$sedencoded_mysql_password]]><\/password>/;
+   s/^\([[:space:]]*\)\(<dbname>.*<\/dbname>\)/\1<dbname><![CDATA[$hosting_database]]><\/dbname>/;
+  " | run_ised "$home/public_html/$vhost/app/etc/local.xml"
+
+  # magento by default does some redirections with the full URL, but this
+  # causes several incoveniences when the database is shared by different
+  # development sites. So by default we configure it to use "absolute local"
+  # URLs that are safe in all cases
+
+  if [ -z "$use_my_cnf" ]; then
+    mysql -D "$hosting_database" -e "
+      UPDATE core_config_data SET value = 'http://$fqdn/' WHERE path='web/unsecure/base_url';
+      UPDATE core_config_data SET value = 'http://$fqdn/' WHERE path='web/secure/base_url';
+      UPDATE core_config_data SET value = '/' WHERE path = 'web/unsecure/base_link_url';
+      UPDATE core_config_data SET value = '/' WHERE path = 'web/secure/base_link_url';
+      UPDATE core_config_data SET value = '{{unsecure_base_url}}media/' WHERE path = 'web/unsecure/base_media_url';
+      UPDATE core_config_data SET value = '{{unsecure_base_url}}js/' WHERE path = 'web/unsecure/base_js_url';
+      UPDATE core_config_data SET value = '{{unsecure_base_url}}skin/' WHERE path = 'web/unsecure/base_skin_url';
+      UPDATE core_config_data SET value = '0' WHERE path = 'web/url/redirect_to_base';
+    "
+  fi
+}
+
+magento_custom() {
+  if [ -z "$opt_n" ]; then
+    echo 'Clearing site access history'
+    sql_clear_table core_session log_url log_url_info log_visitor log_visitor_info
+    echo 'Clearing cache dir'
+    run find "$home/public_html/$vhost/var/cache/" \! -type d -exec rm -f {} \;
+  fi
+
+  echo "Updating settings.php"
+  magento_update_config || error "Cannot update settings.php"
+}
+

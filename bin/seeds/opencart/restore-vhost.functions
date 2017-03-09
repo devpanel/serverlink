@@ -1,0 +1,126 @@
+opencart_get_users() {
+  sql_query_result "SELECT username from user WHERE username <> ''"
+}
+
+opencart_genpass() {
+  "$dir/genpass"
+  return $?
+}
+
+opencart_encrypt() {
+  local password="$1"
+
+  local encrypted=$(echo -n "$password"| md5sum | cut -d\  -f 1)
+  printf "%s\n" "$encrypted"
+}
+
+opencart_set_password() {
+  local user="$1"
+  local encrypted_password="$2"
+  local salt
+
+  sql_query "UPDATE user SET password = '$encrypted_password' WHERE username = '$user';"
+}
+
+opencart_set_email() {
+  local user="$1"
+  local email="$2"
+
+  sql_query "UPDATE user set email = '$email' WHERE username = '$user';"
+}
+
+opencart_get_email() {
+  local user="$1"
+
+  sql_query_result "SELECT email FROM user WHERE username = '$user'"
+}
+
+opencart_update_php_config()
+{
+  run_mysql -B -D "$hosting_database" \
+            -e "UPDATE setting SET value = 'http://$fqdn/' WHERE \`key\` = 'config_url';"
+
+  local opencart_dir="$home/public_html/$vhost"
+  opencart_dir=$(echo -n "$opencart_dir" | sed 's|/|\\/|g;')
+  local base_url=${WEBENABLED_HOSTING_LINK_BASE_URL:-"http:\/\/$fqdn"}
+
+  printf "
+    s/^\(define('HTTP_SERVER',\) \+'.\+\')\;/\\\1 '%s')\;/; 
+    s/^\(define('HTTPS_SERVER',\) \+'.\+\')\;/\\\1 '%s')\;/;
+    s/^\(define('DIR_APPLICATION',\) \+'.\+\')\;/\\\1 '%s')\;/;
+    s/^\(define('DIR_SYSTEM',\) \+'.\+\')\;/\\\1 '%s')\;/;
+    s/^\(define('DIR_DATABASE',\) \+'.\+\')\;/\\\1 '%s')\;/;
+    s/^\(define('DIR_LANGUAGE',\) \+'.\+\')\;/\\\1 '%s')\;/;
+    s/^\(define('DIR_TEMPLATE',\) \+'.\+\')\;/\\\1 '%s')\;/;
+    s/^\(define('DIR_CONFIG',\) \+'.\+\')\;/\\\1 '%s')\;/;
+    s/^\(define('DIR_IMAGE',\) \+'.\+\')\;/\\\1 '%s')\;/;
+    s/^\(define('DIR_CACHE',\) \+'.\+\')\;/\\\1 '%s')\;/;
+    s/^\(define('DIR_DOWNLOAD',\) \+'.\+\')\;/\\\1 '%s')\;/;
+    s/^\(define('DIR_LOGS',\) \+'.\+\')\;/\\\1 '%s')\;/;
+    s/^\(define('DB_DRIVER',\) \+'.\+\')\;/\\\1 '%s')\;/;
+    s/^\(define('DB_HOSTNAME',\) \+'.\+')\;/\\\1 '%s')\;/;
+    s/^\(define('DB_USERNAME',\) \+'.\+')\;/\\\1 '%s')\;/;
+    s/^\(define('DB_PASSWORD',\) \+'.\+')\;/\\\1 '%s')\;/;
+    s/^\(define('DB_DATABASE',\) \+'.\+')\;/\\\1 '%s')\;/;
+    s/^\(define('DB_PREFIX',\) \+'.\+')\;/\\\1 '%s')\;/;
+" \
+"$base_url\/" "$base_url\/" "$opencart_dir\/catalog\/" "$opencart_dir\/system\/" \
+"$opencart_dir\/system\/database\/" "$opencart_dir\/catalog\/language\/" \
+"$opencart_dir\/catalog\/view\/theme\/" "$opencart_dir\/system\/config\/" \
+"$opencart_dir\/image\/" "$opencart_dir\/system\/cache\/" \
+"$opencart_dir\/download\/" "$opencart_dir\/system\/logs\/" \
+mysql "$mysql_host:$mysql_port" "$mysql_user" "$mysql_password" "$hosting_database" \
+"" | run_ised "$home/public_html/$vhost/config.php"
+
+
+  printf "
+    s/^\(define('HTTP_SERVER',\) \+'.\+\')\;/\\\1 '%s')\;/;
+    s/^\(define('HTTP_CATALOG',\) \+'.\+\')\;/\\\1 '%s')\;/;
+
+    s/^\(define('HTTPS_SERVER',\) \+'.\+\')\;/\\\1 '%s')\;/;
+    s/^\(define('HTTPS_CATALOG',\) \+'.\+\')\;/\\\1 '%s')\;/;
+
+    s/^\(define('DIR_APPLICATION',\) \+'.\+\')\;/\\\1 '%s')\;/;
+    s/^\(define('DIR_SYSTEM',\) \+'.\+\')\;/\\\1 '%s')\;/;
+    s/^\(define('DIR_DATABASE',\) \+'.\+\')\;/\\\1 '%s')\;/;
+    s/^\(define('DIR_LANGUAGE',\) \+'.\+\')\;/\\\1 '%s')\;/;
+    s/^\(define('DIR_TEMPLATE',\) \+'.\+\')\;/\\\1 '%s')\;/;
+    s/^\(define('DIR_CONFIG',\) \+'.\+\')\;/\\\1 '%s')\;/;
+    s/^\(define('DIR_IMAGE',\) \+'.\+\')\;/\\\1 '%s')\;/;
+    s/^\(define('DIR_CACHE',\) \+'.\+\')\;/\\\1 '%s')\;/;
+    s/^\(define('DIR_DOWNLOAD',\) \+'.\+\')\;/\\\1 '%s')\;/;
+    s/^\(define('DIR_LOGS',\) \+'.\+\')\;/\\\1 '%s')\;/;
+    s/^\(define('DIR_CATALOG',\) \+'.\+\')\;/\\\1 '%s')\;/;
+    s/^\(define('DB_DRIVER',\) \+'.\+\')\;/\\\1 '%s')\;/;
+    s/^\(define('DB_HOSTNAME',\) \+'.\+')\;/\\\1 '%s')\;/;
+    s/^\(define('DB_USERNAME',\) \+'.\+')\;/\\\1 '%s')\;/;
+    s/^\(define('DB_PASSWORD',\) \+'.\+')\;/\\\1 '%s')\;/;
+    s/^\(define('DB_DATABASE',\) \+'.\+')\;/\\\1 '%s')\;/;
+    s/^\(define('DB_PREFIX',\) \+'.\+')\;/\\\1 '%s')\;/;
+  " \
+"$base_url\/admin\/" "$base_url\/" \
+"$base_url\/admin\/" "$base_url\/" \
+"$opencart_dir\/admin\/" "$opencart_dir\/system\/" \
+"$opencart_dir\/system\/database\/" "$opencart_dir\/admin\/language\/" \
+"$opencart_dir\/admin\/view\/template\/" \
+"$opencart_dir\/system\/config\/" "$opencart_dir\/image\/" \
+"$opencart_dir\/system\/cache\/" "$opencart_dir\/download\/" \
+"$opencart_dir\/system\/logs\/" "$opencart_dir\/catalog\/" \
+mysql "$mysql_host:$mysql_port" "$mysql_user" "$mysql_password" "$hosting_database" \
+"" | run_ised "$home/public_html/$vhost/admin/config.php"
+}
+
+opencart_get_admin_user() {
+  sql_query_result "SELECT username FROM user WHERE user_id = 1"
+}
+
+opencart_custom()
+{
+  if [ -z "$opt_n" ]; then
+    rm -f "$home/public_html/$vhost/system/cache/"*
+  fi
+
+  echo "Updating config.php"
+  opencart_update_php_config || error "Cannot update configuration files"
+}
+

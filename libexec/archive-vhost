@@ -1,0 +1,443 @@
+#!/bin/bash
+
+# Options:
+# -P -- save shadow entry
+
+error()
+{
+  echo "ERROR${1+: }$@" >&2
+  exit 1
+}
+
+usage() {
+  local prog=$(basename "$0")
+
+  echo "Usage: $prog [options] <vhost> [archive_name]
+
+  Options:
+    -P        save shadow entry
+    -d        debug mode: prints more verbose debug msgs, and doesn't remove
+              the temporary directory on exit
+    -u        write the file on public_html/gen/archive, writable by the user
+              (used by internal operations, like clone)
+    -e file   file containing paths to be excluded from backup (with ./ as
+              the root of the \$HOME directory. This file is passed to tar
+              --exclude-from option)
+    -C        don't do checksum calculations
+    -G        skip vhost group ownership changes on directories (used when
+              removing a vhost)
+
+  This command creates an archive of the current state of a vhost, saving
+  Apache files and MySQL databases into a tar ball.
+"
+  exit 1
+}
+
+cleanup()
+{
+  unlock_path "$archive_lock"
+  rm -f -- "$archive_lock"
+
+  if [ -z "$debug" -a -n "$tmp_archive_dir" -a -d "$tmp_archive_dir" ]; then
+    rm_rf_safer "$tmp_archive_dir"
+  elif [ -n "$debug" ]; then
+    echo "Kept temporary directory at $tmp_archive_dir" 1>&2
+  fi
+}
+
+run()
+{
+  echo "  Running $@"
+  "$@"
+}
+
+# main
+
+[ $# -eq 0 -o -z "$1" ] && usage
+
+archive_vhost_web_options=""
+check_archive_pathname_options=""
+debug=""
+in_user_path=""
+uninstall=""
+no_checksum=""
+skip_group_changes=""
+
+umask 027
+
+while getopts "PudUGCe:" OPTOPT
+do
+  case "$OPTOPT" in
+    P) archive_vhost_web_options="${archive_vhost_web_options+ }-P";;
+    u) in_user_path=1 ;;
+    d) debug=1 ;;
+    U) uninstall=1 ;   ;;
+    e)
+      archive_vhost_web_options="${archive_vhost_web_options+ }-e $OPTARG"
+      ;;
+    C)
+      no_checksum=1
+      ;;
+    G)
+      skip_group_changes=1
+      ;;
+    *) exit 1;
+  esac
+done
+[ $OPTIND -gt 1 ] && shift `expr $OPTIND - 1`
+
+[ $# -eq 0 -o -z "$1" ] && usage
+
+self_bin=$(readlink -e "$0")
+dir=`dirname "$self_bin"`
+sys_dir=$(readlink -e "$dir/..")
+
+lib_file="$sys_dir/lib/functions"
+if ! source "$lib_file"; then
+  echo "Error: unable to load lib file '$lib_file'" 1>&2
+  exit 1
+fi
+
+vhost="$1"
+archive_to="$2"
+
+user_db="b_$vhost"
+user_web="w_$vhost"
+
+$dir/check-vhost-name archive "$vhost" || usage
+home="`eval echo -n \~$user_web`"
+[ -d "$home" ] || error "Home dir $home does not exist"
+
+# lock $vhost_archive_dir not to have other concurring backups
+# at the same time
+archive_lock="$sys_dir/config/vhosts/$vhost/.archive"
+touch "$archive_lock"
+if ! lock_path "$archive_lock" >/dev/null; then
+  error "unable to lock directory $vhost_archive_dir"\
+\ "probably there's an ongoing backup running."
+fi
+
+trap 'exit 1 ' HUP INT QUIT ILL TRAP ABRT BUS FPE KILL SEGV \
+  PIPE STOP ALRM TERM
+trap 'cleanup' EXIT
+
+assign_deref_os_prop_or_exit sys_data_dir "$sys_dir" data_dir
+sys_data_dir=$(readlink -e "$sys_data_dir")
+if [ $? -ne 0 ]; then
+  if   [ ! -e "$sys_data_dir" ]; then
+    error "missing system data directory $sys_data_dir"
+  elif [ ! -d "$sys_data_dir" ]; then
+    error "path '$sys_data_dir' is not a directory."
+  else
+    error "unknown error on path $sys_data_dir"
+  fi
+fi
+
+assign_deref_os_prop_or_exit archive_template_str "$sys_dir" \
+  vhost_archive_template_str
+
+assign_deref_os_prop_or_exit apache_group "$sys_dir" \
+  names/apache.group
+
+unset to_stdout webenabled_backwards
+if deref_os_prop "$sys_dir" webenabled_backwards &>/dev/null; then
+  webenabled_backwards=1
+fi
+
+if [ -n "$uninstall" ]; then
+  # if this archiving is before uninstalling devPanel software
+  sys_archive_dir="$sys_data_dir/.previous_installs"
+else
+  sys_archive_dir="$sys_data_dir/vhost_archives"
+fi
+
+# create sys_archive_dir if it doesn't exist
+if [ ! -d "$sys_archive_dir" ]; then
+  mkdir -m 711 "$sys_archive_dir"
+  if [ $? -ne 0 ]; then
+    error "unable to create archive directory '$sys_archive_dir'"
+  fi
+fi
+
+removed_vhosts_dir="$sys_archive_dir/removed_vhosts"
+vhost_removed_dir="$removed_vhosts_dir/$vhost"
+
+# as this script runs as root, work on a write protected directory to avoid
+# tmp race conditions
+upper_tmp_dir="$sys_data_dir/tmp"
+if [ ! -d "$upper_tmp_dir" ]; then
+  mkdir -m 710 "$upper_tmp_dir"
+  if [ $? -ne 0 ]; then
+    error "unable to create directory $upper_tmp_dir"
+  fi
+fi
+
+# these variables need to be set in advance for
+#   translate_archive_placeholders()
+archive_dir_in_user="$home/public_html/gen/archive"
+archive_dir_in_sys="$sys_archive_dir/$vhost"
+if [ -n "$in_user_path" ]; then
+  vhost_archive_dir="$archive_dir_in_user"
+else
+  vhost_archive_dir="$archive_dir_in_sys"
+fi
+
+if [ -n "$archive_to" -a "$archive_to" == "-" ]; then
+  to_stdout=1  # destination is STDOUT
+else # destination is a file
+  if [ -n "$archive_to" ]; then
+    archive_to=$(translate_archive_placeholders "$archive_to")
+    if [ $? -ne 0 ]; then
+      error "unable to translate placeholders from input filename"
+    fi
+  else
+    # archive name was not passed on cmdline, use the full template
+    archive_to="$archive_template_str"
+  fi
+
+  if [ "${archive_to:0:1}" == "/" ]; then
+    tmp_full_path=$(readlink -m "$archive_to")
+  else
+    tmp_full_path=$(readlink -m "$vhost_archive_dir/$archive_to")
+  fi
+
+  if [ -d "$tmp_full_path" ]; then
+    # if the whole filename is actually a directory,
+    # then append the default filename
+    tmp_full_path+="/@archive_template_str@"
+  fi
+
+  tmp_full_path=$(translate_archive_placeholders "$tmp_full_path")
+  [ $? -ne 0 ] && exit 1
+  archive_filename=$(basename "$tmp_full_path")
+  if [[ "$archive_filename" != *.[Tt][Gg][Zz] ]]; then
+    archive_filename+=".tgz"
+  fi
+
+  target_dir=${tmp_full_path%/*}
+  target_file="$target_dir/$archive_filename"
+
+  # validate the final target name
+  if [ -n "$uninstall" -a "${target_file#$sys_archive_dir}" != "$target_file" ]; then
+    : # ok, uninstall is happening and it's inside $sys_archive_dir
+  elif [ "${target_file#$vhost_archive_dir}" != "$target_file" ]; then
+    : # ok, it's inside $vhost_archive_dir
+  elif [ "${target_file#$vhost_removed_dir}" != "$target_file" ]; then
+    : # ok, it's inside $vhost_removed_dir
+  else
+    error "the file needs to be created inside $vhost_archive_dir or $vhost_removed_dir."
+  fi
+
+  # test whether the target file already exists
+  if [ -e "$target_file" -o -L "$target_file" ]; then
+    error "file '$target_file' already exists."
+  fi
+
+  # test if a file with the same name already exists at $archive_dir_in_user or
+  # $archive_dir_in_sys and refuse to create if a file with the same name exists on
+  # either place
+  test_in_user="$archive_dir_in_user/$archive_filename"
+  test_in_sys="$archive_dir_in_sys/$archive_filename"
+  if [ -n "$in_user_path" ]; then
+    if [ -e "$test_in_sys" -o -L "$test_in_sys" ]; then
+      error "file with the same name already exists at $test_in_sys. Please choose a different name."
+    fi
+  else
+    if [ -e "$test_in_user" -o -L "$test_in_user" ]; then
+      error "file with the same name already exists at $test_in_user. Please choose a different name"
+    fi
+  fi
+
+  # if the $target_file is inside $vhost_archive_dir
+  if [ "${target_dir#$vhost_archive_dir}" != "$target_dir" ]; then
+    if [ ! -d "$vhost_archive_dir" ]; then
+      # create vhost_archive_dir if it doesn't exist
+      mkdir -m 2750 "$vhost_archive_dir"
+      if [ $? -ne 0 ]; then
+        error "unable to create directory '$vhost_archive_dir'"
+      fi
+      echo "Created directory '$vhost_archive_dir'..."
+      if [ -n "$in_user_path" ]; then
+        chown "$user_web" "$vhost_archive_dir"
+      fi
+    fi
+
+    # in case group ownership is different, chgrp vhost_archive_dir to $user_web
+    group_name=$(stat -c %G "$vhost_archive_dir")
+    if [ -z "$skip_group_changes" -a "$group_name" != "$user_web" ]; then
+      chgrp "$user_web" "$vhost_archive_dir"
+      if [ $? -ne 0 ]; then
+        error "unable to chgrp archive dir $vhost_archive_dir to $user_web"
+      fi
+      echo "Chgrp'd directory '$vhost_archive_dir' to $user_web..."
+    fi
+  fi
+
+  if [ ! -d "$target_dir" ]; then
+    if ! mkdir -p -m 750 "$target_dir"; then
+      error "unable to create target directory $target_dir"
+    fi
+  fi
+fi
+
+tmp_archive_dir=`mktemp -d "$upper_tmp_dir/${vhost}__archive_vhost.tmp.XXXXXX"`
+if [ $? -ne 0 ]; then
+  error "unable to create temporary directory for archiving."
+fi
+
+# make the temporary directory readable by the web user
+# in debug mode it's useful if the archiving failed the user can inspect as
+# non-root
+if [ -z "$skip_group_changes" ]; then
+  if ! chgrp "$user_web" "$tmp_archive_dir"; then
+    echo "Warning: unable to chgrp temp dir '$tmp_archive_dir' to $user_web" 1>&2
+    sleep 2
+  fi
+fi
+
+if ! chmod 2750 "$tmp_archive_dir"; then
+  echo "Warning: unable to chmod 2750 temp dir '$tmp_archive_dir'" 1>&2
+  sleep 2
+fi
+
+if [ -n "$to_stdout" ]; then
+  tmp_target_file="-"
+else
+  tmp_target_file=$(mktemp "$tmp_archive_dir/$archive_filename.XXXXXX")
+  if [ $? -ne 0 ]; then
+    error "unable to create temporary file"
+  fi
+fi
+
+echo "Archiving web files..." 1>&2
+${debug:+run} "$0-web" $archive_vhost_web_options "$vhost" "$tmp_archive_dir/web" 1>&2
+if [ $? -ne 0 ]; then
+  error "unable to archive web files (temp dir $tmp_archive_dir/web)"
+fi
+
+if ! `id -u "$user_db" 2>/dev/null >/dev/null`
+then
+  echo "Skipping db (no such user $user_db)"
+else
+  echo "Archiving MySQL databases..." 1>&2
+  ${debug:+run} "$0-db" "$vhost" "$tmp_archive_dir/db" 1>&2
+  if [ $? -ne 0 ]; then
+    error "unable to archive db files (temp dir $tmp_archive_dir/db)"
+  fi
+fi
+
+echo "Starting final tar ball archiving..." 1>&2
+base_tmp_target_file=$(basename "$tmp_target_file")
+tar -C "$tmp_archive_dir" --exclude="$base_tmp_target_file" \
+  -zScpf "$tmp_target_file" .
+if [ $? -ne 0 ]; then
+  error "unable to create archive file $tmp_target_file"
+fi
+
+if [ -n "$to_stdout" ]; then
+  # destination is stdout, file has been already sent to stdout
+  # nothing else is needed
+  exit 0
+fi
+
+if [ -n "$webenabled_backwards" ]; then
+  archive_file_mode='640'
+else
+  archive_file_mode='640'
+fi
+
+# before moving the archive file to it's final destination, do any
+# permission adjustment needed
+if [ -n "$in_user_path" ]; then
+  chown "$user_web":"$apache_group" "$tmp_target_file"
+  if [ $? -ne 0 ]; then
+    echo "Warning: unable to chown temp file to user $apache_group" 1>&2
+    sleep 2
+  fi
+
+  chmod $archive_file_mode "$tmp_target_file"
+  if [ $? -ne 0 ]; then
+    echo "Warning: unable to chmod $archive_file_mode temp file to user $user_web" 1>&2
+    sleep 2
+  fi
+fi
+
+if [ -z "$in_user_path" -a -z "$skip_group_changes" ] && ! ${debug:+run} chgrp "$user_web" "$tmp_target_file"; then
+  echo "Warning: unable to chgrp temp file to group $user_web" 1>&2
+  sleep 2
+fi
+
+if [ -z "$in_user_path" ] && ! ${debug:+run} chmod 0640 "$tmp_target_file"; then
+  echo "Warning: unable to chmod 0640 temp file $tmp_target_file" 1>&2
+  sleep 2
+fi
+
+# now move the tmp file to the target location
+# don't overwrite in case the target file exists
+if ! ${debug:+run} mv -n "$tmp_target_file" "$target_file"; then
+  error "unable to move '$tmp_target_file' to '$target_file'"
+fi
+
+echo
+echo "Successfully saved archive file to '$target_file'"
+
+if [ -n "$webenabled_backwards" -a -z "$no_checksum" ]; then
+  echo "Calculating md5sum for the file..." 1>&2
+  md5_output=$(nice -19 md5sum "$target_file")
+  echo "Calculating sha1sum for the file..." 1>&2
+  sha1_output=$(nice -19 sha1sum "$target_file")
+
+  if [ -n "$md5_output" ]; then
+    md5_str=${md5_output%% *}
+    md5_file="${target_file%.*}.md5"
+
+    touch "$md5_file"
+    chmod 0640 "$md5_file"
+    chown "$user_web":"$apache_group" "$md5_file"
+
+    su -l -s /bin/bash -c "umask 027; cd "$vhost_archive_dir" && \
+      echo "$md5_str" >"$md5_file"" "$user_web"
+  fi
+
+  if [ -n "$sha1_output" ]; then
+    sha1_str=${sha1_output%% *}
+    sha1_file="${target_file%.*}.sha1"
+
+    touch "$sha1_file"
+    chmod 0640 "$sha1_file"
+    chown "$user_web":"$apache_group" "$sha1_file"
+
+    su -l -s /bin/bash -c "umask 027; cd "$vhost_archive_dir" && \
+      echo "$sha1_str" >"$sha1_file"" "$user_web"
+  fi
+
+  # create a link to $HOME/public_html/gen/archive so that it displays in
+  # Webenabled v1 dashboard
+  su -l -s /bin/bash -c '
+    target_file='"$target_file"'                 ;
+    md5_file="${target_file%.*}.md5"             ;
+    sha1_file="${target_file%.*}.sha1"           ;
+    ard=$HOME/public_html/gen/archive            ;
+    [ ! -d $ard ] && mkdir -m 751 -p $ard        ;
+    cd $ard                                      ;
+    ln -s $target_file .                         ;
+    [ -e "$md5_file"  ]  && ln -s $md5_file .    ;
+    [ -e "$sha1_file" ]  && ln -s $sha1_file .   ;
+  ' "$user_web"
+ 
+fi
+
+# successfully ran the backup process, now go through the postrun scripts
+# and execute each with: $script  <vhost> <target_file>
+(
+  self_basename=$(basename "$0")
+  postrun_dir="$sys_dir/bin/post-run/$self_basename"
+  [ ! -d "$postrun_dir" ] && exit 0
+
+  for file in "$postrun_dir"/*; do
+    [ ! -f "$file" -o ! -x "$file" ] && continue
+    "$file" "$vhost" "$target_file" &>/dev/null &
+  done
+) &
+
+exit 0

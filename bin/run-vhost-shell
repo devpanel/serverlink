@@ -1,0 +1,14 @@
+#!/bin/bash
+
+usage() {
+  local prog=$(basename "$0")
+  echo "Usage: $prog <command> [ command args ]
+  
+Executes arguments received."
+  exit 1
+}
+
+[ $# -eq 0 -o "$1" == "-h" ] && usage
+
+# executes arguments received
+eval $*

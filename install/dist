@@ -1,0 +1,14 @@
+#!/bin/sh -xe
+dir=`dirname "$0"`
+cd "$dir"
+label="$1"
+tmp="tmp/serverlink"
+if [ -e "$label.tgz" ]; then echo Must not exist >&2; exit 1; fi
+mkdir -p "$tmp"
+cp -a current/* "$tmp"
+(cd "$tmp"; tar cpf files.tar files && rm -rf files)
+tar zcpf "$label.tgz" -C tmp "serverlink"
+chmod go+r "$label.tgz"
+chown w_dist: "$label.tgz" 
+ln "$label.tgz" ~w_dist/public_html/dist
+rm -rf "$tmp"

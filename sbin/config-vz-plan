@@ -1,0 +1,56 @@
+#!/bin/bash
+remote_cmdline=""
+basename=`basename "$0"`
+
+error()
+{
+  echo "ERROR${1+: }$1" >&2
+  exit 1
+}
+
+
+# if we are run as 'client', the remote command name is in $1;
+# otherwise, it is the basename of $0
+if [ o"$basename" = o"client" ]
+then
+  basename="$1"
+  shift
+fi
+remote_user=r_wevz
+global_identity=/opt/webenabled/config/ssh/global.vz
+local_identity=/opt/webenabled/config/ssh/local.vz
+WEBENABLED_VZ_SERVERS="uranus.hwn.initsoft.com pear.hwn.initsoft.com orange.hwn.initsoft.com"
+#[ -n "$WEBENABLED_VZ_SERVER" ] && remote_server="$WEBENABLED_VZ_SERVER"
+
+if [ -r "$global_identity" ]
+then
+  identity="$global_identity"
+else
+  identity="$local_identity"
+fi
+hostname="$1"
+plan="$2"
+[ -n "$hostname" ] || error "Must specify hostname"
+[ -n "$plan" ] || error "Must specify plan"
+echo "$hostname" | egrep -q '^[-.a-z0-9]+$' || error "Invalid hostname"
+echo "$plan" | egrep -q '^[a-z_]+$' || error "Invalid plan"
+
+output="ERROR: cannot contact any server"
+remote_server="unknown_server"
+status=1
+for remote_server in $WEBENABLED_VZ_SERVERS
+do
+  if [ o"$remote_server" = o"pear.hwn.initsoft.com" ] || [ o"$remote_server" = o"orange.hwn.initsoft.com" ]
+  then
+    ssh_port="-p940"
+  else
+    ssh_port=""
+  fi
+  output=$(ssh $ssh_port -T -2 -q -o 'BatchMode yes' -o 'StrictHostKeyChecking no' -i "$identity" -l "$remote_user" "$remote_server" 'wevz-set-plan' "$hostname" "$plan" 2>&1)
+  status=$?
+  [ $status = 0 ] && break
+done
+
+echo "contacting $remote_server" 
+[ -n "$output" ] && echo "$output"
+exit $status
