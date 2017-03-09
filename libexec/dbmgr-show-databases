@@ -1,9 +1,0 @@
-#!/bin/bash
-dir=`dirname "$0"`
-user="$1"
-if ! list=`$dir/dbmgr-mysql-as-root "$user" mysql '-B -e "show databases;"'`
-then
-  echo "ERROR: cannot list databases for $user" >&2
-  exit 1
-fi
-echo "$list"|sed 1d

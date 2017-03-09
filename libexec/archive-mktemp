@@ -1,9 +1,0 @@
-#!/bin/bash
-prefix=/opt/webenabled/data
-base=${1-clone_vhost}
-if ! TMPDIR="`mktemp -d "$prefix/$base.tmp.XXXXXXXXXX"`" || [ -z "$TMPDIR" ]
-then
-  echo "ERROR: mktemp failed";
-  exit 1
-fi
-echo "$TMPDIR"

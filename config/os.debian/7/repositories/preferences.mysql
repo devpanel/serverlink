@@ -1,4 +1,0 @@
-# for Debian 7, pin mysql install to the distribution
-Package: mysql*
-Pin: release o=Debian
-Pin-Priority: 900

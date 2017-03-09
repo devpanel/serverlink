@@ -1,5 +1,0 @@
-#!/bin/sh
-auth_file=/opt/webenabled/config/auth
-echo -n "Auth string: "
-read s
-echo "$s" >"$auth_file"

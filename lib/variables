@@ -1,2 +1,0 @@
-DEVPANEL_VHOST_LOCK_FLAG="flag:locked"
-DEVPANEL_VHOST_HTPASSWD_LOCK_FLAG="flag:htpasswd_locked"

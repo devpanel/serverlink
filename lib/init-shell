@@ -1,8 +1,0 @@
-#!/bin/bash
-
-public_html_dir="$HOME/public_html/${USER#w_}"
-if [ -d "$public_html_dir" ]; then
-  cd "$public_html_dir"
-fi
-
-: just return 0

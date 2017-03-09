@@ -1,8 +1,0 @@
-#!/bin/sh
-# Usage:
-# sbin/config-dns-add_vps_records FQDN IP
-dir=`dirname $0`
-config_dir="$dir/../../config"
-identity_base="manage-dns-update_records"
-identity="$config_dir/ssh/$identity_base"
-ssh -T -2 -q -o 'BatchMode yes' -o 'StrictHostKeyChecking no' -i "$identity" d_we@ns1.webenabled.net ./update_vps_records.pl "$@"

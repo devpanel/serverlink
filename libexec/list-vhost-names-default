@@ -1,3 +1,0 @@
-#!/bin/bash
-config=/opt/webenabled/config/names/default
-cat "$config"

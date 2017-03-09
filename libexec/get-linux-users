@@ -1,3 +1,0 @@
-#!/bin/bash
-
-getent passwd | cut -d: -f 1

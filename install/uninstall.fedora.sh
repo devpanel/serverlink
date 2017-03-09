@@ -1,1 +1,0 @@
-uninstall.centos.sh
