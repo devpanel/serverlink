@@ -36,7 +36,6 @@ usage() {
 cleanup()
 {
   unlock_path "$archive_lock"
-  rm -f -- "$archive_lock"
 
   if [ -z "$debug" -a -n "$tmp_archive_dir" -a -d "$tmp_archive_dir" ]; then
     rm_rf_safer "$tmp_archive_dir"
@@ -49,6 +48,18 @@ run()
 {
   echo "  Running $@"
   "$@"
+}
+
+process_still_exists() {
+  local pid="$1"
+
+  local pid_dir="/proc/$pid"
+
+  if [ -d "$pid_dir" ]; then
+    return 0
+  else
+    return 1
+  fi
 }
 
 # main
@@ -110,11 +121,38 @@ home="`eval echo -n \~$user_web`"
 
 # lock $vhost_archive_dir not to have other concurring backups
 # at the same time
-archive_lock="$sys_dir/config/vhosts/$vhost/.archive"
-touch "$archive_lock"
+archive_lock="$sys_dir/config/vhosts/$vhost"
 if ! lock_path "$archive_lock" >/dev/null; then
-  error "unable to lock directory $vhost_archive_dir"\
-\ "probably there's an ongoing backup running."
+  lock_f=$(get_lock_filename "$archive_lock")
+  if [ -L "$lock_f" ]; then
+    # lock file exists, check if it's from the same program type
+    #
+    # this is needed because on some VPSs when the script crashes because of
+    # lack of memory the lock file gets stale because the exit code is not
+    # run
+    prev_pid=$(deref_contents "$lock_f")
+    prev_pid=${prev_pid//[^0-9]/}
+    if [ -z "$prev_pid" ]; then
+      error "there's a lock file, but it was not possible to get pid from it"
+    fi
+
+    if process_still_exists "$prev_pid"; then
+      errmsg="unable to lock directory $vhost_archive_dir"
+      errmsg+=" there's another backup running already."
+      error "$errmsg"
+    else
+      # that pid not running anymore, just remove the lock
+      echo "Warning: removing stale pid file..."
+      unlock_path "$archive_lock"
+
+      # try locking again, but this time as the last attempt
+      if ! lock_path "$archive_lock" >/dev/null; then
+        exit 1
+      fi
+    fi
+  else
+    exit 1
+  fi
 fi
 
 trap 'exit 1 ' HUP INT QUIT ILL TRAP ABRT BUS FPE KILL SEGV \

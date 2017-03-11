@@ -906,6 +906,28 @@ assign_deref_os_fs_path_ex_or_exit() {
   fi
 }
 
+get_lock_filename() {
+  local orig_name="$1"
+
+  if [ -z "$1" ]; then
+    echo "$FUNCNAME(): error, missing file name" 1>&2
+    return 1
+  fi
+
+  local real_path dir_name basename lock_file
+  real_path=$(readlink -m "$orig_name")
+  if [ $? -ne 0 -o -z "$real_path" ]; then
+    return 1
+  fi
+
+  dir_name=${real_path%/*}
+  basename=${real_path##*/}
+
+  lock_file="$dir_name/.$basename.lock"
+
+  echo "$lock_file"
+}
+
 lock_path() {
   local path="$1"
   local sleep_n="${2:-0.1}"
@@ -913,11 +935,11 @@ lock_path() {
 
   local lock_file=""
 
-  lock_file="`dirname "$path"`/.`basename "$path"`.lock"
+  lock_file=$(get_lock_filename "$path") || return 1
 
   local -i retries=1
   while [ $retries -le $max_retries ]; do
-    ln -s "pid:$PPID" "$lock_file" 2>/dev/null
+    ln -s "pid:$BASHPID" "$lock_file" 2>/dev/null
     if [ $? -eq 0 ]; then
       printf '%s' "$lock_file"
       return 0
@@ -936,7 +958,7 @@ unlock_path() {
   
   local lock_file=""
 
-  lock_file="`dirname "$path"`/.`basename "$path"`.lock"
+  lock_file=$(get_lock_filename "$path")
 
   if [ ! -L "$lock_file" -a ! -e "$lock_file" ]; then
     wedp_warn "didn't find lock file '$lock_file'"
