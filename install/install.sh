@@ -111,7 +111,6 @@ install_ce_software() {
   local skel_dir_major_minor="$skel_dir_major.$distro_ver_minor"
 
   local data_dir="${webenabled_install_dir}-data"
-  local removed_vhosts_dir="$data_dir/removed_vhosts"
 
   mkdir -m 755 -p "$webenabled_install_dir" \
     "$homedir_base" "$databasedir_base" "$data_dir"

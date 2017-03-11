@@ -148,6 +148,8 @@ uninstall_archive_dir="$uninstall_base_dir/$(date +%b-%d-%Y--%Hh%Mm-%Z)"
 if ! mkdir -m 700 "$uninstall_archive_dir"; then
   error "unable to create directory $uninstall_archive_dir"
 fi
+vhost_archives_dir="$data_dir/vhost_archives"
+old_removed_vhosts_dir="$data_dir/removed_vhosts"
 
 db_stale_dir="$uninstall_archive_dir/db_stale"
 vhost_stale_dir="$uninstall_archive_dir/www_stale"
@@ -176,10 +178,8 @@ while read passwd_line; do
   if [ ${#user} -gt 2 -a "${user:0:2}" == "w_" ]; then
     vhost=${user#w_}
 
-    archive_file="$uninstall_archive_dir/@archive_template_str@"
-
     # first try the usual removal
-    if "$install_dir/libexec/remove-vhost" -U "$vhost" "$archive_file" >/dev/null; then
+    if "$install_dir/libexec/remove-vhost" "$vhost" >/dev/null; then
       echo "Successfully archived and removed vhost $vhost" 1>&2
       removal_st=$?
       continue # successfully removed, go to the next
@@ -251,6 +251,10 @@ for inc_dir in mysql_inc_dir php_inc_dir; do
     rm -f -- "$inc_dir/*devpanel*"
   fi
 done
+
+# move old vhost archives
+mv -v "$vhost_archives_dir" "$uninstall_archive_dir"
+mv -v "$old_removed_vhosts_dir" "$uninstall_archive_dir"
 
 # vagrant specific code
 vagrant_dir=~devpanel/vagrant

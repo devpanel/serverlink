@@ -70,19 +70,17 @@ archive_vhost_web_options=""
 check_archive_pathname_options=""
 debug=""
 in_user_path=""
-uninstall=""
 no_checksum=""
 skip_group_changes=""
 
 umask 027
 
-while getopts "PudUGCe:" OPTOPT
+while getopts "PudGCe:" OPTOPT
 do
   case "$OPTOPT" in
     P) archive_vhost_web_options="${archive_vhost_web_options+ }-P";;
     u) in_user_path=1 ;;
     d) debug=1 ;;
-    U) uninstall=1 ;   ;;
     e)
       archive_vhost_web_options="${archive_vhost_web_options+ }-e $OPTARG"
       ;;
@@ -182,12 +180,7 @@ if deref_os_prop "$sys_dir" webenabled_backwards &>/dev/null; then
   webenabled_backwards=1
 fi
 
-if [ -n "$uninstall" ]; then
-  # if this archiving is before uninstalling devPanel software
-  sys_archive_dir="$sys_data_dir/.previous_installs"
-else
-  sys_archive_dir="$sys_data_dir/vhost_archives"
-fi
+sys_archive_dir="$sys_data_dir/vhost_archives"
 
 # create sys_archive_dir if it doesn't exist
 if [ ! -d "$sys_archive_dir" ]; then
@@ -196,9 +189,6 @@ if [ ! -d "$sys_archive_dir" ]; then
     error "unable to create archive directory '$sys_archive_dir'"
   fi
 fi
-
-removed_vhosts_dir="$sys_archive_dir/removed_vhosts"
-vhost_removed_dir="$removed_vhosts_dir/$vhost"
 
 # as this script runs as root, work on a write protected directory to avoid
 # tmp race conditions
@@ -224,6 +214,19 @@ if [ -n "$archive_to" -a "$archive_to" == "-" ]; then
   to_stdout=1  # destination is STDOUT
 else # destination is a file
   if [ -n "$archive_to" ]; then
+
+    if [ -n "$webenabled_backwards" ]; then
+      # backwards compatibility with Webenabled v1...
+      old_data_dir="$sys_dir/data/"
+      old_data_dir_size=${#old_data_dir}
+      if [ ${#archive_to} -gt $old_data_dir_size ]; then
+        if [ ${archive_to:0:$old_data_dir_size} == "$old_data_dir" ]; then
+        # if $archive_to starts with /opt/webenabled/data then use the basename only
+        archive_to="${archive_to##*/}"
+        fi
+      fi
+    fi
+
     archive_to=$(translate_archive_placeholders "$archive_to")
     if [ $? -ne 0 ]; then
       error "unable to translate placeholders from input filename"
@@ -256,14 +259,10 @@ else # destination is a file
   target_file="$target_dir/$archive_filename"
 
   # validate the final target name
-  if [ -n "$uninstall" -a "${target_file#$sys_archive_dir}" != "$target_file" ]; then
-    : # ok, uninstall is happening and it's inside $sys_archive_dir
-  elif [ "${target_file#$vhost_archive_dir}" != "$target_file" ]; then
+  if [ "${target_file#$vhost_archive_dir}" != "$target_file" ]; then
     : # ok, it's inside $vhost_archive_dir
-  elif [ "${target_file#$vhost_removed_dir}" != "$target_file" ]; then
-    : # ok, it's inside $vhost_removed_dir
   else
-    error "the file needs to be created inside $vhost_archive_dir or $vhost_removed_dir."
+    error "the file needs to be created inside $vhost_archive_dir"
   fi
 
   # test whether the target file already exists

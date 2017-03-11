@@ -41,14 +41,12 @@ revert_disable_vhost() {
 # main
 archive_vhost_web_options=""
 check_archive_pathname_options=""
-webenabled_backwards=""
 
-while getopts "PuU" OPTOPT
+while getopts "Pu" OPTOPT
 do
   case "$OPTOPT" in
     P) archive_vhost_web_options="${archive_vhost_web_options+ }-P";;
     u) : ;; # option removed, left here until we update all references to it
-    U) archive_vhost_web_options="${archive_vhost_web_options+ }-U" ;;
     *) exit 1;
   esac
 done
@@ -61,11 +59,7 @@ sys_dir=$(readlink -e "$dir/..")
 vhost="$1"
 archive_to="$2"
 if [ -z "$archive_to" ]; then
-  archive_to="@removed_vhosts_dir@/@vhost@/@archive_template_str@"
-else
-  if [ "$archive_to" != "-" -a "${archive_to:0:1}" != @ -a "${archive_to:0:1}" != / ]; then
-    archive_to="@removed_vhosts_dir@/@vhost@/$archive_to"
-  fi
+  archive_to="@archive_template_str@"
 fi
 
 user_db="b_$vhost"
@@ -79,32 +73,27 @@ if ! source "$lib_file"; then
   exit 1
 fi
 
+assign_deref_os_prop_or_exit sys_data_dir "$sys_dir" data_dir
+
+assign_deref_os_fs_path_ex_or_exit apache_base_log_dir "$sys_dir" \
+  pathnames/var/log/apache_vhosts
+
+date_ts=`date  +'%b-%d-%Y-%Hh%Mmin'`
+if [ $? -ne 0 -o -z "$date_ts" ]; then
+  error "unable to get current date"
+fi
+
 vhost_config_dir="$sys_dir/config/vhosts/$vhost"
 vhost_cache_dir="$sys_dir/var/cache/vhost/$vhost"
-apache_base_log_dir=$(deref_os_fs_path "$sys_dir" pathnames/var/log/apache_vhosts)
-[ -n "$apache_base_log_dir" ] && apache_log_dir="$apache_base_log_dir/$user_web"
-
-if deref_os_prop "$sys_dir" webenabled_backwards &>/dev/null; then
-  webenabled_backwards=1
-fi
+archived_files_dir="$sys_data_dir/vhost_archives/$vhost"
+apache_log_dir="$apache_base_log_dir/$user_web"
+removed_vhosts_dir="$sys_data_dir/removed_vhosts"
 
 "$dir/config-vhost-apache" -D "$vhost" || exit 1
 trap 'revert_disable_vhost' EXIT
 
 # if $archive_to not equal "-" then archive it before removing
 if [ -n "$archive_to" -a "$archive_to" != "-" ]; then
-  if [ -n "$webenabled_backwards" ]; then
-    old_data_dir="$sys_dir/data/"
-    old_data_dir_size=${#old_data_dir}
-    if [ ${#archive_to} -gt $old_data_dir_size ]; then
-      if [ ${archive_to:0:$old_data_dir_size} == "$old_data_dir" ]; then
-        # if $archive_to starts with /opt/webenabled/data then archive to
-        #   removed_vhosts/...
-        archive_to="@removed_vhosts_dir@/@vhost@/${archive_to:$old_data_dir_size}"
-      fi
-    fi
-  fi
-
   "$dir/archive-vhost" -C -G $archive_vhost_web_options "$vhost" "$archive_to"
   [ $? -ne 0 ] && exit 1
 fi
@@ -151,6 +140,20 @@ run rm_rf_safer "$vhost_config_dir"
 if [ -d "$vhost_cache_dir" ]; then
   echo "Removing cache dir $vhost_cache_dir"
   run rm_rf_safer "$vhost_cache_dir"
+fi
+
+if [ -d "$archived_files_dir" ]; then
+  if [ ! -d "$removed_vhosts_dir" ]; then
+    mkdir -p -m 700 "$removed_vhosts_dir"
+  fi
+
+  removed_archives_dir="$removed_vhosts_dir/$vhost--$date_ts.$RANDOM"
+  if mv -v "$archived_files_dir" "$removed_archives_dir"; then
+    chmod 700 "$removed_archives_dir"
+    chown 0:0 "$removed_archives_dir"  # chown directory to root:root
+    find "$removed_archives_dir" -type f -exec chmod 0600 "{}" \; \
+                                         -exec chown 0:0 "{}" \;
+  fi
 fi
 
 echo "Removing cron for $user_web"

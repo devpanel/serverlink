@@ -40,7 +40,7 @@ else
   chmod 755 "$archive_vhosts_dir"
 fi
 
-protected_dirs=( tmp $archive_vhosts_dir/removed_vhosts )
+protected_dirs=( tmp )
 for d_dir in "${protected_dirs[@]}"; do
   if [ "${d_dir:0:1}" == / ]; then
     prot_dir="$d_dir"
