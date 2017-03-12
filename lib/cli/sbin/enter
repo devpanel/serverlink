@@ -11,7 +11,7 @@ set_usage_msg \
   Starts a shell for the specified vhost.
 "
 
-enter() {
+devpanel_cmd__enter() {
   local param vhost user domain
   
   [ $# -eq 0 -o -z "$1" ] && usage
