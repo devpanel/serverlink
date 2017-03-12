@@ -246,11 +246,24 @@ for v_path in "$mysqls_dir"/*; do
   mv -v -f "$v_path" "$db_stale_dir"
 done
 
-for inc_dir in mysql_inc_dir php_inc_dir; do
-  if [ -n "${!inc_dir}" ]; then
-    rm -f -- "$inc_dir/*devpanel*"
-  fi
+for inc_dir in "$mysql_inc_dir" "$php_inc_dir"; do
+  rm -v -f -- "$inc_dir/"*devpanel*
 done
+
+if hash systemctl &>/dev/null; then
+  # disable taskd on boot, but don't stop it now
+  systemctl disable devpanel-taskd
+fi
+
+if hash update-rc.d &>/dev/null; then
+  update-rc.d -f devpanel-dbmgr remove
+
+  taskd_initd=/etc/init.d/devpanel-taskd
+
+  if [ -f "$taskd_initd" ]; then
+    update-rc.d -f devpanel-taskd remove
+  fi
+fi
 
 # move old vhost archives
 mv -v "$vhost_archives_dir" "$uninstall_archive_dir"
@@ -289,9 +302,6 @@ done
  $install_dir/install/install-zabbix off
  
 $install_dir/libexec/change-iptables-rules -D
-
-echo
-echo "Successfully removed devPanel software"
 
 (
   # run in a background taskd, just for the case it's running from inside
@@ -336,5 +346,11 @@ echo "Successfully removed devPanel software"
  : &
 ) &
 
+if [ -z "$through_taskd" ]; then
+  wait
+  sleep 3 # just for the msg below to show last
+fi
+
+echo
 echo "Successfully uninstalled devPanel software. Backup made on $uninstall_archive_dir"
 exit 0
