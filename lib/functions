@@ -130,6 +130,48 @@ wedp_auto_detect_distro_version() {
   fi
 }
 
+get_linux_distro_string() {
+  local os_release_file=/etc/os-release
+  local tmp_1 tmp_2
+  local distro_str
+
+  if hash lsb_release &>/dev/null; then
+    distro_str=$(lsb_release -sd)
+  elif [ -f "$os_release_file" ]; then
+    tmp_1=$(egrep -x -m 1 'PRETTY_NAME="[^"]+"' /etc/os-release)
+    if [ $? -ne 0 -o -z "$tmp_1" ]; then
+      echo "$FUNCNAME(): unable to get string from $os_release_file" 1>&2
+      return 1
+    fi
+
+    tmp_2=${tmp_1#PRETTY_NAME=\"}
+    distro_str=${tmp_2%\"}
+    return 0
+  else
+    echo "$FUNCNAME(): don't know how to get info about linux distro" 1>&2
+    return 1
+  fi
+
+  echo "$distro_str"
+}
+
+get_apache_vhosts_port() {
+  deref_contents "$DEVPANEL_HOME/config/packages/apache_vhost/_:Port"
+}
+
+set_apache_vhosts_port() {
+  local port="$1"
+  if [ -z "$port" ]; then
+    echo "$FUNCNAME(): missing port" 1>&2
+    return 1
+  elif [[ ! "$port" =~ ^[0-9]+$ ]]; then
+    echo "$FUNCNAME(): received a malformed port" 1>&2
+    return 1
+  fi
+
+  ln -sf "$port" "$DEVPANEL_HOME/config/packages/apache_vhost/_:Port"
+}
+
 print_quoted_variables() {
   local line=""
   local var=""
@@ -1352,6 +1394,10 @@ get_list_of_vhosts() {
   else
     echo "${vhosts_ar[@]}"
   fi
+}
+
+get_list_of_local_vhosts() {
+  get_list_of_vhosts "$@"
 }
 
 get_vhost_with_hostname() {

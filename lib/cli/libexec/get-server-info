@@ -1,0 +1,40 @@
+#!/bin/bash
+
+set_usage_msg \
+  "Usage: $bin_name $action $object
+
+  Prints server information.
+"
+
+devpanel_cmd__server_get_info() {
+  while [ -n "$1" ]; do
+    name="$1"
+    case "$name" in
+      --help)
+        usage
+        ;;
+      --[A-Za-z0-9_-]*)
+        error "unknown option $name"
+        ;;
+      *)
+        break
+        ;;
+    esac
+  done
+
+  . $sys_dir/lib/functions
+
+  echo "Linux Distribution: $(get_linux_distro_string 2>/dev/null)"
+
+  vhosts_domain=$(get_server_base_domain)
+  echo "Vhosts base domain: $vhosts_domain"
+
+  apache_vhosts_port=$(get_apache_vhosts_port)
+
+  declare -a vhosts_ar
+  vhosts_ar=$(get_list_of_vhosts)
+  n_vhosts=${#vhosts_ar[@]}
+
+  echo "Apache Vhosts Port: $apache_vhosts_port"
+  echo "Number of vhosts: $n_vhosts"
+}
