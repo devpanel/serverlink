@@ -9,7 +9,7 @@ set_usage_msg \
   Clears the cache of the app on the specified vhost.
 "
 
-app_clear_cache() {
+devpanel_cmd__app_clear_cache() {
   [ $# -eq 0 -o -z "$1" ] && usage
 
   local name vhost

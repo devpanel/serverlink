@@ -10,7 +10,7 @@ set_usage_msg \
   Sets specific name and value pairs to the specified application.
 "
 
-app_config() {
+devpanel_cmd__app_config() {
   [ $# -eq 0 -o -z "$1" ] && usage
 
   local name vhost admin_pw

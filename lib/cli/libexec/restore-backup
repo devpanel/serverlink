@@ -10,7 +10,7 @@ set_usage_msg \
   Restores the contents of an archive file into the specified vhost
 "
 
-backup_restore() {
+devpanel_cmd__backup_restore() {
   [ $# -eq 0 -o -z "$1" ] && usage
 
   local name vhost file

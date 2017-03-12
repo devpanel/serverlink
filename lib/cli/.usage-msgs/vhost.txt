@@ -1,0 +1,33 @@
+Usage: @self_invoked@ <command> [args]
+
+  Vhost Oriented Commands:
+
+    list vhosts          lists all vhosts on this server
+    list backups         list the backup files available for the specified
+                         vhost
+    create vhost         creates a new site with the specified application
+    backup vhost         creates a backup of the app files and database
+    remove vhost         removes an existing application
+    restore backup       restores a backup in an existing vhost (EXPERIMENTAL 
+                         AND INCOMPLETE (restores only files))
+    enter                start a shell for the specified vhost
+    restart mysql        restarts mysql for the specified vhost or domain
+    find domain          finds the vhost with a specific domain name
+    manage domains       manages domains associated with a vhost
+    enable htpasswd      enables htpasswd password protection for the
+                         specified site
+    manage htpasswd      manage htpasswd users (add and delete users, change
+                         passwords)
+    configure ssl        configures SSL for the specified site
+    enable lets-encrypt  enable Let's Encrypt certificates on the specified
+                         vhost
+    get tool token       gets a token for one of the admin tools (e.g.
+                         phpmyadmin, extplorer, etc)
+
+
+  For help with a specific command, please run:
+  $ @self_invoked@ <command> --help
+
+    Example:
+      $ @self_invoked@ configure ssl --help
+

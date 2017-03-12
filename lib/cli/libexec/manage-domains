@@ -19,7 +19,7 @@ set_usage_msg \
   Manages domains on the specified vhost.
 "
 
-domains_manage() {
+devpanel_cmd__domains_manage() {
   [ $# -eq 0 -o -z "$1" ] && usage
 
   local name vhost domain

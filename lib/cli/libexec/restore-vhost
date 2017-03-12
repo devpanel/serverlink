@@ -10,7 +10,7 @@ set_usage_msg \
   Restores a vhost from the specified file. Creates a new vhost.
 "
 
-vhost_restore() {
+devpanel_cmd__vhost_restore() {
   [ $# -eq 0 -o -z "$1" ] && usage
 
   local name vhost file

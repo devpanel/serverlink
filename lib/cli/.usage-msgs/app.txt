@@ -1,0 +1,14 @@
+Usage: @self_invoked@ <command> [args]
+
+  Application Oriented Commands:
+
+    refresh config       updates config files of the app with DB credentials
+    clear app cache      clears the cache of the app on the specified vhost
+
+
+  For help with a specific command, please run:
+  $ @self_invoked@ <command> --help
+
+    Example:
+      $ @self_invoked@ clear app cache --help
+

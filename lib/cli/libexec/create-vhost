@@ -18,7 +18,7 @@ set_usage_msg \
 "
 
 # main
-vhost_create() {
+devpanel_cmd__vhost_create() {
   [ $# -eq 0 -o -z "$1" ] && usage
 
   local name vhost from source_type title

@@ -11,7 +11,7 @@ set_usage_msg \
   Restarts mysqld associated with the specified domain or vhost.
 "
 
-mysql_restart() {
+devpanel_cmd__mysql_restart() {
   local param vhost user user_home domain
   
   [ $# -eq 0 -o -z "$1" ] && usage

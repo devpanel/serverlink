@@ -9,7 +9,7 @@ set_usage_msg \
   Lists the backup files available for the specified vhost.
 "
 
-backups_list() {
+devpanel_cmd__backups_list() {
   [ $# -eq 0 -o -z "$1" ] && usage
 
   local name vhost file

@@ -6,7 +6,7 @@ set_usage_msg \
   Lists the vhosts on this server.
 "
 
-vhosts_list() {
+devpanel_cmd__vhosts_list() {
   local vhost vhosts_ar name app default_host url
 
   while [ -n "$1" ]; do

@@ -11,7 +11,7 @@ set_usage_msg \
   associated with it.
 "
 
-domain_find() {
+devpanel_cmd__domain_find() {
   [ $# -eq 0 -o -z "$1" ] && usage
 
   local name vhost domain

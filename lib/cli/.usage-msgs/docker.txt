@@ -1,0 +1,18 @@
+Usage: @self_invoked@ <command> [args]
+
+  Docker Oriented Commands:
+
+    create docker vhost      creates a new vhost with Docker containers
+    backup docker vhost      creates a backup from the containers of the vhost
+    destroy docker vhost     destroys the containers of the vhost
+    stop docker vhost        stops the containers of the vhost
+    clone docker vhost       clones (duplicates) the containers of the vhost
+    restore docker vhost     create new containers of the vhost from a backup
+
+
+  For help with a specific command, please run:
+  $ @self_invoked@ <command> --help
+
+    Example:
+      $ @self_invoked@ create docker vhost --help
+

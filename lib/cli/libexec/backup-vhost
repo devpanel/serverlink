@@ -10,7 +10,7 @@ set_usage_msg \
   Creates a backup file with the files and database of a vhost.
 "
 
-vhost_backup() {
+devpanel_cmd__vhost_backup() {
   [ $# -eq 0 -o -z "$1" ] && usage
 
   local name vhost file

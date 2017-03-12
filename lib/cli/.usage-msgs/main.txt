@@ -1,0 +1,31 @@
+Usage: @self_invoked@ <command> [args]
+
+  Main Commands
+    list vhosts          lists all vhosts on this server
+    create vhost         creates a new site with the specified application
+    backup vhost         creates a backup of the app files and database
+    enter                start a shell for the specified vhost
+    restart mysql        restarts mysql for the specified vhost or domain
+    enable htpasswd      enables htpasswd password protection for the specified site
+
+  Other common commands
+    manage htpasswd      manage htpasswd users (add and delete users, change passwords)
+    configure ssl        configures SSL for the specified site
+    enable lets-encrypt  enable Let's Encrypt certificates on the specified vhost
+    refresh config       updates config files of the app with DB credentials
+    clear app cache      clears the cache of the app on the specified vhost
+
+
+  For more information about a specific command, run:
+    $ @self_invoked@ COMMAND --help
+
+    Example: $ @self_invoked@ create vhost --help
+
+
+  For more information about vhost related commands, run:
+    $ @self_invoked@ help --section vhost
+
+
+  For more information about application related commands, run:
+    $ @self_invoked@ help --section app
+

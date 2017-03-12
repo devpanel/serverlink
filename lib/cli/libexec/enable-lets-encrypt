@@ -9,7 +9,7 @@ set_usage_msg \
   Enables Let's Encrypt certificates on the specified vhost.
 "
 
-lets_encrypt_enable() {
+devpanel_cmd__lets_encrypt_enable() {
   [ $# -eq 0 -o -z "$1" ] && usage
 
   local name vhost file

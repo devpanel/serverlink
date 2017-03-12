@@ -1,63 +1,8 @@
 #!/bin/bash
 
 usage_default() {
-  # devpanel <word>
-  # devpanel <action> <object> <specific> <args>
-  #            create   vhost    
-  #            remove   vhost    
-  #            get      vhost    token
-  #            get      vhost    token
 
-  local -A sections_r=()
-  local summ_dir tmp_summ_file tmp_section tmp_desc_file desc
-  local tmp_real_file tmp_msg tmp_cmd tmp_cmd_str tmp_cmd_line
-  local section section_l section_b cmd_f
-  local -a commands_ar=()
-
-  echo "Usage: ${0##*/} <command> [args]"
-  echo
-
-  summ_dir="$lib_dir/.usage-lines"
-  for section_l in $summ_dir/.section.[0-9]; do
-    section_b=${section_l##*/}
-
-    section=$(readlink "$section_l")
-    echo "  $section"
-
-    for tmp_summ_file in $summ_dir/$section_b.cmd.*; do
-      if [ ! -L "$tmp_summ_file" ]; then
-        continue
-      fi
-
-      tmp_cmd_str=${tmp_summ_file#$summ_dir/$section_b.cmd.*.}
-      tmp_real_file=$(readlink -m "$tmp_summ_file")
-      desc=${tmp_real_file##*/}
-
-      printf "    %-20s %s\n" "$tmp_cmd_str" "$desc"
-
-      # tmp_cmd_line=$(printf "    %-20s %s\n" "$tmp_cmd_str" "$desc")
-      # commands_ar+=( "$tmp_cmd_line" )
-    done
-      
-    echo # print a new line at the end of the section
-  done
-
-  echo "
-  For more information about a specific command, run:
-    $ devpanel COMMAND --help
-
-    Example: $ devpanel create vhost --help
-"
-  # if [ ${#commands_ar[@]} -gt 0 ]; then
-  #   echo "
-  # Commands: "
-  #
-  #   for tmp_cmd in "${commands_ar[@]}"; do
-  #     echo "$tmp_cmd"
-  #   done
-  # 
-  #   echo
-  # fi
+  show_help_msg main
 
   exit 1
 }
@@ -142,7 +87,7 @@ devpanel_load_n_run() {
     return 1
   fi
 
-  $function_name "${@:+$@}"
+  devpanel_cmd__$function_name "${@:+$@}"
 }
 
 set_usage_msg() {
@@ -200,6 +145,26 @@ error_missing_param() {
   error "missing required parameter --$name. Please specify it."
 }
 
+escape_sed() {
+  local str="$1"
+  local escaped="$str"
+
+  escaped=${escaped//\'/\\\'}
+  escaped=${escaped//\*/\\\*}
+  escaped=${escaped//\;/\\\;}
+  escaped=${escaped//\[/\\\[}
+  escaped=${escaped//\]/\\\]}
+  escaped=${escaped//\\+/+\]}
+  escaped=${escaped//\\\?/\?}
+  escaped=${escaped//\\\(/\(}
+  escaped=${escaped//\\\)/\)}
+  escaped=${escaped//\//\\\/}
+  escaped=${escaped//\&/\\\&}
+  escaped=${escaped//$'\n'/\\n}
+
+  echo -n "$escaped"
+}
+
 # main
 __self_bin=`readlink -e "$0"`
 if [ $? -ne 0 ]; then
@@ -213,6 +178,24 @@ declare -r self_bin_dir="${self_bin%/*}"
 declare -r sys_dir="${self_bin_dir%/*}"
 
 declare -r lib_dir="$sys_dir/lib/cli"
+
+show_help_msg() {
+  local section="$1"
+
+  local msg_dir="$sys_dir/lib/cli/.usage-msgs"
+
+  local msg_file="$msg_dir/$section.txt"
+
+  local self_invoked=$(escape_sed "$0")
+
+  if [ -f "$msg_file" ]; then
+    sed -e "s/@self_invoked@/$self_invoked/g;" "$msg_file"
+  else
+    echo "$FUNCNAME(): missing help file for section $section" 1>&2
+    return 1
+  fi
+}
+
 
 [ $# -eq 0 -o -z "$1" ] && usage
 

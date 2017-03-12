@@ -11,7 +11,7 @@ set_usage_msg \
   Returns a one time token to login on the specified app.
 "
 
-tool_get_token() {
+devpanel_cmd__tool_get_token() {
   [ $# -eq 0 -o -z "$1" ] && usage
 
   local name vhost tool

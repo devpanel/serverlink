@@ -15,7 +15,7 @@ set_usage_msg \
 "
 
 # main
-ssl_configure() {
+devpanel_cmd__ssl_configure() {
   [ $# -eq 0 -o -z "$1" ] && usage
 
   local name vhost source

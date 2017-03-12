@@ -13,7 +13,7 @@ set_usage_msg \
   file.
 "
 
-vhost_remove() {
+devpanel_cmd__vhost_remove() {
   [ $# -eq 0 -o -z "$1" ] && usage
 
   local name vhost file

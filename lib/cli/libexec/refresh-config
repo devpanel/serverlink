@@ -10,7 +10,7 @@ set_usage_msg \
   database credentials, etc.
 "
 
-config_refresh() {
+devpanel_cmd__config_refresh() {
   [ $# -eq 0 -o -z "$1" ] && usage
 
   local name vhost
