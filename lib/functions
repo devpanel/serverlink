@@ -2184,16 +2184,104 @@ generate_vhost_ini_str() {
   echo -n "$ini_str"
 }
 
-get_app_type_from_vhost() {
+get_1st_level_field_value_from_app() {
   local vhost="$1"
+  local field="$2"
+  local prefix="app:0:_"
+  local value
 
-  local app
-  
-  app=$(get_vhost_key_value "app:0:_:seed_app" "$vhost" 2>/dev/null)
+  value=$(get_vhost_key_value "$prefix:$field" "$vhost" 2>/dev/null)
   if [ $? -eq 0 ]; then
-    echo -n "$app"
+    echo -n "$value"
     return 0
   else
     return 1
   fi
 }
+
+get_app_type_from_vhost() {
+  local vhost="$1"
+
+  get_1st_level_field_value_from_app "$vhost" seed_app
+}
+
+is_htpasswd_enabled_on_vhost() {
+  local vhost="$1"
+  local en
+
+  en=$(get_vhost_key_value flag:htpasswd_locked "$vhost" 2>/dev/null )
+  if [ $? -eq 0 ]; then
+    return 0
+  else
+    return 1
+  fi
+}
+
+get_mysql_db_name_from_vhost() {
+  local vhost="$1"
+
+  get_1st_level_field_value_from_app "$vhost" db_name
+}
+
+get_mysql_db_host_from_vhost() {
+  local vhost="$1"
+
+  get_1st_level_field_value_from_app "$vhost" db_host
+}
+
+get_mysql_db_port_from_vhost() {
+  local vhost="$1"
+
+  get_1st_level_field_value_from_app "$vhost" db_port
+}
+
+get_mysql_db_host_port_from_vhost() {
+  local vhost="$1"
+  local db_host db_port
+
+  db_host=$(get_mysql_db_host_from_vhost "$vhost" 2>/dev/null)
+  db_port=$(get_mysql_db_port_from_vhost "$vhost" 2>/dev/null)
+
+  if [ -n "$db_host" -a -n "$db_port" ]; then
+    echo "$db_host:$db_port"
+    return 0
+  else
+    return 1
+  fi
+}
+
+print_vhost_summary() {
+  local vhost="$1"
+
+  local summ_txt="
+Information about vhost @vhost@
+
+Domains: @domains@
+App: @app_type@
+MySQL Host/Port: @db_host_port@
+MySQL Database:  @db_name@
+"
+
+  local -a domains_ar=( $(get_hostnames_from_vhost "$vhost") )
+  local domains_txt="" out_txt=""
+  local db_name db_host_port db_name app_type
+
+  app_type=$(get_app_type_from_vhost "$vhost")
+  db_host_port=$(get_mysql_db_host_port_from_vhost "$vhost")
+  db_name=$(get_mysql_db_name_from_vhost "$vhost")
+  
+  domains_txt+=$'\n'
+  for domain in "${domains_ar[@]}"; do
+    domains_txt+="    $domain"$'\n'
+  done
+
+  out_txt="$summ_txt"
+  out_txt=${out_txt//@vhost@/$vhost}
+  out_txt=${out_txt//@domains@/$domains_txt}
+  out_txt=${out_txt//@app_type@/$app_type}
+  out_txt=${out_txt//@db_host_port@/$db_host_port}
+  out_txt=${out_txt//@db_name@/$db_name}
+
+  echo "$out_txt"
+}
+

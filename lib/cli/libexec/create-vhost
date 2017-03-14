@@ -92,6 +92,8 @@ devpanel_cmd__vhost_create() {
     source_type="$def_source_type"
   fi
 
+  local st
+
   if [ "$source_type" == "github" -o "$source_type" == "git" ]; then
 
     # replace github://name/repo with https://github.com/name/repo.git
@@ -103,7 +105,17 @@ devpanel_cmd__vhost_create() {
     fi
 
     "$sys_dir/libexec/import-site-from-git" "${cmd_args[@]}" "$vhost" "$from"
+    st=$?
   else
     "$sys_dir/libexec/restore-vhost" "${cmd_args[@]}" $vhost "$from"
+    st=$?
   fi
+
+  if [ $st -eq 0 ]; then
+    . "$sys_dir/lib/functions"
+    print_vhost_summary "$vhost"
+    echo "Successfully created vhost $vhost"
+  fi
+
+  return $st
 }
