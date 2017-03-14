@@ -1,0 +1,11 @@
+Usage: @self_basename@ help --section <section>
+
+  Displays all commands related to a given section.
+
+  Sections:
+    server      commands related to the server wide maintenance
+    vhost       commands related to the maintenance of virtual hosts
+    app         commands related to the apps installed on vhosts
+
+  Example:
+   @sb@ @self_basename@ help --section vhost

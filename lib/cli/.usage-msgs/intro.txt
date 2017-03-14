@@ -1,0 +1,8 @@
+devPanel serverlink stack
+
+You can get more information with command:
+@sb@ @self_invoked@ help
+
+Hint: to create a vhost with Drupal 7 you can run the command:
+@sb@ @self_invoked@ create vhost --vhost d7 --from devpanel://drupal-v7
+

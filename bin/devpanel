@@ -104,35 +104,6 @@ set_usage_msg() {
   devpanel_usage_r[$namespace]="$msg"
 }
 
-print_object_help() {
-  local obj="$1"
-
-  local t_file usage_file t_dir t_bname line op usage_msg help_msg
-
-  t_dir="$lib_dir/$obj"
-
-  usage_msg+="Usage: $bin_name <action> $obj [options]"$'\n'$'\n'
-
-  for usage_file in $t_dir/.summary-files/*; do
-    [ ! -f "$usage_file" ] && continue
-
-    line=$(head -1 "$usage_file")
-    help_msg+=$(printf "    %-15s %s" "$op" "$line")
-    help_msg+=$'\n'
-  done
-
-  if [ -n "$help_msg" ]; then
-    usage_msg+="  Actions:"$'\n'
-    help_msg+=$'\n'
-    echo "$usage_msg"
-    echo "$help_msg"
-    return 0
-  else
-    echo "$FUNCNAME(): no help msg for $obj" 1>&2
-    return 1
-  fi
-}
-
 error_missing_value() {
   local name="$1"
 
@@ -173,6 +144,7 @@ if [ $? -ne 0 ]; then
 fi
 
 declare -r self_bin="$__self_bin"
+declare -r self_basename="${0##*/}"
 declare -r bin_name=${self_bin##*/}
 declare -r self_bin_dir="${self_bin%/*}"
 declare -r sys_dir="${self_bin_dir%/*}"
@@ -186,12 +158,21 @@ show_help_msg() {
 
   local msg_file="$msg_dir/$section.txt"
 
-  local self_invoked=$(escape_sed "$0")
+  local basename=$(escape_sed "$self_basename")
+
+  local sb
+
+  if [ $EUID -eq 0 ]; then
+    sb='\#'
+  else
+    sb='\$'
+  fi
 
   if [ -f "$msg_file" ]; then
-    sed -e "s/@self_invoked@/$self_invoked/g;" "$msg_file"
+    sed -e "s/@self_basename@/$basename/g; s/@sb@/$sb/g;" "$msg_file"
   else
-    echo "$FUNCNAME(): missing help file for section $section" 1>&2
+    echo -n "$FUNCNAME(): unknown section $section. "
+    echo    "Please try running: ${sb#\\} $basename help" 1>&2
     return 1
   fi
 }
@@ -228,10 +209,6 @@ done
 
 if [ ${#walk_args[@]} -eq 1 ]; then
   arg="${walk_args[0]}"
-  if [ -d "$lib_dir/$arg" ]; then
-    print_object_help "$arg"
-    exit 1
-  fi
 
   if [ $EUID -eq 0 ]; then
     path_walk_1="$lib_dir/sbin/$arg"
@@ -261,9 +238,7 @@ elif [ ${#walk_args[@]} -ge 2 ]; then
 
   path_walk="$lib_dir/libexec/$action-$object"
 
-  if [ -d "$path_walk" -a ${#walk_args[@]} -eq 2 ]; then
-    print_object_help "$action"
-  elif [ -f "$path_walk" -a -x "$path_walk" ]; then
+  if [ -f "$path_walk" -a -x "$path_walk" ]; then
     full_bin_path="$path_walk"
     found_bin=1
   else

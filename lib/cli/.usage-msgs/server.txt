@@ -1,14 +1,13 @@
-Usage: @self_invoked@ <command> [args]
+Usage: @self_basename@ <command> [args]
 
   Server Oriented Commands:
 
     get server info    prints server information
-    restart taskd      restarts devpanel taskd
 
 
   For help with a specific command, please run:
-  $ @self_invoked@ <command> --help
+  # @self_basename@ <command> --help
 
-    Example:
-      $ @self_invoked@ restart taskd --help
+  Example:
+  # @self_basename@ restart taskd --help
 

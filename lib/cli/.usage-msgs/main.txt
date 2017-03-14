@@ -1,4 +1,4 @@
-Usage: @self_invoked@ <command> [args]
+Usage: @self_basename@ <command> [args]
 
   Main Commands
     list vhosts          lists all vhosts on this server
@@ -17,15 +17,15 @@ Usage: @self_invoked@ <command> [args]
 
 
   For more information about a specific command, run:
-    $ @self_invoked@ COMMAND --help
+    @sb@ @self_basename@ COMMAND --help
 
-    Example: $ @self_invoked@ create vhost --help
+    Example: # @self_basename@ create vhost --help
 
 
   For more information about vhost related commands, run:
-    $ @self_invoked@ help --section vhost
+    @sb@ @self_basename@ help --section vhost
 
 
   For more information about application related commands, run:
-    $ @self_invoked@ help --section app
+    @sb@ @self_basename@ help --section app
 

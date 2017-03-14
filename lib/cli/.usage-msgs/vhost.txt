@@ -1,4 +1,4 @@
-Usage: @self_invoked@ <command> [args]
+Usage: @self_basename@ <command> [args]
 
   Vhost Oriented Commands:
 
@@ -26,8 +26,8 @@ Usage: @self_invoked@ <command> [args]
 
 
   For help with a specific command, please run:
-  $ @self_invoked@ <command> --help
+  @sb@ @self_basename@ <command> --help
 
-    Example:
-      $ @self_invoked@ configure ssl --help
+  Example:
+  # @self_basename@ configure ssl --help
 
