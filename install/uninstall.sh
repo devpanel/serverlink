@@ -351,6 +351,8 @@ if [ -z "$through_taskd" ]; then
   sleep 3 # just for the msg below to show last
 fi
 
+rm -f /usr/local/bin/devpanel
+
 echo
 echo "Successfully uninstalled devPanel software. Backup made on $uninstall_archive_dir"
 exit 0

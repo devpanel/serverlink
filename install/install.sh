@@ -198,6 +198,8 @@ install_ce_software() {
   ln -sf "$webenabled_install_dir/compat/apache_include/$_apache_main_include" \
     "$_apache_includes_dir/devpanel.conf"
 
+  ln -sf "$webenabled_install_dir/bin/devpanel" /usr/local/bin
+
   return 0
 }
 
