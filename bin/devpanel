@@ -234,7 +234,13 @@ if [ ${#walk_args[@]} -eq 1 ]; then
   fi
 
   if [ $EUID -eq 0 ]; then
-    path_walk="$lib_dir/sbin/$arg"
+    path_walk_1="$lib_dir/sbin/$arg"
+    path_walk_2="$lib_dir/bin/$arg"
+    if [ -f "$path_walk_1" -a -x "$path_walk_1" ]; then
+      path_walk="$path_walk_1"
+    else
+      path_walk="$path_walk_2"
+    fi
   else
     path_walk="$lib_dir/bin/$arg"
   fi
