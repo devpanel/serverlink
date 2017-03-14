@@ -191,16 +191,28 @@ TMPDIR=""
 unset archive_file download_archive archive_dir
 if [ "$archive_label" == "-" ]; then
   archive_file="-"
-elif [ ${#archive_label}  -gt 10 -a "${archive_label:0:7}" == "http://" \
-     -o ${#archive_label} -gt 10 -a "${archive_label:0:8}" == "https://" \
-     -o ${#archive_label} -gt 10 -a "${archive_label:0:6}" == "ftp://"   \
-     -o ${#archive_label} -gt  8 -a "${archive_label:0:5}" == "we://" ]; then
+elif [ ${#archive_label}  -gt 10 -a "${archive_label:0:7}" == "http://"    \
+     -o ${#archive_label} -gt 10 -a "${archive_label:0:8}" == "https://"   \
+     -o ${#archive_label} -gt 10 -a "${archive_label:0:6}" == "ftp://"     \
+     -o ${#archive_label} -gt  8 -a "${archive_label:0:5}" == "we://"      \
+     -o ${#archive_label} -gt 13 -a "${archive_label:0:11}" == "devpanel://" \
+     ]; then
 
   if [[ "$archive_label" == we://* ]]; then
     assign_deref_os_prop_or_exit seedapp_base_url "$we_base_dir" \
       webenabled_seedapps_base_url
 
-    archive_url=${archive_label//we:\/\//$seedapp_base_url}
+    tmp_rel_url=${archive_label#*://}
+    archive_url="${seedapp_base_url%/}/$tmp_rel_url"
+    if ! [[ "$archive_url" == *.tgz ]]; then
+      archive_url+=".tgz"
+    fi
+  elif [[ "$archive_label" == devpanel://* ]]; then
+    assign_deref_os_prop_or_exit seedapp_base_url "$we_base_dir" \
+      devpanel_seedapps_base_url
+
+    tmp_rel_url=${archive_label#*://}
+    archive_url="${seedapp_base_url%/}/$tmp_rel_url"
     if ! [[ "$archive_url" == *.tgz ]]; then
       archive_url+=".tgz"
     fi
