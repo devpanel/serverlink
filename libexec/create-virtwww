@@ -20,6 +20,8 @@ dir=$(dirname "$0")
 we_base=`readlink -e "$dir/.."`
 dir_bin="$we_base/bin"
 
+apache_metadata_bin="$we_base/libexec/apache-metadata-handler"
+
 pathnames="$dir/../config/os/pathnames"
 #macro_file="$dir/../config/names/apache-macro"
 
@@ -155,11 +157,13 @@ fi
 
 DB_ACCOUNT_NAME="b_$ACCOUNT_NAME"
 vhost="$ACCOUNT_NAME"
+ACCOUNT_NAME="w_$ACCOUNT_NAME"
+VHOST_HOME="$WEBSITES_HOME/$ACCOUNT_NAME"
 
-generate_linux_username_for_vhost "$vhost" && ACCOUNT_NAME="$_dp_value"
-if [ $? -ne 0 ]; then
-  error "unable to generate linux username for vhost"
-fi
+#generate_linux_username_for_vhost "$vhost" && ACCOUNT_NAME="$_dp_value"
+#if [ $? -ne 0 ]; then
+#  error "unable to generate linux username for vhost"
+#fi
 
 config_base_dir="$we_base/config/vhosts"
 config_dir="$config_base_dir/$vhost"
@@ -267,7 +271,7 @@ else
     echo 'not found'
     echo -n "+ creating '$ACCOUNT_NAME' account ... "
     if ! useradd -g "$apache_group" -G "$ACCOUNT_NAME${ADDON_GROUPS:+,$ADDON_GROUPS}" \
-        -m -d "$WEBSITES_HOME/$ACCOUNT_NAME" "$ACCOUNT_NAME"; then
+        -m -d "$VHOST_HOME" "$ACCOUNT_NAME"; then
         echo
         echo 'Aborting'
         exit 2
@@ -315,7 +319,6 @@ fi # MYSQL_LOCAL
 mkdir -m 2750 $vhost_cache_dir
 chown root:$ACCOUNT_NAME $vhost_cache_dir
 
-VHOST_HOME="$WEBSITES_HOME/$ACCOUNT_NAME"
 echo -n '+ configuring home directory for virtual host ... '
 chgrp $apache_group "$VHOST_HOME" || exit 2
 su - -c "
@@ -448,30 +451,18 @@ fi
 echo 'done'
 
 vhost_prefix_f="$config_dir/apache_vhost"
+metadata_str="
+set $vhost_prefix_f:_:linux_user $ACCOUNT_NAME
+set $vhost_prefix_f:_:document_root $VHOST_HOME
+set $vhost_prefix_f:0 devpanel_main
+set $vhost_prefix_f:_:name:devpanel_main 0
+set $vhost_prefix_f:0:_:template_ref names/apache_vhost_template
+set $vhost_prefix_f:1 devpanel_tools
+set $vhost_prefix_f:_:name:devpanel_tools 1
+set $vhost_prefix_f:1:_:template_ref names/tools_vhost_template
+"
 
-if ln -s "devpanel_main" "$vhost_prefix_f:0"; then
-  if ! ln -s 0 "$vhost_prefix_f:_:name:devpanel_main"; then
-    error "unable to set the name for vhost 0 (devpanel_main)"
-  fi
-
-  if ! ln -s "names/apache_vhost_template" "$vhost_prefix_f:0:_:template_ref"; then
-    error "unable to create template ref $vhost_prefix_f:0:_:template_ref"
-  fi
-else
-  error "unable to create vhost entry $vhost_prefix_f:0"
-fi
-
-if ln -s "devpanel_tools" "$vhost_prefix_f:1"; then
-  if ! ln -s 1 "$vhost_prefix_f:_:name:devpanel_tools"; then
-    error "unable to set the name for vhost 1 (tools vhost)"
-  fi
-
-  if ! ln -s "names/tools_vhost_template" "$vhost_prefix_f:1:_:template_ref"; then
-    error "unable to create template ref $vhost_prefix_f:1:_:template_ref"
-  fi
-else
-  error "unable to create vhost entry $vhost_prefix_f:1"
-fi
+echo "$metadata_str" | "$apache_metadata_bin" -q "$vhost" || exit $?
 
 echo '---[ end of creating new virtual host ]---'
 echo

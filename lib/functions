@@ -2229,13 +2229,13 @@ generate_vhost_ini_str() {
 
 get_key_value_from_vhost() {
   local key="$1"
-  local vhost="${1:-$_dp_vhost}"
+  local vhost="${2:-$_dp_vhost}"
 
   local value
   unset _dp_value
 
   value=$(deref_contents \
-            "$DEVPANEL_HOME/config/vhosts/$vhost/$key") || return $?
+            "$DEVPANEL_HOME/config/vhosts/$vhost/$key" 2>/dev/null) || return $?
 
 	_dp_value="$value"
 
