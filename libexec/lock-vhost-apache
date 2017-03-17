@@ -26,7 +26,17 @@ dir=`dirname "$self_bin"`
 devpanel_dir=`readlink -e "$dir/.."`
 
 vhost="$1"
-user="w_$vhost"
+if [ "$cmd_name" == "lock-vhost" ]; then
+  $dir/check-vhost-name lock "$vhost" || exit 1
+elif [ "$cmd_name" == "unlock-vhost" ]; then
+  $dir/check-vhost-name unlock "$vhost" || exit 1
+fi
+
+get_linux_username_from_vhost "$vhost" && \
+user="$_dp_value"
+if [ $? -ne 0 ]; then
+  error "unable to get the linux username from vhost $vhost"
+fi
 
 lib_file="$devpanel_dir/lib/functions"
 vars_file="$devpanel_dir/lib/variables"
@@ -42,11 +52,6 @@ assign_deref_os_fs_path_ex_or_exit apache_config_dir "$devpanel_dir" \
 
 apache_config="$apache_config_dir/$user.conf"
 
-if [ "$cmd_name" == "lock-vhost" ]; then
-  $dir/check-vhost-name lock "$vhost" || exit 1
-elif [ "$cmd_name" == "unlock-vhost" ]; then
-  $dir/check-vhost-name unlock "$vhost" || exit 1
-fi
 
 assign_deref_os_fs_path_ex_or_exit apachectl "$devpanel_dir" \
   pathnames/sbin/apachectl

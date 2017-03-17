@@ -153,7 +153,11 @@ export DEVPANEL_HOME="$we_base_dir"
 
 metadata_bin="$DEVPANEL_HOME/libexec/apache-metadata-handler"
 config_dir="$we_base_dir/config/vhosts/$vhost"
-user_web="w_$vhost"
+get_linux_username_from_vhost "$vhost" && user_web="$_dp_value"
+if [ $? -ne 0 ]; then
+  error "unable to get the linux username from vhost $vhost"
+fi
+
 home="`eval \"echo ~$user_web\"`" || error "unable to get \$HOME of user $user_web"
 user_db="b_$vhost"
 vhost_config_dir=.webenabled/private
@@ -328,11 +332,11 @@ fi
 echo "$output"
 [ $status = 0 ] || exit $status
 
-mysql_host_port=$(get_param_from_db_output "w_$vhost" host "$output")
+mysql_host_port=$(get_param_from_db_output "$user_web" host "$output")
 mysql_host=${mysql_host_port%:*}
 mysql_port=${mysql_host_port#*:}
-mysql_user=$(get_param_from_db_output "w_$vhost" user "$output")
-mysql_password=$(get_param_from_db_output "w_$vhost" password "$output")
+mysql_user=$(get_param_from_db_output "$user_web" user "$output")
+mysql_password=$(get_param_from_db_output "$user_web" password "$output")
 
 # write the ~/.my.cnf file
 { printf 'client.host = %s\nclient.port = %s\nclient.user = %s\n' \

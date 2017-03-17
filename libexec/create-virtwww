@@ -155,7 +155,11 @@ fi
 
 DB_ACCOUNT_NAME="b_$ACCOUNT_NAME"
 vhost="$ACCOUNT_NAME"
-ACCOUNT_NAME="w_$ACCOUNT_NAME"
+
+generate_linux_username_for_vhost "$vhost" && ACCOUNT_NAME="$_dp_value"
+if [ $? -ne 0 ]; then
+  error "unable to generate linux username for vhost"
+fi
 
 config_base_dir="$we_base/config/vhosts"
 config_dir="$config_base_dir/$vhost"

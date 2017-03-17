@@ -15,7 +15,6 @@ do
   case "$OPTOPT" in
     u) opt_u=1
        vhost="$OPTARG"
-       user_web="w_$vhost"
        ;;
     *) exit 1;
   esac
@@ -79,6 +78,19 @@ write_tar_output()
 
 # using mode archive: it's OK to operate on a locked vhost
 [ -n "$tar_output_file" ] || error "no label"
+
+lib_f="$dir/../lib/functions"
+if ! source "$lib_f"; then
+  echo "Error: unable to import $lib_f" 1>&2
+  exit 1
+fi
+
+get_linux_username_from_vhost "$vhost" && \
+user_web="$_dp_value"
+if [ $? -ne 0 ]; then
+  error "unable to get the linux username from vhost $vhost"
+fi
+
 if [ $opt_u = 1 ]
 then
   $dir/check-vhost-name archive "$vhost" || exit 1

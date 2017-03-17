@@ -98,8 +98,14 @@ elif [ $delete_token -eq 1 ]; then
   fi
 fi
 
-if ! getent passwd "w_$vhost" ; then
-  wedp_warn "vhost 'w_$vhost' doesn't exist yet (this is just a warning)"
+get_linux_username_from_vhost "$vhost" && \
+vhost_user="$_dp_value"
+if [ $? -ne 0 ]; then
+  error "unable to get the linux username from vhost $vhost"
+fi
+
+if ! getent passwd "$vhost_user" ; then
+  wedp_warn "vhost '$vhost_user' doesn't exist yet (this is just a warning)"
 fi
 
 if [ -z "$token_str" ]; then

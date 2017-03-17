@@ -143,7 +143,11 @@ vhost="$1"
 if ! "$dir/check-vhost-name" name-only "$vhost"; then
   error "vhost argument is in an invalid format"
 fi
-user="w_$vhost"
+get_linux_username_from_vhost "$vhost" && \
+user="$_dp_value"
+if [ $? -ne 0 ]; then
+  error "unable to get the linux username from vhost $vhost"
+fi
 
 if [ -z "$ip" ]; then
   ip='*'

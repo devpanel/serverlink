@@ -225,6 +225,13 @@ case $op in
       exit 1
     fi
      
+		get_linux_username_from_vhost "$vhost" && \
+		vhost_user="$_dp_value"
+		if [ $? -ne 0 ]; then
+			error "unable to get the linux username from vhost $vhost"
+		fi
+		vhost_group="$vhost_user"
+
     assign_deref_os_prop_or_exit archive_template_str "$sys_dir" \
       vhost_snapshot_${frequency}_template_str
 
@@ -246,7 +253,7 @@ case $op in
     cache_dir="$system_cache_dir/$vhost"
     if [ ! -e "$cache_dir" ]; then
       if mkdir -m 750 "$cache_dir"; then
-        if ! chown "root:w_$vhost" "$cache_dir"; then
+        if ! chown "root:$vhost_group" "$cache_dir"; then
           error "unable to chown $cache_dir"
         fi
       else
@@ -329,7 +336,6 @@ case $op in
     fi
 
     # no archive for the same frequency exists, go and archive it
-    vhost_user="w_$vhost"
     vhost_dir=$(eval echo \~$vhost_user)
     exclude_file="$vhost_dir/.devpanel/recurring-snapshots.exclude-$frequency"
     if [ ! -f "$exclude_file" ]; then

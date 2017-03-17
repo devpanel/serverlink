@@ -23,7 +23,6 @@ shift `expr $OPTIND - 1`
 dir=`dirname "$0"`
 dir_bin="$dir/../bin"
 vhost="$1"
-user_web="w_$vhost"
 vhost_config_dir=.webenabled/private
 run()
 {
@@ -42,6 +41,19 @@ run_su()
 }
 
 $dir/check-vhost-name archive "$vhost" || usage
+
+lib_f="$dir/../lib/functions"
+if ! source "$lib_f"; then
+  echo "Error: unable to import $lib_f" 1>&2
+  exit 1
+fi
+
+get_linux_username_from_vhost "$vhost" && \
+user_web="$_dp_value"
+if [ $? -ne 0 ]; then
+  error "unable to get the linux username from vhost $vhost"
+fi
+
 home="`eval \"echo ~$user_web\"`" || error
 
 config="`cat`"

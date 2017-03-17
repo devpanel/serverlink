@@ -41,7 +41,12 @@ then
   prefix=/opt/webenabled/data
 else
   $mydir/check-vhost-name archive "$opt_u" || error
-  user="w_$opt_u"
+	get_linux_username_from_vhost "$opt_u" && \
+	user="$_dp_value"
+	if [ $? -ne 0 ]; then
+		error "unable to get the linux username from vhost $opt_u"
+	fi
+
   home="`eval \"echo ~$user\"`" || error
   [ -d "$home" ] || error "Home dir $home does not exist"
   prefix="$home/public_html/gen/archive"

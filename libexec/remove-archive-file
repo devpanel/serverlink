@@ -30,14 +30,12 @@ fi
 [ -z "$1" -o -z "$2" ] && usage
 
 vhost="$1"
-archive_file_in="$2"
-
-user="w_$vhost"
-
-assign_deref_os_prop_or_exit data_dir "$sys_dir" data_dir
-
 # using mode archive: it's OK to operate on a locked vhost
 "$self_dir/check-vhost-name" archive "$vhost" || exit 1
+
+archive_file_in="$2"
+
+assign_deref_os_prop_or_exit data_dir "$sys_dir" data_dir
 
 archives_dir=$(readlink -m "$data_dir/vhost_archives/$vhost")
 archive_file=$(readlink -m "$archives_dir/$archive_file_in")

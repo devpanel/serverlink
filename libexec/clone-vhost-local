@@ -22,6 +22,7 @@ usage()
 [ $# -lt 2 ] && usage
 dir=`dirname "${BASH_SOURCE[0]}"`
 sys_dir=$(readlink -e "$dir/..")
+lib_file="$sys_dir/lib/functions"
 
 while getopts "PpinS:IF" OPTOPT
 do
@@ -48,7 +49,18 @@ shift
 $dir/check-vhost-name archive "$source" || usage
 $dir/check-vhost-name restore "$target" || usage
 
-source_home=$(eval echo -n \~"w_$source")
+if ! . source "$lib_file"; then
+  echo "Error: unable to load lib file '$lib_file'" 1>&2
+  exit 1
+fi
+
+get_linux_username_from_vhost "$vhost" && \
+source_vuser="$_dp_value"
+if [ $? -ne 0 ]; then
+  error "unable to get the linux username from vhost $source"
+fi
+
+source_home=$(eval echo -n \~"$source_vuser")
 TMP_FILE="tmp_archive_$source-$(date +%b-%d-%Y--%H-%M).tgz"
 TMP_FILE_FP="$source_home/public_html/gen/archive/$TMP_FILE"
 

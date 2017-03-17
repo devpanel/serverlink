@@ -267,8 +267,9 @@ wedp_resolve_link() {
 
 wedp_gen_random_str() {
   local length=${1:-40}
+  local class=${2:-'A-Za-z0-9'}
 
-  local str=$(head -c $(( $length * 30 )) /dev/urandom | tr -dc 'A-Za-z0-9')
+  local str=$(head -c $(( $length * 30 )) /dev/urandom | tr -dc "$class")
 
   if [ ${#str} -lt $length ]; then
     return 1
@@ -276,6 +277,48 @@ wedp_gen_random_str() {
     echo "${str:0:$length}"
     return 0
   fi
+}
+
+gen_random_str_az_lower() {
+  local length=${1:-6}
+  local str
+
+  wedp_gen_random_str $length a-z
+}
+
+generate_linux_username_for_vhost() {
+  local vhost="$1"
+
+  unset _dp_value
+
+  local user randomstr
+  randomstr=$(gen_random_str_az_lower 6) || return 1
+
+  user="w_$randomstr"
+
+  _dp_value="$user"
+  
+  [ -n "$_dp_print" ] && printf '%s' "$_dp_value"
+
+  return 0
+}
+
+get_linux_username_from_vhost() {
+  local vhost="$1"
+
+  local user
+
+  get_key_value_from_vhost apache_vhost:_:linux_user "$vhost" && \
+    user="$_dp_value"
+
+  if [ $? -ne 0 ]; then
+    user="w_$vhost"
+    _dp_value="$user"
+	fi
+  
+  [ -n "$_dp_print" ] && printf '%s' "$_dp_value"
+
+  return 0
 }
 
 download_file() {
@@ -2182,6 +2225,23 @@ generate_vhost_ini_str() {
   fi
 
   echo -n "$ini_str"
+}
+
+get_key_value_from_vhost() {
+  local key="$1"
+  local vhost="${1:-$_dp_vhost}"
+
+  local value
+  unset _dp_value
+
+  value=$(deref_contents \
+            "$DEVPANEL_HOME/config/vhosts/$vhost/$key") || return $?
+
+	_dp_value="$value"
+
+  [ -n "$_dp_print" ] && printf '%s' "$value"
+
+  return 0
 }
 
 get_1st_level_field_value_from_app() {

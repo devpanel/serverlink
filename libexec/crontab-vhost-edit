@@ -23,9 +23,14 @@ EOF
 [ $# -lt 1 ] && usage
 
 vhost="$1"
-user="w_$vhost"
 # using mode archive: it's OK to operate on a locked vhost
 $dir/check-vhost-name archive "$vhost" || exit 1
+
+get_linux_username_from_vhost "$vhost" && \
+user="$_dp_value"
+if [ $? -ne 0 ]; then
+  error "unable to get the linux username from vhost $vhost"
+fi
 
 temp_file=$(su -l -c 'export TMPDIR=${TMPDIR:-/tmp}; mktemp -p "$TMPDIR" cron_edit.XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX' "$user")
 status=$?

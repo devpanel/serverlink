@@ -5,15 +5,30 @@ option="$1"
 vhost="$2"
 user="$vhost"
 
+# main
+
+lib_f="$dir/../lib/functions"
+if ! source "$lib_f"; then
+  echo "Error: unable to import $lib_f" 1>&2
+  exit 1
+fi
+
 # using mode archive: it's OK to operate on a locked vhost
 $dir/check-vhost-name archive "$vhost" || exit 1
 
+get_linux_username_from_vhost "$vhost" && \
+vhost_user="$_dp_value"
+if [ $? -ne 0 ]; then
+  error "unable to get the linux username from vhost $vhost"
+fi
+db_user="b_$vhost"
+
 if [ "$option" = "-g" ]; then
-  $dir_bin/quota-scripts/get-disk-quota.sh w_$user
-  $dir_bin/quota-scripts/get-disk-quota.sh b_$user
+  $dir_bin/quota-scripts/get-disk-quota.sh "$vhost_user"
+  $dir_bin/quota-scripts/get-disk-quota.sh "$db_user"
 elif [ "$option" = "-s" ]; then
   w_quota="$3"
   b_quota="$4"
-  $dir_bin/quota-scripts/set-disk-quota.sh w_$user $3
-  $dir_bin/quota-scripts/set-disk-quota.sh b_$user $4
+  $dir_bin/quota-scripts/set-disk-quota.sh "$vhost_user" $3
+  $dir_bin/quota-scripts/set-disk-quota.sh "$db_user" $4
 fi

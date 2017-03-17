@@ -11,11 +11,21 @@ usage() {
 self_bin=`readlink -e "$0"`
 dir=`dirname "$self_bin"`
 dir_bin="$dir/../bin"
-vhost="$1"
-user="w_$vhost"
 
-# using mode archive: it's OK to operate on a locked vhost
-"$dir/check-vhost-name" archive "$vhost" || exit 1
+vhost="$1"
+$sys_dir/libexec/check-vhost-name archive "$vhost" || exit 1
+
+lib_f="$dir/../lib/functions"
+if ! source "$lib_f"; then
+  echo "Error: unable to import $lib_f" 1>&2
+  exit 1
+fi
+
+get_linux_username_from_vhost "$vhost" && \
+user="$_dp_value"
+if [ $? -ne 0 ]; then
+  error "unable to get the linux username from vhost $vhost"
+fi
 
 token_bin="$dir/token-mgr"
 

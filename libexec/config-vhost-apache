@@ -301,9 +301,13 @@ done
 [ $# -eq 0 -o -z "$1" ] && usage # yes, again
 
 vhost="$1"
-user="w_$vhost"
-
 "$dir/check-vhost-name" name-only "$vhost" || error
+
+get_linux_username_from_vhost "$vhost" && \
+user="$_dp_value"
+if [ $? -ne 0 ]; then
+  error "unable to get the linux username from vhost $vhost"
+fi
 
 we_base_dir=`readlink -e "$dir/.."`
 

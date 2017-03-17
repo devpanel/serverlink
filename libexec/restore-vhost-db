@@ -44,8 +44,13 @@ fi
 
 vhost="$1"
 user="b_$vhost"
-user_web="w_$vhost"
 archive_label="$2"
+
+get_linux_username_from_vhost "$vhost" && \
+user_web="$_dp_value"
+if [ $? -ne 0 ]; then
+  error "unable to get the linux username from vhost $vhost"
+fi
 
 if [ $create_db_instance -eq 1 ] && getent passwd "$user" &>/dev/null; then
   error "user '$user' already exists"

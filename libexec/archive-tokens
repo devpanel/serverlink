@@ -116,8 +116,14 @@ if [ -z "$clone_type" ]; then
 fi
 
 vhost="$1"
-if ! getent passwd "w_$vhost" &>/dev/null; then
-  error "user 'w_$vhost' doesn't exist"
+get_linux_username_from_vhost "$vhost" && \
+vhost_user="$_dp_value"
+if [ $? -ne 0 ]; then
+  error "unable to get the linux username from vhost $vhost"
+fi
+
+if ! getent passwd "$vhost_user" &>/dev/null; then
+  error "user '$vhost_user' doesn't exist"
 fi
 
 if [ $delete_token -eq 1 -a -z "$token_str" ]; then
@@ -144,9 +150,9 @@ if [ "$clone_type" == "recv_active" -o \
     error "unable to create archive dir for vhost '$vhost'"
   elif [ -e "$vhost_archive_dir" -a ! -d "$vhost_archive_dir" ]; then
     error "directory '$vhost_archive_dir' exists but is not a directory"
-  elif ! chown "w_$vhost" "$vhost_archive_dir"; then
+  elif ! chown "$vhost_user" "$vhost_archive_dir"; then
     error "unable to change the permissions of directory"\
-"$vhost_archive_dir to user 'w_$vhost'"
+"$vhost_archive_dir to user '$vhost_user'"
   fi
 fi
 
@@ -203,9 +209,9 @@ echo "$secret_key" >"$token_file"
 if [ $? -ne 0 ]; then
   error "unable to create token file."
 fi
-if ! chgrp "w_$vhost" "$token_file"; then
+if ! chgrp "$vhost_user" "$token_file"; then
   rm -f "$token_file"
-  error "unable to chgrp token file '$token_file' to group 'w_$vhost'"
+  error "unable to chgrp token file '$token_file' to group '$vhost_user'"
 fi
 
 if [ $print_token_in_the_end -eq 1 ]; then

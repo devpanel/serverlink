@@ -36,8 +36,23 @@ done
 [ $# -lt 1 -o "$1" == "" ] && usage
 
 vhost="$1"
-user="w_$vhost"
 $dir/check-vhost-name config "$vhost" || exit 1
+
+self_dir="${self_bin%/*}"
+sys_dir="${self_dir%/*}"
+
+lib_f="$sys_dir/lib/functions"
+if ! source "$lib_f"; then
+  echo "Error: unable to import $lib_f" 1>&2
+  exit 1
+fi
+
+get_linux_username_from_vhost "$vhost" && \
+user="$_dp_value"
+if [ $? -ne 0 ]; then
+  error "unable to get the linux username from vhost $vhost"
+fi
+
 
 if [ -n "$pass_from_stdin" ]; then
   # received -i. read pass from stdin

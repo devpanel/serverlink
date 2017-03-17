@@ -29,7 +29,14 @@ shift `expr $OPTIND - 1`
 dir=`dirname "$0"`
 dir_bin="$dir/../bin"
 vhost="$1"
-user_web="w_$vhost"
+$dir/check-vhost-name restore "$vhost" || error
+
+get_linux_username_from_vhost "$vhost" && \
+user_web="$_dp_value"
+if [ $? -ne 0 ]; then
+  error "unable to get the linux username from vhost $vhost"
+fi
+
 vhost_config_dir=.webenabled/private
 run()
 {
@@ -47,7 +54,6 @@ run_su()
   su -l -c "$*" "$user_web"
 }
 
-$dir/check-vhost-name restore "$vhost" || error
 home="`eval \"echo ~$user_web\"`" || error
 
 config="`sed \"\\$a\

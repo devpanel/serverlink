@@ -44,14 +44,19 @@ for inc_file in "$lib_file" "$vars_file"; do
 done
 
 vhost="$1"
-user="w_$vhost"
-vhost_config_dir="$devpanel_dir/config/vhosts/$vhost"
-
 if [ "$cmd_name" == "lock-vhost" ]; then
   $dir/check-vhost-name lock "$vhost" || error
 elif [ "$cmd_name" == "unlock-vhost" ]; then
   $dir/check-vhost-name unlock "$vhost" || error
 fi
+
+get_linux_username_from_vhost "$vhost" && \
+user="$_dp_value"
+if [ $? -ne 0 ]; then
+  error "unable to get the linux username from vhost $vhost"
+fi
+
+vhost_config_dir="$devpanel_dir/config/vhosts/$vhost"
 
 trap 'exit 1' INT TERM HUP
 if lock_path "$vhost_config_dir"; then

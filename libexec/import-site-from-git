@@ -171,6 +171,12 @@ else
   vhost_check=restore
 fi
 
+get_linux_username_from_vhost "$vhost" && \
+vhost_user="$_dp_value"
+if [ $? -ne 0 ]; then
+  error "unable to get the linux username from vhost $vhost"
+fi
+
 if [ -n "$install_profile" -a -n "$orig_db_dump_file" ]; then
   error "can't use option install_profile with a database dump."
 fi
@@ -287,7 +293,7 @@ if [ -z "$subsystem" ]; then
   fi
 fi
 
-web_archive_file="$pack_dir/web/w_$vhost.tgz"
+web_archive_file="$pack_dir/web/$vhost_user.tgz"
 tar -zSpcf "$web_archive_file" -C "$app_dir_dist" .
 if [ $? -ne 0 ]; then
   error "unable to pack web dir $app_dir_dist"

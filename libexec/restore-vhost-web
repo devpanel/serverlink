@@ -73,7 +73,6 @@ done
 dir=`dirname "$0"`
 bin_dir="$dir/../bin"
 vhost="$1"
-user="w_$vhost"
 archive_label="$2"
 
 we_base_dir=`readlink -e "$dir/.."`
@@ -81,6 +80,12 @@ lib_file="$we_base_dir/lib/functions"
 if ! source "$lib_file" ; then
   echo "Error: unable to load auxiliary functions from '$lib_file'" 1>&2
   exit 1
+fi
+
+get_linux_username_from_vhost "$vhost" && \
+user="$_dp_value"
+if [ $? -ne 0 ]; then
+  error "unable to get the linux username from vhost $vhost"
 fi
 
 if [ $create_vhost -eq 1 ] && getent passwd "$user" &>/dev/null; then

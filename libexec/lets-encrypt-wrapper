@@ -115,6 +115,11 @@ case "$op" in
       exit 1
     fi
 
+		get_linux_username_from_vhost "$vhost" && linux_user="$_dp_value"
+		if [ $? -ne 0 ]; then
+			error "unable to get the linux username from vhost $vhost"
+		fi
+
     server_base_domain=$(get_server_base_domain) || exit 1
 
     certs_dir="$sys_dir/config/vhosts/$vhost/lets-encrypt"
@@ -128,7 +133,7 @@ case "$op" in
 
     acme_args+=( --home "$certs_dir" --renew-hook "$self_bin post-renew" )
 
-    public_dir=$(eval echo -n \~w_$vhost/public_html/$vhost)
+    public_dir=$(eval echo -n \~$linux_user/public_html/$vhost)
     if [ ! -d "$public_dir" ]; then
       error "public directory not found: $public_dir"
     fi
@@ -165,7 +170,7 @@ case "$op" in
     # Encrypt. Will be brought back after the certificate generation
     unset moved_htaccess
     if [ -f "$htaccess_file" ]; then
-      su -l -s /bin/bash -c "mv -n $htaccess_file $htaccess_file_moved" "w_$vhost"
+      su -l -s /bin/bash -c "mv -n $htaccess_file $htaccess_file_moved" "$linux_user"
       if [ $? -eq 0 ]; then
         moved_htaccess=1
       fi

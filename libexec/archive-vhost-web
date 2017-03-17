@@ -35,8 +35,21 @@ dir=`dirname "$self_bin"`
 sys_dir=$(readlink -e "$dir/..")
 
 vhost="$1"
+$sys_dir/libexec/check-vhost-name archive "$vhost" || exit 1
+
+lib_f="$sys_dir/lib/functions"
+if ! source "$lib_f"; then
+  echo "Error: unable to import $lib_f" 1>&2
+  exit 1
+fi
+
+get_linux_username_from_vhost "$vhost" && \
+user="$_dp_value"
+if [ $? -ne 0 ]; then
+  error "unable to get the linux username from vhost $vhost"
+fi
+
 archive_dir="$2"
-user="w_$vhost"
 home="`eval \"echo ~$user\"`"
 date=`date  +'%Y%m%d'`
 archive_file="$archive_dir/$user.tgz"
