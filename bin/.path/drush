@@ -29,7 +29,7 @@ home_2_drush="$HOME/.drush/drush/drush"
 # fallback version
 devpanel_drush="$devpanel_dir/bin/packages/drush-7/drush"
 
-public_dir="$HOME/public_html/${USER#w_}"
+public_dir=$(get_docroot_from_user)
 
 # first check for drush on the user directory
 # if not found, and there isn't another drush in PATH, fallback to

@@ -89,7 +89,11 @@ elif [ "$transfer_type" == "recv_active" -a -e "$file_to_use" ]; then
   error "file '$file_to_use' already exists"
 fi
 
-token_file="$tokens_dir/${USER#w_}.$transfer_type.$token"
+if ! vhost=$(get_vhost_from_linuxuser); then
+  error "unable to get vhost from user $USER"
+fi
+
+token_file="$tokens_dir/$vhost.$transfer_type.$token"
 if [ ! -e "$token_file" ]; then
   error "token file '$token_file' doesn't exist"
 elif [ ! -f "$token_file" ]; then

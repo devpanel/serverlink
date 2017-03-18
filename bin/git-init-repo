@@ -70,7 +70,8 @@ while getopts $getopt_flags OPTNAME; do
       fi
       ;;
     P)
-      target_dir="$HOME/public_html/${USER#w_}"
+      target_dir=$(get_docroot_from_user)
+      
       unset is_bare
       ;;
     n)

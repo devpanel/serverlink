@@ -23,7 +23,7 @@ elif ! hash drush &>/dev/null; then
   exit 1
 fi
 
-vhost_dir="$HOME/public_html/${USER#w_}"
+vhost_dir=$(get_docroot_from_user)
 
 if ! cd "$vhost_dir"; then
   echo "Error: unable to chdir to '$vhost_dir'" 1>&2

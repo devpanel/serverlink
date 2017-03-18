@@ -1,10 +1,10 @@
 #!/bin/bash
-PIVOTX_DIR="$home/public_html/$vhost/pivotx"
+PIVOTX_DIR="$public_html_dir/pivotx"
 
 pivotx_detect_config() {
   local user="$1"
   local home=$(eval echo ~"$user" )
-  local file="$home/public_html/${user#w_}/pivotx/db/ser_config.php"
+  local file="$public_html_dir/pivotx/db/ser_config.php"
 
   if [ -f "$file" ]; then
     echo "$file"

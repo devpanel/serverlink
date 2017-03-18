@@ -321,6 +321,50 @@ get_linux_username_from_vhost() {
   return 0
 }
 
+get_vhost_from_linuxuser() {
+  local user="${1:-$USER}"
+
+  local map_dir map_link
+  map_dir=$(get_linuxuser_vhost_dir)
+  map_link="$map_dir/$user"
+
+  deref_contents "$map_link"
+}
+
+get_docroot_from_vhost() {
+  local vhost="$1"
+
+  local docroot_dir virtwww_homedir
+
+  get_key_value_from_vhost apache_vhost:_:document_root "$vhost" && \
+    docroot_dir="$_dp_value"
+
+  if [ $? -ne 0 ]; then
+    # backwards compatibility
+    virtwww_homedir=$(deref_os_prop "$DEVPANEL_HOME" apache_virtwww_homedir) \
+      || return 1
+
+    docroot_dir="$virtwww_homedir/public_html/$vhost"
+	fi
+  
+  echo "$docroot_dir"
+
+  return 0
+}
+
+get_docroot_from_user() {
+  local user="${1:-$USER}"
+  local vhost
+
+  vhost=$(get_vhost_from_linuxuser "$user") || return 1
+
+  get_docroot_from_vhost "$vhost"
+}
+
+get_linuxuser_vhost_dir() {
+  echo "$DEVPANEL_HOME/config/key_value/linuxuser-vhost"
+}
+
 download_file() {
   local url="$1"
   local temp_file="$2"
@@ -1109,8 +1153,10 @@ get_apache_metadata_value() {
   local key="$2"
 
   local apache_config_dir="$system_dir/config/vhosts"
+  local vhost
+  vhost=$(get_vhost_from_linuxuser) || return $?
 
-  local vhost_conf_dir="$apache_config_dir/${USER#w_}"
+  local vhost_conf_dir="$apache_config_dir/$vhost"
 
   if [ ! -d "$vhost_conf_dir" ]; then
     echo "$FUNCNAME(): missing vhost conf dir $vhost_conf_dir" 1>&2
@@ -1559,9 +1605,7 @@ get_vhost_key_value() {
   local value=""
 
   if [ -z "$vhost" ]; then
-    if [[ "$USER" == w_* ]]; then
-      vhost="${USER#w_}"
-    else
+    if ! vhost=$(get_vhost_from_linuxuser); then
       echo "$FUNCNAME(): missing vhost, please specify it" 1>&2
       return 1
     fi
@@ -1635,9 +1679,7 @@ get_php_version_for_vhost() {
     USER=$(id -un)
   fi
 
-  if [ -z "$vhost" -a "$EUID" != "0" -a "${#USER}" -gt 2 -a "${USER:0:2}" == w_ ]; then
-    vhost=${USER#w_}
-  elif [ -z "$vhost" ]; then
+  if ! vhost=$(get_vhost_from_linuxuser); then
     echo "$FUNCNAME(): missing vhost argument" 1>&2
     return 1
   fi

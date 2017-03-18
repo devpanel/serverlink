@@ -176,7 +176,7 @@ while read passwd_line; do
   IFS=":" read user x uid gid gecos home shell <<< "$passwd_line"
 
   if [ ${#user} -gt 2 -a "${user:0:2}" == "w_" ]; then
-    vhost=${user#w_}
+    vhost=$(get_vhost_from_linuxuser)
 
     # first try the usual removal
     if "$install_dir/libexec/remove-vhost" "$vhost" >/dev/null; then

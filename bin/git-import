@@ -9,7 +9,8 @@ Usage: $prog < options >
   Options: 
     -u user           username to use while logging to git repo
     -r name           name of the remote git repository
-    -d dir            name of the local directory to import (default: ~/public_html/vhost)
+    -d dir            name of the local directory to import (default: vhost
+                      docroot dir)
     -s hostname       hostname of the git server (default: git.webenabled.net)
     -m commit_msg     message to include in the commit (default: 'Initial project commit')
     -P protocol       protocol to use while connecting to git (default: ssh)
@@ -65,8 +66,8 @@ if [ -z "$repo_name" ]; then
   exit 1
 fi
 
-if [ -z "$source_dir" ] && [[ "$USER" =~ ^w_ ]] && [ -d "$HOME/public_html/${USER#w_}" ]; then
-  source_dir="$HOME/public_html/${USER#w_}"
+if [ -z "$source_dir" ] && docroot_dir=$(get_docroot_from_user); then
+  source_dir="$docroot_dir"
 elif [ -z "$source_dir" ]; then
   echo "Error: please specify the source directory using the -d option (was unable to auto-detect)."
   exit 1

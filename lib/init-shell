@@ -1,6 +1,16 @@
 #!/bin/bash
 
-public_html_dir="$HOME/public_html/${USER#w_}"
+self_bin=$(readlink -e "$0")
+self_dir=${self_bin%/*}
+sys_dir=${self_dir%/*}
+
+lib_f="$sys_dir/lib/functions"
+if ! source "$lib_f"; then
+  echo "Error: unable to import $lib_f" 1>&2
+  exit 1
+fi
+
+public_html_dir=$(get_docroot_from_user)
 if [ -d "$public_html_dir" ]; then
   cd "$public_html_dir"
 fi

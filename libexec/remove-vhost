@@ -160,6 +160,9 @@ if [ -d "$archived_files_dir" ]; then
   fi
 fi
 
+linuxuser_vhost_dir=$(get_linuxuser_vhost_dir)
+rm -f "$linuxuser_vhost_dir/$user_web"
+
 echo "Removing cron for $user_web"
 run crontab -u "$user_web" -r
 

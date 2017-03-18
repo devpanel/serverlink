@@ -50,6 +50,8 @@ else
     names/apache_vhost_template
 fi
 
+linuxuser_vhost_dir=$(get_linuxuser_vhost_dir)
+
 passgen="$dir_bin/genpass"
 
 ADDON_GROUPS=
@@ -463,6 +465,8 @@ set $vhost_prefix_f:1:_:template_ref names/tools_vhost_template
 "
 
 echo "$metadata_str" | "$apache_metadata_bin" -q "$vhost" || exit $?
+
+ln -s "$vhost" "$linuxuser_vhost_dir/$ACCOUNT_NAME"
 
 echo '---[ end of creating new virtual host ]---'
 echo

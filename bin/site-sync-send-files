@@ -29,7 +29,7 @@ if ! source "$lib_file"; then
   exit 1
 fi
 
-vhost_dir="$HOME/public_html/${USER#w_}"
+vhost_dir=$(get_docroot_from_user)
 if [ ! -e "$vhost_dir" ]; then
   error "missing vhost dir $vhost_dir"
 fi

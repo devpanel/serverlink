@@ -485,8 +485,12 @@ done
 
 # set main system variables
 user_web="$USER"
-vhost="${user_web#w_}"
-user_db="b_$vhost"
+
+if ! vhost=$(get_vhost_from_linuxuser); then
+  error "unable to get vhost name"
+fi
+
+user_db="b_${user_web#w_}"
 config_dir="$we_base_dir/config/vhosts/$vhost"
 home="`eval \"echo ~$user_web\"`"
 vhost_config_dir=.webenabled/private
