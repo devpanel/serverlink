@@ -107,66 +107,18 @@ function check_account_name() {
 ACCOUNT_NAME="$1"
 DOMAIN_NAMES="$2"
 
-if [ -z "$DOMAIN_NAMES" ]; then
-    echo 'Please enter domain name(s) [use comma to separate, empty = quit]'
-    while :; do
-        read -e -p '>' DOMAIN_NAMES
-        if [ -z "$DOMAIN_NAMES" ]; then
-            echo 'Aborted creation of new virtual host'
-            exit 1
-        fi
-        check_domain_name "$DOMAIN_NAMES"
-        case "$?" in
-            0)
-                break
-                ;;
-            *)
-                echo 'Invalid domain name(s) specified, please try again'
-                ;;
-        esac
-    done
-else
-    if ! check_domain_name "$DOMAIN_NAMES"; then
-        echo 'Invalid domain name(s) specified, aborting'
-        exit 1
-    fi
-fi
-
-if [ -z "$ACCOUNT_NAME" ]; then
-    echo 'Please enter basename for system account [empty = quit]'
-    while :; do
-        read -e -p '>' ACCOUNT_NAME
-        if [ -z "$ACCOUNT_NAME" ]; then
-            echo 'Aborted creation of new virtual host'
-            exit 1
-        fi
-        check_account_name "$ACCOUNT_NAME"
-        case "$?" in
-            0)
-                break
-                ;;
-            *)
-                echo 'Invalid domain name(s) specified, please try again'
-                ;;
-        esac
-    done
-else
-    if ! check_account_name "$ACCOUNT_NAME"; then
-        echo 'Invalid account basename specified, aborting'
-        exit 1
-    fi
-fi
-
 DB_ACCOUNT_NAME="b_$ACCOUNT_NAME"
 vhost="$ACCOUNT_NAME"
-ACCOUNT_NAME="w_$ACCOUNT_NAME"
+ACCOUNT_NAME="w_$ACCOUNT_NAME" # linux user
 VHOST_HOME="$WEBSITES_HOME/$ACCOUNT_NAME"
+VHOST_DOC_ROOT="$VHOST_HOME/public_html/$vhost"
 
 #generate_linux_username_for_vhost "$vhost" && ACCOUNT_NAME="$_dp_value"
 #if [ $? -ne 0 ]; then
 #  error "unable to generate linux username for vhost"
 #fi
 
+# stack stuff
 config_base_dir="$we_base/config/vhosts"
 config_dir="$config_base_dir/$vhost"
 vhost_cache_dir="$we_base/var/cache/vhost/$vhost"
@@ -174,75 +126,14 @@ if [ ! -e "$config_base_dir" ] && \
   ! mkdir -m 755 "$config_base_dir"; then
   error "unable to create directory '$config_base_dir'"
 fi
+# /stack stuff
 
-echo
-VHOST_MULTISITE=
-echo -n 'Is the new vhost a multi-site one (y/N)?'
-read ANSWER
-ANSWER=${ANSWER:-n}
-[ "$ANSWER" == 'y' -o "$ANSWER" == 'Y' ] && VHOST_MULTISITE=y
-
-VHOST_PHPMYADMIN=
-echo -n 'Do you want to enable phpMyAdmin for this vhost (Y/n)? '
-read ANSWER
-ANSWER=${ANSWER:-y}
-[ "$ANSWER" == 'y' -o "$ANSWER" == 'Y' ] && VHOST_PHPMYADMIN=y
-
-# ===
-
-echo '---'
-{
-    count=0
-    IFS=', '
-    PRIMARY_NAME=
-    PRIMARY_DOMAIN=
-    for domain in $DOMAIN_NAMES ; do
-        if [ "$count" -eq 0 ]; then
-            echo -n 'Virtual server: '
-            PRIMARY_NAME=$(echo -n $domain | cut -f1 -d'.')
-            PRIMARY_DOMAIN=$(echo -n $domain | cut -f2- -d'.')
-        else
-            echo -n "ServerAlias #$count: "
-        fi
-        echo "$domain"
-        count=$(($count+1))
-    done
-    echo
-    if [ -n "$VHOST_MULTISITE" ]; then
-        echo "Virtual server: $PRIMARY_NAME-dev.$PRIMARY_DOMAIN"
-        echo "Virtual server: $PRIMARY_NAME-qa.$PRIMARY_DOMAIN"
-        echo "Virtual server: $PRIMARY_NAME-gen.$PRIMARY_DOMAIN"
-        echo
-    fi
-}
 echo "System account: $ACCOUNT_NAME"
-if [ -n "$VHOST_PHPMYADMIN" ]; then
-    echo
-    echo + phpMyAdmin common CGI is enabled
-    echo
-fi
-echo '---'
-
-echo -n 'Do you want to create specified virtual host (y/N)? '
-read ANSWER
-if [ "$ANSWER" != 'y' -a "$ANSWER" != 'Y' ]; then
-    echo 'Aborting'
-    exit 1
-fi
 
 echo '---[ creating new virtual host ]---'
 
-echo -n "+ checking for '$apache_group' group ... "
-if getent group "$apache_group" >/dev/null; then
-    echo 'found'
-else
-    echo 'not found'
-    echo
-    echo "Error: apache group '$apache_group' is not present, this hosting server is unconfigured!"
-    echo 'Aborting'
-    exit 2
-fi
-
+# apache vhost
+  # create vhost group
 echo -n "+ checking for '$ACCOUNT_NAME' group ... "
 if grep -E "^$ACCOUNT_NAME:" /etc/group &>/dev/null; then
     echo 'found'
@@ -257,6 +148,7 @@ else
     echo 'done'
 fi
 
+# create linux user for vhost
 echo -n "+ checking for '$ACCOUNT_NAME' account ... "
 if [ x$(id -un "$ACCOUNT_NAME" 2>/dev/null) == "x$ACCOUNT_NAME" ]; then
     echo 'found'
@@ -280,7 +172,9 @@ else
     fi
     echo 'done'
 fi
+# /linux user
 
+# stack stuff: chown stuff dir to just created user
 if ! mkdir -m 750 "$config_dir"; then
   echo "Error: unable to create directory '$config_dir'" 1>&2
   exit 1
@@ -291,36 +185,14 @@ if ! chown "root":"$ACCOUNT_NAME" "$config_dir"; then
   exit 1
 fi
 
-set_vhost_base_domain      "$vhost" || exit $?
-
-# 20060426 - (GM): added optional database creation
-DB_CREATE_FAILED=
-DB_HOST=
-DB_PORT=
-DB_ADMIN_PASS=
-DB_USER_PASS=
-if [ x"$MYSQL_LOCAL" == xyes ]; then
-if [ -n "$VHOST_PHPMYADMIN" -a x"$DB_ACCOUNT_NAME" != x$(id -un "$DB_ACCOUNT_NAME" 2>/dev/null) ]; then
-    echo -n "+ initializing '$DB_ACCOUNT_NAME' database ... "
-    CREATEDB_OUTPUT=$(/opt/dbmgr/current/bin/createdb "$DB_ACCOUNT_NAME")
-    DB_HOST_PORT=$(echo -n "$CREATEDB_OUTPUT" | grep -E "^started:[[:space:]]+user=$DB_ACCOUNT_NAME[[:space:]]" | tail -n1 | sed -n "s,^started:.\+[[:space:]]host=\(.\+\)[[:space:]]\+status=0$,\1,; T; p")
-    DB_HOST=$(echo -n "$DB_HOST_PORT" | cut -f1 -d':')
-    DB_PORT=$(echo -n "$DB_HOST_PORT" | cut -f2 -d':')
-    [ x"$DB_HOST" == x"$DB_PORT" ] && DB_PORT=
-    DB_ADMIN_PASS=$(echo -n "$CREATEDB_OUTPUT" | grep -E '^added:' | fgrep "user='admin'" | tail -n1 | sed -n "s,^added:.\+[[:space:]]password='\(.\+\)'[[:space:]]\+status=0$,\1,; T; p")
-    DB_USER_PASS=$(echo -n "$CREATEDB_OUTPUT" | grep -E '^added:' | fgrep "user='$ACCOUNT_NAME'" | tail -n1 | sed -n "s,^added:.\+[[:space:]]password='\(.\+\)'[[:space:]]\+status=0\$,\1,; T; p")
-    if [ -z "$DB_ADMIN_PASS" -o -z "$DB_USER_PASS" -o -z "$DB_HOST" -o -z "$DB_PORT" ]; then
-        echo 'failed, ignoring'
-        DB_CREATE_FAILED=1
-    else
-        echo 'done'
-    fi
-fi
-fi # MYSQL_LOCAL
-
 mkdir -m 2750 $vhost_cache_dir
 chown root:$ACCOUNT_NAME $vhost_cache_dir
 
+set_vhost_base_domain      "$vhost" || exit $?
+
+# /stack stuff
+
+# apache vhost: create the basic directory structure
 echo -n '+ configuring home directory for virtual host ... '
 chgrp $apache_group "$VHOST_HOME" || exit 2
 su - -c "
@@ -331,14 +203,10 @@ mkdir -m 0711 ~/.webenabled ~/.webenabled/private
 mkdir -p \"$VHOST_HOME/bin\"
 chmod 0700 \"$VHOST_HOME/bin\"
 # end of PHP hack
-mkdir -m 0755 -p \"$VHOST_HOME/public_html/$PRIMARY_NAME\"
+mkdir -m 0755 -p \"$VHOST_HOME/public_html/$vhost\"
 mkdir -p \"$VHOST_HOME/public_html/gen\"
 mkdir -m 711 -p \"$VHOST_HOME/public_html/gen/archive\"
 chmod 0755 \"$VHOST_HOME/public_html/gen\"
-if [ -n \"$VHOST_MULTISITE\" ]; then
-    mkdir -p \"$VHOST_HOME/public_html/$PRIMARY_NAME\"-{dev,qa}
-    chmod 0755 \"$VHOST_HOME/public_html/$PRIMARY_NAME\"-{dev,qa}
-fi
 chmod 0711 \"$VHOST_HOME/public_html\"
 test -h \"$VHOST_HOME/logs\" && rm \"$VHOST_HOME/logs\"
 ln -s \"$VIRTWWW_LOGDIR/$ACCOUNT_NAME\" \"$VHOST_HOME/logs\"
@@ -357,6 +225,7 @@ if [ "$?" -eq 0 ]; then
 else
     echo 'failed'
 fi
+# // apache vhost
 
 # Fri May 20 2005 10:22 AM (fen@civicactions.com): added this section
 echo -n '+ setting up .php directory ... '
@@ -374,88 +243,32 @@ else
     echo 'failed'
 fi
 
+# apache log dir setup
 echo -n '+ configuring httpd log directory for virtual host ... '
 set -e
 mkdir -p -m 0750 "$VIRTWWW_LOGDIR/$ACCOUNT_NAME"
 chown "root:$ACCOUNT_NAME" "$VIRTWWW_LOGDIR/$ACCOUNT_NAME"
 touch "$VIRTWWW_LOGDIR/$ACCOUNT_NAME/"{access,error}_log
 chmod 0644 "$VIRTWWW_LOGDIR/$ACCOUNT_NAME/"{access,error}_log
-touch "$VIRTWWW_LOGDIR/$ACCOUNT_NAME/$PRIMARY_NAME-"{access,error}_log
-chmod 0644 "$VIRTWWW_LOGDIR/$ACCOUNT_NAME/$PRIMARY_NAME-"{access,error}_log
+touch "$VIRTWWW_LOGDIR/$ACCOUNT_NAME/$vhost-"{access,error}_log
+chmod 0644 "$VIRTWWW_LOGDIR/$ACCOUNT_NAME/$vhost-"{access,error}_log
 set +e
 echo 'done'
+# // apache log dir setup
 
+# stack stuff
 echo '+ enabling personal CGIs:'
 "$chcgi" "$ACCOUNT_NAME" +0
-
-if [ -n "$VHOST_PHPMYADMIN" ]; then
-    echo '+ enabling common CGIs:'
-    echo -n '  * phpMyAdmin ... '
-    "$chcgi" "$ACCOUNT_NAME" +2
-    if [ -n "$DB_USER_PASS" ]; then
-        echo -n '  * setting up Basic Authentication ... '
-        su - -c "phpMyAdmin.fix \"$DB_USER_PASS\"" -s /bin/bash "$ACCOUNT_NAME"
-        if [ "$?" -eq 0 ]; then
-            echo 'done'
-        else
-            echo 'failed'
-        fi
-    fi
-    if [ -n "$VHOST_MULTISITE" -a -n "$DB_HOST" -a -n "$DB_PORT" -a -n "$DB_ADMIN_PASS" ]; then
-        echo -n '+ adding multisite databases ... '
-        su - -c "
-set -e
-create-site-db \"$ACCOUNT_NAME\" \"-h$DB_HOST\" \"-P$DB_PORT\" -uadmin \"-p$DB_ADMIN_PASS\"
-set +e
-" -s /bin/bash "$ACCOUNT_NAME"
-        if [ "$?" -eq 0 ]; then
-            echo 'done'
-        else
-            echo 'failed'
-        fi
-    fi
-fi
 
 echo -n '+ setting default quotas (using w_ as a template) ... '
 if "$edquota" -p w_ "$ACCOUNT_NAME"; then
     echo 'done'
 fi
 
-echo -n '+ adding new virtual host record into httpd config ... '
-TMPFILE="$(mktemp $VIRTWWW_CFGDIR/$ACCOUNT_NAME.conf.XXXXXXXXXX)" || exit 1
-trap 'rm -f -- "$TMPFILE"' EXIT
-trap 'trap - EXIT; rm -f -- "$TMPFILE"; exit 1' HUP INT QUIT TERM
-echo "# created: $(date '+%x [%X]')" > "$TMPFILE"
-count=0
-ALIAS_LIST=
-IFS=', '
-for domain in $DOMAIN_NAMES ; do
-    if [ "$count" -gt 0 ]; then
-	ALIAS_LIST="${ALIAS_LIST:+$ALIAS_LIST }$domain"
-    fi
-    count=$(($count+1))
-done
-
-if ! ln "$TMPFILE" "$VIRTWWW_CFGDIR/$ACCOUNT_NAME.conf" 2>/dev/null ; then
-	echo 'failed'
-	echo "$0: could not add configuration for '$ACCOUNT_NAME'"
-	echo "Please insert the following snippet to '$VIRTWWW_CFGDIR/$ACCOUNT_NAME' file:"
-	echo '===[ begin ]==='
-	cat "$TMPFILE"
-	echo '===[  end  ]==='
-else
-  if getent group nagios >/dev/null
-  then
-    chgrp nagios "$VIRTWWW_CFGDIR/$ACCOUNT_NAME.conf"
-    chmod g+r "$VIRTWWW_CFGDIR/$ACCOUNT_NAME.conf"
-  fi
-fi
-echo 'done'
-
 vhost_prefix_f="$config_dir/apache_vhost"
 metadata_str="
 set $vhost_prefix_f:_:linux_user $ACCOUNT_NAME
-set $vhost_prefix_f:_:document_root $VHOST_HOME
+set $vhost_prefix_f:_:document_root $VHOST_DOC_ROOT
 set $vhost_prefix_f:0 devpanel_main
 set $vhost_prefix_f:_:name:devpanel_main 0
 set $vhost_prefix_f:0:_:template_ref names/apache_vhost_template
@@ -472,24 +285,9 @@ echo '---[ end of creating new virtual host ]---'
 echo
 echo "Don't forget to set password for '$ACCOUNT_NAME' :)"
 echo "Bye"
-if [ -n "$DB_CREATE_FAILED" ]; then
-    echo 'An error occured during the database creation, the following is the'
-    echo 'output from the createdb script:'
-    echo '==='
-    echo "$CREATEDB_OUTPUT"
-    echo '==='
-    exit 1
-else
-    if [ -n "$VHOST_PHPMYADMIN" -a -n "$DB_ADMIN_PASS" ]; then
-        echo '===[ database credentials ]==='
-        echo "db host: $DB_HOST"
-        echo "db port: $DB_PORT"
-        echo
-        echo "db login = 'admin', password = '$DB_ADMIN_PASS'"
-        echo "db login = '$ACCOUNT_NAME', password = '$DB_USER_PASS'"
-    fi
-fi
+# //stack stuff
 
+# apache: add default domain to apache
 count=0
 for domain in $DOMAIN_NAMES; do
   if [ $count -eq 0 ]; then
@@ -505,5 +303,6 @@ for domain in $DOMAIN_NAMES; do
   fi 
   count=$(( $count + 1 ))
 done 
+# // apache
 
 exit 0

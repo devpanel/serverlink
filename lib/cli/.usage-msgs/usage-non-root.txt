@@ -1,0 +1,13 @@
+Usage: @self_basename@ <command> [args]
+
+  Commands
+
+    refresh config       updates config files of the app with DB credentials
+    clear app cache      clears the cache of the app on the specified vhost
+
+
+  For more information about a specific command, run:
+    @sb@ @self_basename@ COMMAND --help
+
+    Example: # @self_basename@ refresh config --help
+

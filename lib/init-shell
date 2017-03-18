@@ -1,6 +1,6 @@
 #!/bin/bash
 
-self_bin=$(readlink -e "$0")
+self_bin=$(readlink -e "${BASH_SOURCE[0]}")
 self_dir=${self_bin%/*}
 sys_dir=${self_dir%/*}
 
@@ -10,7 +10,7 @@ if ! source "$lib_f"; then
   exit 1
 fi
 
-public_html_dir=$(get_docroot_from_user)
+public_html_dir=$(get_docroot_from_vhost "$DEVPANEL_VHOST")
 if [ -d "$public_html_dir" ]; then
   cd "$public_html_dir"
 fi

@@ -2,7 +2,11 @@
 
 usage_default() {
 
-  show_help_msg main
+  if [ $EUID -eq 0 ]; then
+    show_help_msg usage-root
+  else
+    show_help_msg usage-non-root
+  fi
 
   exit 1
 }

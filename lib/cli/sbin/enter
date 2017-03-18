@@ -43,16 +43,17 @@ devpanel_cmd__enter() {
     error "either --vhost or --domain needs to be specified"
   fi
 
-  if [ -z "$vhost" ]; then
-    . $sys_dir/lib/functions
+  . $sys_dir/lib/functions
 
+  if [ -z "$vhost" ]; then
     vhost=$(get_vhost_with_hostname "$domain")
     if [ $? -ne 0 ]; then
       error "didn't find any vhost with the specified hostname"
     fi
   fi
 
-  user="w_$vhost"
+  get_linux_username_from_vhost "$vhost" && \
+  user="$_dp_value"
 
   echo "Starting a shell for vhost $vhost (user: $user)..."
   if hash runuser &>/dev/null; then
@@ -61,9 +62,9 @@ devpanel_cmd__enter() {
     # there are some versions of 'runuser' that don't have the -u option
     # so detect it and run it with the appropriate args
     if runuser --help 2>&1 | fgrep -q -- -u; then
-      runuser -u "$user" -- /bin/bash "${run_args[@]}"
+      runuser -u "$user" -- env DEVPANEL_VHOST=$vhost /bin/bash "${run_args[@]}"
     else
-      runuser -- "$user" "${run_args[@]}"
+      runuser -- "$user" env DEVPANEL_VHOST=$vhost "${run_args[@]}"
     fi
   else
     su -l "$user"
