@@ -11,7 +11,6 @@ set_usage_msg \
 "
 
 devpanel_cmd__config_refresh() {
-  [ $# -eq 0 -o -z "$1" ] && usage
 
   local name vhost
   local -a cmd_args=()
@@ -37,10 +36,22 @@ devpanel_cmd__config_refresh() {
     esac
   done
 
-  [ -z "$vhost" ] && error_missing_param vhost
+  [ -z "$vhost" -a $EUID -eq 0 ] && error_missing_param vhost
 
-  local user="w_$vhost"
+  if [ $EUID -eq 0 ]; then
+    . "$sys_dir/lib/functions"
 
-  su -l \
-    -c "$sys_dir/bin/restore-vhost-subsystem"\ "${cmd_args[*]}"\ -n "$user"
+    local user
+
+    get_linux_username_from_vhost "$vhost"
+    if ! user="$_dp_value"; then
+      error "unable to get linux username for vhost $vhost"
+    fi
+
+    su -l \
+      -c "$sys_dir/bin/restore-vhost-subsystem"\ "${cmd_args[*]}"\ -n "$user"
+  else
+    # not root, run it directly
+    "$sys_dir/bin/restore-vhost-subsystem" -n
+  fi
 }
