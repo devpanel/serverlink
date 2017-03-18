@@ -16,6 +16,8 @@ Usage: @self_basename@ <command> [args]
     manage domains       manages domains associated with a vhost
     enable htpasswd      enables htpasswd password protection for the
                          specified site
+    disable htpasswd     disables htpasswd password protection for the
+                         specified site
     manage htpasswd      manage htpasswd users (add and delete users, change
                          passwords)
     configure ssl        configures SSL for the specified site
