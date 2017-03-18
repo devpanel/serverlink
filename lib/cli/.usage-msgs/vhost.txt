@@ -26,6 +26,8 @@ Usage: @self_basename@ <command> [args]
     get tool token       gets a token for one of the admin tools (e.g.
                          phpmyadmin, extplorer, etc)
 
+    disable vhost        disables the specified vhost
+    enable  vhost        enables the specified vhost (case it's disabled)
 
   For help with a specific command, please run:
   @sb@ @self_basename@ <command> --help
