@@ -4,6 +4,7 @@ Usage: @self_basename@ <command> [args]
 
     refresh config       updates config files of the app with DB credentials
     clear app cache      clears the cache of the app on the specified vhost
+    reset app password   resets the password for the admin user of the app
 
 
   For more information about a specific command, run:

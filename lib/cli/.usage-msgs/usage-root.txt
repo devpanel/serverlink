@@ -7,6 +7,7 @@ Usage: @self_basename@ <command> [args]
     enter                start a shell for the specified vhost
     restart mysql        restarts mysql for the specified vhost or domain
     enable htpasswd      enables htpasswd password protection for the specified site
+    disable vhost        disables the specified vhost
 
   Other common commands
     manage htpasswd      manage htpasswd users (add and delete users, change passwords)
