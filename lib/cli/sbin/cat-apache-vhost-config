@@ -1,0 +1,45 @@
+#!/bin/bash
+
+set_usage_msg \
+  "Usage: $bin_name $action $object vhost config [opts] --vhost <vhost>
+
+  Options:
+    --vhost <vhost>         the vhost name
+
+  Displays the Apache configuration for the specified virtual host.
+"
+
+devpanel_cmd__apache_cat_vhost_config() {
+  [ $# -eq 0 -o -z "$1" ] && usage
+
+  local arg vhost
+
+  while [ -n "$1" ]; do
+    arg="$1"
+    case "$arg" in
+      --vhost)
+        [ -z "$2" ] && error_missing_value "$arg"
+        vhost="$2"
+        shift 2
+        ;;
+      --help)
+        usage
+        ;;
+      --[A-Za-z0-9_-]*)
+        error "unknown option $arg"
+        ;;
+      *)
+        usage
+        ;;
+    esac
+  done
+
+  [ -z "$vhost" ] && error_missing_param vhost
+  
+  "$sys_dir/libexec/check-vhost-name" archive "$vhost" || exit $?
+
+  local virtwww_dir="$sys_dir/compat/apache_include/virtwww"
+  local vhost_file="$virtwww_dir/w_$vhost.conf"
+
+  cat "$vhost_file"
+}
