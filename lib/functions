@@ -286,6 +286,16 @@ gen_random_str_az_lower() {
   wedp_gen_random_str $length a-z
 }
 
+is_valid_domain_string() {
+  local input_str="$1"
+
+  if [[ "$input_str" =~ ^[A-Za-z0-9.-]+$ ]]; then
+    return 0
+  else
+    return 1
+  fi
+}
+
 generate_linux_username_for_vhost() {
   local vhost="$1"
 

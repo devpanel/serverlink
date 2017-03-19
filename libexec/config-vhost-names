@@ -16,6 +16,9 @@ usage() {
     -n                      don't add the www prefix to aliases when adding
                             or removing a hostname
 
+    -N                      don't restart Apache after adding or removing
+                            hostname
+
   This script adds or removes hostnames to/from the specified virtual host.
 "
   exit 1
@@ -96,7 +99,8 @@ generate_serveralias() {
 
 prefix_with_www=1
 force_subdomain=0
-getopt_flags='nsi:'
+restart_apache=1
+getopt_flags='Nnsi:'
 
 unset ip
 while getopts $getopt_flags OPTOPT
@@ -110,6 +114,9 @@ do
       ;;
     n)
       unset prefix_with_www
+      ;;
+    N)
+      unset restart_apache
       ;;
     *)
       exit 1
@@ -358,4 +365,8 @@ if ! generate_serveralias "$vhost_base" "$server_hostname"; then
   error "unable to regenerate the ServerAlias entry"
 fi
 
-"$dir/config-vhost-apache" "$vhost" || exit 1
+if [ -n "$restart_apache" ]; then
+  "$dir/config-vhost-apache" "$vhost" || exit 1
+else
+  :
+fi
