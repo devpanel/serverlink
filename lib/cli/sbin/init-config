@@ -66,7 +66,7 @@ ipv4_to_hostname() {
 
 gen_hostname_for_ipv4() {
   local ipv4_addr="$1"
-  local domain="app.devpanel.net"
+  local domain="$2"
 
   ipv4_to_hostname "$ipv4_addr" "$domain"
 }
@@ -115,14 +115,15 @@ get_my_default_ipv4() {
 devpanel_cmd__init_config() {
   [ $# -eq 0 -o -z "$1" ] && usage
 
-  local arg hostname
+  local arg hostname domain
 
   while [ -n "$1" ]; do
     arg="$1"
     case "$arg" in
       --gen-hostname-from-ip)
+        assign_deref_os_prop_or_exit domain "$sys_dir" auto_gen_domain
         ipv4=$(get_my_default_ipv4)
-        hostname=$(gen_hostname_for_ipv4 "$ipv4")
+        hostname=$(gen_hostname_for_ipv4 "$ipv4" "$domain")
         shift
       ;;
 
