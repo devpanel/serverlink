@@ -4,10 +4,113 @@ set_usage_msg \
   "Usage: $bin_name ${cmd_ar[*]} [opts] --hostname <hostname>
 
   Options:
-    --hostname <name>       the base hostname for virtualhosts
+    --hostname <name>       		the base hostname for virtualhosts
+    --gen-hostname-from-ip  		generate a base hostname from the IP address
+																of the default network interface
 
   Initializes the basic config of a devPanel installation.
 "
+
+# auxiliary functions for generating the hostname
+b10_to_base36() {
+  # from https://en.wikipedia.org/wiki/Base36
+  local value=$1
+  local result=""
+  local base36="0123456789abcdefghijklmnopqrstuvwxyz"
+
+  while true; do
+    result=${base36:((value%36)):1}${result}
+    if [ $((value=${value}/36)) -eq 0 ]; then
+      break
+    fi
+  done
+
+  echo ${result}
+}
+
+ipv4_to_b10() {
+  local ipv4_addr="$1"
+  local -i n10
+  local n1 n2 n3 n4
+
+  IFS="." read n1 n2 n3 n4 <<< "$ipv4_addr"
+  n10=$(( ($n1 * (256**3) ) + ($n2 * (256**2) ) + ($n3 * 256) + $n4 ))
+
+  echo $n10
+}
+
+ipv4_to_b36() {
+  local ipv4_addr="$1"
+  local -i n10
+
+  n10=$(ipv4_to_b10 "$ipv4_addr")
+  b10_to_base36 $n10
+}
+
+ipv4_to_b36_reverse() {
+  local ipv4_addr="$1"
+  local n1 n2 n3 n4
+
+  IFS=. read n4 n3 n2 n1 <<< "$ipv4_addr"
+  ipv4_to_b36 "$n1.$n2.$n3.$n4"
+}
+
+ipv4_to_hostname() {
+  local ipv4_addr="$1"
+  local domain="$2"
+  local sub
+
+  sub=$(ipv4_to_b36_reverse "$ipv4_addr")
+  echo "$sub.$domain"
+}
+
+gen_hostname_for_ipv4() {
+  local ipv4_addr="$1"
+  local domain="app.devpanel.net"
+
+  ipv4_to_hostname "$ipv4_addr" "$domain"
+}
+
+get_ipv4_for_interface_up() {
+  local interface="$1"
+  local ipv4_regex='[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}'
+
+  local inet_line=$(ip addr show dev "$interface" scope global up \
+                    | egrep -m 1 -o "^[[:space:]]*inet $ipv4_regex")
+
+  if [ $? -ne 0 ]; then
+    echo "$FUNCNAME(): unable to get IPv4 for interface $interface" 1>&2
+    return 1
+  fi
+
+  local ipv4=${inet_line##* }
+  printf '%s' "$ipv4"
+}
+
+get_interface_default_route() {
+  local line=$(route -n | egrep -m 1 ^0.0.0.0)
+  if [ $? -ne 0 -o -z "$line" ]; then
+    echo "$FUNCNAME(): unable to get interface of default route" 1>&2
+    return 1
+  fi
+
+  local interface=${line##* }
+  printf '%s' "$interface"
+}
+
+get_my_default_ipv4() {
+  local interface=$(get_interface_default_route)
+  local st=$?
+  [ $st -ne 0 ] && return $st
+
+  local ipv4=$(get_ipv4_for_interface_up "$interface")
+  st=$?
+  [ $st -ne 0 ] && return $st
+
+  printf '%s' "$ipv4"
+}
+
+# // hostname functions
 
 devpanel_cmd__init_config() {
   [ $# -eq 0 -o -z "$1" ] && usage
@@ -17,6 +120,12 @@ devpanel_cmd__init_config() {
   while [ -n "$1" ]; do
     arg="$1"
     case "$arg" in
+      --gen-hostname-from-ip)
+        ipv4=$(get_my_default_ipv4)
+        hostname=$(gen_hostname_for_ipv4 "$ipv4")
+        shift
+      ;;
+
       --hostname)
         [ -z "$2" ] && error_missing_value hostname
         hostname="$2"
