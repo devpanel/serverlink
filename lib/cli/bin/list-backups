@@ -33,7 +33,6 @@ devpanel_cmd__list_backups() {
     [ -z "${!param}" ] && error_missing_param $param
   done
 
-  . $sys_dir/lib/functions
 
   local sys_bkp_dir bkp_src_dir archive_file
   assign_deref_os_prop_or_exit sys_bkp_dir "$sys_dir" data_dir

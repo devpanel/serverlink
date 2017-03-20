@@ -43,7 +43,6 @@ devpanel_cmd__enter() {
     error "either --vhost or --domain needs to be specified"
   fi
 
-  . $sys_dir/lib/functions
 
   if [ -z "$vhost" ]; then
     vhost=$(get_vhost_with_hostname "$domain")

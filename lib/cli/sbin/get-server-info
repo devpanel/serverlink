@@ -22,7 +22,6 @@ devpanel_cmd__get_server_info() {
     esac
   done
 
-  . $sys_dir/lib/functions
 
   echo "Linux Distribution: $(get_linux_distro_string 2>/dev/null)"
 

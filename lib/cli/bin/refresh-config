@@ -39,7 +39,6 @@ devpanel_cmd__refresh_config() {
   [ -z "$vhost" -a $EUID -eq 0 ] && error_missing_param vhost
 
   if [ $EUID -eq 0 ]; then
-    . "$sys_dir/lib/functions"
 
     local user
 

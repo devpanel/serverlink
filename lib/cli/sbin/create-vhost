@@ -112,7 +112,6 @@ devpanel_cmd__create_vhost() {
   fi
 
   if [ $st -eq 0 ]; then
-    . "$sys_dir/lib/functions"
     print_vhost_summary "$vhost"
     echo "Successfully created vhost $vhost"
   fi

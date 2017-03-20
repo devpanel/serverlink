@@ -219,5 +219,9 @@ while getopts $getopt_flags OPTN; do
 done
 [ $OPTIND -gt 1 ] && shift $(( $OPTIND - 1 ))
 
-# TODO: load functions
+lib_file="$sys_dir/lib/functions"
+if ! . "$lib_file"; then
+  error "unable to load lib file '$lib_file'"
+fi
+
 devpanel_run "$@"

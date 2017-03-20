@@ -44,7 +44,6 @@ devpanel_cmd__restart_mysql() {
   fi
 
   if [ -z "$vhost" ]; then
-    . $sys_dir/lib/functions
 
     vhost=$(get_vhost_with_hostname "$domain")
     if [ $? -ne 0 ]; then

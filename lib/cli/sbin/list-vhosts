@@ -21,7 +21,6 @@ devpanel_cmd__list_vhosts() {
     esac
   done
 
-  . $sys_dir/lib/functions
 
   vhosts_ar=( $(get_list_of_vhosts) )
 

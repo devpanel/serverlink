@@ -37,7 +37,6 @@ devpanel_cmd__restore_backup() {
     esac
   done
 
-  . $sys_dir/lib/functions
 
   local param
   for param in vhost file; do

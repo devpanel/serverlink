@@ -36,7 +36,6 @@ devpanel_cmd__find_domain() {
 
   [ -z "$domain" ] && error_missing_param domain
 
-  . $sys_dir/lib/functions
 
   vhost=$(get_vhost_with_hostname "$domain")
   if [ $? -eq 0 ]; then
