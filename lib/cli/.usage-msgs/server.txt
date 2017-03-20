@@ -2,6 +2,9 @@ Usage: @self_basename@ <command> [args]
 
   Server Oriented Commands:
 
+    update                      updates devPanel software
+    init config                 initializes the basic configuration of
+                                devPanel
     get server info             prints server information
     set base hostname           sets the base hostname for virtual hosts
     cat apache vhost config     shows the apache configuration for the vhost
@@ -11,5 +14,5 @@ Usage: @self_basename@ <command> [args]
   # @self_basename@ <command> --help
 
   Example:
-  # @self_basename@ restart taskd --help
+  # @self_basename@ init config --help
 
