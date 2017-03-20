@@ -37,7 +37,12 @@ error() {
   local exit_code="${2:-1}"
 
   [ -n "$msg" ] && echo "Error: $msg" 1>&2
-  exit $exit_code
+
+  if [ "$exit_code" == - ]; then
+    return 1
+  else
+    exit $exit_code
+  fi
 }
 
 get_namespace() {
@@ -140,6 +145,63 @@ escape_sed() {
   echo -n "$escaped"
 }
 
+devpanel_run() {
+  local -a cmd_ar=()
+  local -a non_opts_ar=()
+  local -a extra_args_ar=()
+
+  while [ -n "$1" ] && [ "${1:0:1}" != "-" ] && [[ "$1" =~ ^[A-Za-z0-9_.-]+$ ]]; do
+    non_opts_ar+=( "$1" )
+    shift
+  done
+
+  local arg filename n_last_arg
+  local test_bin full_bin_path found_bin run_bin
+  local namespace
+
+  n_last_arg=${#non_opts_ar[@]}
+  for((i=0; $i < $n_last_arg; i++)); do
+    arg=${non_opts_ar[$i]}
+    cmd_ar+=( $arg )
+
+    if [ $i -eq 0 ]; then
+      filename="$arg"
+    else
+      filename+="-$arg"
+    fi
+
+    for test_dir in libexec bin sbin; do
+      test_bin="$lib_dir/$test_dir/$filename"
+      if [ -f "$test_bin" -a -x "$test_bin" ]; then
+        found_bin=1
+
+        if [ "$test_dir" == sbin -a $EUID -ne 0 ]; then
+          error "this command requires ROOT privileges" -
+          break 2
+        fi
+
+        full_bin_path="$test_bin"
+        namespace=${filename//-/_}
+        extra_args_ar=(${non_opts_ar[@]:$(($i+1))})
+        run_bin=1
+        break 2
+      fi
+    done
+  done
+
+  if [ -n "$found_bin" ]; then
+    if [ -n "$run_bin" ]; then
+      devpanel_load_n_run "$namespace" "$full_bin_path" "$@"
+    else
+      return 1
+    fi
+  else
+    error "no such command" -
+    return 1
+  fi
+}
+
+
 # main
 __self_bin=`readlink -e "$0"`
 if [ $? -ne 0 ]; then
@@ -181,7 +243,6 @@ show_help_msg() {
   fi
 }
 
-
 [ $# -eq 0 -o -z "$1" ] && usage
 
 declare -A devpanel_usage_r=()
@@ -200,74 +261,5 @@ while getopts $getopt_flags OPTN; do
 done
 [ $OPTIND -gt 1 ] && shift $(( $OPTIND - 1 ))
 
-unset full_bin_path found_bin
-unset action object
-
-declare -a walk_args=()
-path_walk=""
-
-while [ -n "$1" ] && [ "${1:0:1}" != "-" ] && [[ "$1" =~ ^[A-Za-z0-9_.-]+$ ]]; do
-  walk_args+=( "$1" )
-  shift
-done
-
-if [ ${#walk_args[@]} -eq 1 ]; then
-  arg="${walk_args[0]}"
-
-  if [ $EUID -eq 0 ]; then
-    path_walk_1="$lib_dir/sbin/$arg"
-    path_walk_2="$lib_dir/bin/$arg"
-    if [ -f "$path_walk_1" -a -x "$path_walk_1" ]; then
-      path_walk="$path_walk_1"
-    else
-      path_walk="$path_walk_2"
-    fi
-  else
-    path_walk="$lib_dir/bin/$arg"
-  fi
-
-  if [ -f "$path_walk" -a -x "$path_walk" ]; then
-    action="$arg"
-    object=""
-    namespace="$action"
-    full_bin_path="$path_walk"
-    found_bin=1
-    # shift # crucial as there's only one argument
-  fi
-elif [ ${#walk_args[@]} -ge 2 ]; then
-  action="${walk_args[0]}"
-  object="${walk_args[1]}"
-
-  namespace="${object}_${action}"
-
-  path_walk="$lib_dir/libexec/$action-$object"
-
-  if [ -f "$path_walk" -a -x "$path_walk" ]; then
-    full_bin_path="$path_walk"
-    found_bin=1
-  else
-    for((i=2; $i < ${#walk_args[@]}; i++)); do
-      arg=${walk_args[$i]}
-      path_walk+="-$arg"
-      namespace+="_$arg"
-
-      if [ -f "$path_walk" -a -x "$path_walk" ]; then
-        full_bin_path="$path_walk"
-        found_bin=1
-        break
-      fi
-    done
-  fi
-fi
- 
-if [ -z "$found_bin" ]; then
-  error "unknown command (not found)"
-fi
-
-if [ -n "$verbose" ]; then
-  echo
-  echo "Executing: $full_bin_path $@"
-fi
-
-namespace=${namespace//-/_}
-devpanel_load_n_run "$namespace" "$full_bin_path" "$@"
+# TODO: load functions
+devpanel_run "$@"

@@ -1,7 +1,7 @@
 #!/bin/bash
 
 set_usage_msg \
-  "Usage: $bin_name $action $object [opts] --vhost <vhost> --name-value name=value
+  "Usage: $bin_name ${cmd_ar[*]} [opts] --vhost <vhost> --name-value name=value
 
   Options:
     --vhost <vhost>             the vhost
@@ -10,7 +10,7 @@ set_usage_msg \
   Sets specific name and value pairs to the specified application.
 "
 
-devpanel_cmd__app_config() {
+devpanel_cmd__config_app() {
   [ $# -eq 0 -o -z "$1" ] && usage
 
   local name vhost admin_pw

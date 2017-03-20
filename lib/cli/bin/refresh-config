@@ -1,16 +1,16 @@
 #!/bin/bash
 
 set_usage_msg \
-  "Usage: $bin_name $action $object password [opts] --vhost <vhost>
+  "Usage: $bin_name ${cmd_ar[*]} [opts] --vhost <vhost>
 
   Options:
-    --vhost <vhost>         the vhost
+    --vhost <vhost>         the vhost to backup
 
-  Resets the password of the admin user of the application. The new password 
-  is read from stdin.
+  Refreshes the configuration files of the specified apps, resetting
+  database credentials, etc.
 "
 
-devpanel_cmd__app_reset_password() {
+devpanel_cmd__refresh_config() {
 
   local name vhost
   local -a cmd_args=()
@@ -30,7 +30,8 @@ devpanel_cmd__app_reset_password() {
         error "unknown option $name"
         ;;
       *)
-        usage
+        cmd_args+=( "$name" )
+        shift
         ;;
     esac
   done
@@ -48,9 +49,9 @@ devpanel_cmd__app_reset_password() {
     fi
 
     su -l \
-      -c "$sys_dir/bin/restore-vhost-subsystem -i -p" "$user"
+      -c "$sys_dir/bin/restore-vhost-subsystem"\ "${cmd_args[*]}"\ -n "$user"
   else
     # not root, run it directly
-    "$sys_dir/bin/restore-vhost-subsystem" -i -p
+    "$sys_dir/bin/restore-vhost-subsystem" -n
   fi
 }

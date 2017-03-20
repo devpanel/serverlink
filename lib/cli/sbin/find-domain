@@ -1,7 +1,7 @@
 #!/bin/bash
 
 set_usage_msg \
-  "Usage: $bin_name $action $object [opts] --domain <domain> 
+  "Usage: $bin_name ${cmd_ar[*]} [opts] --domain <domain> 
 
   Options:
     --domain <domain>         the domain name you're looking for (e.g.
@@ -11,7 +11,7 @@ set_usage_msg \
   associated with it.
 "
 
-devpanel_cmd__domain_find() {
+devpanel_cmd__find_domain() {
   [ $# -eq 0 -o -z "$1" ] && usage
 
   local name vhost domain

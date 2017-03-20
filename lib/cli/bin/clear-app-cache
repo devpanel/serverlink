@@ -1,19 +1,21 @@
 #!/bin/bash
 
 set_usage_msg \
-  "Usage: $bin_name $action $object [opts] --vhost <vhost>
+  "Usage: $bin_name ${cmd_ar[*]} cache [opts] --vhost <vhost>
 
   Options:
-    --vhost <vhost>         the vhost to protect
+    --vhost <vhost>             the vhost
 
-  Enables Let's Encrypt certificates on the specified vhost.
+  Clears the cache of the app on the specified vhost.
 "
 
-devpanel_cmd__lets_encrypt_enable() {
+devpanel_cmd__clear_app_cache() {
   [ $# -eq 0 -o -z "$1" ] && usage
 
-  local name vhost file
+  local name vhost
+
   local -a cmd_args=()
+  local -a opts_ar=( )
 
   while [ -n "$1" ]; do
     name="$1"
@@ -27,13 +29,16 @@ devpanel_cmd__lets_encrypt_enable() {
         usage
         ;;
       *)
-        cmd_args+=( "$name" )
-        shift
+        usage
         ;;
     esac
   done
 
   [ -z "$vhost" ] && error_missing_param vhost
 
-  "$sys_dir/libexec/lets-encrypt-wrapper" enable $vhost
+  user="w_${vhost}"
+
+  local exec_bin="$sys_dir/bin/restore-vhost-subsystem"
+
+  su -l -c "$exec_bin -C" "$user"
 }

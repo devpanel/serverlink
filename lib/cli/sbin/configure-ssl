@@ -1,7 +1,7 @@
 #!/bin/bash
 
 set_usage_msg \
-  "Usage: $bin_name $action $object [opts] --vhost <vhost> [--ca-file <ca_file>]
+  "Usage: $bin_name ${cmd_ar[*]} [opts] --vhost <vhost> [--ca-file <ca_file>]
                           --cert-file <file> --priv-key-file <priv_key_file>
 
   Options:
@@ -15,7 +15,7 @@ set_usage_msg \
 "
 
 # main
-devpanel_cmd__ssl_configure() {
+devpanel_cmd__configure_ssl() {
   [ $# -eq 0 -o -z "$1" ] && usage
 
   local name vhost source

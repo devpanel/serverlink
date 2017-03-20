@@ -1,7 +1,7 @@
 #!/bin/bash
 
 set_usage_msg \
-  "Usage: $bin_name $action $object --vhost <vhost> <options>
+  "Usage: $bin_name ${cmd_ar[*]} --vhost <vhost> <options>
 
   Options:
     --vhost <vhost>           the vhost to backup
@@ -19,7 +19,7 @@ set_usage_msg \
   Manages domains on the specified vhost.
 "
 
-devpanel_cmd__domains_manage() {
+devpanel_cmd__manage_domains() {
   [ $# -eq 0 -o -z "$1" ] && usage
 
   local name vhost domain

@@ -1,7 +1,7 @@
 #!/bin/bash
 
 set_usage_msg \
-  "Usage: $bin_name $action $object [opts] --vhost <vhost>
+  "Usage: $bin_name ${cmd_ar[*]} [opts] --vhost <vhost>
 
   Options:
     --vhost <vhost>         the vhost to restore
@@ -9,7 +9,7 @@ set_usage_msg \
   Lists the backup files available for the specified vhost.
 "
 
-devpanel_cmd__backups_list() {
+devpanel_cmd__list_backups() {
   [ $# -eq 0 -o -z "$1" ] && usage
 
   local name vhost file

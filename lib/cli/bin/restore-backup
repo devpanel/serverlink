@@ -1,7 +1,7 @@
 #!/bin/bash
 
 set_usage_msg \
-  "Usage: $bin_name $action $object [opts] --vhost <vhost> --file <filename>
+  "Usage: $bin_name ${cmd_ar[*]} [opts] --vhost <vhost> --file <filename>
 
   Options:
     --vhost <vhost>         the vhost to restore
@@ -10,7 +10,7 @@ set_usage_msg \
   Restores the contents of an archive file into the specified vhost
 "
 
-devpanel_cmd__backup_restore() {
+devpanel_cmd__restore_backup() {
   [ $# -eq 0 -o -z "$1" ] && usage
 
   local name vhost file

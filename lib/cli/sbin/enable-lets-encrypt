@@ -1,15 +1,15 @@
 #!/bin/bash
 
 set_usage_msg \
-  "Usage: $bin_name $action $object [opts] --vhost <vhost>
+  "Usage: $bin_name ${cmd_ar[*]} [opts] --vhost <vhost>
 
   Options:
     --vhost <vhost>         the vhost to protect
 
-  Disables the specified vhost.
+  Enables Let's Encrypt certificates on the specified vhost.
 "
 
-devpanel_cmd__vhost_disable() {
+devpanel_cmd__enable_lets_encrypt() {
   [ $# -eq 0 -o -z "$1" ] && usage
 
   local name vhost file
@@ -26,9 +26,6 @@ devpanel_cmd__vhost_disable() {
       --help)
         usage
         ;;
-      --[A-Za-z0-9_-]*)
-        error "unknown option $name"
-        ;;
       *)
         cmd_args+=( "$name" )
         shift
@@ -38,5 +35,5 @@ devpanel_cmd__vhost_disable() {
 
   [ -z "$vhost" ] && error_missing_param vhost
 
-  "$sys_dir/libexec/lock-vhost" "${cmd_args[@]}" $vhost
+  "$sys_dir/libexec/lets-encrypt-wrapper" enable $vhost
 }

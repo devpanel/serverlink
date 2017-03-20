@@ -1,15 +1,15 @@
 #!/bin/bash
 
 set_usage_msg \
-  "Usage: $bin_name $action $object [opts] --vhost <vhost>
+  "Usage: $bin_name ${cmd_ar[*]} [opts] --vhost <vhost>
 
   Options:
     --vhost <vhost>         the vhost to protect
 
-  Disables htpasswd protection on the specified vhost.
+  Enables the specified vhost.
 "
 
-devpanel_cmd__htpasswd_enable() {
+devpanel_cmd__enable_vhost() {
   [ $# -eq 0 -o -z "$1" ] && usage
 
   local name vhost file
@@ -38,5 +38,5 @@ devpanel_cmd__htpasswd_enable() {
 
   [ -z "$vhost" ] && error_missing_param vhost
 
-  "$sys_dir/libexec/htaccess-unlock-vhost" "${cmd_args[@]}" $vhost
+  "$sys_dir/libexec/unlock-vhost" "${cmd_args[@]}" $vhost
 }

@@ -1,12 +1,12 @@
 #!/bin/bash
 
 set_usage_msg \
-  "Usage: $bin_name $action $object [opts] --vhost <vhost>
+  "Usage: $bin_name ${cmd_ar[*]} [opts] --vhost <vhost>
 
   Lists the vhosts on this server.
 "
 
-devpanel_cmd__vhosts_list() {
+devpanel_cmd__list_vhosts() {
   local vhost vhosts_ar name app default_host url
 
   while [ -n "$1" ]; do

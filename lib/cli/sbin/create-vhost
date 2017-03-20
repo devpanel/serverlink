@@ -1,7 +1,7 @@
 #!/bin/bash
 
 set_usage_msg \
-  "Usage: $bin_name $action $object [opts] --vhost <vhost> --from <source>
+  "Usage: $bin_name ${cmd_ar[*]} [opts] --vhost <vhost> --from <source>
 
   Options:
     --vhost <vhost>           name of the vhost
@@ -18,7 +18,7 @@ set_usage_msg \
 "
 
 # main
-devpanel_cmd__vhost_create() {
+devpanel_cmd__create_vhost() {
   [ $# -eq 0 -o -z "$1" ] && usage
 
   local name vhost from source_type title

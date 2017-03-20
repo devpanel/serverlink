@@ -6,7 +6,7 @@ set_usage_msg \
   Prints server information.
 "
 
-devpanel_cmd__server_get_info() {
+devpanel_cmd__get_server_info() {
   while [ -n "$1" ]; do
     name="$1"
     case "$name" in
