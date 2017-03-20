@@ -1,0 +1,14 @@
+#!/bin/bash
+
+set_usage_msg \
+  "Usage: $bin_name ${cmd_ar[*]} [opts]
+
+  Updates the local devPanel installation.
+"
+
+devpanel_cmd__update() {
+
+  "$sys_dir/libexec/update-scripts" || return $?
+
+  "$sys_dir/libexec/update-packages" -y
+}
