@@ -2370,13 +2370,15 @@ Information about vhost @vhost@
 
 Domains: @domains@
 App: @app_type@
+SFTP User: @ssh_user@
+SFTP Host: @ssh_host@
 MySQL Host/Port: @db_host_port@
 MySQL Database:  @db_name@
 "
 
   local -a domains_ar=( $(get_hostnames_from_vhost "$vhost") )
   local domains_txt="" out_txt=""
-  local db_name db_host_port db_name app_type
+  local ssh_host ssh_user db_name db_host_port db_name app_type
 
   app_type=$(get_app_type_from_vhost "$vhost")
   db_host_port=$(get_mysql_db_host_port_from_vhost "$vhost")
@@ -2387,12 +2389,19 @@ MySQL Database:  @db_name@
     domains_txt+="    $domain"$'\n'
   done
 
+  get_linux_username_from_vhost "$vhost" && \
+    ssh_user="$_dp_value"
+
+  ssh_host=$(get_server_base_domain)
+
   out_txt="$summ_txt"
   out_txt=${out_txt//@vhost@/$vhost}
   out_txt=${out_txt//@domains@/$domains_txt}
   out_txt=${out_txt//@app_type@/$app_type}
   out_txt=${out_txt//@db_host_port@/$db_host_port}
   out_txt=${out_txt//@db_name@/$db_name}
+  out_txt=${out_txt//@ssh_user@/$ssh_user}
+  out_txt=${out_txt//@ssh_host@/$ssh_host}
 
   echo "$out_txt"
 }
