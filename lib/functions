@@ -20,7 +20,12 @@ error() {
   local exit_code="${2:-1}"
 
   [ -n "$msg" ] && echo "Error: $msg" 1>&2
-  exit $exit_code
+
+  if [ "$exit_code" == - ]; then
+    return 1
+  else
+    exit $exit_code
+  fi
 }
 
 wedp_warn() {

@@ -73,13 +73,13 @@ set_usage_msg() {
 }
 
 error_missing_value() {
-  local name="$1"
+  local name="${1#--}"
 
   error "missing value of parameter --$name"
 }
 
 error_missing_param() {
-  local name="$1"
+  local name="${1#--}"
 
   error "missing required parameter --$name. Please specify it."
 }
@@ -160,6 +160,21 @@ devpanel_run() {
   fi
 }
 
+_devpanel_cli_cleanup() {
+  local _tmp_file _tmp_dir
+  if [ ${#temp_files_ar[@]} -gt 0 ]; then
+    for _tmp_file in "${temp_files_ar[@]}"; do
+      rm -f "${_tmp_file}"
+    done
+  fi
+
+  if [ ${#temp_dirs_ar[@]} -gt 0 ]; then
+    for _tmp_dir in "${temp_dirs_ar[@]}"; do
+      rm_rf_safer "${_tmp_dir}"
+    done
+  fi
+}
+
 # main
 __self_bin=`readlink -e "$0"`
 if [ $? -ne 0 ]; then
@@ -177,12 +192,7 @@ declare -r lib_dir="$sys_dir/lib/cli"
 
 show_help_msg() {
   local section="$1"
-
-  local msg_dir="$sys_dir/lib/cli/.usage-msgs"
-
-  local msg_file="$msg_dir/$section.txt"
-
-  local basename=$(escape_sed "$self_basename")
+  shift
 
   local sb
 
@@ -192,13 +202,40 @@ show_help_msg() {
     sb='\$'
   fi
 
-  if [ -f "$msg_file" ]; then
-    sed -e "s/@self_basename@/$basename/g; s/@sb@/$sb/g;" "$msg_file"
-  else
+  local msg_dir="$sys_dir/lib/cli/.usage-msgs"
+  local msg_file="$msg_dir/$section.txt"
+
+  if [ ! -f "$msg_file" ]; then
     echo -n "$FUNCNAME(): unknown section $section. "
     echo    "Please try running: ${sb#\\} $basename help" 1>&2
     return 1
   fi
+
+  local name value name_esc value_esc
+  local -a sed_replace_ar=()
+  local basename=$(escape_sed "$self_basename")
+
+  sed_replace_ar+=( "s/@self_basename@/$basename/g; s/@sb@/$sb/g;"$'\n' )
+  while [ -n "$1" ]; do
+    [[ ! "$1" == *=* ]] && continue
+    name="${1%%=*}"
+    value="${1##*=}"
+
+    name_esc=$(escape_sed "$name")
+    value_esc=$(escape_sed "$value")
+
+    sed_replace_ar+=( "s/@$name_esc@/$value_esc/g;"$'\n' )
+    shift
+  done
+
+  local tmp_file
+
+  tmp_file=$(mktemp) || return 1
+  temp_files_ar+=( "$tmp_file" )
+
+  echo "${sed_replace_ar[@]}" >"$tmp_file" || return $?
+
+  sed -r -f "$tmp_file" "$msg_file"
 }
 
 [ $# -eq 0 -o -z "$1" ] && usage
@@ -223,5 +260,9 @@ lib_file="$sys_dir/lib/functions"
 if ! . "$lib_file"; then
   error "unable to load lib file '$lib_file'"
 fi
+
+declare -a temp_files_ar=()
+declare -a temp_dirs_ar=()
+trap _devpanel_cli_cleanup EXIT
 
 devpanel_run "$@"
