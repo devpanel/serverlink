@@ -4,9 +4,13 @@ set_usage_msg \
   "Usage: $bin_name ${cmd_ar[*]} [opts] --hostname <hostname>
 
   Options:
-    --hostname <name>       		the base hostname for virtualhosts
-    --gen-hostname-from-ip  		generate a base hostname from the IP address
-																of the default network interface
+    --hostname <name>               the base hostname for virtualhosts
+
+    --gen-hostname-from-ip          generate a base hostname from the IP address
+                                    of the default network interface
+
+    --virtualbox-net-workaround     try to find an IP of an interface that is
+                                    not the NAT one
 
   Initializes the basic config of a devPanel installation.
 "
@@ -110,20 +114,55 @@ get_my_default_ipv4() {
   printf '%s' "$ipv4"
 }
 
+get_net_interfaces() {
+  local -i n_intf=0
+
+  while read line; do
+    [[ ! "$line" == *:\ *  ]] && continue
+    read intf_name remaining <<< "$line"
+    intf_name=${intf_name%:}
+
+    n_intf+=1
+    echo "$intf_name"
+  done < /proc/net/dev
+
+  if [ $n_intf -gt 0 ]; then
+    # success when found more than 0 interfaces
+    return 0
+  else
+    return 1
+  fi
+}
+
+find_non_local_virtualbox_ipv4() {
+  local _intf ipv4
+  
+  for _intf in $(get_net_interfaces); do
+    [ "$_intf" == lo ] && continue
+
+    if ipv4=$(get_ipv4_for_interface_up "$_intf"); then
+      if [ "$ipv4" != "10.0.2.15" ]; then
+        echo "$ipv4"
+        return 0
+      fi
+    fi
+  done
+
+  return 1
+}
+
 # // hostname functions
 
 devpanel_cmd__init_config() {
   [ $# -eq 0 -o -z "$1" ] && usage
 
-  local arg hostname domain
+  local arg hostname ipv4 domain vagrant_net_workaround auto_gen_hostname
 
   while [ -n "$1" ]; do
     arg="$1"
     case "$arg" in
       --gen-hostname-from-ip)
-        assign_deref_os_prop_or_exit domain "$sys_dir" auto_gen_domain
-        ipv4=$(get_my_default_ipv4)
-        hostname=$(gen_hostname_for_ipv4 "$ipv4" "$domain")
+        auto_gen_hostname=1
         shift
       ;;
 
@@ -132,6 +171,13 @@ devpanel_cmd__init_config() {
         hostname="$2"
         shift 2
         ;;
+
+      --virtualbox-net-workaround)
+        auto_gen_hostname=1
+        virtualbox_net_workaround=1
+        shift
+        ;;
+
       --help)
         usage
         ;;
@@ -144,7 +190,28 @@ devpanel_cmd__init_config() {
     esac
   done
 
-  [ -z "$hostname" ] && usage
+  if [ -n "$auto_gen_hostname" -a -n "$hostname" ]; then
+    error "received conflicting parameters about hostname generation." - && \
+      return 1
+  fi
+
+  if [ -n "$virtualbox_net_workaround" ]; then
+    ipv4=$(find_non_local_virtualbox_ipv4)
+    if [ $? -ne 0 ]; then
+      error "unable to find an IP to use in hostname generation" - && \
+        return 1
+    fi
+  fi
+
+  if [ -n "$auto_gen_hostname" ]; then
+    assign_deref_os_prop_or_exit domain "$sys_dir" auto_gen_domain
+    [ -z "$ipv4" ] && ipv4=$(get_my_default_ipv4)
+    hostname=$(gen_hostname_for_ipv4 "$ipv4" "$domain")
+    echo "Setting base hostname to '$hostname' based on IP '$ipv4'."
+  else
+    [ -z "$hostname" ] && usage
+  fi
+
 
   devpanel_run update
 
