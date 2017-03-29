@@ -31,7 +31,7 @@ devpanel_cmd__get_server_info() {
   apache_vhosts_port=$(get_apache_vhosts_port)
 
   declare -a vhosts_ar
-  vhosts_ar=$(get_list_of_vhosts)
+  vhosts_ar=( $(get_list_of_vhosts) )
   n_vhosts=${#vhosts_ar[@]}
 
   echo "Apache Vhosts Port: $apache_vhosts_port"
