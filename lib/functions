@@ -1350,6 +1350,37 @@ get_vhost_default_hostname() {
   fi
 }
 
+is_ssl_enabled_on_vhost() {
+  local vhost="$1"
+
+  local conf_dir="$DEVPANEL_HOME/config/vhosts/$vhost"
+  local ssl_link="$conf_dir/apache_vhost:_:name:default_ssl"
+
+  if [ -L "$ssl_link" ]; then
+    return 0
+  else
+    return 1
+  fi
+}
+
+get_main_url_of_vhost() {
+  local vhost="$1"
+  local url domain
+
+  if is_ssl_enabled_on_vhost "$vhost"; then
+    url="https://"
+  else
+    url="http://"
+  fi
+
+  domain=$(get_vhost_default_hostname "$vhost") || return $?
+
+  url+="$domain"
+  url+="/"
+
+  echo "$url"
+}
+
 set_vhost_default_hostname() {
   local vhost="$1"
   local hostname="$2"
@@ -2373,6 +2404,8 @@ print_vhost_summary() {
   local summ_txt="
 Information about vhost @vhost@
 
+Main URL: @main_url@
+
 Domains: @domains@
 App: @app_type@
 SFTP User: @ssh_user@
@@ -2383,8 +2416,9 @@ MySQL Database:  @db_name@
 
   local -a domains_ar=( $(get_hostnames_from_vhost "$vhost") )
   local domains_txt="" out_txt=""
-  local ssh_host ssh_user db_name db_host_port db_name app_type
+  local main_url ssh_host ssh_user db_name db_host_port db_name app_type
 
+  main_url=$(get_main_url_of_vhost "$vhost")
   app_type=$(get_app_type_from_vhost "$vhost")
   db_host_port=$(get_mysql_db_host_port_from_vhost "$vhost")
   db_name=$(get_mysql_db_name_from_vhost "$vhost")
@@ -2400,6 +2434,7 @@ MySQL Database:  @db_name@
   ssh_host=$(get_server_base_domain)
 
   out_txt="$summ_txt"
+  out_txt=${out_txt//@main_url@/$main_url}
   out_txt=${out_txt//@vhost@/$vhost}
   out_txt=${out_txt//@domains@/$domains_txt}
   out_txt=${out_txt//@app_type@/$app_type}
