@@ -1,0 +1,55 @@
+#!/bin/bash
+
+set_usage_msg \
+  "Usage: $bin_name ${cmd_ar[*]} [opts]
+
+  Options:
+    --vhost <name>         the name of the vhost
+
+
+  Displays information about the specified vhost
+"
+
+devpanel_cmd__show_vhost_info() {
+
+  local vhost arg
+  local -a cmd_args=()
+
+  while [ -n "$1" ]; do
+    arg="$1"
+    case "$arg" in
+      --vhost)
+        [ -z "$2" ] && error_missing_value "$arg" && return 1
+        if [[ "$2" =~ ^[A-Za-z0-9_]+$ ]]; then
+          vhost="$2"
+          shift 2
+        else
+          error "invalid format for vhost name"
+        fi
+        ;;
+      --help)
+        usage
+        ;;
+      --[A-Za-z0-9_-]*)
+        error "unknown option $name"
+        ;;
+      *)
+        usage
+        ;;
+    esac
+  done
+
+  if [ $EUID -eq 0 ]; then
+    [ -z "$vhost" ] && usage
+
+    "$sys_dir/libexec/check-vhost-name" archive "$vhost" || return $?
+  else
+    vhost=$(get_vhost_from_linuxuser)
+    if [ $? -ne 0 ]; then
+      error "unable to determine the vhost from the current user" -
+      return 1
+    fi
+  fi
+
+  print_vhost_summary "$vhost"
+}
