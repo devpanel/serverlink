@@ -1,0 +1,3 @@
+
+HINT: to install an app you can use:
+# @self_basename@ install app --publisher @publisher@ --app name-of-the-app

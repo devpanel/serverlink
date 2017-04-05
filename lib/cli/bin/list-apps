@@ -1,0 +1,73 @@
+#!/bin/bash
+
+set_usage_msg \
+  "Usage: $bin_name ${cmd_ar[*]} [opts]
+
+  Options:
+    --publisher <name>         publisher of the application
+
+
+  Lists the applications available for installation.
+"
+
+devpanel_cmd__list_apps() {
+
+  local name vhost arg publisher
+  local -a cmd_args=()
+
+  while [ -n "$1" ]; do
+    arg="$1"
+    case "$arg" in
+      --publisher)
+        [ -z "$2" ] && error_missing_value publisher && return 1
+        if [[ "$publisher" =~ ^[A-Za-z0-9_]+$ ]]; then
+          publisher="$2"
+          shift 2
+        else
+          error "invalid format for publisher name"
+        fi
+        ;;
+      --help)
+        usage
+        ;;
+      --[A-Za-z0-9_-]*)
+        error "unknown option $name"
+        ;;
+      *)
+        usage
+        ;;
+    esac
+  done
+
+  local temp_file line first second
+  local app desc file version enabled
+
+  if [ -z "$publisher" ]; then
+    publisher=$(get_default_app_publisher) || return $?
+  fi
+
+  temp_file=$(mktemp) || return 1
+  temp_files_ar+=( "$temp_file" )
+
+  get_app_metadata_from_publisher "$publisher" "$temp_file" || return $?
+
+  local format="%-15s\t%-9s\t%s\n"
+  printf "$format" App "Display Name" Version
+  while read line; do
+    [ -z "$line"           ] && continue
+    [ "${line:0:1}" == "#" ] && continue
+
+    _ltsv_line="$line"
+
+    ltsv_get_value enabled        && enabled="$_ltsv_value"      || continue
+    [ "$enabled" != "true" ]      && continue
+
+    ltsv_get_value name           && app="$_ltsv_value"          || continue
+    ltsv_get_value display_name   && display_name="$_ltsv_value" || continue
+    ltsv_get_value version        && version="$_ltsv_value"      || continue
+
+    printf "$format" "$app" "$display_name" "$version"
+  done < "$temp_file"
+
+  show_help_msg quick-app-install publisher="$publisher"
+}

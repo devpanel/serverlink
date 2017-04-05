@@ -2446,3 +2446,217 @@ MySQL Database:  @db_name@
   echo "$out_txt"
 }
 
+ltsv_get_value() {
+  local key="$1"
+  local line="${2:-$_ltsv_line}"
+
+  unset _ltsv_value
+
+  local value tmp_ext_1 tmp_ext_2
+
+  if ! [[ "$line" == *$key:* ]]; then
+    return 1
+  fi
+
+  tmp_ext_1=${line#$key:}
+  if [ "$tmp_ext_1" != "$line" ]; then
+    # parameter is the first one on the line
+    # remove any remaining text
+    value=${tmp_ext_1%%$'\t'*}
+  else
+    # check beyond the first position
+    tmp_ext_2=${line##*$'\t'$key:}
+    if [ "$tmp_ext_2" == "$line" ]; then
+      return 1 # parameter not found
+    else
+      # remove any remaining text
+      value=${tmp_ext_2%%$'\t'*}
+    fi
+  fi
+
+  _ltsv_value="$value"
+
+  [ -n "$_ltsv_print" ] && printf '%s' "$value"
+
+  return 0
+}
+
+ltsv_has_key_with_value() {
+  local key="$1"
+  local wanted_value="$2"
+  local line="${3:-$_ltsv_line}"
+  local found_value=""
+
+  ltsv_get_value "$key" "$line" || return 1
+
+  found_value="$_ltsv_value"
+  if [ "$found_value" == "$wanted_value" ]; then
+    return 0
+  else
+    return 1
+  fi
+}
+
+ltsv_find_line_with_keys_n_values() {
+	local file="$1"
+  shift
+
+  local -a keys_ar values_ar
+  local key value line
+  while [ -n "$1" ]; do
+    key=${1%%=*}
+    value=${1#*=}
+
+    keys_ar+=( "$key" )
+    values_ar+=( "$value" )
+    shift
+  done
+
+  local -i n_keys=${#keys_ar[@]}
+  while read line; do
+    [ -z "$line"           ] && continue
+    [ "${line:0:1}" == "#" ] && continue
+
+    _ltsv_line="$line"
+
+    local -i max_n=$(( $n_keys - 1 ))
+    for((i=0; i <= $max_n; i++)); do
+      key=${keys_ar[$i]}
+      value=${values_ar[$i]}
+
+      if ltsv_has_key_with_value "$key" "$value"; then
+        if [ $i == $max_n ]; then
+          # test all key-values, and all matched
+          echo "$line"
+          return 0
+        fi
+      else
+        break
+      fi
+    done
+  done < "$file"
+
+  unset _ltsv_line
+  return 1
+}
+
+get_default_app_publisher() {
+  deref_os_prop "$DEVPANEL_HOME" default_app_publisher
+}
+
+get_base_url_for_publisher() {
+  local publisher="$1"
+  local key="${publisher}_seedapps_base_url"
+
+  deref_os_prop "$DEVPANEL_HOME" "$key"
+}
+
+get_app_metadata_from_publisher() {
+  local publisher="$1"
+  local tmp_file="$2"
+
+  local base_url metadata_url
+  local created_tmp
+
+  base_url=$(get_base_url_for_publisher "$publisher") || return $?
+  metadata_url="${base_url%/}/metadata.ltsv"
+
+  if [ -z "$tmp_file" ]; then
+    tmp_file=$(mktemp)
+    if [ $? -eq 0 ]; then
+      created_tmp=1
+    else
+      echo "$FUNCNAME(): unable to create temporary file" 1>&2
+      return 1
+    fi
+  fi
+
+  download_file "$metadata_url" "$tmp_file"
+  local st=$?
+  if [ $st -eq 0 ]; then
+    if [ -n "$created_tmp" ]; then
+      cat "$tmp_file"
+      rm -f "$tmp_file"
+    fi
+  else
+    echo "$FUNCNAME(): unable to get app metadata from $publisher" 1>&2
+  fi
+
+  return $st
+}
+
+get_app_info_from_publisher() {
+  local app="$1"
+  local publisher="$2"
+  local tmp_file
+
+  tmp_file=$(mktemp)
+  if [ $? -ne 0 ]; then
+    echo "$FUNCNAME(): unable to create temporary file" 1>&2
+    return 1
+  fi
+
+  if ! get_app_metadata_from_publisher "$publisher" "$tmp_file"; then
+    rm -f "$tmp_file"
+    return 1
+  fi
+
+  local info_txt
+  info_txt=$(ltsv_find_line_with_keys_n_values "$tmp_file" name="$app")
+  local st=$?
+
+  if [ $st -eq 0 ]; then
+    echo "$info_txt"
+  fi
+
+  rm -f "$tmp_file"
+
+  return $st
+}
+
+get_tarball_url_for_app() {
+  local app="$1"
+  local publisher="$2"
+
+  local -a info_ar=()
+  local old_IFS="$IFS"
+  IFS=$'\n' info_ar=( $( get_app_info_from_publisher "$app" "$publisher") )
+  local st=$?
+  IFS="$old_IFS"
+
+  if [ $st -ne 0 ]; then
+    return $st
+  elif [ -z "${info_ar[*]}" ]; then
+    echo "$FUNCNAME(): no such app '$app' on $publisher" 1>&2
+    return 1
+  elif [ ${#info_ar[@]} -gt 1 ]; then
+    echo "$FUNCNAME(): got more than one record for app '$app' on '$publisher'" 1>&2
+    return 1
+  fi
+  
+  local filename base_url real_url
+  if ltsv_get_value filename "${info_ar[0]}"; then
+    filename="$_ltsv_value"
+  else
+    echo "$FUNCNAME(): missing filename field for app $app" 1>&2
+    return 1
+  fi
+
+  if ! ltsv_get_value enabled "${info_ar[0]}" ||
+       [ "$_ltsv_value" != "true" ]; then
+
+    echo "$FUNCNAME(): app '$app' is not enabled for installs" 1>&2
+    return 1
+  fi
+
+  if [[ "$filename" == +([a-zA-Z]+)://* ]]; then
+    real_url="$filename"
+  else
+    base_url=$(get_base_url_for_publisher "$publisher") || return $?
+    real_url="${base_url%/}/$filename"
+  fi
+
+  echo "$real_url"
+
+  return 0
+}
