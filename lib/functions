@@ -2682,3 +2682,29 @@ get_tarball_url_for_app() {
 
   return 0
 }
+
+set_vhost_description() {
+  local desc="$1"
+  local vhost="$2"
+  local metadata_str="set apache_vhost:_:opt:description $desc"
+
+  echo "$metadata_str" | "$DEVPANEL_HOME/libexec/apache-metadata-handler" \
+                          -q "$vhost"
+}
+
+get_vhost_description() {
+  local vhost="$1"
+  local key="apache_vhost:_:opt:description"
+
+	get_vhost_key_value "$key" "$vhost" 2>/dev/null
+}
+
+remove_vhost_description() {
+  local vhost="$1"
+
+  local key="apache_vhost:_:opt:description"
+  local metadata_str="rm $key"
+
+  echo "$metadata_str" | "$DEVPANEL_HOME/libexec/apache-metadata-handler" \
+                          -q "$vhost"
+}

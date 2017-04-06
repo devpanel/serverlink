@@ -7,6 +7,7 @@ set_usage_msg \
     --publisher <name>         publisher of the application
     --app <name>               the name of the application to install
     --vhost <name>             the name of the vhost where to install
+    --desc <description>       a short description of the apps's purpose
 
   Installs the specified application in a new virtual host.
 "
@@ -14,7 +15,7 @@ set_usage_msg \
 devpanel_cmd__install_app(){
   [ -z "$1" ] && usage
 
-  local name vhost arg publisher app app_url
+  local name vhost arg publisher app app_url desc
   local -a cmd_args=()
 
   while [ -n "$1" ]; do
@@ -39,6 +40,12 @@ devpanel_cmd__install_app(){
       --vhost)
         [ -z "$2" ] && { error_missing_value "$arg"; return $?; }
         vhost="$2"
+        shift 2
+        ;;
+
+      --desc)
+        [ -z "$2" ] && error_missing_value "$name"
+        desc="$2"
         shift 2
         ;;
 
@@ -69,7 +76,9 @@ devpanel_cmd__install_app(){
   local app_url
   app_url=$(get_tarball_url_for_app "$app" "$publisher") || return $?
 
-  devpanel_run create vhost --vhost "$vhost" --from "$app_url"
+  devpanel_run create vhost --vhost "$vhost" --from "$app_url" \
+    ${desc:+--desc "$desc"}
+
   if [ $? -eq 0 ]; then
     echo
     echo "Successfully installed $app."

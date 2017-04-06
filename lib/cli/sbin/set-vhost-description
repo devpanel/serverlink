@@ -1,0 +1,92 @@
+#!/bin/bash
+
+set_usage_msg \
+  "Usage: $bin_name ${cmd_ar[*]} <opts>
+
+  Options:
+    --vhost <vhost>         the vhost where to rewrite the config
+    --desc                  a short description of the vhost's purpose
+    --remove                remove the existing description instead of
+                            setting a new one
+
+  Set the description of the specified vhost
+"
+
+devpanel_cmd__set_vhost_description() {
+  [ $# -eq 0 -o -z "$1" ] && usage
+
+  local name vhost desc quiet remove
+  local -a cmd_args=()
+
+  while [ -n "$1" ]; do
+    name="$1"
+    case "$name" in
+      --vhost)
+        [ -z "$2" ] && { error_missing_value "$name" ; return $?; }
+        vhost="$2"
+        shift 2
+        ;;
+
+      --desc)
+        [ -z "$2" ] && { error_missing_value "$name" ; return $?; }
+        desc="$2"
+        shift 2
+        ;;
+
+      --quiet|-q)
+        quiet=1
+        shift
+        ;;
+
+      --remove)
+        remove=1
+        shift
+        ;;
+
+      --help)
+        usage
+        ;;
+
+      --[A-Za-z0-9_-]*)
+        error "unknown option $name" - 
+				return $?
+        ;;
+
+      *)
+				usage
+        ;;
+    esac
+  done
+
+  [ -z "$vhost" ] && { error_missing_param vhost; return $?; }
+
+  if [ -z "$desc" -a -z "$remove" ]; then
+    error "either --desc or --remove need to be specified." -
+    return 1
+  elif [ -n "$desc" -a -n "$remove" ]; then
+    error "can't use --desc and --remove in the same command" -
+    return 1
+  fi
+
+  local verb st
+  if [ -n "$desc" ]; then
+    verb=set
+    set_vhost_description "$desc" "$vhost"
+    st=$?
+  elif [ -n "$remove" ]; then
+    verb=removed
+    remove_vhost_description "$vhost"
+    st=$?
+  else
+    error "unknown operation" -
+    return 1
+  fi
+
+  if [ $st -eq 0 ]; then
+    [ -z "$quiet" ] && echo "Successfully $verb description for vhost $vhost."
+    return 0
+  else
+    error "unable to set description for vhost $vhost." -
+    return 1
+  fi
+}

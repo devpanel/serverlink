@@ -13,6 +13,7 @@ set_usage_msg \
     --branch <branch>         when the source type is git, clone the
                               specified branch
 
+    --desc <description>      a short description of the vhost's purpose
 
   Creates a new vhost from the specified source.
 "
@@ -21,7 +22,7 @@ set_usage_msg \
 devpanel_cmd__create_vhost() {
   [ $# -eq 0 -o -z "$1" ] && usage
 
-  local name vhost from source_type title
+  local name vhost from source_type title desc
   local branch
   local -a cmd_args=()
 
@@ -55,6 +56,11 @@ devpanel_cmd__create_vhost() {
         ;;
       --help)
         usage
+        ;;
+      --desc)
+        [ -z "$2" ] && error_missing_value "$name"
+        desc="$2"
+        shift 2
         ;;
       --[A-Za-z0-9_-]*)
         error "unknown argument $name"
@@ -109,6 +115,10 @@ devpanel_cmd__create_vhost() {
   else
     "$sys_dir/libexec/restore-vhost" "${cmd_args[@]}" $vhost "$from"
     st=$?
+  fi
+
+  if [ -n "$desc" ]; then
+    devpanel_run set vhost description --vhost "$vhost" --quiet --desc "$desc"
   fi
 
   if [ $st -eq 0 ]; then

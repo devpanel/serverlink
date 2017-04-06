@@ -28,6 +28,7 @@ Usage: @self_basename@ <command> [args]
                          vhost
     get tool token       gets a token for one of the admin tools (e.g.
                          phpmyadmin, extplorer, etc)
+    set vhost description sets a a short description of the vhost's purpose
 
     disable vhost        disables the specified vhost
     enable  vhost        enables the specified vhost (case it's disabled)

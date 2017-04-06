@@ -29,16 +29,15 @@ devpanel_cmd__list_vhosts() {
     return 0
   fi
 
-  echo "Virtual hosts:"
-  echo
-
+  local format_str="%-8s %-40s %-35s\n"
+  printf "$format_str\n" Vhost Domain Description
   for vhost in ${vhosts_ar[@]}; do
-    default_host=$(get_vhost_key_value "apache_vhost:0:_:ServerName" \
-                                        $vhost 2>/dev/null)
+    domain=$(get_vhost_default_hostname "$vhost")
+    desc=$(get_vhost_description "$vhost")
+    desc="${desc:-(no description set)}"
 
-    app=$(get_vhost_key_value app:0:_:seed_app $vhost 2>/dev/null)
-    url="http://$default_host/"
-    printf "  vhost: %-6s app: %-10s url: %s\n" "$vhost" "$app" "$url"
+    # printf "  vhost: %-8s domain: %-40s desc: %-35s\n" \
+     printf "$format_str" "$vhost" "$domain" "$desc"
   done
 
   echo
