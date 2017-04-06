@@ -2426,12 +2426,13 @@ SFTP Host: @ssh_host@
 MySQL Host/Port: @db_host_port@
 MySQL Database:  @db_name@
 FastCGI: @fastcgi_status@
+Htpasswd: @htpasswd_status@
 "
 
   local -a domains_ar=( $(get_hostnames_from_vhost "$vhost") )
   local domains_txt="" out_txt=""
   local main_url ssh_host ssh_user db_name db_host_port db_name app_type
-  local fastcgi_status
+  local fastcgi_status htpasswd_status
 
   main_url=$(get_main_url_of_vhost "$vhost")
   app_type=$(get_app_type_from_vhost "$vhost")
@@ -2444,6 +2445,12 @@ FastCGI: @fastcgi_status@
     fastcgi_status=disabled
   fi
   
+  if is_htpasswd_enabled_on_vhost "$vhost"; then
+    htpasswd_status=enabled
+  else
+    htpasswd_status=disabled
+  fi
+
   domains_txt+=$'\n'
   for domain in "${domains_ar[@]}"; do
     domains_txt+="    $domain"$'\n'
@@ -2464,6 +2471,7 @@ FastCGI: @fastcgi_status@
   out_txt=${out_txt//@ssh_user@/$ssh_user}
   out_txt=${out_txt//@ssh_host@/$ssh_host}
   out_txt=${out_txt//@fastcgi_status@/$fastcgi_status}
+  out_txt=${out_txt//@htpasswd_status@/$htpasswd_status}
 
   echo "$out_txt"
 }
