@@ -14,6 +14,8 @@ Usage: @self_basename@ <command> [args]
     restart mysql        restarts mysql for the specified vhost or domain
     find domain          finds the vhost with a specific domain name
     manage domains       manages domains associated with a vhost
+    enable  fastcgi      enables FastCGI for the specified vhost
+    disable fastcgi      disables FastCGI for the specified vhost
     enable htpasswd      enables htpasswd password protection for the
                          specified site
     disable htpasswd     disables htpasswd password protection for the

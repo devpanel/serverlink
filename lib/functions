@@ -2365,6 +2365,19 @@ is_htpasswd_enabled_on_vhost() {
   fi
 }
 
+is_fastcgi_enabled_on_vhost() {
+  local vhost="$1"
+  local key="apache_vhost:0:include:fastcgi"
+  local en
+
+  en=$(get_vhost_key_value "$key" "$vhost" 2>/dev/null )
+  if [ $? -eq 0 ]; then
+    return 0
+  else
+    return 1
+  fi
+}
+
 get_mysql_db_name_from_vhost() {
   local vhost="$1"
 
@@ -2412,16 +2425,24 @@ SFTP User: @ssh_user@
 SFTP Host: @ssh_host@
 MySQL Host/Port: @db_host_port@
 MySQL Database:  @db_name@
+FastCGI: @fastcgi_status@
 "
 
   local -a domains_ar=( $(get_hostnames_from_vhost "$vhost") )
   local domains_txt="" out_txt=""
   local main_url ssh_host ssh_user db_name db_host_port db_name app_type
+  local fastcgi_status
 
   main_url=$(get_main_url_of_vhost "$vhost")
   app_type=$(get_app_type_from_vhost "$vhost")
   db_host_port=$(get_mysql_db_host_port_from_vhost "$vhost")
   db_name=$(get_mysql_db_name_from_vhost "$vhost")
+
+  if is_fastcgi_enabled_on_vhost "$vhost"; then
+    fastcgi_status=enabled
+  else
+    fastcgi_status=disabled
+  fi
   
   domains_txt+=$'\n'
   for domain in "${domains_ar[@]}"; do
@@ -2442,6 +2463,7 @@ MySQL Database:  @db_name@
   out_txt=${out_txt//@db_name@/$db_name}
   out_txt=${out_txt//@ssh_user@/$ssh_user}
   out_txt=${out_txt//@ssh_host@/$ssh_host}
+  out_txt=${out_txt//@fastcgi_status@/$fastcgi_status}
 
   echo "$out_txt"
 }
