@@ -2655,6 +2655,7 @@ get_tarball_url_for_app() {
   IFS="$old_IFS"
 
   if [ $st -ne 0 ]; then
+    echo "$FUNCNAME(): no such app '$app' on $publisher" 1>&2
     return $st
   elif [ -z "${info_ar[*]}" ]; then
     echo "$FUNCNAME(): no such app '$app' on $publisher" 1>&2
