@@ -2,6 +2,7 @@ Usage: @self_basename@ <command> [args]
 
   Vhost Oriented Commands:
 
+    show vhost info      displays information about a given vhost
     list vhosts          lists all vhosts on this server
     list backups         list the backup files available for the specified
                          vhost
