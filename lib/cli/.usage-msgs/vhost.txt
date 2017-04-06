@@ -30,6 +30,7 @@ Usage: @self_basename@ <command> [args]
 
     disable vhost        disables the specified vhost
     enable  vhost        enables the specified vhost (case it's disabled)
+    rewrite vhost config updates the vhost configuration on the web server
 
   For help with a specific command, please run:
   @sb@ @self_basename@ <command> --help
