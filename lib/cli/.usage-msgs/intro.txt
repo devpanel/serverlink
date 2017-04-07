@@ -3,6 +3,9 @@ devPanel serverlink stack
 You can get more information with command:
 @sb@ @self_basename@ help
 
-Hint: to create a vhost with Drupal 7 you can run the command:
-@sb@ @self_basename@ create vhost --vhost d7 --from devpanel://drupal-v7
+To get a list of available apps to install:
+@sb@ @self_basename@ list apps
+
+Hint: to create a new virtual vhost with Drupal 7 run the command:
+@sb@ @self_basename@ install app --app drupal-v7
 
