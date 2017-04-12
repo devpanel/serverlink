@@ -117,11 +117,11 @@ devpanel_cmd__create_vhost() {
     st=$?
   fi
 
-  if [ -n "$desc" ]; then
-    devpanel_run set vhost description --vhost "$vhost" --quiet --desc "$desc"
-  fi
-
   if [ $st -eq 0 ]; then
+    if [ -n "$desc" ]; then
+      devpanel_run set vhost description --vhost "$vhost" --quiet --desc "$desc"
+    fi
+
     print_vhost_summary "$vhost"
     echo "Successfully created vhost $vhost"
   fi
