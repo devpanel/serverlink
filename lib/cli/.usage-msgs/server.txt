@@ -7,7 +7,7 @@ Usage: @self_basename@ <command> [args]
                                 devPanel
     get server info             prints server information
     set base hostname           sets the base hostname for virtual hosts
-    cat apache vhost config     shows the apache configuration for the vhost
+    cat vhost config            shows the apache configuration for the vhost
 
 
   For help with a specific command, please run:

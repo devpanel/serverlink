@@ -9,7 +9,7 @@ set_usage_msg \
   Displays the Apache configuration for the specified virtual host.
 "
 
-devpanel_cmd__cat_apache_vhost_config() {
+devpanel_cmd__cat_vhost_config() {
   [ $# -eq 0 -o -z "$1" ] && usage
 
   local arg vhost
