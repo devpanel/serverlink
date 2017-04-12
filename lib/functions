@@ -1181,6 +1181,11 @@ get_apache_metadata_value() {
   get_metadata_value "$vhost_conf_dir" "$key"
 }
 
+
+is_distro_updates_enabled() {
+  deref_os_prop "$DEVPANEL_HOME" automatic_distro_updates &>/dev/null
+}
+
 date_placeholders() {
   local template_str="$1"
   local ref_date="${2:-now}"

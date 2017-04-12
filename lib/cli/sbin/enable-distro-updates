@@ -1,0 +1,35 @@
+#!/bin/bash
+
+set_usage_msg \
+  "Usage: $bin_name ${cmd_ar[*]} [opts]
+
+  Options:
+    --yes                 confirm enabling of updates
+
+  Enables automated updates of the Linux distribution on the
+  current server.
+"
+
+devpanel_cmd__enable_distro_updates() {
+  [ $# -eq 0 -o -z "$1" ] && usage
+
+  local name confirmed
+  local -a cmd_args=()
+
+  while [ -n "$1" ]; do
+    name="$1"
+    case "$name" in
+      --yes)
+        confirmed=yes
+        shift
+        ;;
+      --help|*)
+        usage
+        ;;
+    esac
+  done
+
+  [ -z "$confirmed" -o "$confirmed" != yes ] && usage
+
+  "$sys_dir/libexec/distro-updates" "${cmd_args[@]}" on
+}
