@@ -255,9 +255,11 @@ for i; do
         set_vhost_default_hostname "$vhost" "$default_name_apache" || exit $?
 
         if [ -n "$prefix_with_www" ]; then
-          www_alias_link="$alias_priv:www.$new_default_name"
-          if ! ln -sf "www.$new_default_name" "$www_alias_link"; then
-            error "unable to set www alias to default name"
+          if [[ ! "$this_hostname" == www.* ]]; then
+            www_alias_link="$alias_priv:www.$new_default_name"
+            if ! ln -sf "www.$new_default_name" "$www_alias_link"; then
+              error "unable to set www alias to default name"
+            fi
           fi
         fi
 
@@ -302,16 +304,21 @@ for i; do
           error "unable to add hostname $this_hostname"
         fi
 
+        echo "Successfully added alias hostname $this_name_apache"
+        changed=1
+
         if [ -n "$prefix_with_www" ]; then
+          if [[ "$this_hostname" == www.* ]]; then
+            # already starts with www, continue
+            continue
+          fi
+
           www_name_file="$alias_priv:www.$this_hostname_fmt"
           if ! ln -sf /dev/null "$www_name_file"; then
             error "unable to add hostname www.$this_hostname"
           fi
         fi
 
-        echo "Successfully added alias hostname $this_name_apache"
-
-        changed=1
         ;;
     '-')
         this_hostname="$i"
@@ -335,9 +342,18 @@ for i; do
           continue
         else
           rm -f "$name_file"
+          if [ $? -eq 0 ]; then
+            echo "Successfully removed domain $this_hostname_fmt"
+          fi
         fi
+        changed=1
 
         if [ -n "$prefix_with_www" ]; then
+          if [[ "$this_hostname" == www.* ]]; then
+            # already starts with www, continue
+            continue
+          fi
+
           www_name_file="$alias_priv:www.$this_hostname_fmt"
           if [ ! -L "$www_name_file" ]; then
             printf "Warning: name %s doesn't exist for vhost %s and IP %s\n" \
@@ -348,7 +364,6 @@ for i; do
           fi
         fi
 
-        changed=1
         ;;
       *)
         error "unknown mode '$mode'"
