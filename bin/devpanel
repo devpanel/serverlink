@@ -119,17 +119,13 @@ devpanel_run() {
   local namespace
 
   n_last_arg=${#non_opts_ar[@]}
-  for((i=0; $i < $n_last_arg; i++)); do
-    arg=${non_opts_ar[$i]}
-    cmd_ar+=( $arg )
+  for((i=$n_last_arg; $i >= 0; i--)); do
+    old_IFS="$IFS"
+    IFS=-
+    filename="${non_opts_ar[*]:0:$i}"
+    IFS="$old_IFS"
 
-    if [ $i -eq 0 ]; then
-      filename="$arg"
-    else
-      filename+="-$arg"
-    fi
-
-    for test_dir in libexec bin sbin; do
+    for test_dir in bin sbin; do
       test_bin="$lib_dir/$test_dir/$filename"
       if [ -f "$test_bin" -a -x "$test_bin" ]; then
         found_bin=1
@@ -141,7 +137,10 @@ devpanel_run() {
 
         full_bin_path="$test_bin"
         namespace=${filename//-/_}
-        extra_args_ar=(${non_opts_ar[@]:$(($i+1))})
+
+        cmd_ar=( "${non_opts_ar[@]:0:$i}" )
+        extra_args_ar=( "${non_opts_ar[@]:$i}" )
+
         run_bin=1
         break 2
       fi
