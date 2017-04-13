@@ -1,0 +1,67 @@
+#!/bin/bash
+
+set_usage_msg \
+  "Usage: $bin_name ${cmd_ar[*]} <opts>
+
+  Options:
+    --vhost <name>            the vhost to apply the options to
+
+    --frequency <freq>        a frequency specification. Allowed values:
+                              daily, weekly, monthly.
+
+
+  Disables vhost snapshots for the specified virtual host and frequency.
+"
+
+devpanel_cmd__disable_vhost_snapshots() {
+  [ $# -eq 0 -o -z "$1" ] && usage
+
+  local name vhost frequency metadata_str
+  local -a allowed_freq_ar=( daily weekly monthly )
+  local -a cmd_args=()
+
+  while [ -n "$1" ]; do
+    name="$1"
+    case "$name" in
+      --frequency)
+        [ -z "$2" ] && error_missing_value "$name" && return 1
+        if ! in_array "$2" "${allowed_freq_ar[@]}"; then
+          error "invalid frequency name" -
+          return 1
+        fi
+
+        frequency="$2"
+        shift 2
+        ;;
+
+      --vhost)
+        [ -z "$2" ] && error_missing_value "$name" && return 1
+        vhost="$2"
+        shift 2
+        ;;
+
+      --help|*)
+        usage
+        ;;
+    esac
+  done
+
+  [ -z "$vhost" -o -z "$frequency" ] && usage
+
+  "$sys_dir/libexec/check-vhost-name" archive "$vhost" || return $?
+
+  metadata_str="
+rm config:backup_snapshot:$frequency:enabled
+rm config:backup_snapshot:$frequency:hour
+rm config:backup_snapshot:$frequency:retention_unit
+rm config:backup_snapshot:$frequency:day
+"
+
+  echo "$metadata_str" | "$sys_dir/libexec/apache-metadata-handler" -q "$vhost"
+  if [ $? -eq 0 ]; then
+    echo "Successfully disabled $frequency snapshots for vhost $vhost."
+  else
+    error "unable to disable $frequency snapshots for vhost $vhost." -
+    return 1
+  fi
+}

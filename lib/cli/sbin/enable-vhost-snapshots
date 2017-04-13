@@ -1,0 +1,127 @@
+#!/bin/bash
+
+set_usage_msg \
+  "Usage: $bin_name ${cmd_ar[*]} <opts>
+
+  Options:
+    --vhost <name>            the vhost to apply the options to
+
+    --frequency <freq>        a frequency specification. Allowed values:
+                              daily, weekly, monthly.
+
+    --hour <N>                the hour of the day to start the snapshot.
+                              A number in the range 0-23.
+
+    --retain <N>              retain up to a number of files at a given time
+                              (when the number of files reaches this number,
+                              the oldest files start being removed).
+
+    --day  <name>             The day at which it should happen (monday,
+                              tuesday, etc). Applies only to weekly and
+                              monthly snapshots.
+
+
+  Enables vhost snapshots for the specified virtual host.
+"
+
+devpanel_cmd__enable_vhost_snapshots() {
+  [ $# -eq 0 -o -z "$1" ] && usage
+
+  local name vhost frequency hour day day_n retain metadata_str
+  local -a allowed_freq_ar=( daily weekly monthly )
+  local -a cmd_args=()
+
+  while [ -n "$1" ]; do
+    name="$1"
+    case "$name" in
+      --frequency)
+        [ -z "$2" ] && error_missing_value "$name" && return 1
+        if ! in_array "$2" "${allowed_freq_ar[@]}"; then
+          error "invalid frequency name" -
+          return 1
+        fi
+
+        frequency="$2"
+        shift 2
+        ;;
+
+      --day)
+        [ -z "$2" ] && error_missing_value "$name" && return 1
+        day_n=$(translate_dayname_to_number "$2") || return $?
+        day="$2"
+        shift 2
+        ;;
+
+      --hour)
+        [ -z "$2" ] && error_missing_value "$name" && return 1
+        if [[ ! "$2" == +([0-9]) ]]; then
+          error "invalid format of value passed to $name." -
+          return 1
+        elif [ $2 -gt 23 ]; then
+          error "value passed to --hour must be in the range 0-23" -
+          return 1
+        fi
+
+        hour="$2"
+        shift 2
+        ;;
+
+      --retain)
+        [ -z "$2" ] && error_missing_value "$name" && return 1
+        if [[ ! "$2" == +([0-9]) ]]; then
+          error "invalid format of value passed to $name." -
+          return 1
+        elif [ $2 -lt 1 -o $2 -gt 1000 ]; then
+          error "value of retention must be in the range 1-1000" -
+          return 1
+        fi
+
+        retain="$2"
+        shift 2
+        ;;
+
+      --vhost)
+        [ -z "$2" ] && error_missing_value "$name" && return 1
+        vhost="$2"
+        shift 2
+        ;;
+
+      --help|*)
+        usage
+        ;;
+    esac
+  done
+
+  [ -z "$vhost" -o -z "$frequency" -o -z "$hour" -o -z "$retain" ] && usage
+
+  if [ "$frequency" == daily -a -n "$day" ]; then
+    error "parameter --day can't be used with the daily frequency" -
+    return 1
+  fi
+
+  if [ "$frequency" != daily -a -z "$day" ]; then
+    error "missing option --day" -
+    return 1
+  fi
+
+  "$sys_dir/libexec/check-vhost-name" archive "$vhost" || return $?
+
+  metadata_str="
+set config:backup_snapshot:$frequency:enabled 1
+set config:backup_snapshot:$frequency:hour $hour
+set config:backup_snapshot:$frequency:retention_unit $retain
+"
+
+  if [ -n "$day" ]; then
+    metadata_str+=$'\n'
+    metadata_str+="set config:backup_snapshot:$frequency:day $day_n"$'\n'
+  fi
+
+  echo "$metadata_str" | "$sys_dir/libexec/apache-metadata-handler" -q "$vhost"
+  if [ $? -eq 0 ]; then
+    echo "Successfully set $frequency snapshot options for vhost $vhost."
+  else
+    error "unable to apply snapshot options for vhost $vhost." -
+    return 1
+  fi
+}

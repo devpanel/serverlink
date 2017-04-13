@@ -1186,6 +1186,70 @@ is_distro_updates_enabled() {
   deref_os_prop "$DEVPANEL_HOME" automatic_distro_updates &>/dev/null
 }
 
+are_snapshots_enabled_for_vhost() {
+  local vhost="$1"
+  local freq="$2"
+  local _var
+
+  for _var in vhost freq; do 
+    if [ -z "${!_var}" ]; then
+      echo "$FUNCNAME(): missing $_var" 1>&2
+      return 1
+    fi
+  done
+
+  local key="config:backup_snapshot:$freq:enabled"
+  get_vhost_key_value "$key" "$vhost" &>/dev/null
+}
+
+get_snapshot_defs_for_vhost() {
+  # returns the definitions of a vhost snapshot in a single line, with
+  # elements separated by space. In the format: day hour retention_unit
+  # note: daily backups don't have the 'day' field 
+
+  local vhost="$1"
+  local freq="$2"
+  local _var
+
+  for _var in vhost freq; do 
+    if [ -z "${!_var}" ]; then
+      echo "$FUNCNAME(): missing $_var" 1>&2
+      return 1
+    fi
+  done
+
+  if ! in_array "$freq" daily weekly monthly; then
+    echo "$FUNCNAME(): invalid frequency received" 1>&2
+    return 1
+  fi
+
+  if ! are_snapshots_enabled_for_vhost "$vhost" "$freq"; then
+    echo "$FUNCNAME(): $freq snapshots disabled for vhost $vhost" 1>&2
+    return 1
+  fi
+
+  local day day_name hour retention_unit
+  local key_prefix="config:backup_snapshot:$freq"
+
+  if [ "$freq" != daily ]; then
+    day=$(get_vhost_key_value "$key_prefix:day" "$vhost") || return $?
+    day_name=$(translate_daynumber_to_name "$day") || return $?
+  fi
+
+  hour=$(get_vhost_key_value "$key_prefix:hour" "$vhost") || return $?
+  retention_unit=$(get_vhost_key_value "$key_prefix:retention_unit" \
+                    "$vhost") || return $?
+
+  local out_str
+  if [ "$freq" != daily ]; then
+    out_str+="$day_name "
+  fi
+
+  out_str+="$hour $retention_unit"
+
+  echo "$out_str"
+}
+
 date_placeholders() {
   local template_str="$1"
   local ref_date="${2:-now}"
@@ -2432,12 +2496,14 @@ MySQL Host/Port: @db_host_port@
 MySQL Database:  @db_name@
 FastCGI: @fastcgi_status@
 Htpasswd: @htpasswd_status@
+Snapshots: @snapshots_txt@
 "
 
   local -a domains_ar=( $(get_hostnames_from_vhost "$vhost") )
   local domains_txt="" out_txt=""
   local main_url ssh_host ssh_user db_name db_host_port db_name app_type
   local fastcgi_status htpasswd_status
+  local snapshots_txt snap_daily_txt snap_weekly_txt snap_monthly_txt
 
   main_url=$(get_main_url_of_vhost "$vhost")
   app_type=$(get_app_type_from_vhost "$vhost")
@@ -2464,6 +2530,36 @@ Htpasswd: @htpasswd_status@
   get_linux_username_from_vhost "$vhost" && \
     ssh_user="$_dp_value"
 
+  snap_daily_txt=$(get_snapshot_defs_for_vhost   "$vhost" daily   2>/dev/null)
+  snap_weekly_txt=$(get_snapshot_defs_for_vhost  "$vhost" weekly  2>/dev/null)
+  snap_monthly_txt=$(get_snapshot_defs_for_vhost "$vhost" monthly 2>/dev/null)
+
+  if [ -n "$snap_daily_txt" -o -n "$snap_weekly_txt" -o \
+       -n "$snap_monthly_txt" ]; then
+
+    snapshots_txt="enabled"
+
+    local _var _tst_freq _freq_txt
+    local s_freq s_day s_hour s_ret_unit
+    for _tst_freq in daily weekly monthly; do
+      _var="snap_${_tst_freq}_txt"
+      if [ -n "${!_var}" ]; then
+        if [ "$_tst_freq" == daily ]; then
+          read s_hour s_ret_unit <<< "${!_var}"
+          freq_txt="  $_tst_freq at hour $s_hour"
+        else
+          read s_day s_hour s_ret_unit <<< "${!_var}"
+          freq_txt="  $_tst_freq on $s_day, at hour $s_hour"
+        fi
+        freq_txt+=", retain $s_ret_unit files"
+        snapshots_txt+=$'\n'
+        snapshots_txt+="$freq_txt"
+      fi
+    done
+  else
+    snapshots_txt="disabled"
+  fi
+
   ssh_host=$(get_server_base_domain)
 
   out_txt="$summ_txt"
@@ -2477,6 +2573,7 @@ Htpasswd: @htpasswd_status@
   out_txt=${out_txt//@ssh_host@/$ssh_host}
   out_txt=${out_txt//@fastcgi_status@/$fastcgi_status}
   out_txt=${out_txt//@htpasswd_status@/$htpasswd_status}
+  out_txt=${out_txt//@snapshots_txt@/$snapshots_txt}
 
   echo "$out_txt"
 }
