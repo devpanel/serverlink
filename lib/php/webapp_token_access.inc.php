@@ -73,9 +73,33 @@ function dp_is_already_logged_to_app($app) {
   }
 }
 
+function dp_get_vhost_from_user($username = NULL) {
+  if(is_null($username)) {
+    if($user_info = posix_getpwuid(posix_geteuid())) {
+      $username = $user_info["name"];
+    }
+  }
+
+  $link = sprintf("%s/config/key_value/linuxuser-vhost/%s", DEVPANEL_DIR, $username);
+  if(is_link($link)) {
+    $vhost = readlink($link); 
+    return $vhost;
+  } else {
+    return NULL;
+  }
+}
+
 function dp_derive_gen_vhost() {
   $user_info = posix_getpwuid(posix_geteuid());
 
+  // try to get the user from the user -> vhost map
+  $vhost = dp_get_vhost_from_user($user_info["name"]);
+  if(!is_null($vhost)) {
+    return $vhost;
+  }
+
+  // as there wasn't a user -> vhost map, then get the vhost name from the
+  // username
   if(strlen($user_info['name']) > 2 && substr($user_info['name'], 0, 2) == "w_") {
     $vhost = substr($user_info['name'], 2);
   } else {

@@ -498,7 +498,7 @@ dir=`dirname "$0"`
 seeds_home_dir="$dir/seeds"
 
 if [ -z "$subsystem" ]; then
-  subsystem=`deref_contents "$config_dir/app:0:_:seed_app"`
+  subsystem=`get_app_type_from_vhost "$vhost"`
   if [ $? -ne 0 ]; then
     # if didn't receive a subsystem name, show usage()
     usage "[i] Please provide a subsystem (-s)"
@@ -525,13 +525,7 @@ fi
 test_flags_logic    || error "Inconsistency in the cmdline flags"
 test_target_account || error "Problems in target user account"
 
-servername_link="$config_dir/apache_vhost:0:_:ServerName"
-if fqdn=`deref_contents "$servername_link"`; then
-  :
-elif ! fqdn=`deref_contents "$config_dir/names/default"` || ! [ -n "$fqdn" ]
-then
-  error "Cannot get the primary name from $config_dir/names/default"
-fi
+fqdn=$(get_vhost_default_hostname "$vhost") || exit $?
 
 # some of the scripts of the seed apps use relative paths, and some users
 # add lines to .bash_profile and .bashrc to chdir to the public_html by
@@ -542,7 +536,8 @@ if ! cd "$HOME"; then
 fi
 
 # auxiliary variable to be used by the templates
-public_html_dir="$HOME/public_html/$vhost"
+public_html_dir=$(get_docroot_from_vhost "$vhost") || exit $?
+
 export DEVPANEL_VHOST_PUBLIC_DIR="$public_html_dir"
 
 if [ -n "$opt_i" -o -n "$opt_M" -o -n "$opt_P" -o \

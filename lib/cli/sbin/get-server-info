@@ -24,6 +24,7 @@ devpanel_cmd__get_server_info() {
   done
 
   local linux_distro vhosts_domain apache_vhosts_port distro_updates_st
+  local long_vhost_names_st
   local -a vhosts_ar
   local -i n_vhosts=0
 
@@ -39,11 +40,22 @@ devpanel_cmd__get_server_info() {
     distro_updates_st=disabled
   fi
 
+  if is_longer_vhost_names_enabled; then
+    long_vhost_names_st=enabled
+  else
+    long_vhost_names_st=disabled
+  fi
+
   info_txt="Linux Distribution: $linux_distro
 Vhosts base domain: $vhosts_domain
 Apache Vhosts Port: $apache_vhosts_port
 Number of vhosts: $n_vhosts
 Distro Updates: $distro_updates_st"
+
+  if [ "$long_vhost_names_st" == "enabled" ]; then
+    info_txt+=$'\n'
+    info_txt+="Long vhost names: $long_vhost_names_st"
+  fi
 
   echo "$info_txt"
 }

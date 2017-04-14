@@ -1,0 +1,40 @@
+#!/bin/bash
+
+set_usage_msg \
+  "Usage: $bin_name ${cmd_ar[*]} [opts]
+
+  Options:
+    --yes                 confirm enabling of updates
+
+  Enables vhost names with up to 30 characters (by default it only accepts
+  vhosts with 6 characters).
+"
+
+devpanel_cmd__enable_long_vhost_names() {
+  local name confirmed
+
+  while [ -n "$1" ]; do
+    name="$1"
+    case "$name" in
+      --yes)
+        confirmed=yes
+        shift
+        ;;
+      --help|*)
+        usage
+        ;;
+    esac
+  done
+
+  [ -z "$confirmed" -o "$confirmed" != yes ] && usage
+
+  local metadata_str="set-local enable_long_vhost_names yes"
+
+  echo "$metadata_str" | "$sys_dir/libexec/system-metadata-handler" -q
+  if [ $? -eq 0 ]; then
+    echo "Successfully enabled long vhost names."
+  else
+    error "failed to enable set metadata for long vhost names." -
+    return $?
+  fi
+}

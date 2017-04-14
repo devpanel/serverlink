@@ -1,1 +1,1 @@
-webenabled-logs/virtwww/w_@@__VHOST__@@/@@__VHOST__@@-access_log combined
+webenabled-logs/virtwww/@@__VHOST_USER__@@/@@__VHOST__@@-access_log combined

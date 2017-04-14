@@ -70,17 +70,17 @@ if ! source "$lib_file"; then
   exit 1
 fi
 
-user_db="b_$vhost"
+assign_deref_os_prop_or_exit sys_data_dir "$sys_dir" data_dir
+
+assign_deref_os_fs_path_ex_or_exit apache_base_log_dir "$sys_dir" \
+  pathnames/var/log/apache_vhosts
+
 get_linux_username_from_vhost "$vhost" && \
 user_web="$_dp_value"
 if [ $? -ne 0 ]; then
   error "unable to get the linux username from vhost $vhost"
 fi
-
-assign_deref_os_prop_or_exit sys_data_dir "$sys_dir" data_dir
-
-assign_deref_os_fs_path_ex_or_exit apache_base_log_dir "$sys_dir" \
-  pathnames/var/log/apache_vhosts
+user_db="b_${user_web#w_}"
 
 date_ts=`date  +'%b-%d-%Y-%Hh%Mmin'`
 if [ $? -ne 0 -o -z "$date_ts" ]; then

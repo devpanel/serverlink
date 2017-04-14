@@ -110,12 +110,11 @@ fi
 vhost="$1"
 archive_to="$2"
 
-user_db="b_$vhost"
 get_linux_username_from_vhost "$vhost" && user_web="$_dp_value"
 if [ $? -ne 0 ]; then
   error "unable to get the linux username from vhost $vhost"
 fi
-
+user_db="b_${user_web#w_}"
 
 $dir/check-vhost-name archive "$vhost" || usage
 home="`eval echo -n \~$user_web`"

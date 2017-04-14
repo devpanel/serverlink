@@ -25,6 +25,8 @@ locked()
 
 # main
 
+declare -i max_vhost_length=6
+
 mode="$1"
 [ $# = 2 ] && case "$mode" in archive|restore|lock|unlock|config|name-only) true;; *) false;; esac || 
   error "Usage: $0 [archive|restore|lock|unlock|config|name-only] basename"
@@ -41,6 +43,13 @@ for inc_file in "$lib_file" "$vars_file"; do
   fi
 done
 
+unset enable_long_vhost_names
+enable_long_vhost_names=$(deref_os_prop "$devpanel_dir" \
+                          enable_long_vhost_names 2>/dev/null)
+if [ $? -eq 0 -a "$enable_long_vhost_names" == yes ]; then
+  max_vhost_length=30
+fi
+
 vhost="$2"
 get_linux_username_from_vhost "$vhost" && w_user="$_dp_value"
 if [ $? -ne 0 ]; then
@@ -48,7 +57,7 @@ if [ $? -ne 0 ]; then
 fi
 b_user="b_$vhost"
 
-(echo "$vhost"|egrep -q '^[-_a-z0-9]{1,6}$')||error "invalid vhost name '$vhost'"
+(echo "$vhost"|egrep -q "^[-_a-z0-9]{1,$max_vhost_length}\$")||error "invalid vhost name '$vhost'"
 
 assign_deref_os_fs_path_ex_or_exit apache_config_dir "$devpanel_dir" \
   "pathnames/etc/apache_vhosts"

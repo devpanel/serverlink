@@ -2,6 +2,8 @@
 # Options:
 #   -n - do not activate apache vhost, use the 'Vhost-simple-dummy' macro
 
+[ "$1" == '--help' ] && usage
+
 dummy=""
 
 unset custom_template
@@ -68,9 +70,6 @@ function usage() {
     cat << EOF
 Usage: $progname [[account_name_base] [domain.tld[,alias[,...]]]]
 
-the length of account_name_base must not exceed 6 chars, since it'll prepended
-by "w_" prefix.
-
 EOF
     exit 1
 }
@@ -82,41 +81,31 @@ function check_domain_name() {
     for name in $DOMAIN_NAMES ; do
         result=$(echo "$name" | tr -d '[:alnum:].-')
         if [ -n "$result" ]; then
-            echo "check_domain_name: '$name' contains invalid characters '$result'"
-            return 1
+          echo "$FUNCNAME(): '$name' contains invalid characters '$result'"
+          return 1
         fi
     done
     return 0
 }
 
-function check_account_name() {
-    local ACCOUNT_NAME
-    if [ $# -ne 1 ]; then
-        echo 'check_account_name: wrong number of arguments'
-        return 1
-    fi
-    ACCOUNT_NAME="$1"
-    if [ ${#ACCOUNT_NAME} -gt 6 ]; then
-        echo 'check_account_name: account name too long (more than 6 chars)'
-        return 1
-    fi
-    return 0
-}
-
-[ $# -gt 2 -o "$1" == '--help' ] && usage
-ACCOUNT_NAME="$1"
+unset ACCOUNT_NAME
+vhost="$1"
 DOMAIN_NAMES="$2"
 
+"$we_base/libexec/check-vhost-name" restore "$vhost" || exit $?
+
+if [ -n "$DOMAIN_NAMES" ] && ! check_domain_name "$DOMAIN_NAMES"; then
+  exit 1
+fi
+
+generate_linux_username_for_vhost "$vhost" && ACCOUNT_NAME="$_dp_value"
+if [ $? -ne 0 ]; then
+  error "unable to generate linux username for vhost"
+fi
+
 DB_ACCOUNT_NAME="b_$ACCOUNT_NAME"
-vhost="$ACCOUNT_NAME"
-ACCOUNT_NAME="w_$ACCOUNT_NAME" # linux user
 VHOST_HOME="$WEBSITES_HOME/$ACCOUNT_NAME"
 VHOST_DOC_ROOT="$VHOST_HOME/public_html/$vhost"
-
-#generate_linux_username_for_vhost "$vhost" && ACCOUNT_NAME="$_dp_value"
-#if [ $? -ne 0 ]; then
-#  error "unable to generate linux username for vhost"
-#fi
 
 # stack stuff
 config_base_dir="$we_base/config/vhosts"

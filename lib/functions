@@ -301,17 +301,53 @@ is_valid_domain_string() {
   fi
 }
 
+generate_username_string_from_vhost() {
+  local vhost="$1"
+
+  if [ -z "$vhost" ]; then
+    echo "$FUNCNAME(): missing vhost" 1>&2
+    return 1
+  fi
+
+  if ! is_valid_vhost_string "$vhost"; then
+    echo "$FUNCNAME(): invalid format of vhost name" 1>&2
+    return 1
+  fi
+
+  local vhost_str vhost_str_1
+  vhost_str="$vhost"
+  vhost_str_1="${vhost_str:1}"
+
+  if [ ${#vhost_str} -gt 1 ]; then
+    # remove vogals after the 2nd position from $vhost string
+    vhost_str="${vhost_str:0:1}${vhost_str_1//[aeiou-]/}"
+  fi
+
+  if [ -z "$vhost_str" ]; then
+    # if it got empty from removing the vogals, then just return the first 6
+    # positions of $vhost
+    vhost_str="w_${vhost:0:6}"
+  else
+    vhost_str="w_${vhost_str:0:6}"
+  fi
+
+  echo "$vhost_str"
+}
+
 generate_linux_username_for_vhost() {
   local vhost="$1"
 
   unset _dp_value
 
-  local user randomstr
-  randomstr=$(gen_random_str_az_lower 6) || return 1
+  local user_str random_str
 
-  user="w_$randomstr"
+  user_str=$(generate_username_string_from_vhost "$vhost")
+  if linuxuser_exists "$user_str"; then
+    random_str=$(gen_random_str_az_lower 6) || return 1
+    user_str="w_$randomstr"
+  fi
 
-  _dp_value="$user"
+  _dp_value="$user_str"
   
   [ -n "$_dp_print" ] && printf '%s' "$_dp_value"
 
@@ -1181,6 +1217,53 @@ get_apache_metadata_value() {
   get_metadata_value "$vhost_conf_dir" "$key"
 }
 
+is_valid_vhost_string() {
+  local string="$1"
+
+  if [ -z "$string" ]; then
+    echo "$FUNCNAME(): received an empty vhost string" 1>&2
+    return 1
+  fi
+
+  local vhost_regex='^[a-z0-9]+[a-z0-9-]+$'
+
+  if [[ "$string" =~ $vhost_regex ]]; then
+    return 0
+  else
+    return 1
+  fi
+}
+
+vhost_exists() {
+  local test_str="$1"
+
+  if [ -z "$test_str" ]; then
+    echo "$FUNCNAME(): received an empty vhost string" 1>&2
+    return 1
+  fi
+
+  if ! is_valid_vhost_string "$test_str"; then
+    echo "$FUNCNAME(): invalid format of vhost name" 1>&2
+    return 1
+  fi
+
+  local config_dir="$DEVPANEL_HOME/config/vhosts/$test_str"
+  if [ -d "$config_dir" ]; then
+    return 0
+  else
+    return 1
+  fi
+}
+
+linuxuser_exists() {
+  local user="$1"
+
+  if getent -- passwd "$user" &>/dev/null; then
+    return 0
+  else
+    return 1
+  fi
+}
 
 is_distro_updates_enabled() {
   deref_os_prop "$DEVPANEL_HOME" automatic_distro_updates &>/dev/null
@@ -1729,6 +1812,10 @@ get_vhost_key_value() {
   local key_link="$DEVPANEL_HOME/config/vhosts/$vhost/$key"
 
   deref_contents "$key_link"
+}
+
+is_longer_vhost_names_enabled() {
+  deref_os_prop "$DEVPANEL_HOME" enable_long_vhost_names &>/dev/null
 }
 
 get_php_version_for_series() {

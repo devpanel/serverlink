@@ -29,7 +29,14 @@ devpanel_cmd__list_vhosts() {
     return 0
   fi
 
-  local format_str="%-8s %-40s %-35s\n"
+  local format_str
+  
+  if is_longer_vhost_names_enabled; then
+    format_str="%-16s %-40s %-35s\n"
+  else
+    format_str="%-8s %-40s %-35s\n"
+  fi
+
   printf "$format_str\n" Vhost Domain Description
   for vhost in ${vhosts_ar[@]}; do
     domain=$(get_vhost_default_hostname "$vhost")
