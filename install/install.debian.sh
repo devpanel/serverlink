@@ -59,13 +59,13 @@ debian_install_distro_packages() {
 debian_adjust_system_config() {
   local install_dir="$1"
 
-  if [ -r /etc/apparmor.d/usr.sbin.mysqld ]
-  then
-    sed -i 's/^[:space:]*[^#]/#/' /etc/apparmor.d/usr.sbin.mysqld
-    if [ -r /etc/init.d/apparmor ]
-    then
-      /etc/init.d/apparmor reload
-    fi
+  if [ -r /etc/apparmor.d/usr.sbin.mysqld ]; then
+    # add allow rules on apparmor.d for mysqld to access files on devPanel's
+    # db home directories
+    printf "%s/** rwk,\n" "$databasedir_base" \
+      >>/etc/apparmor.d/local/usr.sbin.mysqld
+
+    service apparmor reload
   fi
 
   local module=""
