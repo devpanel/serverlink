@@ -12,6 +12,8 @@ set_usage_msg \
     --virtualbox-net-workaround     try to find an IP of an interface that is
                                     not the NAT one
 
+    --no-update                     don't try to update devPanel software now
+
   Initializes the basic config of a devPanel installation.
 "
 
@@ -157,6 +159,7 @@ devpanel_cmd__init_config() {
   [ $# -eq 0 -o -z "$1" ] && usage
 
   local arg hostname ipv4 domain vagrant_net_workaround auto_gen_hostname
+  local do_update=1
 
   while [ -n "$1" ]; do
     arg="$1"
@@ -175,6 +178,11 @@ devpanel_cmd__init_config() {
       --virtualbox-net-workaround)
         auto_gen_hostname=1
         virtualbox_net_workaround=1
+        shift
+        ;;
+
+      --no-update)
+        unset do_update
         shift
         ;;
 
@@ -213,7 +221,9 @@ devpanel_cmd__init_config() {
   fi
 
 
-  devpanel_run update
+  if [ -n "$do_update" ]; then
+    devpanel_run update
+  fi
 
   devpanel_run set base hostname --name "$hostname"
 }
