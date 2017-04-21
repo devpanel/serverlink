@@ -9,8 +9,9 @@ usage() {
 [ $# -lt 1 ] && usage
 
 self_bin=`readlink -e "$0"`
-dir=`dirname "$self_bin"`
-dir_bin="$dir/../bin"
+dir=${self_bin%/*}
+sys_dir=${dir%/*}
+dir_bin="$sys_dir/bin"
 
 vhost="$1"
 $sys_dir/libexec/check-vhost-name archive "$vhost" || exit 1
