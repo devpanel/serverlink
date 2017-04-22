@@ -8,6 +8,7 @@ set_usage_msg \
     --app <name>               the name of the application to install
     --vhost <name>             the name of the vhost where to install
     --desc <description>       a short description of the apps's purpose
+    --password-stdin           read the app admin password from stdin
 
   Installs the specified application in a new virtual host.
 "
@@ -16,6 +17,7 @@ devpanel_cmd__install_app(){
   [ -z "$1" ] && usage
 
   local name vhost arg publisher app app_url desc
+  local read_pw_stdin
   local -a cmd_args=()
 
   while [ -n "$1" ]; do
@@ -49,6 +51,10 @@ devpanel_cmd__install_app(){
         shift 2
         ;;
 
+      --password-stdin)
+        read_pw_stdin=1
+        shift
+        ;;
       --help)
         usage
         ;;
@@ -73,13 +79,31 @@ devpanel_cmd__install_app(){
 
   "$sys_dir/libexec/check-vhost-name" restore "$vhost" || return $?
 
-  local app_url
+  local app_url app_password
   app_url=$(get_tarball_url_for_app "$app" "$publisher") || return $?
 
-  devpanel_run create vhost --vhost "$vhost" --from "$app_url" \
-    ${desc:+--desc "$desc"}
+  if [ -n "$read_pw_stdin" ]; then
+    read -p "Enter app password (stdin): " app_password
+    if [ -z "$app_password" ]; then
+      error "got an empty password on stdin" -
+      return 1
+    fi
+  else
+    app_password=$(wedp_gen_random_str 12)
+    if [ $? -ne 0 ]; then
+      error "unable to generate random password" -
+      return 1
+    fi
+  fi
+
+  echo "$app_password" | devpanel_run create vhost --vhost "$vhost" --from "$app_url" \
+    ${desc:+--desc "$desc"} --password-stdin
 
   if [ $? -eq 0 ]; then
+    echo
+    echo "App credentials:"
+    echo "  username: admin"
+    echo "  password: $app_password"
     echo
     echo "Successfully installed $app."
   else

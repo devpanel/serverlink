@@ -15,6 +15,8 @@ set_usage_msg \
 
     --desc <description>      a short description of the vhost's purpose
 
+    --password-stdin          read app password from STDIN
+
   Creates a new vhost from the specified source.
 "
 
@@ -23,7 +25,7 @@ devpanel_cmd__create_vhost() {
   [ $# -eq 0 -o -z "$1" ] && usage
 
   local name vhost from source_type title desc
-  local branch
+  local branch app_password read_pw_stdin
   local -a cmd_args=()
 
   # by default let's assume the source is a file
@@ -62,6 +64,10 @@ devpanel_cmd__create_vhost() {
         desc="$2"
         shift 2
         ;;
+      --password-stdin)
+        read_pw_stdin=1
+        shift
+        ;;
       --[A-Za-z0-9_-]*)
         error "unknown argument $name"
         ;;
@@ -98,6 +104,14 @@ devpanel_cmd__create_vhost() {
     source_type="$def_source_type"
   fi
 
+  if [ -n "$read_pw_stdin" ]; then
+    read -p "Enter app password (stdin): " app_password
+    if [ -z "$app_password" ]; then
+      error "got an empty password on stdin" -
+      return 1
+    fi
+  fi
+
   local st
 
   if [ "$source_type" == "github" -o "$source_type" == "git" ]; then
@@ -118,6 +132,13 @@ devpanel_cmd__create_vhost() {
   fi
 
   if [ $st -eq 0 ]; then
+    if [ -n "$app_password" ]; then
+      echo "$app_password" | devpanel_run reset app password --vhost "$vhost"
+      if [ $? -ne 0 ]; then
+        echo "Warning: failed setting the password for app..." 1>&2
+      fi
+    fi
+
     if [ -n "$desc" ]; then
       devpanel_run set vhost description --vhost "$vhost" --quiet --desc "$desc"
     fi
