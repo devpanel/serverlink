@@ -344,7 +344,7 @@ generate_linux_username_for_vhost() {
   user_str=$(generate_username_string_from_vhost "$vhost")
   if linuxuser_exists "$user_str"; then
     random_str=$(gen_random_str_az_lower 6) || return 1
-    user_str="w_$randomstr"
+    user_str="w_$random_str"
   fi
 
   _dp_value="$user_str"
