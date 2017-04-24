@@ -1,0 +1,68 @@
+#!/bin/bash
+
+set_usage_msg \
+  "Usage: $bin_name ${cmd_ar[*]} [opts] --vhost <vhost>
+
+  Options:
+    --vhost <vhost>         the vhost to backup
+    --db-name <db_name>     name of the database to try to repair
+
+  Run a mysql repair on the database of the specified vhost.
+"
+
+devpanel_cmd__repair_mysql_database() {
+
+  local name vhost db_name
+  local -a cmd_args=()
+
+  [ $# -eq 0 -a $EUID -eq 0 ] && usage
+
+  while [ -n "$1" ]; do
+    name="$1"
+    case "$name" in
+      --vhost)
+        [ -z "$2" ] && error_missing_value "$name"
+        vhost="$2"
+        shift 2
+        ;;
+
+      --db-name)
+        [ -z "$2" ] && error_missing_value "$name"
+        db_name="$2"
+        shift 2
+        ;;
+
+      --help)
+        usage
+        ;;
+      --[A-Za-z0-9_-]*)
+        error "unknown option $name"
+        ;;
+      *)
+        usage
+        ;;
+    esac
+  done
+
+  [ -z "$vhost" -a $EUID -eq 0 ] && error_missing_param vhost
+
+  cmd_args=( "$sys_dir/bin/repair-vhost-db" )
+  if [ -n "$db_name" ]; then
+    cmd_args+=( "$db_name" )
+  fi
+
+  if [ $EUID -eq 0 ]; then
+
+    local user
+
+    get_linux_username_from_vhost "$vhost"
+    if ! user="$_dp_value"; then
+      error "unable to get linux username for vhost $vhost"
+    fi
+
+    su -l -c "${cmd_args[*]}" "$user"
+  else
+    # not root, run it directly
+    "${cmd_args[@]}"
+  fi
+}
