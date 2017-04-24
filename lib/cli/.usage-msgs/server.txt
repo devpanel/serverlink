@@ -10,6 +10,9 @@ Usage: @self_basename@ <command> [args]
     cat vhost config            shows the apache configuration for the vhost
     enable long vhost names     enable long vhost names (up to 30 characters)
 
+    run scheduled snapshots     run now the scheduled backup snapshots for the
+                                virtual hosts
+
 
   For help with a specific command, please run:
   # @self_basename@ <command> --help
