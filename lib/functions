@@ -314,24 +314,28 @@ generate_username_string_from_vhost() {
     return 1
   fi
 
-  local vhost_str vhost_str_1
-  vhost_str="$vhost"
-  vhost_str_1="${vhost_str:1}"
+  local username
 
-  if [ ${#vhost_str} -gt 1 ]; then
+  if [ ${#vhost} -le 6 ]; then
+    username="w_$vhost"
+  else # vhost length greater than 6
+    local vhost_str vhost_str_1
+    vhost_str="$vhost"
+    vhost_str_1="${vhost_str:1}"
+
     # remove vogals after the 2nd position from $vhost string
     vhost_str="${vhost_str:0:1}${vhost_str_1//[aeiou-]/}"
+
+    if [ -z "$vhost_str" ]; then
+      # if it got empty from removing the vogals, then just return the first 6
+      # positions of $vhost
+      username="w_${vhost:0:6}"
+    else
+      username="w_${vhost_str:0:6}"
+    fi
   fi
 
-  if [ -z "$vhost_str" ]; then
-    # if it got empty from removing the vogals, then just return the first 6
-    # positions of $vhost
-    vhost_str="w_${vhost:0:6}"
-  else
-    vhost_str="w_${vhost_str:0:6}"
-  fi
-
-  echo "$vhost_str"
+  echo "$username"
 }
 
 generate_linux_username_for_vhost() {
@@ -345,6 +349,10 @@ generate_linux_username_for_vhost() {
   if linuxuser_exists "$user_str"; then
     random_str=$(gen_random_str_az_lower 6) || return 1
     user_str="w_$random_str"
+    if linuxuser_exists "$user_str"; then
+      echo "$FUNCNAME(): unable to generate a unique name" 1>&2
+      return 1
+    fi
   fi
 
   _dp_value="$user_str"
