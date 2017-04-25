@@ -245,11 +245,6 @@ case $op in
       error "missing vhost config directory $vhost_conf_dir"
     fi
 
-    if ! lock_path "$vhost_conf_dir" >/dev/null; then
-      error "unable to lock vhost dir $vhost_conf_dir"
-    fi
-    trap 'cleanup' EXIT
-
     cache_dir="$system_cache_dir/$vhost"
     if [ ! -e "$cache_dir" ]; then
       if mkdir -m 750 "$cache_dir"; then
