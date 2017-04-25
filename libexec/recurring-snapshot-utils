@@ -262,6 +262,20 @@ case $op in
 
     archive_file="$vhost_archive_dir/$backup_basename"
 
+    # check exclude files for each frequency
+    unset exclude_file
+    declare -i n_excl_files=0
+    vhost_dir=$(eval echo \~$vhost_user)
+    for _tmp_freq in daily weekly monthly; do
+      _tmp_excl_f="$vhost_dir/.devpanel/recurring-snapshots.exclude-$_tmp_freq"
+      if [ -f "$_tmp_excl_f" ]; then
+        n_excl_files+=1
+        if [ "$frequency" == "$_tmp_freq" ]; then
+          exclude_file="$_tmp_excl_f"
+        fi
+      fi
+    done
+
     # defines 2 cache links:
     #   - one specific for the frequency to record the specific file name
     #   - a 'time' based (epoch_status_link) cache link to avoid duplication
@@ -280,7 +294,14 @@ case $op in
       if [ -f "$epoch_status_real_path" ]; then
         # the epoch file already exists, check if it just needs to duplicate
         #  the frequency status (to avoid duplicating the data)
-        if [ ! -e "$frequency_status_link" -a ! -L "$frequency_status_link" ]; then
+        #
+        #  Will only hardlink if there are no exclude files for the
+        #  frequencies (as the exclude files can be different and
+        #  generate different backup files)
+        if [ $n_excl_files -eq 0 -a \
+             ! -e "$frequency_status_link" -a ! -L "$frequency_status_link" ];
+          then
+
           if ln "$epoch_status_real_path" "$archive_file"; then
             if ! ln -s "$backup_basename" "$frequency_status_link" ; then
               error "unable to create frequency link $frequency_status_link"
@@ -331,12 +352,6 @@ case $op in
     fi
 
     # no archive for the same frequency exists, go and archive it
-    vhost_dir=$(eval echo \~$vhost_user)
-    exclude_file="$vhost_dir/.devpanel/recurring-snapshots.exclude-$frequency"
-    if [ ! -f "$exclude_file" ]; then
-      unset exclude_file
-    fi
-
     nice -n $niceness "$self_dir/archive-vhost" \
       ${exclude_file:+-e $exclude_file} "$vhost" "$backup_str"
 
