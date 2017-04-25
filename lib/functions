@@ -1523,6 +1523,19 @@ is_ssl_enabled_on_vhost() {
   fi
 }
 
+is_lets_encrypt_enabled_for_vhost() {
+  local vhost="$1"
+
+  local enabled
+
+  enabled=$(get_vhost_key_value apache_vhost:_:config:lets_encrypt "$vhost" 2>/dev/null)
+  if [ -n "$enabled" ]; then
+    return 0
+  else
+    return 1
+  fi
+}
+
 get_main_url_of_vhost() {
   local vhost="$1"
   local url domain

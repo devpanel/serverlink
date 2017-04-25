@@ -24,8 +24,9 @@ Usage: @self_basename@ <command> [args]
     manage htpasswd                 manage htpasswd users (add and delete users, change
                                     passwords)
     configure ssl                   configures SSL for the specified site
-    enable lets-encrypt             enable Let's Encrypt certificates on the specified
-                                    vhost
+    disable   ssl                   disable SSL for the specified site
+    enable  lets-encrypt            enable Let's Encrypt SSL certificates on the vhost
+    disable lets-encrypt            disable Let's Encrypt SSL certificates on the vhost
     get tool token                  gets a token for one of the admin tools (e.g.
                                     phpmyadmin, extplorer, etc)
     set vhost description           sets a a short description of the vhost's purpose

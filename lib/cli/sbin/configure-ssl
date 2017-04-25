@@ -9,6 +9,7 @@ set_usage_msg \
     --ca-file        <ca_file>           file with the CA bundle certificates
     --cert-file      <cert_file>         file with the main certificate
     --priv-key-file  <priv_key_file>     file with the private key
+    --overwrite                          overwrite existing certs and keys
 
 
   Configures SSL for the specified vhost.
@@ -50,13 +51,16 @@ devpanel_cmd__configure_ssl() {
       --help)
         usage
         ;;
-      --[A-Za-z0-9_-]*)
-        error "unknown argument $name"
+      --overwrite)
+        cmd_args+=( -o )
+        shift
+        ;;
+      --)
+        shift
+        break
         ;;
       *)
-        # pass unknown arguments/options to the original command
-        cmd_args+=( "$name" )
-        shift
+        error "unknown argument $name"
         ;;
 
     esac
@@ -67,5 +71,5 @@ devpanel_cmd__configure_ssl() {
     [ -z "${!param}" ] && error_missing_param $param
   done
 
-  "$sys_dir/libexec/store-ssl-file" "${cmd_args[@]}" $vhost
+  "$sys_dir/libexec/store-ssl-files" "${cmd_args[@]}" $vhost
 }

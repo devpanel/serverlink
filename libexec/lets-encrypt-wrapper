@@ -39,19 +39,6 @@ Usage: ${0##*/} $op <vhost>
   exit 1
 }
 
-is_lets_encrypt_enabled_for_vhost() {
-  local vhost="$1"
-
-  local enabled
-
-  enabled=$(get_vhost_key_value apache_vhost:_:config:lets_encrypt "$vhost" 2>/dev/null)
-  if [ -n "$enabled" ]; then
-    return 0
-  else
-    return 1
-  fi
-}
-
 disable_lets_encrypt_for_vhost() {
   local vhost="$1"
 
@@ -113,6 +100,12 @@ case "$op" in
 
     if ! "$sys_dir/libexec/check-vhost-name" archive "$vhost"; then
       exit 1
+    fi
+
+    if is_ssl_enabled_on_vhost "$vhost"; then
+      errmsg="SSL is already enabled on this vhost."
+      errmsg+=" Please disable it first."
+      error "$errmsg"
     fi
 
 		get_linux_username_from_vhost "$vhost" && linux_user="$_dp_value"
