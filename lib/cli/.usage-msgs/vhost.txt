@@ -38,6 +38,7 @@ Usage: @self_basename@ <command> [args]
     enable  vhost                   enables the specified vhost (case it's disabled)
     rewrite vhost config            updates the vhost configuration on the web server
     repair  mysql database          run a mysql repair on the vhost database
+    tail vhost logs                 shows the last lines of the vhost log files
 
 
   For help with a specific command, please run:

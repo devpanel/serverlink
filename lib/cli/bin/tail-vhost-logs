@@ -1,0 +1,110 @@
+#!/bin/bash
+
+set_usage_msg \
+  "Usage: $bin_name ${cmd_ar[*]} [opts]
+
+  Options:
+    --vhost <name>        the name of the vhost
+    --access-log          display the access log file
+    --error-log           display the error log file
+    -f                    continuously display file information
+
+  Shows the last lines of the log files of the specified vhost.
+"
+
+devpanel_cmd__tail_vhost_logs() {
+
+  local vhost arg
+  local include_access_log include_error_log show_once
+  local -a log_files_ar=()
+  local -a tail_args_ar=()
+
+  while [ -n "$1" ]; do
+    arg="$1"
+    case "$arg" in
+      --vhost)
+        [ -z "$2" ] && error_missing_value "$arg" && return 1
+        if vhost_exists "$2"; then
+          vhost="$2"
+          shift 2
+        else
+          exit 1
+        fi
+        ;;
+      --access-log)
+        include_access_log=1
+        shift
+        ;;
+      --error-log)
+        include_error_log=1
+        shift
+        ;;
+      --once)
+        show_once=1
+        shift
+        ;;
+      --help)
+        usage
+        ;;
+      *)
+        error "unknown option $name"
+        ;;
+    esac
+  done
+
+  assign_deref_os_prop_or_exit virtwww_log_dir "$sys_dir" \
+    pathnames/var/log/apache_vhosts
+
+  local linux_user
+  local access_log_file error_log_file
+
+  if [ $EUID -eq 0 ]; then
+    [ -z "$vhost" ] && { error_missing_param vhost ; return $?; }
+
+    if ! vhost_exists "$vhost"; then
+      exit 1
+    fi
+
+    if get_linux_username_from_vhost "$vhost"; then
+      linux_user="$_dp_value"
+    else
+      error "unable to get the linux user from vhost $vhost" -
+      return $?
+    fi
+  else
+    vhost=$(get_vhost_from_linuxuser 2>/dev/null)
+    if [ $? -ne 0 ]; then
+      error "unable to determine the vhost of the current user" -
+      return $?
+    fi
+
+    if [ -z "$USER" ]; then
+      error "environment variable \$USER is not set" -
+      return $?
+    fi
+
+    linux_user="$USER"
+  fi
+
+  access_log_file="$virtwww_log_dir/$linux_user/$vhost-access_log"
+  error_log_file="$virtwww_log_dir/$linux_user/$vhost-error_log"
+
+  if [ -z "$include_access_log" -a -z "$include_error_log" ]; then
+    include_access_log=1
+    include_error_log=1
+  fi
+
+  if [ -n "$include_access_log" ]; then
+    log_files_ar+=( "$access_log_file" )
+  fi
+ 
+  if [ -n "$include_error_log" ]; then
+    log_files_ar+=( "$error_log_file" )
+  fi
+
+  if [ -z "$show_once" ]; then
+    tail_args_ar+=( -f )
+  fi
+
+  tail "${tail_args_ar[@]}" "${log_files_ar[@]}"
+}
