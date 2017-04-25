@@ -335,7 +335,9 @@ case "$operation" in
 
     [ -n "$1" -a "$1" == "-h" ] && usage_repair_db
 
-    if [ -z "$1" ]; then
+    if [ -n "$1" ]; then
+      db_name="$1"
+    else
       db_name=$(guess_database_name) || exit 1
     fi
 
