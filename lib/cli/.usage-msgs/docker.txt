@@ -1,6 +1,6 @@
 Usage: @self_basename@ <command> [args]
 
-  Docker Oriented Commands:
+ Docker Oriented Commands:
 
     create docker vhost      creates a new vhost with Docker containers
     backup docker vhost      creates a backup from the containers of the vhost
@@ -10,9 +10,9 @@ Usage: @self_basename@ <command> [args]
     restore docker vhost     create new containers of the vhost from a backup
 
 
-  For help with a specific command, please run:
+ For help with a specific command, please run:
   @sb@ @self_basename@ <command> --help
 
-  Example:
+ Example:
   # @self_basename@ create docker vhost --help
 

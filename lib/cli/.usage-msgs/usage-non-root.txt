@@ -1,6 +1,6 @@
 Usage: @self_basename@ <command> [args]
 
-  Commands
+ Commands
 
     refresh config           update config files of the app with DB credentials
     clear app cache          clear the cache of the app on the specified vhost
@@ -8,8 +8,9 @@ Usage: @self_basename@ <command> [args]
     repair mysql database    run a mysql repair on the vhost database
 
 
-  For more information about a specific command, run:
-    @sb@ @self_basename@ COMMAND --help
+ For more information about a specific command, run:
+  @sb@ @self_basename@ COMMAND --help
 
-    Example: # @self_basename@ refresh config --help
+ Example:
+  @sb@ @self_basename@ refresh config --help
 

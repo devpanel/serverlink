@@ -1,11 +1,28 @@
 #!/bin/bash
 
-set_usage_msg "$(show_help_msg help)"$'\n'
+set_usage_msg "
+Usage: $bin_name ${cmd_ar[*]} <opts>
+
+  Options:
+    --section <section>   show help about the specified section
+    --search <term>       search the specified term in the help msgs
+
+  Displays all commands related to a given section.
+
+  Sections:
+    server      commands related to the server wide maintenance
+    vhost       commands related to the maintenance of virtual hosts
+    app         commands related to the apps installed on vhosts
+
+  Example:
+   # $bin_name help --section vhost
+   # $bin_name help --search ssl
+"
 
 devpanel_cmd__help() {
   [ $# -eq 0 -o -z "$1" ] && usage
 
-  local section
+  local section search_term
 
   while [ -n "$1" ]; do
     name="$1"
@@ -15,13 +32,45 @@ devpanel_cmd__help() {
         section="$2"
         shift 2
         ;;
+      --search)
+        [ -z "$2" ] && error_missing_value "$name"
+        search_term="$2"
+        shift 2
+        ;;
       -*)
         error "unknown option -$name"
         ;;
     esac
   done
 
-  [ -z "$section" ] && error_missing_param section
+  if [ -z "$section" -a -z "$search_term" ]; then
+    error "either --section or --search need to be specified" -
+    return $?
+  fi
 
-  show_help_msg "$section"
+  local cmds_regex usage_msgs_dir section_file includes_str
+
+  cmds_regex='^[[:space:]][[:space:]]+[A-Za-z0-9-]+[[:space:]]+[^[:space:]]+'
+  usage_msgs_dir="$sys_dir/lib/cli/.usage-msgs"
+
+  if [ -n "$search_term" ]; then
+    if [ -n "$section" ]; then
+      local section_file="$usage_msgs_dir/${section##*/}.txt"
+      if [ -f "$section_file" ]; then
+        includes_str="${section_file##*/}"
+      else
+        error "unknown section." -
+        return $?
+      fi
+    else
+      includes_str='*.txt'
+    fi
+    egrep -hr --include="$includes_str" --exclude='usage*.txt' \
+      "$cmds_regex" "$usage_msgs_dir" | fgrep -i "$search_term"
+  elif [ -n "$section" ]; then
+    show_help_msg "$section"
+  else
+    error "unknown condition. There's a parsing bug on this file." -
+    return $?
+  fi
 }

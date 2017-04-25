@@ -206,7 +206,7 @@ show_help_msg() {
 
   if [ ! -f "$msg_file" ]; then
     echo -n "$FUNCNAME(): unknown section $section. "
-    echo    "Please try running: ${sb#\\} $basename help" 1>&2
+    echo    "Please try running: ${sb#\\} $bin_name help" 1>&2
     return 1
   fi
 

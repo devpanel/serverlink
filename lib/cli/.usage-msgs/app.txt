@@ -1,15 +1,15 @@
 Usage: @self_basename@ <command> [args]
 
-  Application Oriented Commands:
+ Application Oriented Commands:
 
     refresh config       updates config files of the app with DB credentials
     clear app cache      clears the cache of the app on the specified vhost
     reset app password   resets the password for the admin user of the app
 
 
-  For help with a specific command, please run:
+ For help with a specific command, please run:
   @sb@ @self_basename@ <command> --help
 
-    Example:
-    @sb@ @self_basename@ clear app cache --help
+ Example:
+  @sb@ @self_basename@ clear app cache --help
 

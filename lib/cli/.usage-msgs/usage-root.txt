@@ -1,6 +1,6 @@
 Usage: @self_basename@ <command> [args]
 
-  Main Commands
+ Main Commands
     list apps            list apps available to install
     install app          install an application on a new virtual host
 
@@ -11,7 +11,7 @@ Usage: @self_basename@ <command> [args]
     enable htpasswd      enables htpasswd password protection for the specified site
     disable vhost        disables the specified vhost
 
-  Other common commands
+ Other common commands
     manage htpasswd      manage htpasswd users (add and delete users, change passwords)
     configure ssl        configures SSL for the specified site
     enable lets-encrypt  enable Let's Encrypt certificates on the specified vhost
@@ -19,16 +19,16 @@ Usage: @self_basename@ <command> [args]
     clear app cache      clears the cache of the app on the specified vhost
 
 
-  For more information about a specific command, run:
-    @sb@ @self_basename@ COMMAND --help
+ For more information about a specific command, run:
+ @sb@ @self_basename@ COMMAND --help
 
-    Example: # @self_basename@ create vhost --help
-
-
-  For more information about vhost related commands, run:
-    @sb@ @self_basename@ help --section vhost
+ Example: # @self_basename@ create vhost --help
 
 
-  For more information about application related commands, run:
-    @sb@ @self_basename@ help --section app
+ For more information about vhost related commands, run:
+ @sb@ @self_basename@ help --section vhost
+
+
+ For more information about application related commands, run:
+ @sb@ @self_basename@ help --section app
 
