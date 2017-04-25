@@ -403,7 +403,7 @@ get_docroot_from_vhost() {
     virtwww_homedir=$(deref_os_prop "$DEVPANEL_HOME" apache_virtwww_homedir) \
       || return 1
 
-    docroot_dir="$virtwww_homedir/public_html/$vhost"
+    docroot_dir="$virtwww_homedir/w_$vhost/public_html/$vhost"
 	fi
   
   echo "$docroot_dir"
