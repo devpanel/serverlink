@@ -5,6 +5,7 @@ set_usage_msg \
 
   Options:
     --vhost <vhost>         the vhost to restore
+    --full-path             display the full path of the files
 
   Lists the backup files available for the specified vhost.
 "
@@ -12,7 +13,7 @@ set_usage_msg \
 devpanel_cmd__list_backups() {
   [ $# -eq 0 -o -z "$1" ] && usage
 
-  local name vhost file
+  local name vhost file full_path
 
   while [ -n "$1" ]; do
     name="$1"
@@ -21,6 +22,14 @@ devpanel_cmd__list_backups() {
         [ -z "$2" ] && error_missing_value vhost
         vhost="$2"
         shift 2
+        ;;
+      --full-path)
+        full_path=1
+        shift
+        ;;
+      --)
+        shift
+        break
         ;;
       *)
         error "unknown option $name"
@@ -50,7 +59,7 @@ devpanel_cmd__list_backups() {
   fi
 
   local last_mod_e stat_output f_bname last_mod_friendly
-  local size_bytes size_txt
+  local size_bytes size_txt display_name
 
   for archive_file in $bkp_src_dir/*.tgz; do
     [ ! -f "$archive_file" ] && continue
@@ -66,8 +75,14 @@ devpanel_cmd__list_backups() {
       size_txt="$size_bytes bytes"
     fi
 
+    if [ -n "$full_path" ]; then
+      display_name="$archive_file"
+    else
+      display_name="$f_bname"
+    fi
+
     printf '%s\t%s (%s)\n' \
-      "$last_mod_friendly" "$f_bname" "$size_txt"
+      "$last_mod_friendly" "$display_name" "$size_txt"
 
   done
 
