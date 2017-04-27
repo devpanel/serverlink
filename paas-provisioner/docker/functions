@@ -79,8 +79,18 @@ read_local_config()
 
 create_nginx_config()
 {
+local vhost_dir="/etc/nginx/sites-enabled"
+local vhost_file="$vhost_dir/${servername}.conf"
+local tmp_vhost_file
+
+if [ ! -d "$vhost_dir" ]; then
+  ${sudo} mkdir "$vhost_dir" # create $vhost_dir if it doesn't exist
+fi
+
+tmp_vhost_file=$($sudo mktemp "$vhost_file.XXXXXX")
+
 if [ "${serveraliases}" == "" ]; then serveraliases="${servername}"; fi
-cat << EOF > /tmp/"${servername}".conf
+cat << EOF > "$tmp_vhost_file"
 server {
   listen       80;
   server_name  ${serveraliases};
@@ -91,8 +101,7 @@ server {
 }
 EOF
 
-${sudo} rm -f /etc/nginx/sites-enabled/${servername}.conf
-${sudo} mv /tmp/${servername}.conf /etc/nginx/sites-enabled/${servername}.conf
+${sudo} mv -f "$tmp_vhost_file" "$vhost_file"
 }
 
 update_nginx_config()
@@ -299,7 +308,7 @@ docker_build_or_pull_and_tag()
 
 update_apache_config()
 {
-  sed -i 's/:80/:8080/' /etc/apache2/devpanel-virtwww/w_${target_vhost}.conf
+  "$sys_dir/libexec/config-vhost-apache" -n "$target_vhost"
   if [[ `service apache2 status` == " * apache2 is running" || `service apache2 status|grep 'active (running)'|wc -l` -gt 0 ]]; then
     ${sudo} service apache2 reload
   else
@@ -309,27 +318,39 @@ update_apache_config()
 
 detect_running_apache_and_patch_configs()
 {
-  if [ `ps aux|grep apache2|wc -l` -gt 0 ]; then
-    readarray -t apache_configs_array <<< `find -L /etc/apache2/devpanel-virtwww -name '*.conf'`
-    for i in ${apache_configs_array[@]}; do
-      # patch configs with new port
-      if [ `grep ":80" ${i}|wc -l` -gt 0 -a `grep ":8080" ${i}|wc -l` -eq 0 ]; then
-        sed -i 's/:80/:8080/' ${i}
-      fi
-      if [ `grep "  ServerName " ${i}|wc -l` -gt 0 ]; then
-        # create config for main and additional domains
-        servername=`grep "  ServerName " ${i}|grep -v -- -gen|awk -F "  ServerName " '{print $2}'|tr -d '\r\n'`
-        serveraliases=`grep "  ServerAlias " ${i}|awk -F "  ServerAlias" '{print $2}'`
-        create_nginx_config
-        # create config for -gen domain (mysqladmin and filexplorer)
-        servername=`grep "  ServerName " ${i}|grep -- -gen|awk -F "  ServerName " '{print $2}'|tr -d '\r\n'`
-        serveraliases=''
-        create_nginx_config
-      fi
+  local -a local_vhosts_ar=()
+  local -i n_vhosts=0
+  local base_domain=""
+
+  base_domain=$(get_server_base_domain)
+
+  set_apache_vhosts_port 8080
+
+  local_vhosts_ar=( $(get_list_of_local_vhosts) )
+  n_vhosts=${#local_vhosts_ar[@]}
+
+  if [ $n_vhosts -gt 0 ]; then
+
+    for vhost in "${local_vhosts_ar[@]}"; do
+      # update the config of each local vhost to get the new port just set
+      # above
+      "$sys_dir/libexec/config-vhost-apache" -n "$vhost"
+
+      declare -a serverliases_ar=()
+      serveraliases_ar=( $(get_hostnames_from_vhost "$vhost") )
+      serveraliases_ar+=( "${vhost}-gen.${base_domain}" )
+
+      servername=${serveraliases_ar[0]}
+      serveraliases="${serveraliases_ar[*]}"
+
+      create_nginx_config
     done
+
     sed -i 's/^Listen 80$/Listen 8080/' /etc/apache2/ports.conf
+
     # restart apache
     ${sudo} service apache2 restart
+
     # update nginx configs with apache's hosts
     restart_or_reload_nginx
   fi
