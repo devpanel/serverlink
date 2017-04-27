@@ -79,18 +79,8 @@ read_local_config()
 
 create_nginx_config()
 {
-local vhost_dir="/etc/nginx/sites-enabled"
-local vhost_file="$vhost_dir/${servername}.conf"
-local tmp_vhost_file
-
-if [ ! -d "$vhost_dir" ]; then
-  ${sudo} mkdir "$vhost_dir" # create $vhost_dir if it doesn't exist
-fi
-
-tmp_vhost_file=$($sudo mktemp "$vhost_file.XXXXXX")
-
 if [ "${serveraliases}" == "" ]; then serveraliases="${servername}"; fi
-cat << EOF > "$tmp_vhost_file"
+cat << EOF > /tmp/"${servername}".conf
 server {
   listen       80;
   server_name  ${serveraliases};
@@ -101,7 +91,8 @@ server {
 }
 EOF
 
-${sudo} mv -f "$tmp_vhost_file" "$vhost_file"
+${sudo} rm -f /etc/nginx/sites-enabled/${servername}.conf
+${sudo} mv /tmp/${servername}.conf /etc/nginx/sites-enabled/${servername}.conf
 }
 
 update_nginx_config()
@@ -308,7 +299,7 @@ docker_build_or_pull_and_tag()
 
 update_apache_config()
 {
-  "$sys_dir/libexec/config-vhost-apache" -n "$target_vhost"
+  sed -i 's/:80/:8080/' /etc/apache2/devpanel-virtwww/w_${target_vhost}.conf
   if [[ `service apache2 status` == " * apache2 is running" || `service apache2 status|grep 'active (running)'|wc -l` -gt 0 ]]; then
     ${sudo} service apache2 reload
   else
@@ -318,39 +309,27 @@ update_apache_config()
 
 detect_running_apache_and_patch_configs()
 {
-  local -a local_vhosts_ar=()
-  local -i n_vhosts=0
-  local base_domain=""
-
-  base_domain=$(get_server_base_domain)
-
-  set_apache_vhosts_port 8080
-
-  local_vhosts_ar=( $(get_list_of_local_vhosts) )
-  n_vhosts=${#local_vhosts_ar[@]}
-
-  if [ $n_vhosts -gt 0 ]; then
-
-    for vhost in "${local_vhosts_ar[@]}"; do
-      # update the config of each local vhost to get the new port just set
-      # above
-      "$sys_dir/libexec/config-vhost-apache" -n "$vhost"
-
-      declare -a serverliases_ar=()
-      serveraliases_ar=( $(get_hostnames_from_vhost "$vhost") )
-      serveraliases_ar+=( "${vhost}-gen.${base_domain}" )
-
-      servername=${serveraliases_ar[0]}
-      serveraliases="${serveraliases_ar[*]}"
-
-      create_nginx_config
+  if [ `ps aux|grep apache2|wc -l` -gt 0 ]; then
+    readarray -t apache_configs_array <<< `find -L /etc/apache2/devpanel-virtwww -name '*.conf'`
+    for i in ${apache_configs_array[@]}; do
+      # patch configs with new port
+      if [ `grep ":80" ${i}|wc -l` -gt 0 -a `grep ":8080" ${i}|wc -l` -eq 0 ]; then
+        sed -i 's/:80/:8080/' ${i}
+      fi
+      if [ `grep "  ServerName " ${i}|wc -l` -gt 0 ]; then
+        # create config for main and additional domains
+        servername=`grep "  ServerName " ${i}|grep -v -- -gen|awk -F "  ServerName " '{print $2}'|tr -d '\r\n'`
+        serveraliases=`grep "  ServerAlias " ${i}|awk -F "  ServerAlias" '{print $2}'`
+        create_nginx_config
+        # create config for -gen domain (mysqladmin and filexplorer)
+        servername=`grep "  ServerName " ${i}|grep -- -gen|awk -F "  ServerName " '{print $2}'|tr -d '\r\n'`
+        serveraliases=''
+        create_nginx_config
+      fi
     done
-
     sed -i 's/^Listen 80$/Listen 8080/' /etc/apache2/ports.conf
-
     # restart apache
     ${sudo} service apache2 restart
-
     # update nginx configs with apache's hosts
     restart_or_reload_nginx
   fi
@@ -379,6 +358,7 @@ operation_handle()
 {
   read_local_config
   handler_options=`echo ${handler_options}|sed 's/##/ /g'`
+  if [ -z "$vhost" ]; then vhost=$(echo $handler_options | awk '{print $NF}'); read_local_config; fi
   case "$handler_options" in
     libexec/archive-vhost*)
       filename=$(echo "$handler_options"|awk '{print $NF}')
@@ -866,35 +846,35 @@ operation_get_app_info()
   fi
 
   common_available_tools=''
-  common_available_tools+='app_available_tools[]="clear##cache" '
-  common_available_tools+='app_available_tools[]="reset##application##admin##password" '
-  common_available_tools+='app_available_tools[]="reset##application##admin##email" '
-  common_available_tools+='app_available_tools[]="manage##cron##jobs" '
+  common_available_tools+='app_available_tools[]="clear##cache\":##\"seedapp_clear_cache" '
+  common_available_tools+='app_available_tools[]="reset##application##admin##password\":##\"set_app_opt" '
+  common_available_tools+='app_available_tools[]="reset##application##admin##email\":##\"set_app_opt" '
+  common_available_tools+='app_available_tools[]="manage##cron##jobs\":##\"crontab_vhost_edit" '
   common_available_tools+='app_available_tools[]="file##explorer" '
   common_available_tools+='app_available_tools[]="phpMyAdmin" '
-  common_available_tools+='app_available_tools[]="clone##/##duplicate##this##app" '
-  common_available_tools+='app_available_tools[]="backup##/##snapshot##this##app##(code,##files##and##database)" '
-  common_available_tools+='app_available_tools[]="restore##from##backups" '
-  common_available_tools+='app_available_tools[]="automated##backups" '
+  common_available_tools+='app_available_tools[]="clone##/##duplicate##this##app\":##\"clone_vhost_local" '
+  common_available_tools+='app_available_tools[]="backup##/##snapshot##this##app##(code,##files##and##database)\":##\"archive_vhost" '
+  common_available_tools+='app_available_tools[]="restore##from##backups\":##\"restore_vhost_backup" '
+  common_available_tools+='app_available_tools[]="automated##backups\":##\"schedule_auto_backup" '
 
   case "$app_type" in
     wordpress)
       app_current_version=$(curl -s ${vhost}.${hostname_fqdn}|grep '<meta name="generator" content="WordPress 4.'|awk -F'WordPress' '{print $NF}'|awk -F'"' '{print $1}'|cut -d ' ' -f2)
       app_available_version=$(curl -s https://wordpress.org/download/|grep "/latest.zip"|awk -F'WordPress&nbsp;' '{print $NF}'|awk -F'<' '{print $1}')
       app_available_tools=$common_available_tools
-      app_available_tools+='app_available_tools[]="repair##database" '
+      app_available_tools+='app_available_tools[]="repair##database\":##\"repair_mysql_database" '
     ;;
     drupal|drupal7)
       app_current_version=$(curl -s ${vhost}.${hostname_fqdn}/CHANGELOG.txt|head -2|tail -1|awk -F',' '{print $1}'|awk -F'Drupal ' '{print $NF}')
       app_available_version=$(curl -s https://raw.githubusercontent.com/drupal/drupal/7.x/CHANGELOG.txt|head -5|tail -1|awk -F',' '{print $1}'|awk -F'Drupal ' '{print $NF}')
       app_available_tools=$common_available_tools
-      app_available_tools+='app_available_tools[]="repair##database" '
+      app_available_tools+='app_available_tools[]="repair##database\":##\"repair_mysql_database" '
     ;;
     drupal8)
       app_current_version=$(curl -s ${vhost}.${hostname_fqdn}/core/CHANGELOG.txt|head -1|awk -F',' '{print $1}'|awk -F'Drupal ' '{print $NF}')
       app_available_version=$(curl -s https://raw.githubusercontent.com/drupal/drupal/8.4.x/core/CHANGELOG.txt|head -1|awk -F',' '{print $1}'|awk -F'Drupal ' '{print $NF}')
       app_available_tools=$common_available_tools
-      app_available_tools+='app_available_tools[]="repair##database" '
+      app_available_tools+='app_available_tools[]="repair##database\":##\"repair_mysql_database" '
     ;;
     magento)
       app_current_version=$(curl -s ${vhost}.${hostname_fqdn}|grep "(ver. 1."|awk -F'</a> ' '{print $NF}'|awk -F'ver. ' '{print $NF}'|awk -F')</p>' '{print $1}')
@@ -902,12 +882,21 @@ operation_get_app_info()
       # IFS=$'\n'
       app_available_version=$(echo "${arr[*]}" | sort -nr | head -n1)
       app_available_tools=$common_available_tools
-      app_available_tools+='app_available_tools[]="repair##database" '
+      app_available_tools+='app_available_tools[]="repair##database\":##\"repair_mysql_database" '
     ;;
     *)
       app_available_tools=$common_available_tools
     ;;
   esac
+
+  # App GIT update
+  if [ "$app_hosting" == "docker" ]; then
+    app_git_update=$(docker exec ${app_container_name} /bin/sh -c "cd /home/clients/websites/w_${app_name}/public_html/${app_name} && git rev-list HEAD...origin/master --count 2>&1")
+  else
+    app_git_update=$(cd /home/clients/websites/w_${app_name}/public_html/${app_name} && git rev-list HEAD...origin/master --count 2>&1)
+  fi
+  if [ $(echo ${app_git_update}|grep fatal|wc -l) -gt 0 ]; then app_git_update="-1"; fi
+
   # JSON output
   jo -p \
     app_name=$app_name \
@@ -917,6 +906,7 @@ operation_get_app_info()
     app_available_version=$app_available_version \
     app_db_type=$app_db_type \
     app_status=$app_status \
-    $(echo ${app_available_tools})|sed 's/##/ /g'
+    app_git_update=$app_git_update \
+    $(echo ${app_available_tools})|sed 's/##/ /g'|sed 's/\\//g'
 }
 
