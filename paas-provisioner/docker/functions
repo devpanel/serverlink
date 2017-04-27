@@ -506,7 +506,7 @@ app.clone          = true
     ;;
   esac
 
-  if [ ! "${handler_options}" == "bin/list-backups" ]; then
+  if [  "${handler_options}" != "bin/list-backups" -a  "${handler_options%% *}" != "libexec/check-logs" ]; then
     update_nginx_config
     detect_running_apache_and_patch_configs
   fi
