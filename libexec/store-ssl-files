@@ -485,7 +485,7 @@ fi
 
 if [ -n "$apply_config" ]; then
   "$curr_dir/apply-ssl-config" -c "$target_cert_file" -k "$target_key_file" \
-    ${target_ca_bundle_file:+ -C "$target_ca_bundle_file"}                  \
+    ${orig_ca_bundle_file:+ -C "$target_ca_bundle_file"}                  \
     ${ip_address:+-i "$ip_address"} "$vhost"
 
   exit $?
