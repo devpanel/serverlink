@@ -2397,6 +2397,153 @@ bytes_to_human() {
   echo -n "$n_bytes_human ${unit^^}"
 }
 
+
+get_ssl_cert_path_from_vhost() {
+  local vhost="$1"
+
+  if [ -z "$vhost" ]; then
+    echo "$FUNCNAME(): missing vhost" 1>&2
+    return 1
+  fi
+
+  if ! vhost_exists "$vhost"; then
+    return 1
+  fi
+
+  if ! is_ssl_enabled_on_vhost "$vhost"; then
+    echo "$FUNCNAME(): SSL not enable for vhost $vhost" 1>&2
+    return 1
+  fi
+
+  local cert_dir cert_file
+
+  cert_dir="$DEVPANEL_HOME/config/os/pathnames/etc/ssl/certs"
+  cert_file="$cert_dir/$vhost.default_ssl.crt"
+
+  echo "$cert_file"
+  return 0
+}
+
+get_field_from_ssl_cert_file() {
+  local field="$1"
+  local file="$2"
+
+  if [ -z "$field" ]; then
+    echo "$FUNCNAME(): missing field argument" 1>&2
+    return 1
+  elif [ -z "$file" ]; then
+    echo "$FUNCNAME(): missing file argument" 1>&2
+    return 1
+  elif [[ ! "$field" =~ ^[A-Za-z0-9]+$ ]]; then
+    echo "$FUNCNAME(): received field in an invalid format" 1>&2
+    return 1
+  fi
+
+  if [ ! -f "$file" ]; then
+    echo "$FUNCNAME(): missing file '$file'" 1>&2
+    return 1
+  fi
+
+  local field_txt
+
+  field_txt=$(openssl x509 -noout -"$field" -in "$file" 2>/dev/null)
+  if [ $? -ne 0 ]; then
+    echo "$FUNCNAME(): unable to get field from cert" 1>&2
+    return 1
+  fi
+
+  echo "$field_txt"
+  return 0
+}
+
+get_subject_from_ssl_cert_file() {
+  local file="$1"
+
+  get_field_from_ssl_cert_file subject "$file"
+}
+
+get_cn_from_ssl_cert_file() {
+  local file="$1"
+
+  local tmp_subj cn
+
+  tmp_subj=$(get_subject_from_ssl_cert_file "$file") || return $?
+
+  if cn=$(get_cn_from_asn_string "$tmp_subj"); then
+    echo "$cn"
+    return 0
+  else
+    return 1
+  fi
+}
+
+get_cn_from_asn_string() {
+  local asn="$1"
+  
+  if [ -z "$asn" ]; then
+    echo "$FUNCNAME(): missing ASN string" 1>&2
+    return 1
+  fi
+
+  local cn
+
+  if [[ "$asn" == *CN=* ]]; then
+    cn="${asn##*CN=}"
+    cn="${cn#CN=}"
+    cn="${cn%/*}"
+    echo "$cn"
+    return 0
+  else
+    echo "$FUNCNAME(): unable to parse CN information" 1>&2
+    return 1
+  fi
+}
+
+get_start_date_from_ssl_cert() {
+  # echoes the start date of a SSL cert
+  local file="$1"
+
+  local tmp_start_str start_date
+
+  tmp_start_str=$(get_field_from_ssl_cert_file startdate "$file") || \
+    return $?
+
+  start_date=${tmp_start_str#notBefore=}
+  echo "$start_date"
+  return 0
+}
+
+get_exp_date_from_ssl_cert() {
+  # echoes the expiration date of a SSL cert
+  local file="$1"
+
+  local tmp_exp_str exp_date
+
+  tmp_exp_str=$(get_field_from_ssl_cert_file enddate "$file") || return $?
+
+  exp_date=${tmp_exp_str#notAfter=}
+  echo "$exp_date"
+  return 0
+}
+
+get_issuer_from_ssl_cert() {
+  local file="$1"
+
+  get_field_from_ssl_cert_file issuer "$file"
+}
+
+get_issuer_cn_from_ssl_cert() {
+  local file="$1"
+
+  local tmp_issuer_str issuer_cn
+
+  tmp_issuer_str=$(get_issuer_from_ssl_cert "$file") || return $?
+
+  issuer_cn=$(get_cn_from_asn_string "$tmp_issuer_str") || return $?
+
+  echo "$issuer_cn"
+}
+
 generate_vhost_ini_str() {
   local vhost="$1"
 
@@ -2597,6 +2744,7 @@ Information about vhost @vhost@
 Main URL: @main_url@
 
 Domains: @domains@
+SSL: @ssl_txt@
 App: @app_type@
 SFTP User: @ssh_user@
 SFTP Host: @ssh_host@
@@ -2612,6 +2760,7 @@ Snapshots: @snapshots_txt@
   local main_url ssh_host ssh_user db_name db_host_port db_name app_type
   local fastcgi_status htpasswd_status
   local snapshots_txt snap_daily_txt snap_weekly_txt snap_monthly_txt
+  local ssl_txt
 
   main_url=$(get_main_url_of_vhost "$vhost")
   app_type=$(get_app_type_from_vhost "$vhost")
@@ -2668,12 +2817,42 @@ Snapshots: @snapshots_txt@
     snapshots_txt="disabled"
   fi
 
+  if is_ssl_enabled_on_vhost "$vhost"; then
+    ssl_txt+="enabled"
+
+    local ssl_cert_file ssl_cert_start_date ssl_cert_exp_date ssl_cert_cn
+    local ssl_issuer_cn
+    
+    ssl_cert_file=$(get_ssl_cert_path_from_vhost "$vhost" 2>/dev/null)
+    if [ $? -eq 0 ]; then
+      ssl_txt+=$'\n'
+      ssl_issuer_cn=$(get_issuer_cn_from_ssl_cert "$ssl_cert_file" \
+                        2>/dev/null )
+      [ $? -eq 0 ] && ssl_txt+="  Issuer: $ssl_issuer_cn"$'\n'
+
+      ssl_cert_cn=$(get_cn_from_ssl_cert_file "$ssl_cert_file" 2>/dev/null )
+      [ $? -eq 0 ] && ssl_txt+="  CN: $ssl_cert_cn"$'\n'
+
+      ssl_cert_start_date=$(get_start_date_from_ssl_cert "$ssl_cert_file" \
+                              2>/dev/null )
+      [ $? -eq 0 ] && ssl_txt+="  Valid after: $ssl_cert_start_date"$'\n'
+
+      ssl_cert_exp_date=$(get_exp_date_from_ssl_cert "$ssl_cert_file" \
+                              2>/dev/null )
+      [ $? -eq 0 ] && ssl_txt+="  Expires On:  $ssl_cert_exp_date"$'\n'
+
+    fi
+  else
+    ssl_txt="disabled"
+  fi
+
   ssh_host=$(get_server_base_domain)
 
   out_txt="$summ_txt"
   out_txt=${out_txt//@main_url@/$main_url}
   out_txt=${out_txt//@vhost@/$vhost}
   out_txt=${out_txt//@domains@/$domains_txt}
+  out_txt=${out_txt//@ssl_txt@/$ssl_txt}
   out_txt=${out_txt//@app_type@/$app_type}
   out_txt=${out_txt//@db_host_port@/$db_host_port}
   out_txt=${out_txt//@db_name@/$db_name}
