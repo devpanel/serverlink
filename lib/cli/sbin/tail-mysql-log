@@ -1,0 +1,78 @@
+#!/bin/bash
+
+set_usage_msg \
+  "Usage: $bin_name ${cmd_ar[*]} [opts] --vhost <vhost>
+
+  Options:
+    --vhost <vhost>         the vhost to get the logs for
+    --once                  show the lines once, don't follow the log
+                            changes (i.e. tail without -f)
+
+  Tails the MySQL log file for the specified vhost.
+"
+
+devpanel_cmd__tail_mysql_log() {
+  [ $# -eq 0 -o -z "$1" ] && usage
+
+  local name vhost show_once
+  local -a tail_args_ar=()
+
+  while [ -n "$1" ]; do
+    name="$1"
+    case "$name" in
+      --vhost)
+        [ -z "$2" ] && { error_missing_value "$name" ; return $?; }
+        vhost="$2"
+        shift 2
+        ;;
+
+      --help)
+        usage
+        ;;
+
+      --)
+        shift
+        break
+        ;;
+
+      --once)
+        show_once=1
+        shift
+        ;;
+
+      *)
+        error "unknown option $name" - 
+				return $?
+        ;;
+    esac
+  done
+
+  [ -z "$vhost" ] && { error_missing_param vhost; return $?; }
+
+  if ! vhost_exists "$vhost"; then
+    error "vhost '$vhost' doesn't exist" -
+    return 1
+  fi
+
+  local log_file db_user vhost_user
+  get_linux_username_from_vhost "$vhost" && \
+    vhost_user="$_dp_value" || return $?
+
+  db_user="b_${vhost_user#w_}"
+  if ! linuxuser_exists "$db_user"; then
+    error "user '$db_user' doesn't exist." -
+    return $?
+  fi
+
+  log_file=$(eval echo -n ~$db_user/mysql/error.log)
+  if [ ! -f "$log_file" ]; then
+    error "missing log file $log_file" -
+    return $?
+  fi
+
+  if [ -z "$show_once" ]; then
+    tail_args_ar+=( -f )
+  fi
+
+  tail "${tail_args_ar[@]}" "$log_file"
+}
