@@ -44,5 +44,9 @@ devpanel_cmd__rewrite_vhost_config() {
 
   [ -z "$vhost" ] && { error_missing_param vhost; return $?; }
 
+  if ! vhost_exists "$vhost"; then
+    exit 1
+  fi
+
   "$sys_dir/libexec/config-vhost-apache" "${cmd_args[@]}" "$vhost"
 }
