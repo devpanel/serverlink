@@ -1,0 +1,42 @@
+#!/bin/bash
+
+set_usage_msg \
+  "Usage: $bin_name ${cmd_ar[*]} [opts]
+
+  Options:
+    --yes                 confirm the intent to disable
+
+  Disables backward compatibilities with Webenabled version 1."
+
+devpanel_cmd__disable_webenabled_compat() {
+  local name confirmed
+
+  while [ -n "$1" ]; do
+    name="$1"
+    case "$name" in
+      --yes)
+        confirmed=yes
+        shift
+        ;;
+      --)
+        shift
+        break
+        ;;
+      --help|*)
+        usage
+        ;;
+    esac
+  done
+
+  [ -z "$confirmed" -o "$confirmed" != yes ] && usage
+
+  local metadata_str="rm-local webenabled_backwards"
+
+  echo "$metadata_str" | "$sys_dir/libexec/system-metadata-handler" -q
+  if [ $? -eq 0 ]; then
+    echo "Successfully disabled Webenabled v1 compatibility."
+  else
+    error "failed to remove metadata." -
+    return $?
+  fi
+}

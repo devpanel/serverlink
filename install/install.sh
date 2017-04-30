@@ -672,31 +672,9 @@ else
   "$_apachectl_bin" start
 fi
 
-# WE v1.0 backwards compatibility changes
 if [ -n "$we_v1_compat" ]; then
-  if ! getent passwd r_we &>/dev/null; then
-    shell_escaped=$(escape_sed "$webenabled_install_dir/libexec/server")
-    sed -i -e '/^root:/ { s/^root:\(.\+\)$/&\
-r_we:\1/;
-  s/:[^:]\+:[^:]\+$/:\/home\/r_we:'"$shell_escaped"'/;
-   }' /etc/passwd
-
-    sed -i -e '/^root:/ { s/^root:[^:]\+:\(.*\)/&\
-r_we:x:\1/}' /etc/shadow
-  fi
-
-  [ ! -d /home/r_we ] && \
-    cp -a "$webenabled_install_dir/install/skel/home/r_we/" \
-      /home/r_we
-
-  chown -R 0:0 /home/r_we
-  chmod 700 /home/r_we
-  chmod 700 /home/r_we/.ssh
-  chmod 600 /home/r_we/.ssh/authorized_keys
-
-  ln -s . "$webenabled_install_dir/current"
-
-  echo "set-local webenabled_backwards 1" | "$webenabled_install_dir/libexec/system-metadata-handler"
+  # WE v1.0 backwards compatibility
+  devpanel enable webenabled compat --yes
 fi
 
 echo

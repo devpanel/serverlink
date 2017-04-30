@@ -1,0 +1,72 @@
+#!/bin/bash
+
+set_usage_msg \
+  "Usage: $bin_name ${cmd_ar[*]} [opts]
+
+  Options:
+    --yes                 confirm the intent to enable
+
+  Enables backward compatibilities with Webenabled version 1. This enables
+  some old conventions on file paths and archiving options. This option only
+  makes sense for hosts linked to Webenabled version 1.
+"
+
+devpanel_cmd__enable_webenabled_compat() {
+  local name confirmed
+
+  while [ -n "$1" ]; do
+    name="$1"
+    case "$name" in
+      --yes)
+        confirmed=yes
+        shift
+        ;;
+      --)
+        shift
+        break
+        ;;
+      --help|*)
+        usage
+        ;;
+    esac
+  done
+
+  [ -z "$confirmed" -o "$confirmed" != yes ] && usage
+
+  # create ssh user r_we to receive commands from WE v1
+  local shell_escaped
+  if ! linuxuser_exists r_we; then
+    # as the user r_we has uid = 0, adding it directly to /etc/passwd and
+    # shadow files (as useradd would refuse to create another user with uid
+    # 0)
+    shell_escaped=$(escape_sed "$sys_dir/libexec/server")
+    sed -i -e '/^root:/ { s/^root:\(.\+\)$/&\
+r_we:\1/;
+  s/:[^:]\+:[^:]\+$/:\/home\/r_we:'"$shell_escaped"'/;
+   }' /etc/passwd
+
+    sed -i -e '/^root:/ { s/^root:[^:]\+:\(.*\)/&\
+r_we:x:\1/}' /etc/shadow
+  fi
+
+  local user_dir="/home/r_we"
+  if [ ! -d "$user_dir" ]; then
+    cp -a "$sys_dir/install/skel/home/r_we/" "$user_dir"
+    chown -R 0:0 "$user_dir"
+    chmod 700 "$user_dir"
+    chmod 700 "$user_dir/.ssh"
+    chmod 600 "$user_dir/.ssh/authorized_keys"
+
+    ln -s . "$sys_dir/current"
+  fi
+
+  local metadata_str="set-local webenabled_backwards 1"
+
+  echo "$metadata_str" | "$sys_dir/libexec/system-metadata-handler" -q
+  if [ $? -eq 0 ]; then
+    echo "Successfully enabled Webenabled v1 backwards compatibility."
+  else
+    error "failed to set metadata." -
+    return $?
+  fi
+}
