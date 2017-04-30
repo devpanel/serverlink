@@ -13,6 +13,10 @@ Usage: @self_basename@ <command> [args]
     run scheduled snapshots     run now the scheduled backup snapshots for the
                                 virtual hosts
 
+    restart taskd               restart devPanel taskd
+    stop  taskd                 stop devPanel taskd
+    debug taskd                 starts devPanel taskd in debug mode
+
 
  For help with a specific command, please run:
  # @self_basename@ <command> --help

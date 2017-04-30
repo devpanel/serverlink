@@ -1,0 +1,47 @@
+#!/bin/bash
+
+set_usage_msg \
+  "Usage: $bin_name ${cmd_ar[*]} [opts] --yes
+
+  Options:
+    --yes                   confirm the intent to stop
+
+  Stops devPanel taskd.
+"
+
+devpanel_cmd__stop_taskd() {
+  [ $# -eq 0 -o -z "$1" ] && usage
+
+  local name confirmed
+
+  while [ -n "$1" ]; do
+    name="$1"
+    case "$name" in
+      --yes)
+        confirmed=1
+        shift
+        ;;
+
+      --help)
+        usage
+        ;;
+
+      --)
+        shift
+        break
+        ;;
+
+      *)
+        error "unknown option $name" - 
+				return $?
+        ;;
+    esac
+  done
+
+  if [ -z "$confirmed" ]; then
+    error_missing_param yes
+    return 1
+  fi
+
+  "$sys_dir/libexec/system-services" devpanel-taskd stop
+}
