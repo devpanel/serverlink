@@ -1,0 +1,35 @@
+#!/bin/bash
+
+set_usage_msg \
+  "Usage: $bin_name ${cmd_ar[*]} [opts]
+
+  Options:
+    --yes                 confirm the intent to run it
+
+  Run the update of the Linux distribution packages now.
+"
+
+devpanel_cmd__run_distro_update() {
+  local name confirmed
+
+  while [ -n "$1" ]; do
+    name="$1"
+    case "$name" in
+      --yes)
+        confirmed=yes
+        shift
+        ;;
+      --)
+        shift
+        break
+        ;;
+      --help|*)
+        usage
+        ;;
+    esac
+  done
+
+  [ -z "$confirmed" -o "$confirmed" != yes ] && usage
+
+  "$sys_dir/libexec/distro-updates" run -Y
+}

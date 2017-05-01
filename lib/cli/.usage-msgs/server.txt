@@ -13,6 +13,8 @@ Usage: @self_basename@ <command> [args]
     enable  webenabled compat   enable backwards compatibility with WE v1
     disable webenabled compat   disable backwards compatibility with WE v1
 
+    run distro update           run now the update of the Linux distro packages
+
     run scheduled snapshots     run now the scheduled backup snapshots for the
                                 virtual hosts
 
