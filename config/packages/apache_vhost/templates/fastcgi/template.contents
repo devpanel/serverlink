@@ -2,7 +2,6 @@
     FcgidMaxRequestLen 2147483648
     FcgidIdleTimeout 180
     FcgidIOTimeout 180
-    FcgidMaxProcesses 40
     FcgidMaxProcessesPerClass 40
     FcgidMaxRequestsPerProcess 300
     AddHandler fcgid-script .php
