@@ -100,8 +100,11 @@ devpanel_cmd__install_app(){
     ${desc:+--desc "$desc"} --password-stdin
 
   if [ $? -eq 0 ]; then
+    local vhost_url
+    vhost_url=$(get_main_url_of_vhost "$vhost")
     echo
     echo "App credentials:"
+    echo "  URL: $vhost_url"
     echo "  username: admin"
     echo "  password: $app_password"
     echo
