@@ -62,7 +62,7 @@ devpanel_cmd__restart_mysql() {
     error "missing home directory $user_home"
   fi
 
-  local mysql_known_file="$user_home/mysql/mysql/user.MYD"
+  local mysql_known_file="$user_home/mysql/error.log"
   local killed
   if fuser -s "$mysql_known_file"; then
     fuser -s -k "$mysql_known_file"
