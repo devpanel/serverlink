@@ -1,0 +1,258 @@
+#!/bin/bash
+
+usage() {
+  local prog=${0##*/}
+  
+  echo "
+Usage: $prog <options>
+
+  Options:
+    --add <add_file>          add keys from file
+    --rm  <rm_file>           remove keys from file
+    --target-file <file>      target file (default: ~/.ssh/authorized_keys)
+
+  Adds or removes ssh keys from the target_file from input files specified in
+  --add or --rm files.
+"
+  exit 1
+}
+
+cleanup() {
+  unlock_path "$target_file"
+  
+  local tmp_file
+  for tmp_file in "${temp_files_ar[@]}"; do
+    rm -f "$tmp_file"
+  done
+}
+
+error_missing_value() {
+  local name="${1#--}"
+
+  error "missing value of parameter --$name"
+}
+
+# main()
+[ $# -eq 0 ] && usage
+
+unset add_file rm_file target_file
+while [ -n "$1" -a "${1:0:1}" == - ]; do
+  opt_name="$1"
+  case "$opt_name" in
+    --add)
+      [ -z "$2" ] && error_missing_value "$opt_name"
+
+      if [ "$2" == "-" ]; then
+        add_file="/dev/stdin"
+      else
+        add_file="$2"
+      fi
+      shift 2
+      ;;
+    --rm)
+      [ -z "$2" ] && error_missing_value "$opt_name"
+
+      if [ "$2" == "-" ]; then
+        rm_file="/dev/stdin"
+      else
+        rm_file="$2"
+      fi
+      shift 2
+      ;;
+    --target-file)
+      [ -z "$2" ] && error_missing_value "$opt_name"
+
+      target_file="$2"
+      shift 2
+      ;;
+    --)
+      shift
+      break
+      ;;
+    *)
+      echo "Error: unknown option $opt_name" 1>&2
+      exit 1
+      ;;
+  esac
+done
+
+if [ -z "$add_file" -a -z "$rm_file" ]; then
+  echo "Error: either --add or --rm need to be specified." 1>&2
+  exit 1
+fi
+
+self_bin=`readlink -e "$0"`
+if [ $? -ne 0 ]; then
+  echo "Error: unable to get self path" 1>&2
+  exit 1
+fi
+
+self_dir=${self_bin%/*}
+we_base_dir=${self_dir%/*}
+dir_bin="$we_base_dir/bin"
+
+lib_file="$we_base_dir/lib/functions"
+if ! source "$lib_file"; then
+  echo "Error: unable to source lib file '$lib_file'" 1>&2
+  exit 1
+fi
+
+declare -a temp_files_ar=()
+
+if [ -n "$add_file" ]; then
+  real_add_file=$(readlink -e "$add_file")
+  if [ $? -ne 0 ]; then
+    error "unable to get real path of file '$add_file'"
+  fi
+fi
+
+if [ -n "$rm_file" ]; then
+  real_rm_file=$(readlink -e "$rm_file")
+  if [ $? -ne 0 ]; then
+    error "unable to get real path of file '$rm_file'"
+  fi
+fi
+
+if [ "$real_add_file" == "$real_rm_file" ]; then
+  error "can't add and remove keys from the same file"
+fi
+
+target_file=${target_file:-"$HOME/.ssh/authorized_keys"}
+real_target_file=$(readlink -m "$target_file")
+if [ $? -ne 0 ]; then
+  echo "Error: unable to determine the real path of the target file." 1>&2
+  exit 1
+fi
+
+key_dir=${real_target_file%/*}
+if [ ! -d "$key_dir" ]; then
+  if ! mkdir -p -m 700 "$key_dir"; then
+    error "unable to create directory $key_dir"
+  fi
+fi
+
+if ! lock_path "$target_file" >/dev/null; then
+  exit 1
+fi
+trap 'cleanup' EXIT
+
+tmp_key_file=$(mktemp "$target_file.XXXXXX") || exit $?
+temp_files_ar+=( "$tmp_key_file" )
+
+declare -a curr_key_fps_ar=()
+declare -a new_key_fps_ar=()
+declare -a rm_fps_ar=()
+declare -i n_no_action=0
+declare -a add_keys_ar=()
+declare -i line_n=0
+declare key fp
+
+if [ -s "$target_file" ]; then
+  cat "$target_file" >"$tmp_key_file" || exit $?
+
+  # get the fingerprints of lines on the existing key file
+  while read key ; do
+    line_n+=1
+    [ -z "$key"            ] && continue
+    [  "${key:0:1}" == "#" ] && continue
+
+    if fp=$(get_sshkey_fingerprint "$key"); then
+      curr_key_fps_ar[$line_n]="$fp"
+    else
+      echo "Warning: unable to get fp on line $line_n of file $target_file" \
+            1>&2
+      continue
+    fi
+  done < "$tmp_key_file"
+fi
+
+declare -i n_no_action=0
+if [ -n "$add_file" ]; then
+  line_n=0
+  while read key; do
+    line_n+=1
+    [ -z "$key"           ] && continue # next if line empty
+    [ "${key:0:1}" == "#" ] && continue
+
+    if ! fp=$(get_sshkey_fingerprint "$key"); then
+      error "couldn't get key fp on line $line_n from file $add_file"
+    fi
+
+    if in_array "$fp" "${curr_key_fps_ar[@]}"; then
+      n_no_action+=1
+    else
+      add_keys_ar+=( "$key" )
+      curr_key_fps_ar+=( "$fp" )
+    fi
+  done < "$add_file"
+fi
+
+if [ -n "$rm_file" ]; then
+  line_n=0
+  while read key; do
+    line_n+=1
+    [ -z "$key"           ] && continue # next if line empty
+    [ "${key:0:1}" == "#" ] && continue
+
+    if ! fp=$(get_sshkey_fingerprint "$key"); then
+      error "couldn't get fingerprint of ssh key on line $line_n"
+    fi
+
+    if in_array "$fp" "${curr_key_fps_ar[@]}"; then
+      rm_fps_ar+=( "$fp" )
+    else
+      n_no_action+=1
+    fi
+  done < "$rm_file"
+fi
+
+declare -i n_add=${#add_keys_ar[@]}
+declare -i n_rm=${#rm_fps_ar[@]}
+
+# check if received any key
+if [ $n_add -eq 0 -a $n_rm -eq 0 -a $n_no_action -eq 0 ]; then
+  echo "Error: didn't receive any key to work on. Either pass keys on" \
+  "command line with -a or -r or send it through stdin (-i)."
+  exit 1
+elif [ $n_add -eq 0 -a $n_rm -eq 0 -a $n_no_action -gt 0 ]; then
+  echo "No action needed, no change in key file."
+  exit 0
+fi
+
+# Process the request
+declare -i n_eval=0
+while [ $n_eval -ne $n_add ]; do
+  new_key="${add_keys_ar[$n_eval]}"
+  n_eval+=1
+
+  echo "$new_key" >"$tmp_key_file"
+  if [ $? -ne 0 ]; then
+    echo "Error: unable to add key '$new_key'" 1>&2
+    exit 1
+  fi
+done
+
+n_eval=0
+while [ $n_eval -ne $n_rm ]; do
+  rm_fp="${rm_fps_ar[$n_eval]}"
+  n_eval+=1
+
+  line_n=0
+  for _fp in "${curr_key_fps_ar[@]}"; do
+    line_n+=1
+    if [ "$_fp" == "$rm_fp" ]; then
+      sed -i -e "${line_n}d;" "$tmp_key_file" || exit $?
+    fi
+  done
+done
+
+mv -f "$tmp_key_file" "$target_file"
+st=$?
+if [ $st -eq 0 ]; then
+  echo "Added $n_add keys, removed $n_rm keys."
+  chmod 600 "$target_file"
+else
+  echo "Error: unable to write key file $target_file" 1>&2
+fi
+
+exit $st

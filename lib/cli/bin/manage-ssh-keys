@@ -1,0 +1,156 @@
+#!/bin/bash
+
+set_usage_msg \
+  "Usage: $bin_name ${cmd_ar[*]} <opts>
+
+  Options:
+    --vhost <name>      vhost name
+    --add <file>        add ssh keys from file
+    --rm  <file>        remove ssh keys from file
+
+  Manage ssh keys. Add or remove keys from files.
+"
+
+devpanel_cmd__manage_ssh_keys() {
+
+  local vhost arg add_file rm_file key_file
+  local -a cmd_args_ar=( "$sys_dir/bin/manage-ssh-keys" )
+
+  [ -z "$1" ] && usage
+
+  while [ -n "$1" ]; do
+    arg="$1"
+    case "$arg" in
+      --vhost)
+        [ -z "$2" ] && { error_missing_value "$arg"; return 1; }
+        vhost="$2"
+        shift 2
+        ;;
+      --add)
+        [ -z "$2" ] && { error_missing_value "$arg"; return 1; }
+        add_file="$2"
+        shift 2
+        ;;
+      --rm)
+        [ -z "$2" ] && { error_missing_value "$arg"; return 1; }
+        rm_file="$2"
+        shift 2
+        ;;
+      --)
+        shift
+        break
+        ;;
+      --help)
+        usage
+        ;;
+      *)
+        error "unknown option $arg"
+        ;;
+    esac
+  done
+
+  if [ -n "$add_file" -a -n "$rm_file" -a \
+        "$add_file" == "$rm_file" ]; then
+    error "file passed to --add and --rm can't be the same." -
+    return $?
+  fi
+
+  local linux_user
+  if [ $EUID -eq 0 ]; then
+    [ -z "$vhost" ] && { error_missing_param vhost ; return $?; }
+
+    if ! vhost_exists "$vhost"; then
+      exit 1
+    fi
+
+    if get_linux_username_from_vhost "$vhost"; then
+      linux_user="$_dp_value"
+    else
+      error "unable to get the linux user from vhost $vhost" -
+      return $?
+    fi
+
+    local tmp_add_file tmp_rm_file
+
+    # as the vhost might not have access to the input files, we need to copy
+    # it's contents to a temporary file owned by the vhost
+    if [ -n "$add_file" -a "$add_file" != - ]; then
+      if [ ! -f "$add_file" ]; then
+        error "missing file '$add_file'" -
+        return $?
+      fi
+
+      tmp_add_file=$(su -l -c '
+        tmp_file=`mktemp`
+        if [ $? -ne 0 ]; then
+          echo Unable to create temporary file 1>&2
+          exit 1
+        fi
+
+        cat >$tmp_file
+        if [ $? -eq 0 ]; then
+          echo $tmp_file
+        else
+          echo Unable to write temporary file $tmp_file
+          exit 1
+        fi
+        ' "$linux_user" < "$add_file")
+
+      if [ $? -eq 0 ]; then
+        temp_files_ar+=( "$tmp_add_file" )
+        cmd_args_ar+=( --add "$tmp_add_file" )
+      else
+        error "unable to create temporary file for --add file" -
+        return $?
+      fi
+    elif [ -n "$add_file" ]; then
+      cmd_args_ar+=( --add "$add_file" )
+    fi
+
+    if [ -n "$rm_file" -a "$rm_file" != - ]; then
+      if [ ! -f "$rm_file" ]; then
+        error "missing file '$rm_file'" -
+        return $?
+      fi
+
+      tmp_rm_file=$(su -l -c '
+        tmp_file=`mktemp`
+        if [ $? -ne 0 ]; then
+          echo Unable to create temporary file 1>&2
+          exit 1
+        fi
+
+        cat >$tmp_file
+        if [ $? -eq 0 ]; then
+          echo $tmp_file
+        else
+          echo Unable to write temporary file $tmp_file
+          exit 1
+        fi
+        ' "$linux_user" < "$rm_file")
+
+      if [ $? -eq 0 ]; then
+        cmd_args_ar+=( --rm "$tmp_rm_file" )
+        temp_files_ar+=( "$tmp_rm_file" )
+      else
+        error "unable to create temporary file for --rm file" -
+        return $?
+      fi
+    elif [ -n "$rm_file" ]; then
+      cmd_args_ar+=( --rm "$rm_file" )
+    fi
+
+    key_file=$(eval echo -n ~$linux_user/.ssh/authorized_keys)
+    cmd_args_ar+=( --target-file $(printf '%q' "$key_file" ) )
+
+    su -l -c "${cmd_args_ar[*]}" "$linux_user"
+  else
+    [ -n "$add_file" ] && cmd_args_ar+=( --add "$add_file" )
+    [ -n "$rm_file"  ] && cmd_args_ar+=( --rm "$rm_file"   )
+
+    key_file="$HOME/.ssh/authorized_keys"
+    cmd_args_ar+=( --target-file "$key_file" )
+
+    "${cmd_args_ar[@]}"
+  fi
+}
