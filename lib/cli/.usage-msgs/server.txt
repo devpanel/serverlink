@@ -21,6 +21,7 @@ Usage: @self_basename@ <command> [args]
     restart taskd               restart devPanel taskd
     stop  taskd                 stop devPanel taskd
     debug taskd                 starts devPanel taskd in debug mode
+    manage root ssh keys        manages ssh keys for the user root
 
 
  For help with a specific command, please run:

@@ -1,0 +1,65 @@
+#!/bin/bash
+
+set_usage_msg \
+  "Usage: $bin_name ${cmd_ar[*]} <opts>
+
+  Options:
+    --add <file>        add ssh keys from file
+    --rm  <file>        remove ssh keys from file
+
+  Manage ssh keys for the user root. Add or remove keys from files.
+"
+
+devpanel_cmd__manage_root_ssh_keys() {
+
+  local arg add_file rm_file key_file
+  local -a cmd_args_ar=( "$sys_dir/bin/manage-ssh-keys" )
+
+  [ -z "$1" ] && usage
+
+  while [ -n "$1" ]; do
+    arg="$1"
+    case "$arg" in
+      --add)
+        [ -z "$2" ] && { error_missing_value "$arg"; return 1; }
+        add_file="$2"
+        shift 2
+        ;;
+      --rm)
+        [ -z "$2" ] && { error_missing_value "$arg"; return 1; }
+        rm_file="$2"
+        shift 2
+        ;;
+      --)
+        shift
+        break
+        ;;
+      --help)
+        usage
+        ;;
+      *)
+        error "unknown option $arg"
+        ;;
+    esac
+  done
+
+  if [ -n "$add_file" -a -n "$rm_file" -a \
+        "$add_file" == "$rm_file" ]; then
+    error "file passed to --add and --rm can't be the same." -
+    return $?
+  fi
+
+  if [ -n "$add_file" ]; then
+    cmd_args_ar+=( --add "$add_file" )
+  fi
+
+  if [ -n "$rm_file" ]; then
+    cmd_args_ar+=( --rm "$rm_file" )
+  fi
+
+  key_file="$HOME/.ssh/authorized_keys"
+
+  cmd_args_ar+=( --target-file "$key_file" )
+
+  "${cmd_args_ar[@]}"
+}
