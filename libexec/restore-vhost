@@ -226,10 +226,8 @@ elif [ ! -e "$archive_label" -a $create_vhost -eq 0 \
   -a "${archive_label:0:1}" != "/" -a "${archive_label:0:2}" != "./" \
   -a "${archive_label:0:3}" != "../" ]; then
 
-  user_info=$(grep "w_$vhost" /etc/passwd)
-  user_home_dir=$(echo "$user_info" | cut -d: -f 6)
   base_label=$(basename "$archive_label")
-  path_in_home="$user_home_dir/public_html/gen/archive/$base_label"
+  path_in_home="$home/public_html/gen/archive/$base_label"
   path_in_sysdir="$sys_datadir/vhost_archives/$vhost/$base_label"
 
   if [ -f "$path_in_sysdir" ]; then
