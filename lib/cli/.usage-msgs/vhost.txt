@@ -28,8 +28,7 @@ Usage: @self_basename@ <command> [args]
     disable   ssl                   disable SSL for the specified site
     enable  lets-encrypt            enable Let's Encrypt SSL certificates on the vhost
     disable lets-encrypt            disable Let's Encrypt SSL certificates on the vhost
-    get tool token                  gets a token for one of the admin tools (e.g.
-                                    phpmyadmin, extplorer, etc)
+    get token                       get a token for one of the admin tools (e.g. phpmyadmin)
     set vhost description           sets a a short description of the vhost's purpose
 
     enable vhost snapshots          enables backup snashots for the specified vhost
