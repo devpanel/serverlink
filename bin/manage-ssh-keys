@@ -35,7 +35,7 @@ error_missing_value() {
 # main()
 [ $# -eq 0 ] && usage
 
-unset add_file rm_file target_file
+unset add_file rm_file target_file has_tty
 while [ -n "$1" -a "${1:0:1}" == - ]; do
   opt_name="$1"
   case "$opt_name" in
@@ -164,6 +164,16 @@ if [ -s "$target_file" ]; then
       continue
     fi
   done < "$tmp_key_file"
+fi
+
+if tty -s &>/dev/null; then
+  has_tty=1
+fi
+
+if [ "$add_file" == /dev/stdin -a -n "$has_tty" ]; then
+  echo "Reading keys to ADD from stdin, please paste it here:" 1>&2
+elif [ "$rm_file" == /dev/stdin -a -n "$has_tty" ]; then
+  echo "Reading keys to REMOVE from stdin, please paste it here:" 1>&2
 fi
 
 declare -i n_no_action=0
