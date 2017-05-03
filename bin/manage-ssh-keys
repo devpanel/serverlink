@@ -41,22 +41,12 @@ while [ -n "$1" -a "${1:0:1}" == - ]; do
   case "$opt_name" in
     --add)
       [ -z "$2" ] && error_missing_value "$opt_name"
-
-      if [ "$2" == "-" ]; then
-        add_file="/dev/stdin"
-      else
-        add_file="$2"
-      fi
+      add_file="$2"
       shift 2
       ;;
     --rm)
       [ -z "$2" ] && error_missing_value "$opt_name"
-
-      if [ "$2" == "-" ]; then
-        rm_file="/dev/stdin"
-      else
-        rm_file="$2"
-      fi
+      rm_file="$2"
       shift 2
       ;;
     --target-file)
@@ -99,18 +89,34 @@ fi
 
 declare -a temp_files_ar=()
 
-if [ -n "$add_file" ]; then
+if [ -n "$add_file" -a "$add_file" != - ]; then
   real_add_file=$(readlink -e "$add_file")
   if [ $? -ne 0 ]; then
     error "unable to get real path of file '$add_file'"
   fi
+
+  if [ "$add_file" != - ]; then
+    if ! exec {add_fd_n}<$add_file; then
+      error "unable to read from $add_file"
+    fi
+  fi
+elif [ -n "$add_file" -a "$add_file" == - ]; then
+  real_add_file=-
 fi
 
-if [ -n "$rm_file" ]; then
+if [ -n "$rm_file" -a "$rm_file" != - ]; then
   real_rm_file=$(readlink -e "$rm_file")
   if [ $? -ne 0 ]; then
     error "unable to get real path of file '$rm_file'"
   fi
+
+  if [ "$rm_file" != - ]; then
+    if ! exec {rm_fd_n}<$rm_file; then
+      error "unable to read from $rm_file"
+    fi
+  fi
+elif [ -n "$rm_file" -a "$rm_file" == - ]; then
+  real_rm_file=-
 fi
 
 if [ "$real_add_file" == "$real_rm_file" ]; then
@@ -118,16 +124,16 @@ if [ "$real_add_file" == "$real_rm_file" ]; then
 fi
 
 target_file=${target_file:-"$HOME/.ssh/authorized_keys"}
-real_target_file=$(readlink -m "$target_file")
-if [ $? -ne 0 ]; then
-  echo "Error: unable to determine the real path of the target file." 1>&2
-  exit 1
-fi
-
-key_dir=${real_target_file%/*}
-if [ ! -d "$key_dir" ]; then
-  if ! mkdir -p -m 700 "$key_dir"; then
-    error "unable to create directory $key_dir"
+if [ ! -f "$target_file" ]; then
+  if real_target_file=$(readlink -m "$target_file") ; then
+    key_dir=${real_target_file%/*}
+    if [ ! -d "$key_dir" ]; then
+      if ! mkdir -p -m 700 "$key_dir"; then
+        error "unable to create directory $key_dir"
+      fi
+    fi
+  else
+    error "unable to determine full path for $target_file"
   fi
 fi
 
@@ -163,23 +169,23 @@ if [ -s "$target_file" ]; then
             1>&2
       continue
     fi
-  done < "$tmp_key_file"
+  done < "$target_file"
 fi
 
 if tty -s &>/dev/null; then
   has_tty=1
 fi
 
-if [ "$add_file" == /dev/stdin -a -n "$has_tty" ]; then
+if [ "$add_file" == - -a -n "$has_tty" ]; then
   echo "Reading keys to ADD from stdin, please paste it here:" 1>&2
-elif [ "$rm_file" == /dev/stdin -a -n "$has_tty" ]; then
+elif [ "$rm_file" == - -a -n "$has_tty" ]; then
   echo "Reading keys to REMOVE from stdin, please paste it here:" 1>&2
 fi
 
 declare -i n_no_action=0
 if [ -n "$add_file" ]; then
   line_n=0
-  while read key; do
+  while read -u ${add_fd_n:-0} key; do
     line_n+=1
     [ -z "$key"           ] && continue # next if line empty
     [ "${key:0:1}" == "#" ] && continue
@@ -194,12 +200,12 @@ if [ -n "$add_file" ]; then
       add_keys_ar+=( "$key" )
       curr_key_fps_ar+=( "$fp" )
     fi
-  done < "$add_file"
+  done
 fi
 
 if [ -n "$rm_file" ]; then
   line_n=0
-  while read key; do
+  while read -u ${rm_fd_n:-0} key; do
     line_n+=1
     [ -z "$key"           ] && continue # next if line empty
     [ "${key:0:1}" == "#" ] && continue
@@ -213,7 +219,7 @@ if [ -n "$rm_file" ]; then
     else
       n_no_action+=1
     fi
-  done < "$rm_file"
+  done
 fi
 
 declare -i n_add=${#add_keys_ar[@]}
