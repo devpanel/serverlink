@@ -71,5 +71,9 @@ devpanel_cmd__configure_ssl() {
     [ -z "${!param}" ] && error_missing_param $param
   done
 
+  if [ -z "$ca_file" ]; then
+    cmd_args+=( -N )
+  fi
+
   "$sys_dir/libexec/store-ssl-files" "${cmd_args[@]}" $vhost
 }
