@@ -41,7 +41,7 @@ $dir/check-vhost-name config "$vhost" || exit 1
 self_dir="${self_bin%/*}"
 sys_dir="${self_dir%/*}"
 
-lib_f="$sys_dir/lib/functions"
+lib_f="$dir/../lib/functions"
 if ! source "$lib_f"; then
   echo "Error: unable to import $lib_f" 1>&2
   exit 1
