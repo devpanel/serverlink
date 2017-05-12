@@ -11,3 +11,6 @@
 !/compat/w_/public_html/cgi/cgit.cgi
 /config/os
 /var/lock/
+/.vagrant/
+/Vagrantfile
+/console.log
