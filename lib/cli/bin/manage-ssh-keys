@@ -60,7 +60,8 @@ devpanel_cmd__manage_ssh_keys() {
     [ -z "$vhost" ] && { error_missing_param vhost ; return $?; }
 
     if ! vhost_exists "$vhost"; then
-      exit 1
+      error "vhost doesn't exist." -
+      return 1
     fi
 
     if get_linux_username_from_vhost "$vhost"; then
