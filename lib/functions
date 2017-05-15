@@ -1485,7 +1485,9 @@ get_vhost_base_domain() {
 
   key="apache_vhost:0:_:base_domain"
 
-  domain_int=$(get_vhost_key_value "$key" "$vhost") || return $?
+  if ! domain_int=$(get_vhost_key_value "$key" "$vhost" 2>/dev/null); then
+    domain_int="$vhost"
+  fi
 
   base_domain=$(get_real_hostname "$domain_int") || return $?
 
