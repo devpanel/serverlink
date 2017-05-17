@@ -7,3 +7,12 @@
 
   Scriptalias /download-file @@__APACHE_VIRTWWW_HOMEDIR__@@/w_/public_html/cgi/download-file.cgi
 </VirtualHost>
+<VirtualHost *:8080>
+  ServerName admin-ctl.@@__APACHE_VIRTWWW_DOMAIN__@@
+  DocumentRoot @@__APACHE_VIRTWWW_HOMEDIR__@@/w_/public_html/server_default
+  SuexecUserGroup w_ virtwww
+  CustomLog webenabled-logs/admin-ctl-access_log combined
+  ErrorLog webenabled-logs/admin-ctl-error_log
+
+  Scriptalias /download-file @@__APACHE_VIRTWWW_HOMEDIR__@@/w_/public_html/cgi/download-file.cgi
+</VirtualHost>
