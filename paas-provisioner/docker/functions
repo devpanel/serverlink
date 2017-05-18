@@ -77,6 +77,38 @@ read_local_config()
   fi
 }
 
+create_admin-ctl_config_in_nginx()
+{
+local vhost_dir="/etc/nginx/sites-enabled"
+hostname=`hostname`
+serveradmin="admin-ctl.${hostname}"
+local vhost_file="$vhost_dir/${serveradmin}.conf"
+local tmp_vhost_file
+
+if [ ! -d "$vhost_dir" ]; then
+  ${sudo} mkdir "$vhost_dir" # create $vhost_dir if it doesn't exist
+fi
+
+if [ "${serveraliases}" == "" ]; then serveraliases="${servername}"; fi
+
+if [ ! -e $vhost_file ]; then
+
+    tmp_vhost_file=$($sudo mktemp "$vhost_file.XXXXXX")
+    cat << EOF > "$tmp_vhost_file"
+server {
+listen       80;
+server_name  ${serveradmin};
+    location / {
+        proxy_set_header Host $host;
+        proxy_pass http://localhost:8080;
+    }
+}
+EOF
+
+    ${sudo} mv -f "$tmp_vhost_file" "$vhost_file"
+fi
+}
+
 create_nginx_config()
 {
 local vhost_dir="/etc/nginx/sites-enabled"
@@ -103,6 +135,7 @@ EOF
 
 ${sudo} mv -f "$tmp_vhost_file" "$vhost_file"
 }
+
 
 update_nginx_config()
 {
