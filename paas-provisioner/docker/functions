@@ -99,7 +99,7 @@ server {
 listen       80;
 server_name  ${serveradmin};
     location / {
-        proxy_set_header Host $host;
+        proxy_set_header Host \$host;
         proxy_pass http://localhost:8080;
     }
 }
