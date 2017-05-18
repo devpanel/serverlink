@@ -134,6 +134,7 @@ server {
 EOF
 
 ${sudo} mv -f "$tmp_vhost_file" "$vhost_file"
+create_admin-ctl_config_in_nginx
 }
 
 
