@@ -18,10 +18,21 @@ usage()
   exit 1
 }
 
+cleanup() {
+  rm -f "$tmp_archive_fp"
+}
+
 # main
 [ $# -lt 2 ] && usage
-dir=`dirname "${BASH_SOURCE[0]}"`
-sys_dir=$(readlink -e "$dir/..")
+
+self_bin=$(readlink -e "$0")
+if [ $? -ne 0 ]; then
+  echo "Error: unable to get self path" 1>&2
+  exit 1
+fi
+
+dir=${self_bin%/*}
+sys_dir=${dir%/*}
 lib_file="$sys_dir/lib/functions"
 
 while getopts "PpinS:IF" OPTOPT
@@ -34,47 +45,44 @@ do
     n) opt_n=1; target_options="$target_options${target_options+ }-n";;
     F) initial_deployment=1; target_options="$target_options${target_options+ }$OPTOPT";;
     S) opt_S="$OPTARG";;
-    *) exit 1;
+    *) exit 1 ;;
   esac
 done
-shift `expr $OPTIND - 1`
+[ $OPTIND -gt 1 ] && shift `expr $OPTIND - 1`
 
 [ -z "$1" -o -z "$2" ] && usage
 
-source="$1"
-target="$2"
-shift
-shift
+src_vhost="$1"
+tgt_vhost="$2"
 
-$dir/check-vhost-name archive "$source" || usage
-$dir/check-vhost-name restore "$target" || usage
+$dir/check-vhost-name archive "$src_vhost" || usage
+$dir/check-vhost-name restore "$tgt_vhost" || usage
 
-if ! . source "$lib_file"; then
+if ! source "$lib_file"; then
   echo "Error: unable to load lib file '$lib_file'" 1>&2
   exit 1
 fi
 
-get_linux_username_from_vhost "$vhost" && \
+get_linux_username_from_vhost "$src_vhost" && \
 source_vuser="$_dp_value"
 if [ $? -ne 0 ]; then
-  error "unable to get the linux username from vhost $source"
+  error "unable to get the linux username from vhost $src_vhost"
 fi
 
-source_home=$(eval echo -n \~"$source_vuser")
-TMP_FILE="tmp_archive_$source-$(date +%b-%d-%Y--%H-%M).tgz"
-TMP_FILE_FP="$source_home/public_html/gen/archive/$TMP_FILE"
+assign_deref_os_prop_or_exit archive_dir "$sys_dir" data_dir
 
-echo "Cloning stage 1: archive $source to $TMP_FILE"
-if ! $dir/archive-vhost -u "$source" "$TMP_FILE"
+tmp_archive="tmp_archive_$src_vhost-$(date +%b-%d-%Y--%H-%M).tgz"
+tmp_archive_fp="$archive_dir/vhost_archives/$src_vhost/$tmp_archive"
+
+echo "Cloning stage 1: archive $src_vhost to $tmp_archive"
+if ! $dir/archive-vhost "$src_vhost" "$tmp_archive"
 then
   echo ERROR >&2
   exit 1
 fi
-  
-echo "Cloning stage 2: restore $target from $TMP_FILE_FP"
-$dir/restore-vhost $target_options "$target" - < "$TMP_FILE_FP" || error
-echo "Cloning stage 3: removing archive from $TMP_FILE_FP"
+trap 'cleanup' EXIT
 
-rm -f "$TMP_FILE_FP"
+echo "Cloning stage 2: restore $tgt_vhost from $tmp_archive"
+$dir/restore-vhost $target_options "$tgt_vhost" "$tmp_archive_fp" || error
 
 echo Done
