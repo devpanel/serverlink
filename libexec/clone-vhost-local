@@ -2,19 +2,19 @@
 
 run()
 {
-  echo "  Running $@"
+  echo "  Running $*"
   "$@"
 }
 
 error()
 {
-  echo "ERROR${1+: }$@" >&2
+  echo "ERROR${1+: }$*" >&2
   exit 1
 }
 
 usage()
 {
-  echo "Usage: clone-vhost SOURCE_VHOST TARGET_VHOST" >&2
+  echo "Usage: ${0##*/} SOURCE_VHOST TARGET_VHOST" >&2
   exit 1
 }
 
