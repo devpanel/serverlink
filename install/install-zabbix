@@ -46,6 +46,7 @@ patch_sudoers()
   echo "zabbix ALL=NOPASSWD: /opt/webenabled/sbin/check_mem_diskspace_usage.sh" >> /etc/sudoers
   echo "zabbix ALL=NOPASSWD: /opt/webenabled/sbin/check_apache2_logs.sh" >> /etc/sudoers
   echo "zabbix ALL=NOPASSWD: /opt/webenabled/sbin/check_git_update.sh" >> /etc/sudoers
+  echo "zabbix ALL=NOPASSWD: /opt/webenabled/sbin/zabbix-autoheal" >> /etc/sudoers
 }
 
 installzabbix(){
