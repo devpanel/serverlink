@@ -1,0 +1,100 @@
+#!/bin/bash
+
+
+## define to use sudo or not
+if [ "$UID" -eq 0 ]; then
+  sudo=""
+else
+  sudo="sudo"
+fi
+
+hostname=$(hostname)
+webhook_id=$1
+
+# Slack incoming web-hook URL and user name
+url="https://hooks.slack.com/services/${webhook_id}"
+slack_username="Zabbix"
+
+
+slack_msg()
+{
+  to="#support"
+  subject=$1
+  message=$2
+  # Change message emoji depending on the subject - smile (RECOVERY), frowning (PROBLEM), or ghost (for everything else)
+  recoversub='^RECOVER(Y|ED)?$'
+  if [[ "$subject" =~ ${recoversub} ]]; then
+    emoji=':smile:'
+  elif [ "$subject" == 'PROBLEM' ]; then
+    emoji=':frowning:'
+  else
+    emoji=':ghost:'
+  fi
+  # Build our JSON payload and send it as a POST request to the Slack incoming web-hook URL
+  payload="payload={\"channel\": \"${to//\"/\\\"}\", \"username\": \"${slack_username//\"/\\\"}\", \"text\": \"${message//\"/\\\"}\", \"icon_emoji\": \"${emoji}\"}"
+  curl -m 5 --data-urlencode "${payload}" $url -A 'zabbix-slack-alertscript / https://github.com/ericoc/zabbix-slack-alertscript'
+}
+
+service_check()
+{
+  if [ -z "$(${sudo} netstat -ltpn 2>&1|grep ${service_port})" ]; then
+    slack_msg "PROBLEM" "PROBLEM: ${service_name} is down, attempting to auto heal at ${hostname}."
+    ${sudo} service ${service_cmd} restart
+    if [ -z "$(${sudo} netstat -ltpn 2>&1|grep ${service_port})" ]; then
+      slack_msg "PROBLEM" "PROBLEM: Auto heal attempt failed... Please restart the ${service_name} service yourself at ${hostname}."
+    else
+      slack_msg "RECOVERY" "RECOVERY: Auto heal successful, service ${service_name} was restarted at ${hostname}."
+    fi
+  fi
+}
+
+
+# local apps
+IFS=!
+LOCAL_APPS_ARRAY=(`find /home/clients/websites/* -maxdepth 0 -type d -printf %f!`)
+for username in ${LOCAL_APPS_ARRAY[*]}; do
+  db_port=$(grep port /home/clients/websites/${username}/.my.cnf |cut -d '=' -f2)
+  if [ -z "$(${sudo} netstat -ltpn 2>&1|grep "127.0.0.1:${db_port} ")" ]; then
+    slack_msg "PROBLEM" "PROBLEM: MySQL is down, attempting to auto heal for vhost ${username#w_} at ${hostname}."
+    devpanel restart mysql --vhost ${username#w_}
+    if [ -z "$(${sudo} netstat -ltpn 2>&1|grep "127.0.0.1:${db_port} ")" ]; then
+      slack_msg "PROBLEM" "PROBLEM: Auto heal attempt failed... Please restart the MySQL service yourself for vhost ${username#w_} at ${hostname}."
+    else
+      slack_msg "RECOVERY" "RECOVERY: Auto heal successful, service MySQL was restarted for vhost ${username#w_} at ${hostname}."
+    fi
+  fi
+done
+
+# mail
+service_name="Postfix"
+service_port="0.0.0.0:25 "
+service_cmd="postfix"
+service_check
+
+# zabbix agent
+service_name="Zabbix Agent"
+service_port="0.0.0.0:10050 "
+service_cmd="zabbix-agent"
+service_check
+
+# apache
+service_name="Apache"
+service_port=":8080 "
+service_cmd="apache2"
+service_check
+
+# nginx
+service_name="Nginx"
+service_port="0.0.0.0:80 "
+service_cmd="nginx"
+service_check
+
+
+# # docker apps
+# if [ $(whereis docker|grep -c /usr) -gt 0 ]; then
+#   IFS=$'\n'
+#   DOCKER_APPS_ARRAY=(`docker ps|tail -n +2|awk '{print $NF}'`)
+#   for docker_container in ${DOCKER_APPS_ARRAY[*]}; do
+#     docker exec ${docker_container} /opt/webenabled/libexec/zabbix-autoheal ${webhook_id}
+#   done
+# fi
