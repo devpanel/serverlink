@@ -95,6 +95,6 @@ service_check
 #   IFS=$'\n'
 #   DOCKER_APPS_ARRAY=(`docker ps|tail -n +2|awk '{print $NF}'`)
 #   for docker_container in ${DOCKER_APPS_ARRAY[*]}; do
-#     docker exec ${docker_container} /opt/webenabled/libexec/zabbix-autoheal ${webhook_id}
+#     docker exec ${docker_container} /opt/webenabled/sbin/zabbix-autoheal ${webhook_id}
 #   done
 # fi

@@ -467,6 +467,27 @@ operation_handle()
 
     libexec/restore-vhost*http://www.webenabled.com/seedapps/*)
       ${sys_dir}/${handler_options}
+      if [ -z "${app}" ]; then
+        case "$handler_options" in
+          libexec/restore-vhost*http://www.webenabled.com/seedapps/wordpress*.tgz)
+            app="wordpress"
+          ;;
+          libexec/restore-vhost*http://www.webenabled.com/seedapps/drupal-v7*.tgz)
+            app="drupal"
+          ;;
+          libexec/restore-vhost*http://www.webenabled.com/seedapps/drupal-v8*.tgz)
+            app="drupal8"
+          ;;
+          libexec/restore-vhost*http://www.webenabled.com/seedapps/mag*.tgz)
+            app="magento"
+          ;;
+          *)
+            echo "App not supported."
+            exit 1
+          ;;
+        esac
+      fi
+      create_local_config
     ;;
 
     libexec/restore-vhost*)
