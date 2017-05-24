@@ -240,9 +240,9 @@ restart_or_reload_nginx()
     ${sudo} echo "client_max_body_size 200M;" > /etc/nginx/conf.d/client_max_body_size.conf
   fi
 
-  if [ `"grep -c include /etc/nginx/sites-enabled/\*;"` eq 0 ]; then
+  if [ `grep -c "include /etc/nginx/sites-enabled/\*;"` -eq 0 ]; then
     # Fix isssue with nginx configuration in centos
-    sed -i '/include /etc/nginx/conf.d/\*.conf;/a include /etc/nginx/sites-enabled/\*;' /etx/nginx/nginx.conf
+    sed -i '|include /etc/nginx/conf.d/\*.conf;|a include /etc/nginx/sites-enabled/\*;' /etc/nginx/nginx.conf
   fi
 
   if [[ `service nginx status` == " * nginx is running" || `service nginx status|grep 'active (running)'|wc -l` -gt 0 ]]; then
@@ -386,14 +386,14 @@ detect_running_apache_and_patch_configs()
     done
 
     distro=$(devpanel_auto_detect_distro)
-    if [ "$distro" eq "centos"]; then
+    if [ "$distro" == "centos" ]; then
         sed -i 's/^Listen 80$/Listen 8080/' /etc/httpd/conf/httpd.conf
     else
         sed -i 's/^Listen 80$/Listen 8080/' /etc/apache2/ports.conf
     fi
 
     # restart apache
-    if [ "$distro" eq "centos"]; then
+    if [ "$distro" == "centos" ]; then
         ${sudo} service httpd restart
     else
         ${sudo} service apache2 restart

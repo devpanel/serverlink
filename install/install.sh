@@ -237,6 +237,10 @@ add_custom_users_n_groups() {
     useradd -m -c "$comment" -d "/home/devpanel" devpanel
   fi
 
+ if [ `grep -c apache /etc/passwd` -eq 0 ]; then
+     adduser apache
+ fi
+
   usermod -a -G virtwww "$_apache_user"
 
 }
