@@ -64,11 +64,11 @@ devpanel_cmd__restart_mysql() {
 
   local mysql_known_file="$user_home/mysql/error.log"
   local killed
-  if fuser -s "$mysql_known_file"; then
-    fuser -s -k "$mysql_known_file"
+  if fuser -s "$mysql_known_file" 2>/dev/null; then
+    fuser -s -k "$mysql_known_file" 2>/dev/null
     echo "Stopping mysql..."
     for i in {1..30}; do
-      if fuser -s -k "$mysql_known_file"; then
+      if fuser -s -k "$mysql_known_file" 2>/dev/null; then
         if [ $i -gt 0 -a $(($i % 10)) == 0 ]; then
           echo "Waiting a bit more for mysql to stop..." 1>&2
         fi
@@ -81,9 +81,9 @@ devpanel_cmd__restart_mysql() {
 
     if [ -z "$killed" ]; then
       if [ -n "$force" ]; then
-        if fuser -s "$mysql_known_file"; then
+        if fuser -s "$mysql_known_file" 2>/dev/null; then
           echo "Couldn't kill mysql with TERM signal, doing a KILL now..." 1>&2
-          fuser -k -KILL "$mysql_known_file"
+          fuser -k -KILL "$mysql_known_file" 2>/dev/null
         fi
       else
         error "couldn't kill mysql, it seems dead stuck. Try running with --force"
