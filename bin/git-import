@@ -114,6 +114,7 @@ if ! author_email=`git config --global user.email 2>/dev/null`; then
 fi
 
 git init  || { echo "Error while executing: git init" 1>&2 ; exit 1; }
+touch dummy.txt
 git add -f . || { echo "Error while executing: git add"  1>&2 ; exit 1; }
 git commit --author="$author_name <$author_email>" -am "$commit_msg" || \
   { echo "Error while executing: git commit" 1>&2 ; exit 1; }
