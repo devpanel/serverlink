@@ -56,7 +56,7 @@ for username in ${LOCAL_APPS_ARRAY[*]}; do
   db_port=$(grep port /home/clients/websites/${username}/.my.cnf |cut -d '=' -f2)
   if [ -z "$(${sudo} netstat -ltpn 2>&1|grep "127.0.0.1:${db_port} ")" ]; then
     slack_msg "PROBLEM" "PROBLEM: MySQL is down, attempting to auto heal for vhost ${username#w_} at ${hostname}."
-    devpanel restart mysql --vhost ${username#w_}
+    ${sudo} devpanel restart mysql --vhost ${username#w_}
     if [ -z "$(${sudo} netstat -ltpn 2>&1|grep "127.0.0.1:${db_port} ")" ]; then
       slack_msg "PROBLEM" "PROBLEM: Auto heal attempt failed... Please restart the MySQL service yourself for vhost ${username#w_} at ${hostname}."
     else
