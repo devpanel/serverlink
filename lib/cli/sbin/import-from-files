@@ -1,0 +1,97 @@
+#!/bin/bash
+
+set_usage_msg \
+  "Usage: $bin_name ${cmd_ar[*]} <opts>
+
+  Options:
+    --vhost      <name>           the name of the virtual host to be created [*]
+
+    --file <filename>             archive containing the files with the
+                                  website contents (must be .zip or .tar.gz) [*]
+
+    --mysql-file <filename>       the mysqldump file of the database (must
+                                  be either .sql, .zip or .gz). If it's .zip the
+                                  file inside it must be named database.sql. [*]
+
+    --subsystem <name>            the subsystem type of the app (e.g.
+                                  drupal, wordpress, magento, etc)           [*]
+
+    --pack-file <filename>        create a new archive file ready to be imported,
+                                  but don't actually create the vhost. Only use
+                                  this option if you want to generate an archive
+                                  in the right format, but to be used later.
+
+
+  Options marked with [*] are required.
+
+
+  Imports a site from the specified archive files.
+"
+
+devpanel_cmd__import_from_files() {
+  [ $# -eq 0 -o -z "$1" ] && usage
+
+  local name vhost file mysql_file subsystem pack_file
+  local -a cmd_args_ar=()
+
+  while [ -n "$1" ]; do
+    name="$1"
+    case "$name" in
+      --vhost)
+        [ -z "$2" ] && error_missing_value "$name"
+        vhost="$2"
+        shift 2
+        ;;
+
+      --file)
+        [ -z "$2" ] && error_missing_value "$name"
+        file="$2"
+        cmd_args_ar+=( -f "$file" )
+        shift 2
+        ;;
+
+      --mysql-file)
+        [ -z "$2" ] && error_missing_value "$name"
+        mysql_file="$2"
+        cmd_args_ar+=( -d "$mysql_file" )
+        shift 2
+        ;;
+
+      --subsystem)
+        [ -z "$2" ] && error_missing_value "$name"
+        subsystem="$2"
+        cmd_args_ar+=( -s "$subsystem" )
+        shift 2
+        ;;
+
+       
+      --pack-file)
+        [ -z "$2" ] && error_missing_value "$name"
+        pack_file="$2"
+        cmd_args_ar+=( -p "$pack_file" )
+        shift 2
+        ;;
+
+      --help)
+        usage
+        ;;
+
+      --)
+        shift
+        break
+        ;;
+
+      *)
+        error "unknown option $name"
+        ;;
+    esac
+  done
+
+  local _param
+  for _param in vhost file subsystem mysql_file;  do
+    [ -z "${!_param}" ] && error_missing_param $_param
+  done
+
+  "$sys_dir/libexec/import-site-from-files" "${cmd_args_ar[@]}" \
+    "$vhost"
+}

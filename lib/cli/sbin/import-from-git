@@ -1,0 +1,132 @@
+#!/bin/bash
+
+set_usage_msg \
+  "Usage: $bin_name ${cmd_ar[*]} <opts> --vhost <name> --git-url <git_url>
+
+  Options:
+    --vhost      <name>          the name of the virtual host to be created [*]
+
+    --git-url <url>              URL used to clone the git repository [*]
+
+    --git-branch <branch_name>   checkout the specified git branch [*]
+
+    --mysql-file <filename>      the mysqldump file of the database (must be
+                                 either .sql, .zip or .gz). If it's .zip the
+                                 file inside it must be named database.sql. [*]
+
+    --mysql-file-type <type>     type of database file. Can be either: sql, zip
+                                 or gz (it's required when the database file is
+                                 a URL).
+
+    --subsystem <name>           the subsystem type of the app (e.g. drupal,
+                                 wordpress, magento, etc) [*]
+
+    --app-profile <profile>      install with the following Drupal profile
+
+    --pack-file <file.tgz>       create a new archive file ready to be imported,
+                                 but don't actually create the vhost. Only use
+                                 this option if you want to generate an archive
+                                 in the right format, but to be used later.
+
+    --option <name=value>        options to pass to restore-vhost (e.g site_title, 
+                                 site_email,etc)
+
+  Options marked with [*] are required.
+
+
+  Create a new virtual host from a git branch.
+"
+
+devpanel_cmd__import_from_git() {
+  [ $# -eq 0 -o -z "$1" ] && usage
+
+  local name vhost mysql_file mysql_file_type subsystem app_profile
+  local pack_file git_branch
+  local -a cmd_args_ar=()
+
+  while [ -n "$1" ]; do
+    name="$1"
+    case "$name" in
+      --vhost)
+        [ -z "$2" ] && error_missing_value "$name"
+        vhost="$2"
+        shift 2
+        ;;
+
+      --mysql-file)
+        [ -z "$2" ] && error_missing_value "$name"
+        mysql_file="$2"
+        cmd_args_ar+=( -d "$mysql_file" )
+        shift 2
+        ;;
+
+      --mysql-file-type)
+        [ -z "$2" ] && error_missing_value "$name"
+        mysql_file_type="$2"
+        cmd_args_ar+=( -t "$mysql_file_type" )
+        shift 2
+        ;;
+
+      --git-url)
+        [ -z "$2" ] && error_missing_value "$name"
+        git_url="$2"
+        shift 2
+        ;;
+
+      --git-branch)
+        [ -z "$2" ] && error_missing_value "$name"
+        git_branch="$2"
+        cmd_args_ar+=( -b "$git_branch" )
+        shift 2
+        ;;
+
+      --subsystem)
+        [ -z "$2" ] && error_missing_value "$name"
+        subsystem="$2"
+        cmd_args_ar+=( -s "$subsystem" )
+        shift 2
+        ;;
+
+      --app-profile)
+        [ -z "$2" ] && error_missing_value "$name"
+        app_profile="$2"
+        cmd_args_ar+=( -I "$app_profile" )
+        shift 2
+        ;;
+        
+      --pack-file)
+        [ -z "$2" ] && error_missing_value "$name"
+        pack_file="$2"
+        cmd_args_ar+=( -p "$pack_file" )
+        shift 2
+        ;;
+
+      --option)
+        [ -z "$2" ] && error_missing_value "$name"
+        cmd_args_ar+=( -O "$2" )
+        shift 2
+        ;;
+
+      --help)
+        usage
+        ;;
+
+      --)
+        shift
+        break
+        ;;
+
+      *)
+        error "unknown option $name"
+        ;;
+    esac
+  done
+
+  local _param
+  for _param in vhost git_url git_branch subsystem mysql_file;  do
+    [ -z "${!_param}" ] && error_missing_param $_param
+  done
+
+  "$sys_dir/libexec/import-site-from-git" "${cmd_args_ar[@]}" \
+    "$vhost" "$git_url"
+}
