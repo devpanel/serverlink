@@ -4,6 +4,10 @@ usage() {
   echo "Usage: ${0##*/} <version>
 
   Downloads and packs acme.sh
+
+  Expects the plain version as argument, e.g. x.y.z or vx.y.z (when the
+  version is prefixed with 'v'. Unfortunately this naming scheme varies from
+  version to version).
 "
   exit 1
 }
@@ -36,19 +40,15 @@ main_pkg_dir="$pack_dir/bin/packages/acme.sh"
 umask 022
 
 mkdir "$pack_dir"
+mkdir -p "$main_pkg_dir"
 
 curl -sS -o "$temp_file"   -L "$acme_url" || \
   { st=$?; echo "Curl returned $st"; exit $st; }
 
-tar -zSxpf "$temp_file" -C "$pack_dir"
-
-mkdir -p "$pack_dir/bin/packages"
+tar -zSxpf "$temp_file" --strip-components 1 -C "$main_pkg_dir"
 
 cron_dir="$pack_dir/bin/packages/cron.d/cron.daily"
 mkdir -p "$cron_dir"
-
-mv "$pack_dir/acme.sh-$version" "$main_pkg_dir"
-
 cp $self_dir/acme-cron "$cron_dir"
 
 "$sys_dir/libexec/pack-package" -d "$pack_dir" "acme.sh-$version.tar.gz" .
