@@ -363,7 +363,7 @@ if [ -n "$disable_vhost" ]; then
   if [ -f "$virtwww_file" ]; then
     mv -f "$virtwww_file" "$virtwww_file.removed"
     if [ $? -eq 0 ]; then
-      apachectl graceful
+      apachectl restart     # Fix bug in Ubuntu 16 and Centos graceful
       if [ $? -eq 0 ]; then
         echo "Successfully disabled vhost $vhost"
         exit 0
@@ -991,7 +991,8 @@ echo "Successfully updated vhost $vhost on file $virtwww_file"
 if [ -n "$restart_apache" ]; then
   echo Restarting apache
 
-  run "$apachectl" graceful || \
+  # Change gracefull for restart to fix issue with ubuntu 16
+  run "$apachectl" restart || \
     error "Cannot restart apache, call a system administrator NOW!"
 fi
 
