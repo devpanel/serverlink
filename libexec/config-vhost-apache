@@ -991,7 +991,8 @@ echo "Successfully updated vhost $vhost on file $virtwww_file"
 if [ -n "$restart_apache" ]; then
   echo Restarting apache
 
-  run "$apachectl" graceful || \
+  # Change gracefull for restart to fix issue with ubuntu 16
+  run "$apachectl" restart || \
     error "Cannot restart apache, call a system administrator NOW!"
 fi
 

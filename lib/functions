@@ -3108,3 +3108,33 @@ remove_vhost_description() {
   echo "$metadata_str" | "$DEVPANEL_HOME/libexec/apache-metadata-handler" \
                           -q "$vhost"
 }
+
+apache_ctl(){
+  local action="$1"
+  distro=$(devpanel_auto_detect_distro)
+
+  case $distro in
+    ubuntu)
+      service_name="apache2"
+    ;;
+    centos|redhat)
+      service_name="httpd"
+    ;;
+  esac
+
+  case $action in
+    start)
+      service ${service_name} start
+    ;;
+    stop)
+      service ${service_name} stop
+    ;;
+    restart)
+      service ${service_name} restart
+    ;;
+    status)
+      service ${service_name} status
+    ;;
+  esac
+}
+
