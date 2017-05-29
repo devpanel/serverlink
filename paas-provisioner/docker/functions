@@ -942,8 +942,8 @@ operation_get_app_info()
   common_available_tools+='app_available_tools[]="manage##cron##jobs\":##\"crontab_vhost_edit" '
   common_available_tools+='app_available_tools[]="file##explorer" '
   common_available_tools+='app_available_tools[]="phpMyAdmin" '
-  common_available_tools+='app_available_tools[]="clone##/##duplicate##this##app\":##\"clone_vhost_local" '
-  common_available_tools+='app_available_tools[]="backup##/##snapshot##this##app##(code,##files##and##database)\":##\"archive_vhost" '
+  common_available_tools+='app_available_tools[]="clone,##duplicate##this##app\":##\"clone_vhost_local" '
+  common_available_tools+='app_available_tools[]="backup,##snapshot##this##app##(code,##files##and##database)\":##\"archive_vhost" '
   common_available_tools+='app_available_tools[]="restore##from##backups\":##\"restore_vhost_backup" '
   common_available_tools+='app_available_tools[]="automated##backups\":##\"schedule_auto_backup" '
 
