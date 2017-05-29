@@ -363,7 +363,7 @@ if [ -n "$disable_vhost" ]; then
   if [ -f "$virtwww_file" ]; then
     mv -f "$virtwww_file" "$virtwww_file.removed"
     if [ $? -eq 0 ]; then
-      apachectl graceful
+      apachectl restart     # Fix bug in Ubuntu 16 and Centos graceful
       if [ $? -eq 0 ]; then
         echo "Successfully disabled vhost $vhost"
         exit 0
