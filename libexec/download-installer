@@ -1,4 +1,7 @@
-#!/bin/bash
+#!/bin/bash -x
+echo ---------------
+echo downwload_intall en `hostname`
+echo --------------
 download_file() {
   local url="$1"
   local temp_file="$2"

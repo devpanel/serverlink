@@ -1,4 +1,7 @@
-#!/bin/bash
+#!/bin/bash -x
+echo ----------
+echo install.centos en `hostname`
+echo ----------
 
 centos_set_variables() {
   return 0
