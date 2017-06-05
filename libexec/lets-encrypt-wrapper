@@ -11,6 +11,7 @@ Usage: ${0##*/} <op> [args]
     enable
     disable
     cron
+    renew
 "
 
   [enable]="
@@ -26,6 +27,18 @@ Usage: ${0##*/} $op <vhost>
   Disables Let's Encrypt for the specified vhost.
 "
 
+  [renew]="
+Usage: ${0##*/} $op [opts] <vhost>
+
+  Options:
+    -f                  force the renewal, even if the certficate is not
+                        close to expire
+
+    -d domain           main domain of the certificate (optional)
+
+
+  Renew the certificate of the specified vhost.
+"
   )
 
   if [ -z "$op" ]; then
@@ -218,6 +231,46 @@ case "$op" in
     done
 
     exit 0
+    ;;
+
+  renew)
+    getopt_flags='fd:'
+    unset force domain
+    while getopts $getopt_flags OPTN; do
+      case "$OPTN" in
+        f)
+          force=1
+          ;;
+
+        d)
+          domain="$OPTARG"
+          ;;
+        *)
+          error "unknown option: $OPTN"
+          ;;
+      esac
+    done
+    [ $OPTIND -gt 1 ] && shift $(( $OPTIND - 1 ))
+
+    [ -z "$1" ] && usage "$op"
+    vhost="$1"
+
+    if ! "$sys_dir/libexec/check-vhost-name" archive "$vhost"; then
+      exit 1
+    fi
+
+    if ! is_lets_encrypt_enabled_for_vhost "$vhost"; then
+      echo "Warning: Let's Encrypt is not enabled for this vhost." 1>&2
+      exit 0
+    fi
+
+    if [ -z "$domain" ]; then
+      domain=$(get_vhost_default_hostname "$vhost") || exit $?
+    fi
+
+    le_dir="$sys_dir/config/vhosts/$vhost/lets-encrypt"
+    acme.sh --home "$le_dir" --renew ${force:+--force} -d "$domain"
+
     ;;
 
   post-renew)

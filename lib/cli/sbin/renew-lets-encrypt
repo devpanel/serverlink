@@ -1,0 +1,65 @@
+#!/bin/bash
+
+set_usage_msg \
+  "Usage: $bin_name ${cmd_ar[*]} [opts] --vhost <name>
+
+  Options:
+    --vhost <name>          the name of the virtual host to be created [*]
+
+    --force                 force renewing certificate, even if it's not
+                            close to expire
+
+    --domain <domain>       main domain of certificate. This is generally
+                            not needed. It's needed if there are multiple
+                            certificate dirs in Let's Encrypt directory
+
+
+  Renew the Let's Encrypt Certificate of the specified vhost.
+"
+
+devpanel_cmd__renew_lets_encrypt() {
+  [ $# -eq 0 -o -z "$1" ] && usage
+
+  local name vhost domain
+  local -a cmd_args_ar=()
+
+  while [ -n "$1" ]; do
+    name="$1"
+    case "$name" in
+      --vhost)
+        [ -z "$2" ] && error_missing_value "$name"
+        vhost="$2"
+        shift 2
+        ;;
+
+      --force)
+        cmd_args_ar+=( -f )
+        shift
+        ;;
+
+      --domain)
+        [ -z "$2" ] && error_missing_value "$name"
+        domain="$2"
+        shift 2
+        ;;
+      
+      --help)
+        usage
+        ;;
+
+      --)
+        shift
+        break
+        ;;
+
+      *)
+        error "unknown option $name"
+        ;;
+    esac
+  done
+
+  [ -z "$vhost" ] && error_missing_param vhost
+
+  "$sys_dir/libexec/lets-encrypt-wrapper" renew "${cmd_args_ar[@]}" \
+     ${domain:+ -d "$domain"} "$vhost"
+}
