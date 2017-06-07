@@ -115,6 +115,10 @@ redhat_install_distro_packages() {
     perl-Digest-HMAC perl-Digest-SHA perl-CGI mod_ssl perl-Crypt-SSLeay \
     perl-CGI-Session
 
+  # Disable selinux
+  setenforce 0
+  sed -i 's/SELINUX=enforcing/SELINUX=disabled/g' /etc/sysconfig/selinux
+
   return 0
 }
 
