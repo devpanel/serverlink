@@ -1,6 +1,0 @@
-[mysqld]
-default_storage_engine = MyISAM
-wait_timeout = 300
-innodb = off
-max_allowed_packet = 16M
-performance_schema = off

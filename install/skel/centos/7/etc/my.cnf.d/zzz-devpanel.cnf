@@ -2,6 +2,10 @@
 thread_stack = 1048576
 
 [mysqld]
+innodb = on
+innodb_file_per_table = on
+innodb_buffer_pool_size = 32M
+innodb_buffer_pool_instances = 1
 wait_timeout = 300
 max_allowed_packet = 16M
 performance_schema = off

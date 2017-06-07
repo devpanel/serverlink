@@ -282,41 +282,28 @@ ServerName $dp_server_hostname
   fi
 
   local custom_conf_d="$target_dir/install/utils"
+
   # choose the additional  my.cnf file for MySQL
   local mysql_version=$(get_mysql_version)
   if [ $? -eq 0 ]; then
     local mysql_ver_reduced=${mysql_version%.*}
-    local my_cnf_src=""
     local my_cnf_src_dir="$custom_conf_d/my.cnf.d"
-    local my_cnf_src_full="$my_cnf_src_dir/$mysql_version--my.cnf"
-    local my_cnf_src_short="$my_cnf_src_dir/$mysql_ver_reduced--my.cnf"
 
-    if [ -f "$my_cnf_src_full" ]; then
-      my_cnf_src="$my_cnf_src_full"
-    elif [ -f "$my_cnf_src_short" ]; then
-      my_cnf_src="$my_cnf_src_short"
-    fi
+    my_cnf_dir=$(deref_os_prop "$target_dir" pathnames/etc/mysql_conf_d)
+    if [ $? -eq 0 -a -d $my_cnf_dir ]; then
+      # special lines for VPSs running on OpenVZ
+      local openvz_cnf openvz_cnf_full_ver openvz_cnf_reduced_ver
+      openvz_cnf_full_ver="$my_cnf_src_dir/$mysql_version--openvz.cnf"
+      openvz_cnf_reduced_ver="$my_cnf_src_dir/$mysql_ver_reduced--openvz.cnf"
+      if [ -f "$openvz_cnf_full_ver" ]; then
+        openvz_cnf="$openvz_cnf_full_ver"
+      elif [ -f "$openvz_cnf_reduced_ver" ]; then
+        openvz_cnf="$openvz_cnf_reduced_ver"
+      fi
 
-    if [ -n "$my_cnf_src" -a -f "$my_cnf_src" ]; then
-      local my_cnf_dir
-      my_cnf_dir=$(deref_os_prop "$target_dir" pathnames/etc/mysql_conf_d)
-      if [ $? -eq 0 -a -d $my_cnf_dir ]; then
-        local my_cnf_lnk="$my_cnf_dir/devpanel.cnf"
-        ln -s "$my_cnf_src" "$my_cnf_lnk"
-
-        # special lines for OpenVZ
-        local openvz_cnf=""
-        local openvz_cnf_full_ver="$my_cnf_src_dir/$mysql_version--openvz.cnf"
-        local openvz_cnf_reduced_ver="$my_cnf_src_dir/$mysql_ver_reduced--openvz.cnf"
-        if [ -f "$openvz_cnf_full_ver" ]; then
-          openvz_cnf="$openvz_cnf_full_ver"
-        elif [ -f "$openvz_cnf_reduced_ver" ]; then
-          openvz_cnf="$openvz_cnf_reduced_ver"
-        fi
-
-        if [ -d /proc/vz -a -n "$openvz_cnf" -a -f "$openvz_cnf" ]; then
-          ln -s "$openvz_cnf" "$my_cnf_dir"
-        fi
+      if [ -d /proc/vz -a -n "$openvz_cnf" ]; then
+        openvz_cnf_target="$my_cnf_dir/zzz-devpanel-openvz.cnf"
+        cp "$openvz_cnf" "$openvz_cnf_target"
       fi
     fi
   else
