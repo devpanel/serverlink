@@ -581,8 +581,8 @@ else
 fi
 
 distro_version=$(wedp_auto_detect_distro_version "$linux_distro") || exit 1
-distro_ver_major=$(devpanel_get_os_version_major)
-distro_ver_minor=$(devpanel_get_os_version_minor)
+distro_ver_major=$(devpanel_get_os_version_major "$distro_version" )
+distro_ver_minor=$(devpanel_get_os_version_minor "$distro_version" )
 
 if ! is_this_distro_version_supported "$install_source_dir" \
       "$linux_distro" "$distro_ver_major" "$distro_ver_minor"; then

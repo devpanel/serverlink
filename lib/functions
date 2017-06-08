@@ -847,16 +847,20 @@ devpanel_get_os_version() {
 }
 
 devpanel_get_os_version_major() {
-  if ! hash lsb_release &>/dev/null; then
-    echo "$FUNCNAME(): error - didn't find lsb_release in PATH" 1>&2
-    return 1
-  fi
+  local version="$1"
+  local major=""
 
-  local version="" major=""
-  version=`lsb_release -sr 2>/dev/null`
   if [ -z "$version" ]; then
-    echo "$FUNCNAME(): error, unable to get OS version" 1>&2
-    return 1
+    if ! hash lsb_release &>/dev/null; then
+      echo "$FUNCNAME(): error - didn't find lsb_release in PATH" 1>&2
+      return 1
+    fi
+
+    version=`lsb_release -sr 2>/dev/null`
+    if [ -z "$version" ]; then
+      echo "$FUNCNAME(): error, unable to get OS version" 1>&2
+      return 1
+    fi
   fi
 
   if [[ "$version" =~ ^[0-9]+\. ]]; then
@@ -870,16 +874,20 @@ devpanel_get_os_version_major() {
 }
 
 devpanel_get_os_version_minor() {
-  if ! hash lsb_release &>/dev/null; then
-    echo "$FUNCNAME(): error - didn't find lsb_release in PATH" 1>&2
-    return 1
-  fi
+  local version="$1"
+  local minor=""
 
-  local version="" minor=""
-  version=`lsb_release -sr 2>/dev/null`
   if [ -z "$version" ]; then
-    echo "$FUNCNAME(): error, unable to get OS version" 1>&2
-    return 1
+    if ! hash lsb_release &>/dev/null; then
+      echo "$FUNCNAME(): error - didn't find lsb_release in PATH" 1>&2
+      return 1
+    fi
+
+    version=`lsb_release -sr 2>/dev/null`
+    if [ -z "$version" ]; then
+      echo "$FUNCNAME(): error, unable to get OS version" 1>&2
+      return 1
+    fi
   fi
 
   if [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then # X.Y.Z
