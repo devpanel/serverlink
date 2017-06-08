@@ -112,6 +112,10 @@ wedp_auto_detect_distro_version() {
   local distro="$1"
   local version_str="" version_number=""
 
+  if [ -z "$distro" ]; then
+    distro=$(wedp_auto_detect_distro) || return $?
+  fi
+
   if hash lsb_release &>/dev/null; then
     version_number=`lsb_release -sr`
     [ $? -ne 0 ] && return 1
@@ -831,19 +835,7 @@ calc_sha512_of_file() {
 }
 
 devpanel_get_os_version() {
-  if ! hash lsb_release &>/dev/null; then
-    echo "$FUNCNAME(): error - didn't find lsb_release in PATH" 1>&2
-    return 1
-  fi
-
-  local version=""
-  version=`lsb_release -r 2>/dev/null | egrep -o '[0-9\.]+$'`
-  if [ -z "$version" ]; then
-    echo "$FUNCNAME(): error, unable to get OS version" 1>&2
-    return 1
-  fi
-
-  echo -n "$version"
+  wedp_auto_detect_distro_version "$@"
 }
 
 devpanel_get_os_version_major() {
@@ -962,7 +954,7 @@ deref_os_prop() {
   os_version=`devpanel_get_os_version`
   [ $? -ne 0 ] && return 1
 
-  os_major=`devpanel_get_os_version_major`
+  os_major=`devpanel_get_os_version_major "$os_version"`
   [ $? -ne 0 ] && return 1
 
   base_path="$base_dir/config/os"
