@@ -131,6 +131,7 @@ wedp_auto_detect_distro_version() {
     echo -n "$version_number"
     return 0
   else
+    echo "$FUNCNAME(): unable to detect distro version" 1>&2
     return 1
   fi
 }
