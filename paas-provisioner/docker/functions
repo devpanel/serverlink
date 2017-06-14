@@ -935,47 +935,44 @@ operation_get_app_info()
     app_status=$(if [ `docker ps|grep -c ${app_container_name}` -gt 0 ]; then echo running; else echo stopped; fi)
   fi
 
-  common_available_tools=''
-  common_available_tools+='app_available_tools[]=seedapp_clear_cache\":##\"clear##cache '
-  common_available_tools+='app_available_tools[]=set_app_opt\":##\"reset##application##admin##password '
-  common_available_tools+='app_available_tools[]=set_app_opt\":##\"reset##application##admin##email '
-  common_available_tools+='app_available_tools[]=crontab_vhost_edit\":##\"manage##cron##jobs '
-  common_available_tools+='app_available_tools[]=file_explorer\":##\"file##explorer '
-  common_available_tools+='app_available_tools[]=phpMyAdmin\":##\"phpMyAdmin '
-  common_available_tools+='app_available_tools[]=clone_vhost_local\":##\"clone,##duplicate##this##app '
-  common_available_tools+='app_available_tools[]=archive_vhost\":##\"backup,##snapshot##this##app##(code,##files##and##database) '
-  common_available_tools+='app_available_tools[]=restore_vhost_backup\":##\"restore##from##backups '
-  common_available_tools+='app_available_tools[]=schedule_auto_backup\":##\"automated##backups '
-
+  local -a app_available_tools=(
+    "seedapp_clear_cache=clear cache"
+    "set_app_opt=reset application admin password"
+    "set_app_opt=reset application admin email"
+    "crontab_vhost_edit=manage cron jobs"
+    "file_explorer=file explorer"
+    "phpMyAdmin=phpMyAdmin"
+    "clone_vhost_local=clone, duplicate this app"
+    "archive_vhost=backup, snapshot this app code, files and database"
+    "restore_vhost_backup=restore from backups"
+    "schedule_auto_backup=automated backups"
+  )
+  
   case "$app_type" in
     wordpress)
       app_current_version=$(curl -s ${vhost}.${hostname_fqdn}|grep '<meta name="generator" content="WordPress 4.'|awk -F'WordPress' '{print $NF}'|awk -F'"' '{print $1}'|cut -d ' ' -f2)
       app_available_version=$(curl -s https://wordpress.org/download/|grep "/latest.zip"|awk -F'WordPress&nbsp;' '{print $NF}'|awk -F'<' '{print $1}')
-      app_available_tools=$common_available_tools
-      app_available_tools+='app_available_tools[]=repair_mysql_database\":##\"repair##database '
+      app_available_tools+=( "repair_mysql_database=repair database" )
     ;;
     drupal|drupal7)
       app_current_version=$(curl -s ${vhost}.${hostname_fqdn}/CHANGELOG.txt|head -2|tail -1|awk -F',' '{print $1}'|awk -F'Drupal ' '{print $NF}')
       app_available_version=$(curl -s https://raw.githubusercontent.com/drupal/drupal/7.x/CHANGELOG.txt|head -5|tail -1|awk -F',' '{print $1}'|awk -F'Drupal ' '{print $NF}')
-      app_available_tools=$common_available_tools
-      app_available_tools+='app_available_tools[]=repair_mysql_database\":##\"repair##database '
+      app_available_tools+=( "repair_mysql_database=repair database" )
     ;;
     drupal8)
       app_current_version=$(curl -s ${vhost}.${hostname_fqdn}/core/CHANGELOG.txt|head -1|awk -F',' '{print $1}'|awk -F'Drupal ' '{print $NF}')
       app_available_version=$(curl -s https://raw.githubusercontent.com/drupal/drupal/8.4.x/core/CHANGELOG.txt|head -1|awk -F',' '{print $1}'|awk -F'Drupal ' '{print $NF}')
-      app_available_tools=$common_available_tools
-      app_available_tools+='app_available_tools[]=repair_mysql_database\":##\"repair##database '
+      app_available_tools+=( "repair_mysql_database=repair database" )
     ;;
     magento)
       app_current_version=$(curl -s ${vhost}.${hostname_fqdn}|grep "(ver. 1."|awk -F'</a> ' '{print $NF}'|awk -F'ver. ' '{print $NF}'|awk -F')</p>' '{print $1}')
       arr=$(curl -s https://magento.com/tech-resources/download|grep "ver 1.9."|awk -F'                                                        ' '{print $2}'|grep -v h3|grep -v later|awk -F'ver ' '{print $NF}')
       # IFS=$'\n'
       app_available_version=$(echo "${arr[*]}" | sort -nr | head -n1)
-      app_available_tools=$common_available_tools
-      app_available_tools+='app_available_tools[]=repair_mysql_database\":##\"repair##database '
+      app_available_tools+=( "repair_mysql_database=repair database" )
     ;;
     *)
-      app_available_tools=$common_available_tools
+      :
     ;;
   esac
 
@@ -997,6 +994,6 @@ operation_get_app_info()
     app_db_type=$app_db_type \
     app_status=$app_status \
     app_git_update=$app_git_update \
-    $(echo ${app_available_tools}) 2>&1|sed 's/##/ /g'|sed 's/\\//g'|sed '/.*k@v.*/ d'
+    app_available_tools="$(jo "${app_available_tools[@]}")"
 }
 
