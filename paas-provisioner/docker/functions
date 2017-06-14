@@ -933,6 +933,9 @@ operation_get_app_info()
   read_local_config
   if [ "$app_hosting" == "docker" ]; then
     app_status=$(if [ `docker ps|grep -c ${app_container_name}` -gt 0 ]; then echo running; else echo stopped; fi)
+  else
+    # local app
+    app_status=enabled
   fi
 
   local -a app_available_tools=(
