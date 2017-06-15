@@ -940,8 +940,8 @@ operation_get_app_info()
 
   local -a app_available_tools=(
     "seedapp_clear_cache=clear cache"
-    "set_app_opt=reset application admin password"
-    "set_app_opt=reset application admin email"
+    "set_app_opt_admin_pw=reset application admin password"
+    "set_app_opt_admin_email=reset application admin email"
     "crontab_vhost_edit=manage cron jobs"
     "file_explorer=file explorer"
     "phpMyAdmin=phpMyAdmin"
