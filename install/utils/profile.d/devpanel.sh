@@ -20,4 +20,12 @@ if [ -n "$DEVPANEL_HOME" ] && ! echo "$PATH" | egrep -q ":?$DEVPANEL_HOME:?"; th
   PATH="$DEVPANEL_PATH:$PATH"
 fi
 
+if [ -z "$LS_COLORS" ] && hash dircolors >/dev/null 2>&1; then
+  eval $(dircolors -b 2>/dev/null)
+fi
+
+if ! alias ls >/dev/null 2>&1; then
+  alias ls='ls -F --color=tty'
+fi
+
 /bin/true
