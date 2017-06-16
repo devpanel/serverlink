@@ -239,7 +239,7 @@ add_custom_users_n_groups() {
 
   # See : https://help.webstandard.com/issues/7421
   if [ `grep -c apache /etc/passwd` -eq 0 ]; then
-    adduser apache
+    useradd -m apache
   fi
 
   usermod -a -G virtwww "$_apache_user"
