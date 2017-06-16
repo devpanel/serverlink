@@ -37,6 +37,7 @@ Usage: @self_basename@ <command> [args]
     enable vhost snapshots          enables backup snashots for the specified vhost
     disable vhost snapshots         disables backup snashots for the specified vhost
 
+    set php version                 use a specific PHP version for the vhost
     disable vhost                   disables the specified vhost
     enable  vhost                   enables the specified vhost (case it's disabled)
     rewrite vhost config            updates the vhost configuration on the web server

@@ -57,5 +57,12 @@ Distro Updates: $distro_updates_st"
     info_txt+="Long vhost names: $long_vhost_names_st"
   fi
 
+  local sys_php_ver
+  sys_php_ver=$(get_default_php_version 2>/dev/null )
+  if [ $? -eq 0 ]; then
+    info_txt+=$'\n'
+    info_txt+="PHP Version: $sys_php_ver"
+  fi
+
   echo "$info_txt"
 }

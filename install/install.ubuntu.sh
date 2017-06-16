@@ -3,32 +3,20 @@ ubuntu_set_variables() {
 }
 
 ubuntu_pre_run() {
-  local has_ssh=""
+  local source_dir="$1"
+  local target_dir="$2"
+  local distro="$3"
+  local distro_ver="$4"
+  local distro_ver_major="$5"
+  local distro_ver_minor="$6"
 
-  for i in {1..3}; do
-    fuser ssh/tcp &>/dev/null
-    if [ $? -eq 0 ]; then
-      has_ssh=1
-      break
-    fi
-  done
+  export DEBIAN_FRONTEND='noninteractive'
 
-  if [ -z "$has_ssh" ]; then
-    if hash sshd &>/dev/null; then
-      if ! service ssh start; then
-        echo "Error: unable to start sshd service. It's required by devPanel" 1>&2
-        exit 1
-      fi
-    else
-      apt-get update
+  apt-get update
 
-      apt-get install openssh-server
-      if [ $? -ne 0 ]; then
-        echo "Error: unable to install OpenSSH. It's required by many"\
-        "functionalities of devPanel" 1>&2
-        return 1
-      fi
-    fi
+  if ! apt-get -y install apt-transport-https; then
+    echo "$FUNCNAME(): apt-get install apt-transport-https FAILED" 1>&2
+    return 1
   fi
 
   return 0
@@ -58,40 +46,14 @@ ubuntu_install_distro_packages() {
 
   # NOTE: at this point the $install_dir has not been copied in place yet
 
+  local pkg_list_file
+  pkg_list_file="$source_dir/config/os.$distro/$distro_ver_major/distro-packages.txt"
+
+  install_distro_pkgs "$distro" "$distro_ver_major" "$pkg_list_file"
+
   export DEBIAN_FRONTEND='noninteractive'
 
-  apt-get update
-
-  echo -n Checking for update-rc.d availability: 
-  if hash update-rc.d ; then
-    echo Already there
-  else
-      echo Not found, installing sysvinit
-      apt-get -y install sysvinit
-  fi
-
-  local -a install_pkgs=( curl apache2 libapache2-mod-macro apache2-suexec \
-                        zlib1g libapache2-mod-fcgid mysql-server git       \
-                        apache2-utils libjson-xs-perl libcrypt-ssleay-perl \
-                        libcgi-session-perl nano vim s3cmd unzip bc
-                        libio-socket-ssl-perl
-                        )
-                          
-
-  for i in ${install_pkgs[@]}; do
-    apt-get -y install $i
-  done
-
-  local php_ver php_mod
-  php_ver=$(deref_os_prop "$source_dir" names/php_version_from_distro)
-
-  apt-get -y install php$php_ver php-pear
-
-  for php_mod in cgi cli curl gd mbstring mcrypt mysql sqlite zip; do
-    apt-get -y install php$php_ver-$php_mod
-  done
-
-  a2dismod php$php_ver
+  # a2dismod php$php_ver
 
   # test whether CGI::Util is available, it's needed by taskd
   # from Ubuntu 16 it's not included in the perl distribution

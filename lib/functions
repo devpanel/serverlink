@@ -8,8 +8,6 @@ if [ -z "$DEVPANEL_HOME" ]; then
   unset tmp_self tmp_self_dir
 fi
 
-devpanel_php_dir=${devpanel_php_dir:-"$DEVPANEL_HOME/bin/packages/phpbrew/php"}
-
 # avoid a warning on MacOS X because md5sum doesn't exist
 if [ -n "$OSTYPE" ] && [[ "$OSTYPE" =~ ^darwin ]] && hash md5 &>/dev/null; then
   hash -p $(which md5) md5sum
@@ -427,6 +425,38 @@ get_docroot_from_user() {
 
 get_linuxuser_vhost_dir() {
   echo "$DEVPANEL_HOME/config/key_value/linuxuser-vhost"
+}
+
+get_shell_from_user() {
+  local user="${1:-$USER}"
+
+  if [ -z "$user" ]; then
+    echo "$FUNCNAME(): missing username" 1>&2
+    return 1
+  fi
+
+  local passwd_line shell
+  passwd_line=$(getent passwd "$user") || return $?
+
+  shell=$(echo "$passwd_line" | cut -d: -f 7)
+  if [ -n "$shell" ]; then
+    echo "$shell"
+    return 0
+  else
+    return 1
+  fi
+}
+
+run_as_user() {
+  local user="$1"
+  shift
+  local -a cmd_ar=( "$@" )
+
+  if hash runuser &>/dev/null; then
+    runuser -c "${cmd_ar[*]}" "$user"
+  else
+    su -c "${cmd_ar[*]}" "$user"
+  fi
 }
 
 download_file() {
@@ -1833,6 +1863,13 @@ get_vhost_key_value() {
     fi
   fi
 
+  is_valid_vhost_string "$vhost" || return $?
+
+  if ! vhost_exists "$vhost"; then
+    echo "$FUNCNAME(): vhost doesn't exist" 1>&2
+    return 1
+  fi
+
   local key_link="$DEVPANEL_HOME/config/vhosts/$vhost/$key"
 
   deref_contents "$key_link"
@@ -1842,134 +1879,56 @@ is_longer_vhost_names_enabled() {
   deref_os_prop "$DEVPANEL_HOME" enable_long_vhost_names &>/dev/null
 }
 
-get_php_version_for_series() {
-  local series="$1"
-  local version
-  local php_version_regex='^[0-9]\.[0-9]\.[0-9]+$'
+is_valid_php_version_string() {
+  local str="$1"
 
-  local php_dir="$DEVPANEL_HOME/bin/packages/phpbrew/php"
-  if [ ! -d "$php_dir" ]; then
-    echo "$FUNCNAME(): missing PHP base directory $php_dir" 1>&2
+  if [ -z "$str" ]; then
+    echo "$FUNCNAME(): missing version string argument" 1>&2
     return 1
   fi
 
-  # if has a link pointing to a specific version, then use it
-  local link_path="$php_dir/php-$series"
-  if [ -L "$link_path" ]; then
-    version=$(deref_contents "$link_path" 2>/dev/null)
-  else
-    # otherwise get the latest version for the serie by scanning
-    # the phpbrew directory
-    local l_dir
-    local local_dirs=( "$php_dir/php-$series."* )
-    local n_dirs=${#local_dirs[@]}
-
-    if [ ${#local_dirs[@]} -gt 1 ]; then
-      local -i last_n=$(( $n_dirs - 1 ))
-      l_dir=${local_dirs[$last_n]}
-    else
-      if [ $n_dirs -eq 1 -a "${local_dirs[0]}" == "$php_dir/php-$series.*" ]; then
-        echo "$FUNCNAME(): error, no version installed for series $series" 1>&2
-        return 1
-      else
-        l_dir=${local_dirs[0]}
-      fi
-    fi
-
-    if [ ! -d "$l_dir" ]; then
-      echo "$FUNCNAME(): target of '$l_dir' is not a directory" 1>&2
-      return 1
-    fi
-
-    version=${l_dir##*/php-}
-  fi
-
-
-  if [[ "$version" =~ $php_version_regex ]]; then
-    echo "$version"
+  if [[ "$str" == [1-9].[0-9] ]]; then
     return 0
   else
-    echo "$FUNCNAME(): found invalid string '$version' as PHP version" 1>&2
+    echo "$FUNCNAME(): invalid format specified for PHP version" 1>&2
     return 1
   fi
 }
 
-get_php_version_for_vhost() {
+set_php_version_metadata_for_vhost() {
   local vhost="$1"
-  local php_series php_version ver_str st
+  local version="$2"
 
-  local php_series_regex='^[0-9]\.[0-9]$'
-  local php_version_regex='^[0-9]\.[0-9]\.[0-9][0-9]?$'
-
-  if [ -z "$vhost" -a -z "$USER" ]; then
-    USER=$(id -un)
-  fi
-
-  if ! vhost=$(get_vhost_from_linuxuser); then
+  if [ -z "$vhost" ]; then
     echo "$FUNCNAME(): missing vhost argument" 1>&2
     return 1
   fi
 
-  ver_str=$(get_vhost_key_value app:0:_:php_version "$vhost" 2>/dev/null)
-  if [ $? -ne 0 ]; then
-    echo "$FUNCNAME(): no specific version set for vhost $vhost" 1>&2
+  if ! vhost_exists "$vhost"; then
+    echo "$FUNCNAME(): vhost doesn't exist" 1>&2
     return 1
   fi
 
-  if [[ "$ver_str" =~ $php_version_regex ]]; then
-    php_version=$ver_str
-    echo "$php_version"
-    return 0
-  elif [[ "$ver_str" =~ $php_series_regex ]]; then
-    php_version=$(get_php_version_for_series "$ver_str")
-    if [ $? -eq 0 ]; then
-      echo "$php_version"
-      return 0
-    fi
-  else
-    echo "$FUNCNAME(): unknown string found, $ver_str" 1>&2
-    return 1
-  fi
+  echo "rm app:0:_:php_version
+set app:0:_:php_version $version" | \
+    "$DEVPANEL_HOME/libexec/apache-metadata-handler" -q "$vhost"
 }
 
-get_default_php_version_for_system() {
-  local php_dir version l_link
-  php_dir="$DEVPANEL_HOME/bin/packages/phpbrew/php"
+rm_php_version_metadata_for_vhost() {
+  local vhost="$1"
 
-  if [ ! -d "$php_dir" ]; then
-    echo "$FUNCNAME(): missing PHP base directory $php_dir" 1>&2
+  if [ -z "$vhost" ]; then
+    echo "$FUNCNAME(): missing vhost argument" 1>&2
     return 1
   fi
 
-  l_link="$php_dir/default"
-  version=$(deref_contents "$l_link" 2>/dev/null)
-  if [ $? -eq 0 ]; then
-    echo "$version"
-    return 0
-  else
-    echo "$FUNCNAME(): unable to get default version of PHP" 1>&2
+  if ! vhost_exists "$vhost"; then
+    echo "$FUNCNAME(): vhost doesn't exist" 1>&2
     return 1
   fi
-}
-
-get_php_bin_for_version() {
-  local version="$1"
-  local bin_prefix=${2:-php-cgi}
-
-  local php_dir="$devpanel_php_dir/php-$version"
-  if [ ! -d "$php_dir" ]; then
-    echo "$FUNCNAME(): missing directory for PHP version $version" 1>&2
-    return 1
-  fi
-
-  local bin_file="$php_dir/bin/$bin_prefix"
-
-  if [ -f "$bin_file" -a -x "$bin_file" ]; then
-    echo "$bin_file"
-    return 0
-  else
-    return 1
-  fi
+ 
+  echo "rm app:0:_:php_version" | \
+    "$DEVPANEL_HOME/libexec/apache-metadata-handler" -q "$vhost"
 }
 
 is_known_seedapp_subsystem() {
@@ -2749,6 +2708,7 @@ Main URL: @main_url@
 Domains: @domains@
 SSL: @ssl_txt@
 App: @app_type@
+PHP Version: @php_version@
 SFTP User: @ssh_user@
 SFTP Host: @ssh_host@
 MySQL Host/Port: @db_host_port@
@@ -2763,7 +2723,7 @@ Snapshots: @snapshots_txt@
   local main_url ssh_host ssh_user db_name db_host_port db_name app_type
   local fastcgi_status htpasswd_status
   local snapshots_txt snap_daily_txt snap_weekly_txt snap_monthly_txt
-  local ssl_txt
+  local ssl_txt php_ver
 
   main_url=$(get_main_url_of_vhost "$vhost")
   app_type=$(get_app_type_from_vhost "$vhost")
@@ -2849,6 +2809,16 @@ Snapshots: @snapshots_txt@
     ssl_txt="disabled"
   fi
 
+  php_ver=$(get_php_version_from_vhost "$vhost" 2>/dev/null )
+  if [ $? -ne 0 ]; then
+    php_ver='system default'
+    local sys_php_ver
+    sys_php_ver=$(get_default_php_version 2>/dev/null )
+    if [ $? -eq 0 ]; then
+      php_ver+=" ($sys_php_ver)"
+    fi
+  fi
+    
   ssh_host=$(get_server_base_domain)
 
   out_txt="$summ_txt"
@@ -2857,6 +2827,7 @@ Snapshots: @snapshots_txt@
   out_txt=${out_txt//@domains@/$domains_txt}
   out_txt=${out_txt//@ssl_txt@/$ssl_txt}
   out_txt=${out_txt//@app_type@/$app_type}
+  out_txt=${out_txt//@php_version@/$php_ver}
   out_txt=${out_txt//@db_host_port@/$db_host_port}
   out_txt=${out_txt//@db_name@/$db_name}
   out_txt=${out_txt//@ssh_user@/$ssh_user}
@@ -3139,3 +3110,56 @@ apache_ctl(){
   esac
 }
 
+install_distro_pkgs() {
+  local distro="$1"
+  local distro_major_ver="$2"
+  local pkg_list_file="$3"
+
+  if [ $# -ne 3 -o -z "$1" -o -z "$2" -o -z "$3" ]; then
+    echo "$FUNCNAME(): required args -" \
+           "distro, distro_major_version, pkg_list_file" 1>&2
+    return 1
+  fi
+
+  if [ ! -f "$pkg_list_file" ]; then
+    echo "$FUNCNAME(): missing file '$pkg_list_file'" 1>&2
+    return 1
+  elif [ ! -s "$pkg_list_file" ]; then
+    echo "$FUNCNAME(): list file '$pkg_list_file' is empty" 1>&2
+    return 1
+  fi
+
+  local -a cmd_ar=()
+  case "$distro" in
+    centos|redhat)
+      cmd_ar=( yum -y install )
+      ;;
+    debian|ubuntu)
+      cmd_ar=( apt-get -y install )
+      ;;
+    *)
+      echo "$FUNCNAME(): don't know how to install packages for distro" \
+        "$distro" 1>&2
+      return 1
+      ;;
+  esac
+
+  local pkg_regex='^[[:space:]]*[^[:space:]#]+'
+
+  if egrep -q "$pkg_regex" "$pkg_list_file"; then
+    egrep "$pkg_regex" "$pkg_list_file" | xargs -n 100 "${cmd_ar[@]}"
+  else
+    echo "$FUNCNAME(): didn't find any package in the list" 1>&2
+    return 1
+  fi
+}
+
+get_php_version_from_vhost() {
+  local vhost="$1"
+
+  get_1st_level_field_value_from_app "$vhost" php_version
+}
+
+get_default_php_version() {
+  deref_os_prop "$DEVPANEL_HOME" php_default_version
+}

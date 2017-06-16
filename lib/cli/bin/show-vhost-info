@@ -42,6 +42,11 @@ devpanel_cmd__show_vhost_info() {
   if [ $EUID -eq 0 ]; then
     [ -z "$vhost" ] && usage
 
+    if ! vhost_exists "$vhost"; then
+      error "vhost doesn't exist." -
+      return 1
+    fi
+
     "$sys_dir/libexec/check-vhost-name" archive "$vhost" || return $?
   else
     vhost=$(get_vhost_from_linuxuser)

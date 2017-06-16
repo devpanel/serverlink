@@ -18,6 +18,7 @@ Usage: @self_basename@ <command> [args]
     run scheduled snapshots     run now the scheduled backup snapshots for the
                                 virtual hosts
 
+    set default php             sets the default PHP version for virtual hosts
     restart taskd               restart devPanel taskd
     stop  taskd                 stop devPanel taskd
     debug taskd                 starts devPanel taskd in debug mode

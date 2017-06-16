@@ -1,0 +1,151 @@
+#!/bin/bash
+
+set_usage_msg \
+  "Usage: $bin_name ${cmd_ar[*]} [opts] --version <version>
+
+  Options:
+    --version <version>     the the specified version
+    --help                  display the command usage
+
+  Sets the default PHP version for the system.
+
+  NOTE: to reset back to devPanel's default use the word 'default' as the
+        version.
+"
+
+devpanel_cmd__set_default_php() {
+  [ $# -eq 0 -o -z "$1" ] && usage
+
+  local name version
+  local -a cmd_args_ar=()
+
+  while [ -n "$1" ]; do
+    name="$1"
+    case "$name" in
+      --version)
+        [ -z "$2" ] && error_missing_value "$name"
+        [ "$2" != default ] && ! is_valid_php_version_string "$2" && return $?
+        version="$2"
+        shift 2
+        ;;
+      --help)
+        usage
+        ;;
+      --)
+        shift
+        break
+        ;;
+      *)
+        error "unknown option $name"
+        ;;
+    esac
+  done
+
+  [ -z "$version" ] && error_missing_param version
+
+  if [ "$version" == default ]; then
+    local php_curr_ver ver_on_install
+    php_curr_ver=$(get_default_php_version 2>/dev/null )
+    if [ $? -ne 0 ]; then
+      error "unable to get current version." -
+      return 1
+    fi
+
+    ver_on_install=$(deref_os_prop "$sys_dir" \
+                      names/php_default_version_on_install 2>/dev/null )
+    if [ $? -ne 0 ]; then
+      error "unable to get default version on install." -
+      return 1
+    fi
+
+    if [ "$php_curr_ver" == "$ver_on_install" ]; then
+      echo "Ok, no action needed. Default PHP is already $php_curr_ver"
+      return 0
+    else
+      # set the version to the one on install (done below)
+      version="$ver_on_install"
+    fi
+  fi
+
+  local php_bin php_cgi_bin php_lnk_dir php_bin_lnk
+
+  php_bin=$(deref_os_prop "$sys_dir" pathnames/bin/php-$version 2>/dev/null)
+  if [ $? -ne 0 ]; then
+    error "unable to find PHP binary for version $version" -
+    return 1
+  fi
+
+  php_lnk_dir=$(deref_os_prop "$sys_dir" pathnames/bin/php_lnk_dir \
+                  2>/dev/null )
+  if [ $? -ne 0 ]; then
+    error "missing definition of php_lnk_dir" -
+    return 1
+  fi
+
+  php_bin_lnk="$php_lnk_dir/php"
+
+  if ! update-alternatives --display php 2>/dev/null | \
+        fgrep -q "$php_bin"; then
+
+    local priority=${version//[^0-9]}
+    # code mostly for CentOS, in which the php binaries are not in
+    # update-alternatives by default
+
+    # add other common PHP binaries as slaves of PHP in the
+    # update-alternatives dependencies
+    local _binname _binpath _binlink
+    for _binname in php-cgi phar pear peardev pecl phpize; do
+      _binpath=$(deref_os_prop "$sys_dir" pathnames/bin/"$_binname-$version" \
+                  2>/dev/null )
+      if [ $? -eq 0 ]; then
+        _binlink="$php_lnk_dir/$_binname"
+        if [ -f "$_binpath" -a -x "$_binpath" ]; then
+          if ! update-alternatives --display $_binname &>/dev/null; then
+            # only add if the executable doesn't have a primary entry on
+            # update-alternatives system
+            cmd_args_ar+=( --slave "$_binlink" $_binname "$_binpath" )
+          fi
+        fi
+      fi
+    done
+
+    update-alternatives --install "$php_bin_lnk" php "$php_bin" "$priority" \
+      "${cmd_args_ar[@]}"
+    if [ $? -ne 0 ]; then
+      error "failed to add $php_bin to alternative links" -
+      return 1
+    fi
+  fi
+
+  update-alternatives --set php "$php_bin"
+  if [ $? -eq 0 ]; then
+    echo "set-local php_default_version $version" | \
+      "$sys_dir/libexec/system-metadata-handler" -q
+    if [ $? -ne 0 ]; then
+      echo "Warning: failed to set metadata for default PHP version" 1>&2
+    fi
+
+    # exception compatibility with Ubuntu:
+    #   On Ubuntu both phar and php-cgi are set as independent binaries in
+    #   update-alternatives, not as slaves of php. So check if each one is
+    #   a slave or independent to update accordingly
+    for _binname in php-cgi phar; do
+      if update-alternatives --display $_binname &>/dev/null; then
+        _binpath=$(deref_os_prop "$sys_dir" pathnames/bin/"$_binname-$version" \
+                    2>/dev/null )
+        if [ $? -eq 0 ]; then
+          _binlink="$php_lnk_dir/$_binname"
+          if [ -f "$_binpath" -a -x "$_binpath" ]; then
+            update-alternatives --set $_binname "$_binpath"
+          fi
+        fi
+      fi
+    done
+
+    echo "Successfully set default PHP version to $version."
+    return 0
+  else
+    error "unable to set PHP version." -
+    return 1
+  fi
+}

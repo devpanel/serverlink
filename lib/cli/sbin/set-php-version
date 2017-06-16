@@ -1,0 +1,124 @@
+#!/bin/bash
+
+set_usage_msg \
+  "Usage: $bin_name ${cmd_ar[*]} [opts] --vhost <vhost> --version <version>
+
+  Options:
+    --vhost   <vhost>       the vhost to protect
+    --version <version>     the the specified version
+    --help                  display the command usage
+
+  Sets the PHP version to be used by the vhost.
+
+  Note: to reset to the system default use 'default' as the version.
+"
+
+devpanel_cmd__set_php_version() {
+  [ $# -eq 0 -o -z "$1" ] && usage
+
+  local name vhost version
+  local -a cmd_args=()
+
+  while [ -n "$1" ]; do
+    name="$1"
+    case "$name" in
+      --vhost)
+        [ -z "$2" ] && error_missing_value "$name"
+        vhost="$2"
+        shift 2
+        ;;
+      --version)
+        [ -z "$2" ] && error_missing_value "$name"
+        [ "$2" != default ] && ! is_valid_php_version_string "$2" && return $?
+        version="$2"
+        shift 2
+        ;;
+      --help)
+        usage
+        ;;
+      --)
+        shift
+        break
+        ;;
+      *)
+        error "unknown option $name"
+        ;;
+    esac
+  done
+
+  [ -z "$vhost"   ] && error_missing_param vhost
+  [ -z "$version" ] && error_missing_param version
+
+  if ! vhost_exists "$vhost"; then
+    error "vhost doesn't exist." -
+    return 1
+  fi
+
+  local vhost_user vhost_home
+  if get_linux_username_from_vhost "$vhost"; then
+    vhost_user="$_dp_value"
+  else
+    error "unable to get linux username for vhost" -
+    return 1
+  fi
+
+  local php_bin php_cgi_bin phar_bin
+
+  if [ "$version" == default ]; then
+    local php_curr_ver
+    php_curr_ver=$(get_php_version_from_vhost "$vhost" 2>/dev/null )
+    if [ $? -ne 0 ]; then
+      echo "Ok, no action. This vhost is already using the default."
+      return 0
+    fi
+
+    run_as_user "$vhost_user" "rm -f ~/bin/php ~/bin/php-cgi ~/bin/phar"
+    if [ $? -eq 0 ]; then
+      rm_php_version_metadata_for_vhost "$vhost"
+      if [ $? -ne 0 ]; then
+        echo "Warning: unable to remove PHP metadata" 1>&2
+      fi
+
+      echo "Successfully reset PHP version to system default." 1>&2
+      return 0
+    else
+      error "failed to unset defined PHP for vhost $vhost." -
+      return 1
+    fi
+  fi
+
+  php_bin=$(deref_os_prop "$sys_dir" pathnames/bin/php-$version 2>/dev/null)
+  if [ $? -ne 0 ]; then
+    error "unable to find PHP binary for version $version" -
+    return 1
+  fi
+
+  php_cgi_bin=$(deref_os_prop "$sys_dir" pathnames/bin/php-cgi-$version \
+                  2>/dev/null )
+  if [ $? -ne 0 ]; then
+    error "unable to find PHP-CGI binary for version $version" -
+    return 1
+  fi
+
+  phar_bin=$(deref_os_prop "$sys_dir" pathnames/bin/phar-$version \
+              2>/dev/null )
+
+  run_as_user "$vhost_user" "phar_bin=$phar_bin;                   \
+               ln -sf $php_cgi_bin ~/bin/php-cgi; ex=$? ;          \
+               ln -sf $php_bin ~/bin/php ;                         \
+              [ -n \"$phar_bin\" ] && ln -s $phar_bin ~/bin/phar ; \
+              exit $ex"
+  if [ $? -eq 0 ]; then
+    # set metadata for vhost
+    if set_php_version_metadata_for_vhost "$vhost" "$version"; then
+      echo "Successfully set vhost PHP version to $version."
+    else
+      echo "Warning: PHP version set, but failed to update vhost metadata." 1>&2
+    fi
+
+    return 0
+  else
+    error "unable to set PHP link on vhost home" -
+    return 1
+  fi
+}

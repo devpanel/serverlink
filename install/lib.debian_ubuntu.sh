@@ -60,5 +60,10 @@ add_apt_repositories() {
     cp -f "$pref_file" "/etc/apt/preferences.d/$pref_name"
   done
 
-  return 0
+  if apt-get update; then
+    return 0
+  else
+    echo "$FUNCNAME(): apt-get update failed" 1>&2
+    return 1
+  fi
 }

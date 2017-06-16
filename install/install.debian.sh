@@ -10,7 +10,14 @@ debian_pre_run() {
   local distro_ver_major="$5"
   local distro_ver_minor="$6"
 
-  return 0
+  export DEBIAN_FRONTEND='noninteractive'
+
+  apt-get update
+
+  if ! apt-get -y install apt-transport-https; then
+    echo "$FUNCNAME(): apt-get install apt-transport-https FAILED" 1>&2
+    return 1
+  fi
 }
 
 debian_install_distro_packages() {
@@ -33,27 +40,10 @@ debian_install_distro_packages() {
   add_apt_repositories "$source_dir" "$distro" "$distro_ver" \
     "$distro_ver_major" "$distro_ver_minor" || return $?
 
-  export DEBIAN_FRONTEND='noninteractive'
+  local pkg_list_file
+  pkg_list_file="$source_dir/config/os.$distro/$distro_ver_major/distro-packages.txt"
 
-  apt-get update
-
-  echo -n Checking for update-rc.d availability: 
-  if hash update-rc.d ; then
-    echo Already there
-  else
-      echo Not found, installing sysvinit
-      apt-get -y install sysvinit
-  fi
-
-  for i in \
-    cron dialog bsdutils curl apache2 libapache2-mod-macro apache2-suexec zlib1g libapache2-mod-fcgid \
-    mysql-server git subversion \
-    php5 php5-cli php-pear php5-gd php5-curl php5-mysql \
-    php5-cgi php5-mcrypt php5-sqlite php5-zip libjson-xs-perl libcrypt-ssleay-perl \
-    libcgi-session-perl unzip s3cmd bc libio-socket-ssl-perl
-  do
-    apt-get -y install $i
-  done
+  install_distro_pkgs "$distro" "$distro_ver_major" "$pkg_list_file"
 }
 
 debian_adjust_system_config() {
