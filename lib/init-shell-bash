@@ -10,9 +10,14 @@ if ! source "$lib_f"; then
   exit 1
 fi
 
-public_html_dir=$(get_docroot_from_vhost "$DEVPANEL_VHOST")
-if [ -d "$public_html_dir" ]; then
-  cd "$public_html_dir"
+. /etc/profile
+
+vhost=$(get_vhost_from_linuxuser)
+if [ $? -eq 0 ]; then
+  public_html_dir=$(get_docroot_from_vhost "$vhost")
+  if [ -d "$public_html_dir" ]; then
+    cd "$public_html_dir"
+  fi
 fi
 
 : just return 0

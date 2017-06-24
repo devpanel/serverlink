@@ -198,7 +198,10 @@ install_ce_software() {
   ln -sf "$webenabled_install_dir/compat/apache_include/$_apache_main_include" \
     "$_apache_includes_dir/devpanel.conf"
 
-  ln -sf "$webenabled_install_dir/bin/devpanel" /usr/local/bin
+  # link to /usr/bin to have devpanel cli in the $PATH
+  # NOTE: not using /usr/local/bin because CentOS doesn't have it in the
+  #       $PATH by default
+  ln -sf "$webenabled_install_dir/bin/devpanel" /usr/bin
 
   return 0
 }
@@ -415,6 +418,14 @@ ServerName $dp_server_hostname
 
   "$webenabled_install_dir/compat/suexec/chcgi" w_ +7
   
+  local default_php_ver
+  default_php_ver=$(deref_os_prop "$webenabled_install_dir" \
+                      names/php_default_version_on_install 2>/dev/null )
+
+  if [ $? -eq 0 ]; then
+    devpanel set default php --version "$default_php_ver"
+  fi
+
   #Install Zabbix Agent
   if [ -z "$we_v1_compat" ]; then
     $webenabled_install_dir/install/install-zabbix on $dp_server_hostname

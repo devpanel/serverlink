@@ -8,11 +8,11 @@ set_usage_msg \
     --domain <domain>        enter the vhost associated with the
                              specified domain
 
-  Starts a shell for the specified vhost.
+  Starts a shell for the specified vhost or domain.
 "
 
 devpanel_cmd__enter() {
-  local param vhost user domain
+  local param vhost user domain user_shell
   
   [ $# -eq 0 -o -z "$1" ] && usage
 
@@ -30,8 +30,21 @@ devpanel_cmd__enter() {
         domain="$2"
         shift 2
         ;;
+      --shell)
+        [ -z "$2" ] && error_missing_value $param
+        user_shell="$2"
+        shift 2
+        if [ ! -f "$user_shell" -a ! -x "$user_shell" ]; then
+          error "missing file for shell $user_shell" -
+          return 1
+        fi
+        ;;
       --help)
         usage
+        ;;
+      --)
+        shift
+        break
         ;;
       *)
         error "unknown parameter: $param"
@@ -40,32 +53,46 @@ devpanel_cmd__enter() {
   done
 
   if [ -z "$vhost" -a -z "$domain" ]; then
-    error "either --vhost or --domain needs to be specified"
+    error "either --vhost or --domain needs to be specified" -
+    return 1
   fi
 
 
   if [ -z "$vhost" ]; then
     vhost=$(get_vhost_with_hostname "$domain")
     if [ $? -ne 0 ]; then
-      error "didn't find any vhost with the specified hostname"
+      error "didn't find any vhost with the specified hostname" -
+      return 1
     fi
   fi
 
   get_linux_username_from_vhost "$vhost" && \
   user="$_dp_value"
 
+  local -a shell_args_ar=() runuser_args_ar=()
   echo "Starting a shell for vhost $vhost (user: $user)..."
   if hash runuser &>/dev/null; then
-    declare -a run_args=( --init-file "$sys_dir/lib/init-shell" )
-
-    # there are some versions of 'runuser' that don't have the -u option
-    # so detect it and run it with the appropriate args
-    if runuser --help 2>&1 | fgrep -q -- -u; then
-      runuser -u "$user" -- env DEVPANEL_VHOST=$vhost /bin/bash "${run_args[@]}"
+    if [ -n "$user_shell" ]; then
+      runuser_args_ar+=( -s "$user_shell" )
     else
-      runuser -- "$user" env DEVPANEL_VHOST=$vhost "${run_args[@]}"
+      user_shell=$(get_shell_from_user "$user")
+      if [ $? -ne 0 ] && hash bash &>/dev/null; then
+        if user_shell=$(hash -t bash); then
+          runuser_args_ar+=( -s "$user_shell" )
+        fi
+      fi
     fi
+
+    local shell_basename="${user_shell##*/}"
+    local shell_init_file="$sys_dir/lib/init-shell-$shell_basename"
+    if [ -f "$shell_init_file" ]; then
+      if [ "$shell_basename" == bash ]; then
+        shell_args_ar+=( --init-file "$shell_init_file" )
+      fi
+    fi
+
+    runuser "${runuser_args_ar[@]}" "$user" -- "${shell_args_ar[@]}"
   else
-    su -l "$user"
+    su ${user_shell:+-s $user_shell} -l "$user"
   fi
 }
