@@ -239,7 +239,7 @@ if [ ! -f /usr/bin/jo ]; then
     ${sudo} apt-get update -q
     ${sudo} apt-get install -y jo
   else
-    yum -y install automake autoconf
+    yum -y install automake autoconf wget
     yum -y groupinstall "Development Tools"
     wget https://github.com/jpmens/jo/archive/master.zip && unzip master.zip && cd jo-master && \
     autoreconf -i && ./configure --prefix=/usr && make check && make install && \
