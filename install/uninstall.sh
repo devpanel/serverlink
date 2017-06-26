@@ -328,6 +328,7 @@ $install_dir/libexec/change-iptables-rules -D
   rm -v -f /etc/profile.d/devpanel*
   rm -v -f /etc/init/devpanel*
   rm -v -f /etc/default/devpanel*
+  rm -v -f /etc/sudoers.d/devpanel*
 
   "$install_dir/libexec/remove-user" devpanel
 

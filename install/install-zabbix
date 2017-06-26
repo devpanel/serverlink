@@ -27,6 +27,8 @@ if ! source "$lib_file"; then
   exit 1
 fi
 
+sudoers_file="/etc/sudoers.d/devpanel-zabbix"
+
 patch_zabbix_config()
 {
   local sed_str=""
@@ -41,13 +43,31 @@ patch_zabbix_config()
 
 patch_sudoers()
 {
+  local txt
+
   # avoid duplicates
-  if [ ! `grep -Fxq "zabbix ALL=NOPASSWD" /etc/sudoers` ]; then sed -i 's/^zabbix\ ALL=NOPASSWD.*//g' /etc/sudoers; fi
-  echo "zabbix ALL=NOPASSWD: /opt/webenabled/sbin/check_mem_diskspace_usage.sh" >> /etc/sudoers
-  echo "zabbix ALL=NOPASSWD: /opt/webenabled/sbin/check_apache2_logs.sh" >> /etc/sudoers
-  echo "zabbix ALL=NOPASSWD: /opt/webenabled/sbin/check_git_update.sh" >> /etc/sudoers
-  echo "zabbix ALL=NOPASSWD: /opt/webenabled/sbin/zabbix-autoheal" >> /etc/sudoers
-  echo "zabbix ALL=NOPASSWD: service" >> /etc/sudoers
+  if egrep -q '^[[:space:]]*zabbix[[:space:]]+' /etc/sudoers; then
+    sed -i -e '/^[[:space:]]*zabbix[[:space:]]\+/d;' /etc/sudoers
+  fi
+
+  txt="
+zabbix ALL=NOPASSWD: /opt/webenabled/sbin/check_mem_diskspace_usage.sh
+zabbix ALL=NOPASSWD: /opt/webenabled/sbin/check_apache2_logs.sh
+zabbix ALL=NOPASSWD: /opt/webenabled/sbin/check_git_update.sh
+zabbix ALL=NOPASSWD: /opt/webenabled/sbin/zabbix-autoheal
+"
+
+  local _bin
+
+  for _bin in /sbin/service /usr/sbin/service; do
+    if [ -f "$_bin" -a -x "$_bin" ]; then
+      txt+="zabbix ALL=NOPASSWD: $_bin"
+      break
+    fi
+  done
+
+  echo "$txt" >"$sudoers_file"
+  chmod 600 "$sudoers_file"
 }
 
 installzabbix(){
@@ -80,6 +100,10 @@ fi
 
 removezabbix(){
 DEVPANELOS=$(devpanel_auto_detect_distro)
+
+[ -f "$sudoers_file" ] && rm -f "$sudoers_file"
+sed -i -e '/^[[:space:]]*zabbix[[:space:]]\+/d;' /etc/sudoers
+
 # Only run it if we can (ie. on Ubuntu/Debian)
 if [ "$DEVPANELOS" == "ubuntu" ] || [ "$DEVPANELOS" == "debian" ];then
   apt-get -y remove zabbix-agent 
