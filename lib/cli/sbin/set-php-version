@@ -103,11 +103,11 @@ devpanel_cmd__set_php_version() {
   phar_bin=$(deref_os_prop "$sys_dir" pathnames/bin/phar-$version \
               2>/dev/null )
 
-  run_as_user "$vhost_user" "phar_bin=$phar_bin;                   \
-               ln -sf $php_cgi_bin ~/bin/php-cgi; ex=$? ;          \
-               ln -sf $php_bin ~/bin/php ;                         \
-              [ -n \"$phar_bin\" ] && ln -s $phar_bin ~/bin/phar ; \
-              exit $ex"
+  run_as_user "$vhost_user" "
+               ln -sf $php_cgi_bin ~/bin/php-cgi; ex=\$? ;          \
+               ln -sf $php_bin ~/bin/php ;                          \
+              [ -n \"$phar_bin\" ] && ln -sf $phar_bin ~/bin/phar ; \
+              exit \$ex"
   if [ $? -eq 0 ]; then
     # set metadata for vhost
     if set_php_version_metadata_for_vhost "$vhost" "$version"; then
