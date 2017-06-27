@@ -7,6 +7,10 @@ apache2
 apache2-suexec
 zlib1g
 libapache2-mod-fcgid
+libcrypt-ssleay-perl
+libio-socket-ssl-perl
+libjson-xs-perl
+liburi-perl
 mysql-server
 git
 php5
