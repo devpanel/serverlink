@@ -40,6 +40,7 @@ our $program  = basename($0);
 our %v = ();
 
 our $n_childs   = 0;
+our $run_in_foreground = 0;
 
 our @report_failed      = ();
 our @set_running_failed = ();
@@ -363,6 +364,33 @@ sub sig_hup_main {
   # } else {
   #  ce_log("Received HUP. But config file has problems, config not reloaded.");
   # }
+}
+
+sub sig_usr1 {
+  my($sig_name) = @_;
+
+  if($run_in_foreground) {
+    taskd_log(undef, "ignoring SIG${sig_name}, as running in foreground");
+  } else {
+    # log before closing
+    taskd_log(undef, "received SIG${sig_name}, closing log file");
+
+    open(STDOUT, ">>$v{log_file}") or
+    die sprintf("Error: can't redirect stdout to %s: %s\n", $v{log_file}, $!);
+
+    open(STDERR, '>&STDOUT') or die "Error: can't dup stderr to stdout. $!\n";
+
+    my $dist_fh = select(STDOUT);
+    $| = 1;
+
+    select(STDERR);
+    $| = 1;
+
+    select($dist_fh);
+
+    # log after re-opening
+    taskd_log(undef, "received SIG${sig_name}, re-opened log file");
+  }
 }
 
 sub master_sig_chld {
@@ -1072,6 +1100,7 @@ sub http_child {
 
   # child process
   local $SIG{CHLD} = 'IGNORE';
+  local $SIG{USR1} = 'IGNORE';
 
   close(FROM_CHILD);
   close(TO_CHILD);
@@ -1544,6 +1573,7 @@ if(!flock(LOCK_FILE, LOCK_EX | LOCK_NB)) {
 }
 
 if(exists($opts{F})) { # run in foreground
+  $run_in_foreground = 1;
   open(TASKD_LOG, '>&STDOUT') or die "Error: can't dup stdout to log file. $!\n";
   open(STDERR, '>&STDOUT') or die "Error: can't dup stderr to stdout. $!\n";
 } else {
@@ -1568,6 +1598,7 @@ close(PID_FILE);
 local $SIG{CHLD} = \&master_sig_chld;
 local $SIG{HUP}  = \&sig_hup_main;
 local $SIG{TERM} = $SIG{INT} = \&sig_term_main;
+local $SIG{USR1} = \&sig_usr1;
 
 $0 = sprintf("%s-master", $v{p_profile});
 
