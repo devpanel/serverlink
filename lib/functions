@@ -385,12 +385,31 @@ get_linux_username_from_vhost() {
 
 get_vhost_from_linuxuser() {
   local user="${1:-$USER}"
+  local vhost
+
+  if [ -z "$user" ]; then
+    echo "$FUNCNAME(): unable to get username information" 1>&2
+    return 1
+  fi
 
   local map_dir map_link
   map_dir=$(get_linuxuser_vhost_dir)
   map_link="$map_dir/$user"
+  if [ -L "$map_link" ]; then
+    deref_contents "$map_link"
+    return $?
+  else
+    # for servers installed before the $map_link was created
+    if [ ${#user} -gt 2 -a "${user:0:2}" == w_ ]; then
+      vhost=${user#w_}
+      if vhost_exists "$vhost"; then
+        echo "$vhost"
+        return 0
+      fi
+    fi
+  fi
 
-  deref_contents "$map_link"
+  return 1
 }
 
 get_docroot_from_vhost() {
