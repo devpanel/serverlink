@@ -970,9 +970,13 @@ operation_get_app_info()
     magento)
       app_current_version=$(curl -N -s ${vhost}.${hostname_fqdn}|grep "(ver. 1."|awk -F'</a> ' '{print $NF}'|awk -F'ver. ' '{print $NF}'|awk -F')</p>' '{print $1}')
       arr=$(curl -N -s https://magento.com/tech-resources/download|grep "ver 1.9."|awk -F'                                                        ' '{print $2}'|grep -v h3|grep -v later|awk -F'ver ' '{print $NF}')
-      # IFS=$'\n'
       app_available_version=$(echo "${arr[*]}" | sort -nr | head -n1)
       app_available_tools+=( "repair_mysql_database=repair database" )
+    ;;
+    grav)
+      app_current_version=$(grep v1. /home/clients/websites/w_${vhost}/public_html/${vhost}/CHANGELOG.md |grep -v rc|head -1|awk -F'# v' '{print $NF}')
+      app_available_version=$(curl -N -s https://raw.githubusercontent.com/getgrav/grav/develop/CHANGELOG.md|grep v1.|grep -v rc|head -1|awk -F'# v' '{print $NF}')
+      # app_available_tools+=( "repair_mysql_database=repair database" )
     ;;
     *)
       :
