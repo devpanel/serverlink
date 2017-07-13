@@ -949,6 +949,7 @@ operation_get_app_info()
     "archive_vhost=backup, snapshot this app code, files and database"
     "restore_vhost_backup=restore from backups"
     "schedule_auto_backup=automated backups"
+    "chpass_vhost=reset ssh/sftp password"
   )
   
   case "$app_type" in
