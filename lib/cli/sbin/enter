@@ -57,7 +57,6 @@ devpanel_cmd__enter() {
     return 1
   fi
 
-
   if [ -z "$vhost" ]; then
     vhost=$(get_vhost_with_hostname "$domain")
     if [ $? -ne 0 ]; then
@@ -66,8 +65,16 @@ devpanel_cmd__enter() {
     fi
   fi
 
-  get_linux_username_from_vhost "$vhost" && \
-  user="$_dp_value"
+  if ! vhost_exists "$vhost"; then
+    error "vhost doesn't exist." -
+    return 1
+  fi
+
+  if ! { get_linux_username_from_vhost "$vhost" && \
+          user="$_dp_value" ; }; then
+    error "unable to get linux username from vhost" -
+    return 1
+  fi
 
   local -a shell_args_ar=() runuser_args_ar=()
   echo "Starting a shell for vhost $vhost (user: $user)..."
