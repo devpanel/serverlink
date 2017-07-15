@@ -24,6 +24,9 @@ devpanel_cmd__disable_ssl() {
         vhost="$2"
         shift 2
         ;;
+      --help)
+        usage
+        ;;
       --)
         shift
         break
@@ -37,7 +40,8 @@ devpanel_cmd__disable_ssl() {
   [ -z "$vhost" ] && error_missing_param vhost
 
   if ! vhost_exists "$vhost"; then
-    exit 1
+    error "vhost does not exist." -
+    return 1
   fi
 
   if is_lets_encrypt_enabled_for_vhost "$vhost"; then
