@@ -495,6 +495,9 @@ operation_handle()
           libexec/restore-vhost*http://www.webenabled.com/seedapps/mag*.tgz)
             app="magento"
           ;;
+          libexec/restore-vhost*http://www.webenabled.com/seedapps/grav*.tgz)
+            app="grav"
+          ;;
           *)
             echo "App not supported."
             exit 1
