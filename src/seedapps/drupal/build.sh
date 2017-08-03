@@ -11,6 +11,8 @@ usage() {
                       default it tries to guess the best one for the
                       distribution
 
+    -o file.tar.gz    file where to save the resulting archive
+
     -h                display the usage msg
 
 
@@ -49,8 +51,8 @@ cleanup() {
 # main
 [ "$1" == "-h" -o -z "$1" ] && usage
 
-unset drush_ver
-getopt_flags='hD:'
+unset drush_ver output_file
+getopt_flags='hD:o:'
 while getopts $getopt_flags OPTN; do
   case $OPTN in
     h)
@@ -63,6 +65,9 @@ while getopts $getopt_flags OPTN; do
         echo "Error: unknown drush version. Valid ones are in range 6-9" 1>&2
         exit 1
       fi
+      ;;
+    o)
+      output_file="$OPTARG"
       ;;
     *)
       exit 1
@@ -85,7 +90,6 @@ if ! source "$lib_f"; then
   echo "Error: unable to import $lib_f" 1>&2
   exit 1
 fi
-
 distro="$1"
 
 if [ -n "$2" ]; then
@@ -100,6 +104,19 @@ else
       inst_profile="$distro"
     fi
   fi
+fi
+
+if [ -z "$output_file" ]; then
+  date_suffix=$(date +%b-%d-%Y-%Hh%Mm)
+  if [ "$inst_profile" == "$distro" ]; then
+    output_file="${distro}-${date_suffix}.tgz"
+  else
+    output_file="${distro}-${inst_profile}-${date_suffix}.tgz"
+  fi
+fi
+
+if [ -f "$output_file" ]; then
+  error "output file '$output_file' already exists."
 fi
 
 if [ -z "$drush_ver" ]; then
@@ -192,6 +209,7 @@ su -l -s /bin/bash -c "
     mysql -D drupal -e \"\$sql_mail_upd\"
   fi
 
+  mysql -e 'DROP DATABASE test;' || true
   mysql -e 'DROP DATABASE scratch;'
 
   rm -rf ~/public_html/$tmp_vhost.[0-9]*
@@ -204,9 +222,9 @@ if [ $? -ne 0 ]; then
   error "unable to cleanely install drupal"
 fi
 
-archive_file="$distro-@archive_template_str@"
-"$sys_dir/libexec/archive-vhost" "$tmp_vhost" "$archive_file"
+"$sys_dir/libexec/archive-vhost" "$tmp_vhost" - >"$output_file"
 if [ $? -eq 0 ]; then
   echo "Successfully built Drupal distribution $distro"
+  echo "Saved output file $output_file"
   exit 0
 fi

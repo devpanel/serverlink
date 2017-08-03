@@ -8,7 +8,11 @@ usage() {
 
   Options:
     -h                display the usage msg
+    -o file.tgz       output file where to save the app
 
+
+  For the grav_url parameter use url of the Grav Core + admin plugin
+  package, e.g. https://getgrav.org/download/core/grav-admin/1.y.x
 
   Builds a seedapp from Grav.
 
@@ -35,13 +39,17 @@ cleanup() {
 }
 
 # main
-app_type=grav
+app_name=grav
+app_subsystem=grav
 
-getopt_flags='h'
+getopt_flags='ho:'
 while getopts $getopt_flags OPTN; do
   case $OPTN in
     h)
       usage
+      ;;
+    o)
+      output_file="$OPTARG"
       ;;
     *)
       exit 1
@@ -74,6 +82,15 @@ if [ ! -f "$passgen_bin" -o ! -x "$passgen_bin" ]; then
   error "missing executable $passgen_bin"
 fi
 
+if [ -z "$output_file" ]; then
+  date_suffix=$(date +%b-%d-%Y-%Hh%mm)
+	output_file="${app_name}-${date_suffix}.tgz"
+fi
+
+if [ -f "$output_file" ]; then
+  error "output file '$output_file' already exists."
+fi
+
 tmp_vhost_str1=$($passgen_bin)
 if [ $? -ne 0 ]; then
   error "unable to generate vhost string"
@@ -101,8 +118,8 @@ trap 'cleanup' EXIT
 # app:0:_:db_name $subsystem
 
 echo "
-set app:0:_:seed_app $app_type
-set app:0:_:db_name  $app_type
+set app:0:_:seed_app $app_subsystem
+set app:0:_:db_name  $app_subsystem
 " | "$sys_dir/libexec/apache-metadata-handler" -q "$tmp_vhost"
 
 su -l -s /bin/bash -c "
@@ -134,9 +151,9 @@ su -l -s /bin/bash -c "
 
   mysql -e 'DROP DATABASE scratch;'
   mysql -e 'DROP DATABASE test;' || true
-  mysql -e 'CREATE DATABASE $app_type;'
+  mysql -e 'CREATE DATABASE $app_subsystem;'
 
-  $sys_dir/bin/restore-vhost-subsystem -s $app_type -n \
+  $sys_dir/bin/restore-vhost-subsystem -s $app_subsystem -n \
     -O config_function=setup_from_cli
 
   rm -rf ~/public_html/$tmp_vhost.[0-9]*
@@ -149,9 +166,9 @@ if [ $? -ne 0 ]; then
   error "unable to cleanely setup environment"
 fi
 
-archive_file="$app_type-@archive_template_str@"
-"$sys_dir/libexec/archive-vhost" "$tmp_vhost" "$archive_file"
+"$sys_dir/libexec/archive-vhost" "$tmp_vhost" - >"$output_file"
 if [ $? -eq 0 ]; then
   echo "Successfully built Grav distribution $distro"
+  echo "Saved output file to $output_file"
   exit 0
 fi
