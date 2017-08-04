@@ -251,6 +251,7 @@ for inc_dir in "$mysql_inc_dir" "$php_inc_dir"; do
 done
 
 if hash systemctl &>/dev/null; then
+  has_systemd=1
   # disable taskd on boot, but don't stop it now
   systemctl disable devpanel-taskd
 fi
@@ -303,32 +304,48 @@ done
  
 $install_dir/libexec/change-iptables-rules -D
 
+# remove the remaining system paths (not removed before because it needs taskd
+# to report the execution status
+for path_dir in /etc/init.d /etc/init /etc/profile.d \
+  "$apache_base_dir" "$apache_includes_dir"; do
+
+  rm -f "$path_dir/devpanel"*
+  rm -f "$path_dir/webenabled"*
+done
+
+rm -v -f /etc/cron*/devpanel*
+rm -v -f /etc/logrotate.d/devpanel*
+rm -v -f /etc/profile.d/devpanel*
+rm -v -f /etc/init/devpanel*
+rm -v -f /etc/default/devpanel*
+rm -v -f /etc/sudoers.d/devpanel*
+rm -f /usr/local/bin/devpanel* /usr/bin/devpanel*
+
+if [ -d "$data_dir/vhost_archives" ]; then
+  mv -f "$data_dir/vhost_archives" "$uninstall_archive_dir"
+fi
+
 (
-  # run in a background taskd, just for the case it's running from inside
-  # taskd for it to be successfully reported, before taskd is killed
+  # ignore SIGTERM when the parent shell exits
+  trap 'echo Ignoring SIGTERM' TERM
 
   if [ -n "$through_taskd" ]; then
-    sleep 70 # wait for taskd to report this task as successful
+    # wait a bit for taskd to report the task
+    sleep 10
   fi
 
-  # now stop taskd
-  "$install_dir/libexec/system-services" devpanel-taskd stop
-
-  # remove the remaining system paths (not removed before because it needs taskd
-  # to report the execution status
-  for path_dir in /etc/init.d /etc/init /etc/profile.d \
-    "$apache_base_dir" "$apache_includes_dir"; do
-
-    rm -f "$path_dir/devpanel"*
-    rm -f "$path_dir/webenabled"*
-  done
-
-  rm -v -f /etc/cron*/devpanel*
-  rm -v -f /etc/logrotate.d/devpanel*
-  rm -v -f /etc/profile.d/devpanel*
-  rm -v -f /etc/init/devpanel*
-  rm -v -f /etc/default/devpanel*
-  rm -v -f /etc/sudoers.d/devpanel*
+  if [ -n "$has_systemd" ]; then
+    systemctl --no-block stop    devpanel-taskd
+    systemctl --no-block disable devpanel-taskd
+    rm -v -f /lib/systemd/system/devpanel*
+  else
+    service devpanel-taskd stop
+    if hash chkconfig &>/dev/null; then
+      chkconfig devpanel-taskd off
+    elif hash update-rc.d &>/dev/null; then
+      update-rc.d devpanel-taskd remove
+    fi
+  fi
 
   "$install_dir/libexec/remove-user" devpanel
 
@@ -336,23 +353,14 @@ $install_dir/libexec/change-iptables-rules -D
     groupdel devpanel
   fi
 
-  if [ -d "$data_dir/vhost_archives" ]; then
-    mv -f "$data_dir/vhost_archives" "$uninstall_archive_dir"
-  fi
-
   rm_rf_safer "$install_dir"
 
   [ -d /var/log/webenabled ] && rm -rf /var/log/webenabled
-
- : &
 ) &
 
 if [ -z "$through_taskd" ]; then
   wait
-  sleep 3 # just for the msg below to show last
 fi
-
-rm -f /usr/local/bin/devpanel* /usr/bin/devpanel*
 
 echo
 echo "Successfully uninstalled devPanel software. Backup made on $uninstall_archive_dir"
