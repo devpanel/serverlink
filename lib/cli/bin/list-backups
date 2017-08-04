@@ -61,9 +61,12 @@ devpanel_cmd__list_backups() {
   local last_mod_e stat_output f_bname last_mod_friendly
   local size_bytes size_txt display_name
 
-  for archive_file in $bkp_src_dir/*.tgz; do
+  for f_bname in $(ls -rt $bkp_src_dir); do
+    archive_file="$bkp_src_dir/$f_bname"
     [ ! -f "$archive_file" ] && continue
-    f_bname=${archive_file##*/}
+    if [[ "$archive_file" != *.tgz ]]; then
+      continue
+    fi
 
     stat_output=$(stat --printf='%Y\t%s' "$archive_file")
     IFS=$'\t' read last_mod_e size_bytes <<< "$stat_output"
