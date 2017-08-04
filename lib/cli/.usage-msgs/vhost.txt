@@ -8,9 +8,8 @@ Usage: @self_basename@ <command> [args]
                                     vhost
     create vhost                    creates a new site with the specified application
     backup vhost                    creates a backup of the app files and database
+    extract backup                  extracts the contents of a backup file
     remove vhost                    removes an existing application
-    restore backup                  restores a backup in an existing vhost (EXPERIMENTAL 
-                                    AND INCOMPLETE (restores only files))
     enter                           start a shell for the specified vhost
     restart mysql                   restarts mysql for the specified vhost or domain
     find domain                     finds the vhost with a specific domain name

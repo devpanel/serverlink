@@ -176,6 +176,12 @@ It'll generate the Let's Encrypt certificates and setup the virtual host with it
 # devpanel backup vhost --vhost d7new
 ```
 
+## Extract the contents of a backup file
+
+```
+# devpanel extract backup --filename a-backup-file.tgz --target-dir a-new-directory
+```
+
 ## Listing existing backup files
 
 ```

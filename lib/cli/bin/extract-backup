@@ -1,0 +1,210 @@
+#!/bin/bash
+
+set_usage_msg \
+  "Usage: $bin_name ${cmd_ar[*]} <opts> <--filename file> <--target-dir dir>
+
+  Options:
+    --vhost    <vhost>          the vhost to restore
+
+    --filename <filename>       name of the archive file to extract
+
+    --target-dir <directory>    directory where to extract the contents.
+                                Must be empty. If it doesn't exist, it'll be
+                                created.
+
+    --only-files                extract only the files (skip the databases)
+
+    --public-files              when extracting files, extract only the
+                                public files (skip the others)
+
+    --only-databases            extract only the databases (skip the other
+                                files)
+
+  Extracts the contents of a backup file into the specified target dir.
+"
+
+devpanel_cmd__extract_backup() {
+  [ $# -eq 0 -o -z "$1" ] && usage
+
+  local name vhost filename target_dir skip_files skip_dbs public_files
+
+  while [ -n "$1" ]; do
+    name="$1"
+    case "$name" in
+      --vhost)
+        [ -z "$2" ] && error_missing_value vhost
+        vhost="$2"
+        shift 2
+        ;;
+      --filename)
+        [ -z "$2" ] && error_missing_value "$name"
+        filename="$2"
+        shift 2
+        ;;
+      --target-dir)
+        [ -z "$2" ] && error_missing_value "$name"
+        target_dir="$2"
+        shift 2
+        ;;
+      --only-files)
+        skip_dbs=1
+        shift
+        ;;
+      --only-databases)
+        skip_files=1
+        shift
+        ;;
+      --public-files)
+        public_files=1
+        shift
+        ;;
+      --help)
+        usage
+        ;;
+      --)
+        shift
+        break
+        ;;
+      *)
+        error "unknown option $name"
+        ;;
+    esac
+  done
+
+  if [ $EUID -ne 0 ]; then
+    if ! vhost=$(get_vhost_from_linuxuser); then
+      error "unable to get vhost for current user" -
+      return $?
+    fi
+  fi
+
+  local param
+  for param in vhost filename target_dir; do
+    [ -z "${!param}" ] && error_missing_param $param
+  done
+
+  if [ -n "$skip_files" -a -n "$skip_dbs" ]; then
+    error "can't use --only-files and --only-databases at the same time." -
+    return $?
+  fi
+
+  local sys_bkp_dir bkp_src_dir archive_file
+  assign_deref_os_prop_or_exit sys_bkp_dir "$sys_dir" data_dir
+
+  bkp_src_dir="$sys_bkp_dir/vhost_archives/$vhost"
+
+  if [ ! -d "$bkp_src_dir" ]; then
+    echo "No backups for vhost (backup dir $bkp_src_dir is missing)" 1>&2
+    exit 0
+  fi
+
+  if [ ! -e "$target_dir" ]; then
+    if ! mkdir -m 700 "$target_dir"; then
+      error "unable to create dir '$target_dir'" -
+      return $?
+    fi
+  elif [ ! -d "$target_dir" ]; then
+    error "directory '$target_dir' exists but is not a directory" -
+    return $?
+  elif [ -d "$target_dir" ]; then
+    local -i n_entries=$(ls -a "$target_dir" | wc -l)
+    if [ $n_entries -ge 2 ]; then
+      error "directory '$target_dir' is not empty." -
+      return $?
+    fi
+
+    if [ ! -w "$target_dir" ]; then
+      error "directory '$target_dir' is not writable" -
+      return $?
+    fi
+  fi
+
+  if [ -f "$filename" ]; then
+    archive_file="$filename"
+  elif [[ "$filename" != */* ]]; then
+    archive_file="$bkp_src_dir/$filename"
+    if [ ! -f "$archive_file" ]; then
+      error "unable to find file $filename" -
+      return $?
+    fi
+  else
+    error "unable to find file $filename" -
+    return $?
+  fi
+
+  temp_dir=$(mktemp -d "$target_dir/tmp_extract.XXXXXX")
+  if [ $? -ne 0 ]; then
+    error "unable to create temporary directory" -
+    return $?
+  fi
+  temp_dirs_ar+=( "$temp_dir" )
+
+  local -a tar_opts_ar=()
+  [ -n "$skip_files" ] && tar_opts_ar+=( --exclude=./web )
+  [ -n "$skip_dbs"   ] && tar_opts_ar+=( --exclude=./db  )
+
+  echo "Extracting file $archive_file ..." 1>&2
+  tar -zxf "$archive_file" -C "$temp_dir" "${tar_opts_ar[@]}"
+  if [ $? -ne 0 ]; then
+    error "unable to extract file '$archive_file' to temp dir $temp_dir" -
+    return $?
+  fi
+
+  if [ -z "$skip_files" ]; then
+    local tmp_vhost tmp_vhost_file web_archive files_dir crontab_file
+    local logs_archive vhost_conf_file
+
+    tmp_vhost_file="$temp_dir/web/id"
+    read tmp_vhost < "$tmp_vhost_file"
+    if [ -z "$tmp_vhost" ]; then
+      error "unable to read vhost from extracted files." -
+      return $?
+    fi
+
+    local -a tar_web_opts_ar=()
+    if [ -n "$public_files" ]; then
+      local include_file="$temp_dir/tmp_pub_files.txt"
+      echo "./public_html/$tmp_vhost" >"$include_file"
+
+      tar_web_opts_ar+=( --files-from="$include_file" --strip-components 3 )
+    fi
+
+    web_archive="$temp_dir/web/w_$tmp_vhost.tgz"
+    files_dir="$target_dir/files"
+    mkdir "$files_dir"
+    echo "Extracting files in $files_dir/ ..." 1>&2
+    tar -zxf "$web_archive" -C "$files_dir" "${tar_web_opts_ar[@]}"
+    if [ $? -ne 0 ]; then
+      error "unable to extract '$web_archive' to dir '$files_dir'" -
+      return $?
+    fi
+
+    crontab_file="$temp_dir/web/crontab"
+    if [ -f "$crontab_file" ]; then
+      mv "$crontab_file" "$target_dir"
+    fi
+
+    vhost_conf_file="$temp_dir/web/apache_$tmp_vhost.conf"
+    if [ -f "$vhost_conf_file" ]; then
+      mv "$vhost_conf_file" "$target_dir/vhost.conf"
+    fi
+
+    if [ -z "$public_files" ]; then
+      logs_archive="$temp_dir/web/logs_$tmp_vhost.tgz"
+      if [ -f "$logs_archive" ]; then
+        mkdir "$target_dir/logs"
+        tar -zxf "$logs_archive" -C "$target_dir/logs"
+      fi
+    fi
+  fi # // [ -z skip_files ]
+
+  if [ -z "$skip_dbs" ]; then
+    if ! mv "$temp_dir/db" "$target_dir"; then
+      error "unable to move db directory to '$target_dir'" -
+      return $?
+    fi
+  fi
+
+  echo "Successfully extracted files on directory $target_dir/" 1>&2
+  return 0
+}

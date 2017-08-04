@@ -6,6 +6,7 @@ Usage: @self_basename@ <command> [args]
 
     list vhosts          lists all vhosts on this server
     backup vhost         creates a backup of the app files and database
+    extract backup       extracts the contents of a backup file
     enter                start a shell for the specified vhost
     restart mysql        restarts mysql for the specified vhost or domain
     enable htpasswd      enables htpasswd password protection for the specified site
