@@ -16,7 +16,9 @@ usage() {
   local msg
 
   if [ -z "$name" ]; then
-    if [ -n "${devpanel_usage_r[$namespace]}" ]; then
+    if [ -z "$namespace" ]; then
+      usage_default
+    elif [ -n "${devpanel_usage_r[$namespace]}" ]; then
       echo "${devpanel_usage_r[$namespace]}" 1>&2
     else 
       usage_default
@@ -242,11 +244,24 @@ show_help_msg() {
 declare -A devpanel_usage_r=()
 
 unset verbose
-getopt_flags='v'
+getopt_flags='vh-'
 while getopts $getopt_flags OPTN; do
   case $OPTN in
     v)
       verbose=1
+      ;;
+    h)
+      usage
+      ;;
+    -)
+      case "$1" in
+        --help|-help)
+          usage
+          ;;
+        *)
+          error "unknown option $1"
+          ;;
+      esac
       ;;
     *)
       exit 1
