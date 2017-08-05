@@ -1,0 +1,101 @@
+#!/bin/bash
+
+set_usage_msg \
+  "Usage: $bin_name ${cmd_ar[*]} <opts>
+
+  Options:
+    --http  <number>        set the HTTP port
+    --https <number>        set the HTTPS port
+
+  Sets the ports where Apache listens.
+"
+
+update_apache_port_file() {
+  local prev_port="$1"
+  local new_port="$2"
+  local file="$3"
+
+  sed -i -e "s/^\([[:space:]]*Listen[[:space:]]\+\)$prev_port[[:space:]]*$/\1$new_port/" "$file"
+}
+
+devpanel_cmd__set_apache_port() {
+  [ $# -eq 0 -o -z "$1" ] && usage
+
+  local name http_port https_port
+  local curr_http_port curr_https_port
+  local -a cmd_args=()
+
+  while [ -n "$1" ]; do
+    name="$1"
+    case "$name" in
+      --http)
+        [ -z "$2" ] && { error_missing_value "$name" ; return $?; }
+        is_valid_port_number "$2" || return $?
+        http_port="$2"
+        shift 2
+        ;;
+      --https)
+        [ -z "$2" ] && { error_missing_value "$name" ; return $?; }
+        is_valid_port_number "$2" || return $?
+        https_port="$2"
+        shift 2
+        ;;
+      --help)
+        usage
+        ;;
+      --)
+        shift
+        break
+        ;;
+      *)
+				usage
+        ;;
+    esac
+  done
+
+  [ -z "$http_port" -a -z "$https_port" ] && usage
+
+  local has_changed
+  local -a vhosts_ar=()
+
+  vhosts_ar=( $(get_list_of_vhosts) )
+  if [ $? -ne 0 ]; then
+    error "unable to get list of vhosts" -
+    return $?
+  fi
+
+  local ports_file
+  ports_file=$(get_apache_ports_file) || return $?
+
+  if [ -n "$http_port" ]; then
+    curr_http_port=$(get_apache_http_port)
+    if [ "$curr_http_port" != "$http_port" ]; then
+      if set_apache_http_port "$http_port"; then
+        update_apache_port_file "$curr_http_port" "$http_port" "$ports_file"
+        has_changed=1
+      fi
+    fi
+  fi
+
+  if [ -n "$https_port" ]; then
+    curr_https_port=$(get_apache_https_port)
+    if [ "$curr_https_port" != "$https_port" ]; then
+      if set_apache_https_port "$https_port"; then
+        update_apache_port_file "$curr_https_port" "$https_port" "$ports_file"
+        has_changed=1
+      fi
+    fi
+  fi
+
+  if [ -z "$has_changed" ]; then
+    echo "Ok, nothing changed."
+    return 0
+  fi
+
+  local vhost
+  for vhost in "${vhosts_ar[@]}"; do
+    devpanel_run rewrite vhost config --no-restart --vhost "$vhost"
+  done
+
+  apache_ctl restart
+}

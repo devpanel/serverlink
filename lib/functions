@@ -163,11 +163,32 @@ get_linux_distro_string() {
   echo "$distro_str"
 }
 
-get_apache_vhosts_port() {
-  deref_contents "$DEVPANEL_HOME/config/packages/apache_vhost/_:Port"
+get_apache_ssl_template_name() {
+  local ssl_dir ssl_tmpl
+  ssl_tmpl=$(deref_os_prop "$DEVPANEL_HOME" names/apache_vhost_ssl_template )
+  if [ $? -eq 0 ]; then
+    echo "$ssl_tmpl"
+    return 0
+  else
+    echo "$FUNCNAME(): unable to get the name of the SSL template" 1>&2
+    return 1
+  fi
 }
 
-set_apache_vhosts_port() {
+get_apache_http_port() {
+  local apache_config_dir="$DEVPANEL_HOME/config/packages/apache_vhost"
+  get_metadata_value "$apache_config_dir" _:Port
+}
+
+get_apache_https_port() {
+  local ssl_tmpl ssl_dir
+  ssl_tmpl=$(get_apache_ssl_template_name) || return $?
+  ssl_dir="$DEVPANEL_HOME/config/packages/apache_vhost/templates/$ssl_tmpl"
+
+  get_metadata_value "$ssl_dir" _:Port
+}
+
+set_apache_http_port() {
   local port="$1"
   if [ -z "$port" ]; then
     echo "$FUNCNAME(): missing port" 1>&2
@@ -177,7 +198,26 @@ set_apache_vhosts_port() {
     return 1
   fi
 
-  ln -sf "$port" "$DEVPANEL_HOME/config/packages/apache_vhost/_:Port"
+  echo "set-local _:Port $port" | "$DEVPANEL_HOME/bin/metadata-handler" -q \
+                                    "$DEVPANEL_HOME/config/packages/apache_vhost"
+}
+
+set_apache_https_port() {
+  local port="$1"
+  if [ -z "$port" ]; then
+    echo "$FUNCNAME(): missing port" 1>&2
+    return 1
+  elif [[ ! "$port" =~ ^[0-9]+$ ]]; then
+    echo "$FUNCNAME(): received a malformed port" 1>&2
+    return 1
+  fi
+
+  local ssl_dir ssl_tmpl
+  ssl_tmpl=$(get_apache_ssl_template_name) || return $?
+  ssl_dir="$DEVPANEL_HOME/config/packages/apache_vhost/templates/$ssl_tmpl"
+
+  echo "set-local _:Port $port" | "$DEVPANEL_HOME/bin/metadata-handler" -q \
+                                    "$ssl_dir"
 }
 
 print_quoted_variables() {
@@ -1273,6 +1313,27 @@ get_apache_metadata_value() {
   fi
 
   get_metadata_value "$vhost_conf_dir" "$key"
+}
+
+is_valid_port_number() {
+  local port="$1"
+
+  if [ -z "$port" ]; then
+    echo "$FUNCNAME(): missing port" 1>&2
+    return 1
+  fi
+
+  if [[ ! "$port" =~ ^[0-9]+$ ]]; then
+    echo "$FUNCNAME(): invalid port string" 1>&2
+    return 1
+  fi
+
+  if [ $port -ge 0 -a $port -le 65535 ]; then
+    return 0
+  else
+    echo "$FUNCNAME(): port out of range, must be within 0-65535" 1>&2
+    return 1
+  fi
 }
 
 is_valid_vhost_string() {
@@ -3105,7 +3166,7 @@ apache_ctl(){
   distro=$(devpanel_auto_detect_distro)
 
   case $distro in
-    ubuntu)
+    ubuntu|debian)
       service_name="apache2"
     ;;
     centos|redhat)
@@ -3123,10 +3184,17 @@ apache_ctl(){
     restart)
       service ${service_name} restart
     ;;
+    reload)
+      service ${service_name} reload
+    ;;
     status)
       service ${service_name} status
     ;;
   esac
+}
+
+get_apache_ports_file() {
+  deref_os_prop "$DEVPANEL_HOME" names/apache_ports_file
 }
 
 install_distro_pkgs() {

@@ -355,6 +355,10 @@ update_apache_config()
   fi
 }
 
+move_apache_ports() {
+  devpanel set apache port --http 8080 --https 8443
+}
+
 detect_running_apache_and_patch_configs()
 {
   local -a local_vhosts_ar=()
@@ -363,18 +367,16 @@ detect_running_apache_and_patch_configs()
 
   base_domain=$(get_server_base_domain)
 
-  set_apache_vhosts_port 8080
+  local apache_port=$(get_apache_http_port)
+  if [ "$apache_port" == 80 ]; then
+    move_apache_ports
+  fi
 
   local_vhosts_ar=( $(get_list_of_local_vhosts) )
   n_vhosts=${#local_vhosts_ar[@]}
 
   if [ $n_vhosts -gt 0 ]; then
-
     for vhost in "${local_vhosts_ar[@]}"; do
-      # update the config of each local vhost to get the new port just set
-      # above
-      "$sys_dir/libexec/config-vhost-apache" -n "$vhost"
-
       declare -a serverliases_ar=()
       serveraliases_ar=( $(get_hostnames_from_vhost "$vhost") )
       serveraliases_ar+=( "${vhost}-gen.${base_domain}" )
@@ -384,20 +386,6 @@ detect_running_apache_and_patch_configs()
 
       create_nginx_config
     done
-
-    distro=$(devpanel_auto_detect_distro)
-    if [ "$distro" == "centos" ]; then
-        sed -i 's/^Listen 80$/Listen 8080/' /etc/httpd/conf/httpd.conf
-    else
-        sed -i 's/^Listen 80$/Listen 8080/' /etc/apache2/ports.conf
-    fi
-
-    # restart apache
-    if [ "$distro" == "centos" ]; then
-        ${sudo} service httpd restart
-    else
-        ${sudo} service apache2 restart
-    fi
 
     # update nginx configs with apache's hosts
     restart_or_reload_nginx

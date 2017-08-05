@@ -219,7 +219,9 @@ docker_build_or_pull_and_tag cache
 
 # check for nginx installation
 if [ ! -f /usr/sbin/nginx ]; then
+  move_apache_ports
   ${sudo} ${installation_tool} nginx
+  detect_running_apache_and_patch_configs
 fi
 
 # check for AWS CLI installation

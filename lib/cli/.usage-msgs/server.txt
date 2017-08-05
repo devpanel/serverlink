@@ -23,6 +23,7 @@ Usage: @self_basename@ <command> [args]
     stop  taskd                 stop devPanel taskd
     debug taskd                 starts devPanel taskd in debug mode
     manage root ssh keys        manages ssh keys for the user root
+    set apache port             sets the HTTP and HTTPS ports of Apache
 
 
  For help with a specific command, please run:
