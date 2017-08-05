@@ -82,7 +82,13 @@ debian_adjust_system_config() {
 
   if hash systemctl &>/dev/null; then
     systemctl enable devpanel-taskd
-    systemctl disable mysql
+
+    # the idea of disabling mysql was not to confuse users with an extra
+    # mysql. But the problem is that on some versions apt-get gets broken
+    # because mysql doesn't run the dpkg-configure correctly when mysql is
+    # disabled on systemd.
+    #
+    # systemctl disable mysql
   else
     local taskd_init=/etc/init.d/devpanel-taskd
     if [ -L "$taskd_init" -o -e "$taskd_init" ]; then
