@@ -1864,12 +1864,16 @@ get_hostnames_from_vhost() {
 
   local vhost_conf_dir="$DEVPANEL_HOME/config/vhosts/$vhost"
 
-  local base_domain base_domain_real tmp_link tmp_name tmp_fmt_name
+  local base_domain default_domain
+  local tmp_link tmp_name tmp_fmt_name 
   local -a hosts_ar=()
 
   base_domain=$(get_vhost_base_domain "$vhost") || return $?
 
+  default_domain=$(get_vhost_default_hostname "$vhost") || return $?
+
   hosts_ar+=( "$base_domain" )
+  hosts_ar+=( "$default_domain" )
 
   for tmp_link in "$vhost_conf_dir/apache_vhost:0:_:ServerAlias:"*; do
     if [ ! -L "$tmp_link" ]; then
