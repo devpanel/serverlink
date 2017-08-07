@@ -7,6 +7,7 @@ usage() {
   echo "Usage: ${0##*/} [options]
 
   Options:
+    -o file.tar.gz    file where to save the resulting archive
     -h                display the usage msg
 
 
@@ -17,6 +18,8 @@ usage() {
 }
 
 cleanup() {
+  [ -f "$tmp_output_file" ] && rm -f "$tmp_output_file"
+
   if [ -n "$vhost_created" ]; then
     temp_rm_file=$(mktemp)
     if [ $? -ne 0 ]; then
@@ -37,11 +40,15 @@ cleanup() {
 # main
 app_type=wordpress
 
-getopt_flags='h'
+unset archive_file
+getopt_flags='ho:'
 while getopts $getopt_flags OPTN; do
   case $OPTN in
     h)
       usage
+      ;;
+    o)
+      output_file="$OPTARG"
       ;;
     *)
       exit 1
@@ -58,6 +65,15 @@ fi
 
 self_dir="${self_bin%/*}"
 sys_dir="${self_dir%/*/*/*}" # assuming src/seedapps/<app>
+
+if [ -z "$output_file" ]; then
+  date_suffix=$(date +%b-%d-%Y-%Hh%mm)
+  output_file="${app_type}-${date_suffix}.tgz"
+fi
+
+if [ -f "$output_file" ]; then
+  error "output file '$output_file' already exists."
+fi
 
 lib_f="$sys_dir/lib/functions"
 if ! source "$lib_f"; then
@@ -80,6 +96,11 @@ tmp_vhost="${tmp_vhost_str2,,}"
 admin_pw=$( $passgen_bin )
 if [ $? -ne 0 ]; then
   error "unable to generate admin password"
+fi
+
+tmp_output_file=$(mktemp)
+if [ $? -ne 0 ]; then
+  error "unable to create temporary file"
 fi
 
 unset vhost_created
@@ -129,9 +150,13 @@ if [ $? -ne 0 ]; then
   error "unable to cleanely setup environment"
 fi
 
-archive_file="$app_type-@archive_template_str@"
-"$sys_dir/libexec/archive-vhost" "$tmp_vhost" "$archive_file"
+"$sys_dir/libexec/archive-vhost" "$tmp_vhost" - >"$tmp_output_file"
 if [ $? -eq 0 ]; then
-  echo "Successfully built Wordpress seed app."
-  exit 0
+  if mv -n "$tmp_output_file" "$output_file"; then
+    chmod 644 "$output_file"
+    echo "Successfully built Wordpress seed app."
+    exit 0
+  else
+    error "unable to copy temp file $tmp_output_file to $output_file"
+  fi
 fi

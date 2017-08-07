@@ -21,6 +21,8 @@ usage() {
 }
 
 cleanup() {
+  [ -f "$tmp_output_file" ] && rm -f "$tmp_output_file"
+
   if [ -n "$vhost_created" ]; then
     temp_rm_file=$(mktemp)
     if [ $? -ne 0 ]; then
@@ -103,6 +105,11 @@ if [ $? -ne 0 ]; then
   error "unable to generate admin password"
 fi
 
+tmp_output_file=$(mktemp)
+if [ $? -ne 0 ]; then
+  error "unable to create temporary file"
+fi
+
 unset vhost_created
 if ! "$sys_dir/libexec/restore-vhost" "$tmp_vhost" we://blank; then
   error "unable to create temporary vhost"
@@ -166,9 +173,14 @@ if [ $? -ne 0 ]; then
   error "unable to cleanely setup environment"
 fi
 
-"$sys_dir/libexec/archive-vhost" "$tmp_vhost" - >"$output_file"
+"$sys_dir/libexec/archive-vhost" "$tmp_vhost" - >"$tmp_output_file"
 if [ $? -eq 0 ]; then
-  echo "Successfully built Grav distribution $distro"
-  echo "Saved output file to $output_file"
-  exit 0
+  if mv -n "$tmp_output_file" "$output_file"; then
+    chmod 644 "$output_file"
+    echo "Successfully built Grav distribution $distro"
+    echo "Saved output file to $output_file"
+    exit 0
+  else
+    error "unable to copy $tmp_output_file to $output_file"
+  fi
 fi
