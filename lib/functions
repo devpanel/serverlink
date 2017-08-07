@@ -3112,11 +3112,11 @@ get_tarball_url_for_app() {
     return 1
   fi
   
-  local filename base_url real_url
-  if ltsv_get_value filename "${info_ar[0]}"; then
-    filename="$_ltsv_value"
+  local file_uri base_url real_url
+  if ltsv_get_value file_uri "${info_ar[0]}"; then
+    file_uri="$_ltsv_value"
   else
-    echo "$FUNCNAME(): missing filename field for app $app" 1>&2
+    echo "$FUNCNAME(): missing file_uri field for app $app" 1>&2
     return 1
   fi
 
@@ -3127,12 +3127,8 @@ get_tarball_url_for_app() {
     return 1
   fi
 
-  if [[ "$filename" == +([a-zA-Z]+)://* ]]; then
-    real_url="$filename"
-  else
-    base_url=$(get_base_url_for_publisher "$publisher") || return $?
-    real_url="${base_url%/}/$filename"
-  fi
+  base_url=$(get_base_url_for_publisher "$publisher") || return $?
+  real_url="${base_url%/}/${file_uri#/}"
 
   echo "$real_url"
 
