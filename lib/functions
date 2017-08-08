@@ -1873,7 +1873,9 @@ get_hostnames_from_vhost() {
   default_domain=$(get_vhost_default_hostname "$vhost") || return $?
 
   hosts_ar+=( "$base_domain" )
-  hosts_ar+=( "$default_domain" )
+  if [ "$base_domain" != "$default_domain" ]; then
+    hosts_ar+=( "$default_domain" )
+  fi
 
   for tmp_link in "$vhost_conf_dir/apache_vhost:0:_:ServerAlias:"*; do
     if [ ! -L "$tmp_link" ]; then
@@ -3249,4 +3251,79 @@ get_php_version_from_vhost() {
 
 get_default_php_version() {
   deref_os_prop "$DEVPANEL_HOME" php_default_version
+}
+
+is_nginx_on_port80() {
+  local apache_port pids_on_port80 tst_pid pid_exe
+
+  apache_port=$(get_apache_http_port ) || return $?
+
+  if [ "$apache_port" != 80 ]; then
+    if pids_on_port80=$(fuser 80/tcp 2>/dev/null ); then
+      while [ -n "$pids_on_port80" -a "${pids_on_port80:0:1}" == " " ]; do
+        # remove the leading space from the output
+        pids_on_port80="${pids_on_port80# }"
+      done
+
+      # test the first pid to see if it's nginx
+      tst_pid=${pids_on_port80%% *}
+
+      pid_exe=$(readlink -e /proc/$tst_pid/exe ) || return $?
+      if [[ "$pid_exe" == *nginx ]]; then
+        return 0
+      fi
+    fi
+  fi
+
+  return 1
+}
+
+write_nginx_local_vhost() {
+  local vhost="$1"
+
+  if ! vhost_exists "$vhost"; then
+    echo "$FUNCNAME(): vhost doesn't exist" 1>&2
+    return 1
+  fi
+
+  local nginx_vhost_dir nginx_vhost_lnk_dir
+  local vhost_base_domain vhost_file vhost_lnk vhost_hostnames vhost_txt
+  local apache_http_port server_base_domain
+
+  server_base_domain=$(get_server_base_domain )       || return $?
+  vhost_base_domain=$(get_vhost_base_domain "$vhost") || return $?
+  apache_http_port=$(get_apache_http_port )           || return $?
+
+  nginx_vhost_dir="/etc/nginx/sites-available"
+  nginx_vhost_lnk_dir="/etc/nginx/sites-enabled"
+
+  vhost_file="$nginx_vhost_dir/$vhost_base_domain.conf"
+  vhost_lnk="$nginx_vhost_lnk_dir/$vhost_base_domain.conf"
+
+  local vhost_tmpl_txt='
+server {
+  listen       80;
+  server_name  @vhost_hostnames@ @vhost@-gen.@server_base_domain@;
+  location / {
+    proxy_set_header Host $host;
+    proxy_pass http://127.0.0.1:@apache_http_port@;
+  }
+}
+'
+
+  vhost_hostnames=$(get_hostnames_from_vhost "$vhost") || return $?
+  vhost_hostnames=${vhost_hostnames//$'\n'/ }
+  vhost_txt="$vhost_tmpl_txt"
+  vhost_txt="${vhost_txt//@vhost@/$vhost}"
+  vhost_txt="${vhost_txt//@server_base_domain@/$server_base_domain}"
+  vhost_txt="${vhost_txt//@vhost_hostnames@/$vhost_hostnames}"
+  vhost_txt="${vhost_txt//@apache_http_port@/$apache_http_port}"
+
+  if echo "$vhost_txt" >"$vhost_file"; then
+    rm -f "$vhost_lnk"
+    ln -s "$vhost_file" "$vhost_lnk"
+  else
+    echo "$FUNCNAME(): unable to write vhost file '$vhost_file'" 1>&2
+    return 1
+  fi
 }

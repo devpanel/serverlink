@@ -361,35 +361,17 @@ move_apache_ports() {
 
 detect_running_apache_and_patch_configs()
 {
-  local -a local_vhosts_ar=()
-  local -i n_vhosts=0
-  local base_domain=""
+  local apache_port
 
-  base_domain=$(get_server_base_domain)
-
-  local apache_port=$(get_apache_http_port)
+  apache_port=$(get_apache_http_port)
+  
   if [ "$apache_port" == 80 ]; then
     move_apache_ports
+    create_nginx_config
   fi
 
-  local_vhosts_ar=( $(get_list_of_local_vhosts) )
-  n_vhosts=${#local_vhosts_ar[@]}
-
-  if [ $n_vhosts -gt 0 ]; then
-    for vhost in "${local_vhosts_ar[@]}"; do
-      declare -a serverliases_ar=()
-      serveraliases_ar=( $(get_hostnames_from_vhost "$vhost") )
-      serveraliases_ar+=( "${vhost}-gen.${base_domain}" )
-
-      servername=${serveraliases_ar[0]}
-      serveraliases="${serveraliases_ar[*]}"
-
-      create_nginx_config
-    done
-
-    # update nginx configs with apache's hosts
-    restart_or_reload_nginx
-  fi
+  # update nginx configs with apache's hosts
+  restart_or_reload_nginx
 }
 
 update_scripts()
@@ -465,34 +447,6 @@ operation_handle()
       elif [ "$app_hosting" == "local" ]; then
         su - w_${vhost} -c "${sys_dir}/${handler_options}"
       fi
-    ;;
-
-    libexec/restore-vhost*http://www.webenabled.com/seedapps/*)
-      ${sys_dir}/${handler_options}
-      if [ -z "${app}" ]; then
-        case "$handler_options" in
-          libexec/restore-vhost*http://www.webenabled.com/seedapps/wordpress*.tgz)
-            app="wordpress"
-          ;;
-          libexec/restore-vhost*http://www.webenabled.com/seedapps/drupal-v7*.tgz)
-            app="drupal"
-          ;;
-          libexec/restore-vhost*http://www.webenabled.com/seedapps/drupal-v8*.tgz)
-            app="drupal8"
-          ;;
-          libexec/restore-vhost*http://www.webenabled.com/seedapps/mag*.tgz)
-            app="magento"
-          ;;
-          libexec/restore-vhost*http://www.webenabled.com/seedapps/grav*.tgz)
-            app="grav"
-          ;;
-          *)
-            echo "App not supported."
-            exit 1
-          ;;
-        esac
-      fi
-      create_local_config
     ;;
 
     libexec/restore-vhost*)
@@ -622,34 +576,18 @@ operation_create()
     echo "exit 0" >> /etc/rc.local
   elif [ "$host_type" == "local" ]; then
     vhost=`echo "${domain}" | awk -F'[.]' '{print $1}'`
-    domain_name=`echo "${domain}" | awk -F"${vhost}." '{print $2}'`
-    ${sudo} ${sys_dir}/libexec/config-vhost-names-default ${domain_name}
-
-    # get seedapps
-    case "$app" in
-      wordpress)
-        app_arch="wordpress-v4.1.tgz"
-      ;;
-      drupal)
-        app_arch="drupal-v7.50.tgz"
-      ;;
-      drupal8)
-        app_arch="drupal-v8.1.8.tgz"
-      ;;
-      magento)
-        app_arch="mag1800.tgz"
-      ;;
-      *)
-        echo "App not supported."
-        exit 1
-      ;;
-    esac
-    # check for downloaded app
-    if [ ! -f ${sys_dir}/${app}/${app_arch} ]; then
-      ${sudo} mkdir -p ${sys_dir}/${app} && cd ${sys_dir}/${app} && wget https://www.webenabled.com/seedapps/${app_arch} && tar zxvf ${app_arch}
+    if [ -z "$app" ]; then
+      echo "Error: missing app parameter. Please specify it with -A" 1>&2
+      return 1
     fi
 
-    ${sudo} ${sys_dir}/libexec/restore-vhost -F ${vhost} ${sys_dir}/${app}
+    ${sudo} devpanel install app --app "${app}" --publisher devpanel --vhost "${vhost}"
+    local st=$?
+    if [ $st -ne 0 ]; then
+      echo "Error: failed to install app '$app' on vhost '$vhost'" 1>&2
+      return $st
+    fi
+
     detect_running_apache_and_patch_configs
   else
     show_help
