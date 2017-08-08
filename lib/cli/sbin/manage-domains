@@ -68,5 +68,10 @@ devpanel_cmd__manage_domains() {
   [ -z "$vhost" ]           && error_missing_param vhost
   [ ${#cmd_args[@]} -eq 0 ] && usage
 
+  if ! vhost_exists "$vhost"; then
+    error "vhost '$vhost' doesn't exist." -
+    return $?
+  fi
+
   "$sys_dir/libexec/config-vhost-names" "$vhost" "${cmd_args[@]}"
 }
