@@ -415,20 +415,9 @@ assemble_pkg_url() {
   if [ -n "$arch" -a "$arch" != "-" ]; then
     relative_url+="-$arch"
   fi
+  relative_url+=".tar.gz"
 
-  local previous_url="$base_url" stripped_url=""
-  while echo "$previous_url" | egrep -q '^[a-z0-9A-Z]+://[^/]+/'; do
-    # recursively remove the /path/some/other/nested/path from the URL 
-    # until all paths are removed and remains only the proto/host
-    stripped_url=${previous_url%/*}
-    if [ "$stripped_url" != "$previous_url" ]; then
-      previous_url="$stripped_url"
-    else
-      break
-    fi
-  done
-
-  url="$stripped_url/$relative_url.tar.gz"
+  url="${base_url%/}/${relative_url#/}"
 
   echo "$url"
 }
@@ -571,9 +560,10 @@ fi
 trap 'exit 1' INT HUP TERM QUIT
 trap 'cleanup' EXIT
 
-updates_file="$tmp_dir/updates_$base_channel.txt"
+pkg_index_url="${packages_url%/}/metadata.ltsv"
+updates_file="$tmp_dir/package_index.ltsv"
 
-if ! download_file "$packages_url" "$updates_file"; then
+if ! download_file "$pkg_index_url" "$updates_file"; then
   error "unable to download update file"
 fi
 
@@ -604,35 +594,45 @@ while read update_line; do
     continue
   fi
 
-  unset v_installed v_needs_update
+  unset v_installed v_needs_update has_missing_field
 
-  declare -a fields_ar=( package serial latest_version pkg_distro \
-                         pkg_distro_version arch sha512_str flags )
-
-  IFS=$'\t' read "${fields_ar[@]}" <<< "$update_line"
+  declare -a fields_ar=( name serial version distro \
+                          file_uri file_hash distro_version arch )
 
   for field in "${fields_ar[@]}"; do
-    if [ -z "${!field}" ]; then
+    unset pkg_$field
+    ltsv_get_value $field "$update_line" && declare pkg_$field="$_ltsv_value"
+  done
+
+  for field in "${fields_ar[@]}"; do
+    field_var="pkg_$field"
+    if [ -z "${!field_var}" ]; then
+      has_missing_field=1
       echo "Warning: missing field $field on line $line_n" 1>&2
       sleep 1
       continue
     fi
   done
 
+  if [ -n "$has_missing_field" ]; then
+    echo "Warning: skipping line $line_n due to missing fields" 1>&2
+    continue
+  fi
+
   # this avoids a package from being installed or updated more than once
   # when there are multiple rules (e.g. a package with specific distro versions and
   # versions without a distro specification)
-  if in_array "$package" ${just_handled_ar[*]}; then
+  if in_array "$pkg_name" ${just_handled_ar[*]}; then
     continue
   fi
- 
+
   # skip if the package is for a specific distro that not the current one
   if [ "$pkg_distro" != "-" -a "$pkg_distro" != "$linux_distro" ]; then
     continue
   fi
 
   # skip if it's for an architecture other than this one
-  if [ "$arch" != "-" -a "$arch" != "$linux_arch" ]; then
+  if [ "$pkg_arch" != "-" -a "$pkg_arch" != "$linux_arch" ]; then
     continue
   fi
 
@@ -645,60 +645,57 @@ while read update_line; do
     continue
   fi
 
-  if is_installed "$package" "$latest_version" "$system_dir"; then
+  if is_installed "$pkg_name" "$pkg_version" "$system_dir"; then
     v_installed=1
   fi
 
-  if [ -z "$v_installed" ] && is_to_skip_install "$package"; then
-    [ $verbose -gt 0 ] && echo "Skipping $package, configured not to install"
+  if [ -z "$v_installed" ] && is_to_skip_install "$pkg_name"; then
+    [ $verbose -gt 0 ] && echo "Skipping $pkg_name, configured not to install"
     continue # not installed, and configured not to install
-  elif [ -n "$v_installed" ] && is_to_skip_updates "$package"; then
-    [ $verbose -gt 0 ] && echo "Skipping $package, configured not to update"
+  elif [ -n "$v_installed" ] && is_to_skip_updates "$pkg_name"; then
+    [ $verbose -gt 0 ] && echo "Skipping $pkg_name, configured not to update"
     continue # installed but configured not to update
-  elif [ -n "$v_installed" ] && needs_update "$package" "$serial"; then
+  elif [ -n "$v_installed" ] && needs_update "$pkg_name" "$pkg_serial"; then
     v_needs_update=1 # installed and needs update
   elif [ -n "$v_installed" -a -z "$v_needs_update" ]; then
     continue # is installed and doesn't need update
   fi
 
   if [ -z "$v_installed" -o -n "$v_needs_update" ]; then
-    pkg_file="$tmp_dir/"
+    pkg_file="$tmp_dir/${pkg_file_uri##*/}"
+    pkg_url="${packages_url%/}/${pkg_file_uri#/}"
 
-    pkg_url=`assemble_pkg_url "$packages_url" "$package" "$latest_version" \
-      "$pkg_distro" "$pkg_distro_version" "$arch"`
-
-    pkg_file+=`assemble_pkg_filename "$package" "$latest_version" \
-      "$pkg_distro" "$pkg_distro_version" "$arch"`
-
-    echo "Downloading $package $latest_version from $pkg_url..." 1>&2
-    just_handled_ar+=( "$package" )
-    if ! download_file "$pkg_url" "$pkg_file"; then
-      echo "Warning: failed download for package '$package' version '$latest_version' from URL '$pkg_url'" 1>&2
+    echo "Downloading $pkg_name $pkg_version from $pkg_url..." 1>&2
+    just_handled_ar+=( "$pkg_name" )
+    # if ! download_file "$pkg_url" "$pkg_file"; then
+    if ! download_file_n_check_sha512 "$pkg_url" "$pkg_file" '' '' \
+        "$pkg_file_hash"; then
+      echo "Warning: failed download for package '$pkg_name' version '$pkg_version' from URL '$pkg_url'" 1>&2
       n_failed_update+=1
       continue
     fi
   fi
 
   if [ -z "$v_installed" ]; then
-    echo "Installing $package version $latest_version..."
-    devpanel_install_pkg "$package" "$serial" "$latest_version" \
-                         "$pkg_file" "$sha512_str" "$system_dir"
+    echo "Installing $pkg_name version $pkg_version..."
+    devpanel_install_pkg "$pkg_name" "$pkg_serial" "$pkg_version" \
+                         "$pkg_file" "$pkg_file_hash" "$system_dir"
     if [ $? -eq 0 ]; then
       n_installed+=1
     else
       n_failed_install+=1
     fi
-    just_handled_ar+=( "$package" )
+    just_handled_ar+=( "$pkg_name" )
   elif [ -n "$v_needs_update" ]; then
-    echo "Updating $package ... (new serial: $serial, new version: $latest_version)"
-    devpanel_upgrade_pkg "$package" "$serial" "$latest_version" \
-                         "$pkg_file" "$sha512_str" "$system_dir"
+    echo "Updating $pkg_name ... (new serial: $pkg_serial, new version: $pkg_version)"
+    devpanel_upgrade_pkg "$pkg_name" "$pkg_serial" "$pkg_version" \
+                         "$pkg_file" "$pkg_file_hash" "$system_dir"
     if [ $? -eq 0 ]; then
       n_updated+=1
     else
       n_failed_update=1
     fi
-    just_handled_ar+=( "$package" )
+    just_handled_ar+=( "$pkg_name" )
   fi
 done < "$updates_file"
 

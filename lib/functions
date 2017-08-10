@@ -535,6 +535,26 @@ download_file() {
   return $status
 }
 
+download_file_n_check_sha512() {
+  download_file "$@" || return $?
+
+  local file exp_sha sha512 
+
+  file="$2"
+  exp_sha="$5"
+
+
+  sha512=$(calc_sha512_of_file "$file") || return $?
+
+  if [ "$sha512" == "$exp_sha" ]; then
+    return 0
+  else
+    echo "$FUNCNAME(): warning, sha512 '$sha512' doesn't match" \
+         "the expected '$exp_sha'" 1>&2
+    return 1
+  fi
+}
+
 get_url_from_cache() {
   local url="$1"
   local retries=${3:-3}
