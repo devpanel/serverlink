@@ -7,8 +7,9 @@ set_usage_msg \
 "
 
 devpanel_cmd__update() {
-
+  # first update the system scripts
   "$sys_dir/libexec/update-scripts" || return $?
 
-  "$sys_dir/libexec/update-packages" -y
+  # then update the system packages
+  "$sys_dir/libexec/package-mgr" update-all -y
 }

@@ -414,7 +414,7 @@ ServerName $dp_server_hostname
     fi
   fi
 
-  "$webenabled_install_dir/libexec/update-packages" -y
+  "$webenabled_install_dir/libexec/package-mgr" update-all -y
 
   "$webenabled_install_dir/compat/suexec/chcgi" w_ +7
   

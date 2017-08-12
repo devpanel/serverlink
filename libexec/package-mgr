@@ -2,16 +2,41 @@
 
 declare -a just_handled_ar
 
+error() {
+  local msg="$1"
+  local exit_code="${2:-1}"
+
+  [ -n "$msg" ] && echo "Error: $msg" 1>&2
+
+  if [ "$exit_code" == - ]; then
+    return 1
+  else
+    exit $exit_code
+  fi
+}
+
 usage() {
-  echo "Usage: `basename "$0"`"
+  echo "Usage: ${0##*/} [global_options] <command> <options>
+
+  Global Options:
+    -h|--help [cmd]             show this help message
+
+  Commands:
+    install
+    uninstall
+    update-all
+    remove
+
+  To get help about a specific command, run:
+  \$ ${0##*/} --help <command>
+"
 
   exit 1
 }
 
 is_installed() {
   local pkg="$1"
-  local ver="$2"
-  local system_dir="$3"
+  local system_dir="${2:-$system_dir}"
 
   if [ -L "$system_dir/config/packages/$pkg/version" ]; then
     return 0
@@ -101,9 +126,41 @@ remove_leftover_files() {
     return 1
   fi
 
+  if [ -s "$only_in_old_txt" ]; then
+    # if there are files present only the in the previous version
+
+    # remove the files that are only in the previous package
+    remove_pkg_files_from_list "$only_in_old_txt" "$system_dir" "$tmp_pkg_dir"
+  else
+    # all files are the same
+    return 0
+  fi
+}
+
+remove_pkg_files_from_list() {
+  local list_file="$1"
+  local system_dir="$2"
+  local tmp_dir="$3"
+
+  if [ ! -e "$list_file" ]; then
+    echo "$FUNCNAME(): list file '$list_file' doesn't exist" 1>&2
+    return 1
+  elif [ ! -f "$list_file" ]; then
+    echo "$FUNCNAME(): list file '$list_file' is not a regular file" 1>&2
+    return 1
+  elif [ ! -s "$list_file" ]; then
+    echo "$FUNCNAME(): list file '$list_file' is empty" 1>&2
+    return 1
+  fi
+
+  if [ ! -d "$tmp_dir" ]; then
+    echo "$FUNCNAME(): missing tmp dir '$tmp_dir'" 1>&2
+    return 1
+  fi
+
   local file full_file_path
-  local old_dirs_txt="$tmp_pkg_dir/old_dirs.txt"
-  local old_others_txt="$tmp_pkg_dir/old_others.txt"
+  local dirs_txt="$tmp_dir/dirs.txt"
+  local others_txt="$tmp_dir/others.txt"
 
   while read file; do
     full_file_path=$(readlink -m "$system_dir/$file")
@@ -115,14 +172,14 @@ remove_leftover_files() {
     if [ ! -e "$full_file_path" ]; then
       continue # skip files that have been removed
     elif [ -d "$full_file_path" ]; then
-      echo "$full_file_path" >>"$old_dirs_txt"
+      echo "$full_file_path" >>"$dirs_txt"
     else
-      echo "$full_file_path" >>"$old_others_txt"
+      echo "$full_file_path" >>"$others_txt"
     fi
-  done < "$only_in_old_txt"
+  done < "$list_file"
 
   # first remove all files (and symlinks, etc)
-  if [ -s "$old_others_txt" ]; then
+  if [ -s "$others_txt" ]; then
     [ -n "$verbose" ] && echo "Removing left over files..."
     while read file; do
       if is_inside_system_dir "$file"; then
@@ -132,20 +189,21 @@ remove_leftover_files() {
         echo "  Warning: file $file is outside directory $system_dir, skipping..." 1>&2
         sleep 1
       fi
-    done < "$old_others_txt"
+    done < "$others_txt"
   fi
 
   # now remove directories of the package
-  if [ -s "$old_dirs_txt" ]; then
+  if [ -s "$dirs_txt" ]; then
 
     # for directory removal the file needs to be reverse sorted because
     # directories need to be removed in an inverse order
     # e.g. /a /a/b  /a/b/c needs  to be removed first as /a/b/c then
     # /a/b and only then /a
-    local old_dirs_rev_txt="$old_dirs_txt.rev"
-    sort -r -u "$old_dirs_txt" >"$old_dirs_rev_txt"
+    local dirs_rev_txt="$dirs_txt.rev"
+    sort -r -u "$dirs_txt" >"$dirs_rev_txt"
     if [ $? -ne 0 ]; then
-      error "unable to sort-reverse file $old_dirs_txt"
+      echo "$FUNCNAME(): unable to sort-reverse file $dirs_txt" 1>&2
+      return 1
     fi
 
     [ -n "$verbose" ] && echo "Removing left over directories..."
@@ -175,7 +233,7 @@ remove_leftover_files() {
         echo "  Warning: directory $dir_name is outside directory $system_dir, skipping..." 1>&2
         sleep 1
       fi
-    done < "$old_dirs_rev_txt"
+    done < "$dirs_rev_txt"
   fi
 
   return 0
@@ -186,8 +244,7 @@ devpanel_install_pkg() {
   local serial="$2"
   local version="$3"
   local file="$4"
-  local exp_sha="$5"
-  local system_dir="$6"
+  local system_dir="$5"
 
   local tmp_pkg_dir="$tmp_dir/$package/pkg-extracted"
   if [ ! -d "$tmp_pkg_dir" ] && ! mkdir -p "$tmp_pkg_dir" ; then
@@ -199,18 +256,6 @@ devpanel_install_pkg() {
   extract_raw_file_list "$file" >"$raw_files_list"
   if [ $? -ne 0 ]; then
     echo "$FUNCNAME(): unable to extract the list of files in the package" 1>&2
-    return 1
-  fi
-
-  local calc_sha
-  calc_sha=$(calc_sha512_of_file "$file")
-  if [ $? -ne 0 ]; then
-    return 1
-  fi
-
-  if [ "$calc_sha" != "$exp_sha" ]; then
-    printf "%s(): skipping $package, mismatch in sha512 of file %s, expected %s got %s\n" \
-      $FUNCNAME "$file" "$exp_sha" "$calc_sha"
     return 1
   fi
 
@@ -294,8 +339,7 @@ devpanel_upgrade_pkg() {
   local serial="$2"
   local version="$3"
   local file="$4"
-  local exp_sha="$5"
-  local system_dir="$6"
+  local system_dir="$5"
 
   local pkg_reg_dir="$system_dir/config/packages/$package"
   if [ ! -d "$pkg_reg_dir" ]; then
@@ -392,61 +436,37 @@ devpanel_upgrade_pkg() {
   return 0
 }
 
-assemble_pkg_url() {
-  local base_url="$1"
-  local pkg_name="$2"
-  local pkg_version="$3"
-  local distro="$4"
-  local distro_version="$5"
-  local arch="$6"
+devpanel_remove_package() {
+  local package="${1##*/}"
+  local system_dir="${2:-$system_dir}"
 
-  local url
-  local relative_url
-
-  relative_url="$pkg_name/${pkg_name}-${pkg_version}"
-  if [ -n "$distro" -a "$distro" != "-" ]; then
-    relative_url+="-$distro"
+  if [ -z "$package" -o -z "$system_dir" ]; then
+    echo "$FUNCNAME(): missing arguments" 1>&2
+    return 1
   fi
 
-  if [ -n "$distro_version" -a "$distro_version" != "-" ]; then
-    relative_url+="-$distro_version"
+  if [ ! -d "$system_dir" ]; then
+    echo "$FUNCNAME(): missing system_dir directory '$system_dir'" 1>&2
+    return 1
   fi
 
-  if [ -n "$arch" -a "$arch" != "-" ]; then
-    relative_url+="-$arch"
-  fi
-  relative_url+=".tar.gz"
-
-  url="${base_url%/}/${relative_url#/}"
-
-  echo "$url"
-}
-
-assemble_pkg_filename() {
-  local pkg_name="$1"
-  local pkg_version="$2"
-  local distro="$3"
-  local distro_version="$4"
-  local arch="$5"
-
-  local filename
-
-  filename="${pkg_name}-${pkg_version}"
-  if [ -n "$distro" -a "$distro" != "-" ]; then
-    filename+="-$distro"
+  local pkg_reg_dir file_list 
+  pkg_reg_dir="$system_dir/config/packages/$package"
+  file_list="$pkg_reg_dir/filelist.txt"
+  if [ ! -d "$pkg_reg_dir" ]; then
+    echo "$FUNCNAME(): missing package reg dir '$pkg_reg_dir'" 1>&2
+    return 1
   fi
 
-  if [ -n "$distro_version" -a "$distro_version" != "-" ]; then
-    filename+="-$distro_version"
+  if [ -s "$file_list" ]; then
+    remove_pkg_files_from_list "$file_list" "$system_dir" "$tmp_dir"
+    if [ $? -ne 0 ]; then
+      echo "$FUNCNAME(): unable to remove package file" 1>&2
+      return 1
+    fi
   fi
 
-  if [ -n "$arch" -a "$arch" != "-" ]; then
-    filename+="-$arch"
-  fi
-
-  filename+=".tar.gz"
-
-  echo "$filename"
+  rm -rf "$pkg_reg_dir"
 }
 
 extract_raw_file_list() {
@@ -481,12 +501,36 @@ filter_pkg_files() {
   ' "$input_file"
 }
 
-usage() {
-  echo "Usage: `basename "$0"` [ options ] -y
+usage_update_all() {
+  echo "Usage: ${0##*/} update-all [ options ] -y
 
   Options:
     -y            effectively update
     -h            show this usage msg
+"
+  exit 1
+}
+
+usage_install() {
+  echo "Usage: ${0##*/} install [options] <-f file> <-p name> <-V version>
+
+  Options:
+    -n package_name           name of the package
+    -f package_file           file that has the package contents
+    -V version                version string for the package
+    -S serial_number          serial number of the package (by default 0)
+    -h                        show this usage msg
+"
+  exit 1
+}
+
+usage_uninstall() {
+  echo "Usage: ${0##*/} [options] uninstall <package>
+
+  Options:
+    -h            show this usage msg
+
+  Uninstalls the specified package from the system.
 "
   exit 1
 }
@@ -510,31 +554,47 @@ is_inside_system_dir() {
 
 # main
 
-declare -i verbose=0
-getopt_flags='hyv'
-unset yes_sure_update
+[ -z "$1" ] && usage
+
+unset verbose
+getopt_flags='vh-'
 while getopts $getopt_flags OPTN; do
   case $OPTN in
-    y)
-      yes_sure_update=1
+    [h-])
+      if [ "$1" == "-h" -o "$1" == "--help" ]; then
+        if [ -z "$2" ]; then
+          usage
+        elif [[ "$2" =~ ^[A-Za-z0-9]+[A-Za-z0-9_]+$ ]]; then
+          if [ "$(type -t usage_$2)" == function ]; then
+            usage_$2
+          else
+            error "unknown command '$2'"
+          fi
+        else
+          error "unknown command '$2'"
+        fi
+      else
+        error "unknown option '$1'"
+      fi
       ;;
     v)
-      verbose+=1
+      verbose=1
       ;;
-    h|*)
-      usage
+    *)
+      error "unknown option"
       ;;
   esac
 done
 [ $OPTIND -gt 1 ] && shift $(( $OPTIND - 1 ))
-
-if [ -z "$yes_sure_update" ]; then
-  usage
-fi
+unset OPTIND
 
 self_bin=`readlink -e "$0"`
-curr_dir=`dirname "$self_bin"`
-system_dir=`readlink -e "$curr_dir/.."`
+if [ $? -ne 0 ]; then
+  error "unable to determine self path"
+fi
+
+self_dir=${self_bin%/*}
+system_dir=${self_dir%/*}
 lib_file="$system_dir/lib/functions"
 lock_file="$system_dir/var/lock/${0##*/}"
 
@@ -544,184 +604,290 @@ if ! source "$lib_file"; then
 fi
 
 assign_deref_os_prop_or_exit packages_url "$system_dir" packages_url
-if deref_os_prop "$system_dir" no_package_updates &>/dev/null; then
-  error "this system is configured not to have automated updates."
-fi
 
 if ! lock_path "$lock_file" >/dev/null; then
   error "unable to lock. There's probably another instance running."
 fi
-
-# should not use /tmp here because the need to execute post-install and
-# post-update scripts, and it breaks if /tmp is mounted with noexec
-if ! tmp_dir=`mktemp -d "$system_dir/var/tmp/tmp.XXXXXX"`; then
-  error "unable to create temporary directory"
-fi
-trap 'exit 1' INT HUP TERM QUIT
 trap 'cleanup' EXIT
 
-pkg_index_url="${packages_url%/}/metadata.ltsv"
-updates_file="$tmp_dir/package_index.ltsv"
+op="$1"
+shift
 
-if ! download_file "$pkg_index_url" "$updates_file"; then
-  error "unable to download update file"
-fi
+case "$op" in
+  update-all)
+    getopt_flags='hy'
+    unset yes_sure_update
+    while getopts $getopt_flags OPTN; do
+      case $OPTN in
+        y)
+          yes_sure_update=1
+          ;;
+        h|*)
+          usage
+          ;;
+      esac
+    done
+    [ $OPTIND -gt 1 ] && shift $(( $OPTIND - 1 ))
 
-linux_distro=$(wedp_auto_detect_distro)
-if [ $? -ne 0 -o -z "$linux_distro" ]; then
-  error "unable to detect the linux distribution of this server"
-fi
-
-distro_version=$(wedp_auto_detect_distro_version)
-if [ $? -ne 0 ]; then
-  error "unable to detection version of current distro"
-fi
-
-distro_major=${distro_version%%.*}
-
-linux_arch=$(uname -m)
-if [ $? -ne 0 -o -z "$linux_arch" ]; then
-  error "unable to detect the machine architecture"
-fi
-
-declare -i n_updated=0 n_failed_update=0 n_installed=0 n_failed_install=0
-declare -i line_n=0
-while read update_line; do
-  line_n+=1
-  # ignore: empty lines, line with only spaces or lines starting with "#"
-  if [ -z "$update_line" ] || [[ "$update_line" =~ ^\ +$ ]] || \
-    [[ "$update_line" =~ ^\ *# ]]; then
-    continue
-  fi
-
-  unset v_installed v_needs_update has_missing_field
-
-  declare -a fields_ar=( name serial version distro \
-                          file_uri file_hash distro_version arch )
-
-  for field in "${fields_ar[@]}"; do
-    unset pkg_$field
-    ltsv_get_value $field "$update_line" && declare pkg_$field="$_ltsv_value"
-  done
-
-  for field in "${fields_ar[@]}"; do
-    field_var="pkg_$field"
-    if [ -z "${!field_var}" ]; then
-      has_missing_field=1
-      echo "Warning: missing field $field on line $line_n" 1>&2
-      sleep 1
-      continue
+    if [ -z "$yes_sure_update" ]; then
+      usage_update_all
     fi
-  done
 
-  if [ -n "$has_missing_field" ]; then
-    echo "Warning: skipping line $line_n due to missing fields" 1>&2
-    continue
-  fi
-
-  # this avoids a package from being installed or updated more than once
-  # when there are multiple rules (e.g. a package with specific distro versions and
-  # versions without a distro specification)
-  if in_array "$pkg_name" ${just_handled_ar[*]}; then
-    continue
-  fi
-
-  # skip if the package is for a specific distro that not the current one
-  if [ "$pkg_distro" != "-" -a "$pkg_distro" != "$linux_distro" ]; then
-    continue
-  fi
-
-  # skip if it's for an architecture other than this one
-  if [ "$pkg_arch" != "-" -a "$pkg_arch" != "$linux_arch" ]; then
-    continue
-  fi
-
-  # skip if the package is specific for a distro version not equal to the
-  # current one
-  if [ "$pkg_distro_version" != "-" \
-    -a "$pkg_distro_version" != "$distro_version" \
-    -a "$pkg_distro_version" != "$distro_major" ]; then
-
-    continue
-  fi
-
-  if is_installed "$pkg_name" "$pkg_version" "$system_dir"; then
-    v_installed=1
-  fi
-
-  if [ -z "$v_installed" ] && is_to_skip_install "$pkg_name"; then
-    [ $verbose -gt 0 ] && echo "Skipping $pkg_name, configured not to install"
-    continue # not installed, and configured not to install
-  elif [ -n "$v_installed" ] && is_to_skip_updates "$pkg_name"; then
-    [ $verbose -gt 0 ] && echo "Skipping $pkg_name, configured not to update"
-    continue # installed but configured not to update
-  elif [ -n "$v_installed" ] && needs_update "$pkg_name" "$pkg_serial"; then
-    v_needs_update=1 # installed and needs update
-  elif [ -n "$v_installed" -a -z "$v_needs_update" ]; then
-    continue # is installed and doesn't need update
-  fi
-
-  if [ -z "$v_installed" -o -n "$v_needs_update" ]; then
-    pkg_file="$tmp_dir/${pkg_file_uri##*/}"
-    pkg_url="${packages_url%/}/${pkg_file_uri#/}"
-
-    echo "Downloading $pkg_name $pkg_version from $pkg_url..." 1>&2
-    just_handled_ar+=( "$pkg_name" )
-    # if ! download_file "$pkg_url" "$pkg_file"; then
-    if ! download_file_n_check_sha512 "$pkg_url" "$pkg_file" '' '' \
-        "$pkg_file_hash"; then
-      echo "Warning: failed download for package '$pkg_name' version '$pkg_version' from URL '$pkg_url'" 1>&2
-      n_failed_update+=1
-      continue
+    if deref_os_prop "$system_dir" no_package_updates &>/dev/null; then
+      error "this system is configured not to have automated updates."
     fi
-  fi
 
-  if [ -z "$v_installed" ]; then
-    echo "Installing $pkg_name version $pkg_version..."
-    devpanel_install_pkg "$pkg_name" "$pkg_serial" "$pkg_version" \
-                         "$pkg_file" "$pkg_file_hash" "$system_dir"
-    if [ $? -eq 0 ]; then
-      n_installed+=1
+    # should not use /tmp here because the need to execute post-install and
+    # post-update scripts, and it breaks if /tmp is mounted with noexec
+    if ! tmp_dir=`mktemp -d "$system_dir/var/tmp/tmp.XXXXXX"`; then
+      error "unable to create temporary directory"
+    fi
+    trap 'exit 1' INT HUP TERM QUIT
+
+    pkg_index_url="${packages_url%/}/metadata.ltsv"
+    updates_file="$tmp_dir/package_index.ltsv"
+
+    if ! download_file "$pkg_index_url" "$updates_file"; then
+      error "unable to download update file"
+    fi
+
+    linux_distro=$(wedp_auto_detect_distro)
+    if [ $? -ne 0 -o -z "$linux_distro" ]; then
+      error "unable to detect the linux distribution of this server"
+    fi
+
+    distro_version=$(wedp_auto_detect_distro_version)
+    if [ $? -ne 0 ]; then
+      error "unable to detection version of current distro"
+    fi
+
+    distro_major=${distro_version%%.*}
+
+    linux_arch=$(uname -m)
+    if [ $? -ne 0 -o -z "$linux_arch" ]; then
+      error "unable to detect the machine architecture"
+    fi
+
+    declare -i n_updated=0 n_failed_update=0 n_installed=0 n_failed_install=0
+    declare -i line_n=0
+    while read update_line; do
+      line_n+=1
+      # ignore: empty lines, line with only spaces or lines starting with "#"
+      if [ -z "$update_line" ] || [[ "$update_line" =~ ^\ +$ ]] || \
+        [[ "$update_line" =~ ^\ *# ]]; then
+        continue
+      fi
+
+      unset v_installed v_needs_update has_missing_field
+
+      declare -a fields_ar=( name serial version distro \
+                              file_uri file_hash distro_version arch )
+
+      for field in "${fields_ar[@]}"; do
+        unset pkg_$field
+        ltsv_get_value $field "$update_line" && declare pkg_$field="$_ltsv_value"
+      done
+
+      for field in "${fields_ar[@]}"; do
+        field_var="pkg_$field"
+        if [ -z "${!field_var}" ]; then
+          has_missing_field=1
+          echo "Warning: missing field $field on line $line_n" 1>&2
+          sleep 1
+          continue
+        fi
+      done
+
+      if [ -n "$has_missing_field" ]; then
+        echo "Warning: skipping line $line_n due to missing fields" 1>&2
+        continue
+      fi
+
+      # this avoids a package from being installed or updated more than once
+      # when there are multiple rules (e.g. a package with specific distro versions and
+      # versions without a distro specification)
+      if in_array "$pkg_name" ${just_handled_ar[*]}; then
+        continue
+      fi
+
+      # skip if the package is for a specific distro that not the current one
+      if [ "$pkg_distro" != "-" -a "$pkg_distro" != "$linux_distro" ]; then
+        continue
+      fi
+
+      # skip if it's for an architecture other than this one
+      if [ "$pkg_arch" != "-" -a "$pkg_arch" != "$linux_arch" ]; then
+        continue
+      fi
+
+      # skip if the package is specific for a distro version not equal to the
+      # current one
+      if [ "$pkg_distro_version" != "-" \
+        -a "$pkg_distro_version" != "$distro_version" \
+        -a "$pkg_distro_version" != "$distro_major" ]; then
+
+        continue
+      fi
+
+      if is_installed "$pkg_name" "$system_dir"; then
+        v_installed=1
+      fi
+
+      if [ -z "$v_installed" ] && is_to_skip_install "$pkg_name"; then
+        [ -n "$verbose" ] && echo "Skipping $pkg_name, configured not to install"
+        continue # not installed, and configured not to install
+      elif [ -n "$v_installed" ] && is_to_skip_updates "$pkg_name"; then
+        [ -n "$verbose" ] && echo "Skipping $pkg_name, configured not to update"
+        continue # installed but configured not to update
+      elif [ -n "$v_installed" ] && needs_update "$pkg_name" "$pkg_serial"; then
+        v_needs_update=1 # installed and needs update
+      elif [ -n "$v_installed" -a -z "$v_needs_update" ]; then
+        continue # is installed and doesn't need update
+      fi
+
+      if [ -z "$v_installed" -o -n "$v_needs_update" ]; then
+        pkg_file="$tmp_dir/${pkg_file_uri##*/}"
+        pkg_url="${packages_url%/}/${pkg_file_uri#/}"
+
+        echo "Downloading $pkg_name $pkg_version from $pkg_url..." 1>&2
+        just_handled_ar+=( "$pkg_name" )
+        if ! download_file_n_check_sha512 "$pkg_url" "$pkg_file" '' '' \
+            "$pkg_file_hash"; then
+          echo "Warning: failed download for package '$pkg_name' version '$pkg_version' from URL '$pkg_url'" 1>&2
+          n_failed_update+=1
+          continue
+        fi
+      fi
+
+      if [ -z "$v_installed" ]; then
+        echo "Installing $pkg_name version $pkg_version..."
+        devpanel_install_pkg "$pkg_name" "$pkg_serial" "$pkg_version" \
+                             "$pkg_file" "$system_dir"
+        if [ $? -eq 0 ]; then
+          n_installed+=1
+        else
+          n_failed_install+=1
+        fi
+        just_handled_ar+=( "$pkg_name" )
+      elif [ -n "$v_needs_update" ]; then
+        echo "Updating $pkg_name ... (new serial: $pkg_serial, new version: $pkg_version)"
+        devpanel_upgrade_pkg "$pkg_name" "$pkg_serial" "$pkg_version" \
+                             "$pkg_file" "$system_dir"
+        if [ $? -eq 0 ]; then
+          n_updated+=1
+        else
+          n_failed_update=1
+        fi
+        just_handled_ar+=( "$pkg_name" )
+      fi
+    done < "$updates_file"
+
+    if [ $n_failed_update -eq 0 -a $n_failed_install -eq 0 \
+      -a $n_updated -eq 0 -a $n_installed -eq 0 ]; then
+
+      echo "Everything up to date."
+      exit 0
+    fi
+
+    if [ $n_failed_update -gt 0 ]; then
+      echo "Failed to update $n_failed_update packages."
+    fi
+
+    if [ $n_failed_install -gt 0 ]; then
+      echo "Failed to install $n_failed_install packages."
+    fi
+
+    if [ $n_updated -gt 0 ]; then
+      echo "Updated $n_updated packages."
+    fi
+
+    if [ $n_installed -gt 0 ]; then
+      echo "Installed $n_installed packages."
+    elif [ $n_installed -eq 0 -a $n_updated -eq 0 ]; then
+      echo "No packages were updated."
+    fi
+
+    exit 0
+    ;;
+
+  install)
+    [ -z "$1" ] && usage_install
+
+    unset file name version serial
+    getopt_flags='f:n:V:S:h'
+    while getopts $getopt_flags OPTN; do
+      case $OPTN in
+        f)
+          file="$OPTARG"
+          ;;
+        n)
+          name="$OPTARG"
+          ;;
+        V)
+          version="$OPTARG"
+          ;;
+        S)
+          serial="$OPTARG"
+          ;;
+        h)
+          usage_install
+          ;;
+        *)
+          error "unknown option"
+          ;;
+      esac
+    done
+    [ $OPTIND -gt 1 ] && shift $(( $OPTIND - 1 ))
+
+    for var in file name version; do
+      [ -z "${!var}" ] && error "missing value for $var. Please specify it."
+    done
+    serial=${serial:-0}
+
+    if [ ! -e "$file" ]; then
+      error "file '$file' doesn't exist."
+    elif [ ! -f "$file" ]; then
+      error "path '$file' is not a regular file"
+    fi
+
+    # temp directory to be used by the devpanel_install_pkg function
+    if ! tmp_dir=$(mktemp -d); then
+      error "unable to create temporary directory."
+    fi
+
+    devpanel_install_pkg "$name" "$serial" "$version" "$file" "$system_dir"
+    st=$?
+    if [ $st -eq 0 ]; then
+      echo "Successfully installed package $name."
     else
-      n_failed_install+=1
+      error "unable to install package $name."
     fi
-    just_handled_ar+=( "$pkg_name" )
-  elif [ -n "$v_needs_update" ]; then
-    echo "Updating $pkg_name ... (new serial: $pkg_serial, new version: $pkg_version)"
-    devpanel_upgrade_pkg "$pkg_name" "$pkg_serial" "$pkg_version" \
-                         "$pkg_file" "$pkg_file_hash" "$system_dir"
+    exit $st
+
+    ;;
+
+  uninstall)
+    [ -z "$1" ] && usage_$op
+
+    package="$1"
+    if ! is_installed "$package"; then
+      error "package '$package' is not installed"
+    fi
+
+    tmp_dir=$(mktemp -d)
+    if [ $? -ne 0 ]; then
+      error "unable to create temporary directory"
+    fi
+
+    devpanel_remove_package "$package"
     if [ $? -eq 0 ]; then
-      n_updated+=1
+      echo "Successfully removed package $package."
     else
-      n_failed_update=1
+      error "unable to remove package $package."
     fi
-    just_handled_ar+=( "$pkg_name" )
-  fi
-done < "$updates_file"
 
-if [ $n_failed_update -eq 0 -a $n_failed_install -eq 0 \
-  -a $n_updated -eq 0 -a $n_installed -eq 0 ]; then
-
-  echo "Everything up to date."
-  exit 0
-fi
-
-if [ $n_failed_update -gt 0 ]; then
-  echo "Failed to update $n_failed_update packages."
-fi
-
-if [ $n_failed_install -gt 0 ]; then
-  echo "Failed to install $n_failed_install packages."
-fi
-
-if [ $n_updated -gt 0 ]; then
-  echo "Updated $n_updated packages."
-fi
-
-if [ $n_installed -gt 0 ]; then
-  echo "Installed $n_installed packages."
-elif [ $n_installed -eq 0 -a $n_updated -eq 0 ]; then
-  echo "No packages were updated."
-fi
-
-exit 0
+    ;;
+  *)
+    error "unknown operation"
+    ;;
+esac
