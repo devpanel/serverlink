@@ -54,6 +54,7 @@ archive_file="$1"
 if [ -e "$archive_file" ]; then
   error "path '$archive_file' already exists."
 fi
+archive_basename="${archive_file##*/}"
 
 self_bin=$(readlink -e "$0")
 if [ $? -ne 0 ]; then
@@ -71,7 +72,7 @@ if [ $? -ne 0 ]; then
   error "unable to create temporary directory."
 fi
 
-if ! mkdir "$temp_dir/pkg-files" "$temp_dir/setup"; then
+if ! mkdir "$temp_dir/pkg-files" "$temp_dir/setup" "$temp_dir/tmp"; then
   error "unable to create directory structure for package."
 fi
 
@@ -98,10 +99,15 @@ if [ $? -ne 0 ]; then
   error "unable to files to temporary directory"
 fi
 
-tar -C "$temp_dir" --no-same-owner -zScf "$archive_file" .
+tmp_archive="$temp_dir/tmp/$archive_basename"
+tar -C "$temp_dir" --exclude=./tmp --no-same-owner -zScf "$tmp_archive" .
 if [ $? -eq 0 ]; then
-  echo "Successfully created package $archive_file"
-  exit 0
+  if mv -n "$tmp_archive" "$archive_file"; then
+    echo "Successfully created package $archive_file"
+    exit 0
+  else
+    error "unable to move '$tmp_archive' to '$archive_file'."
+  fi
 else
   error "unable to create package."
 fi

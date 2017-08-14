@@ -23,9 +23,11 @@ usage() {
 
   Commands:
     install
-    uninstall
     update-all
+    list-packages
     remove
+    enable-option
+    disable-option
 
   To get help about a specific command, run:
   \$ ${0##*/} --help <command>
@@ -34,9 +36,30 @@ usage() {
   exit 1
 }
 
+is_valid_package_name() {
+  local name="$1"
+
+  local pkg_regex='^[A-Za-z0-9]+[A-Za-z0-9_.-]+$'
+
+  if [ -z "$name" ]; then
+    echo "$FUNCNAME(): missing package name" 1>&2
+    return 1
+  fi
+
+  if [[ "$name" =~ $pkg_regex ]]; then
+    return 0
+  else
+    return 1
+  fi
+}
+
 is_installed() {
   local pkg="$1"
   local system_dir="${2:-$system_dir}"
+
+  if ! is_valid_package_name "$pkg"; then
+    return 1
+  fi
 
   if [ -L "$system_dir/config/packages/$pkg/version" ]; then
     return 0
@@ -140,7 +163,7 @@ remove_leftover_files() {
 remove_pkg_files_from_list() {
   local list_file="$1"
   local system_dir="$2"
-  local tmp_dir="$3"
+  local tmp_dir="${3:-$tmp_dir}"
 
   if [ ! -e "$list_file" ]; then
     echo "$FUNCNAME(): list file '$list_file' doesn't exist" 1>&2
@@ -524,16 +547,63 @@ usage_install() {
   exit 1
 }
 
-usage_uninstall() {
-  echo "Usage: ${0##*/} [options] uninstall <package>
+usage_remove() {
+  echo "Usage: ${0##*/} [options] remove <package>
 
   Options:
     -h            show this usage msg
 
-  Uninstalls the specified package from the system.
+  Remove the specified package from the system.
 "
   exit 1
 }
+
+usage_list_packages() {
+  echo "Usage: ${0##*/} list-packages
+
+  Options:
+    -n            list only the package names
+    -h            show this usage msg
+
+  Displays the list of packages installed.
+"
+  exit 1
+}
+
+usage_enable_option() {
+  echo "Usage: ${0##*/} enable-option -p <package> -o <opt_name>
+
+  Options:
+    -p package_name       the name of the package to which the option applies
+
+    -o option_name        the name of the option. Use this option multiple
+                          times to set more than one option at a time.
+                          Available options: dont_update, dont_install
+
+    -h                    show this usage msg
+
+  Enables configuration options on the specified packages.
+"
+  exit 1
+}
+
+usage_disable_option() {
+  echo "Usage: ${0##*/} disable-option -p <package> -o <opt_name>
+
+  Options:
+    -p package_name       the name of the package to which the option applies
+
+    -o option_name        the name of the option. Use this option multiple
+                          times to set more than one option at a time.
+                          Available options: dont_update, dont_install
+
+    -h                    show this usage msg
+
+  Disables configuration options on the specified packages.
+"
+  exit 1
+}
+
 
 cleanup() {
   unlock_path "$lock_file"
@@ -552,6 +622,75 @@ is_inside_system_dir() {
   fi
 }
 
+get_list_of_packages() {
+  local pkg_reg_dir="$system_dir/config/packages"
+
+  local _entry
+  for _entry in $(ls "$pkg_reg_dir"); do
+    if is_installed "$_entry"; then
+      echo "$_entry"
+    fi
+  done
+}
+
+get_package_version() {
+  local pkg="$1"
+  local pkg_reg_dir="$system_dir/config/packages"
+
+  readlink "$pkg_reg_dir/$pkg/version"
+}
+
+get_package_serial() {
+  local pkg="$1"
+  local pkg_reg_dir="$system_dir/config/packages"
+
+  readlink "$pkg_reg_dir/$pkg/serial"
+}
+
+enable_dont_update() {
+  local pkg="$1"
+
+  local pkg_dir="$system_dir/config/packages/$pkg"
+  local link="$pkg_dir/dont_update"
+
+  rm -f "$link"
+
+  ln -s 1 "$link"
+}
+
+disable_dont_update() {
+  local pkg="$1"
+
+  local pkg_dir="$system_dir/config/packages/$pkg"
+  local link="$pkg_dir/dont_update"
+
+  rm -f "$link"
+}
+
+enable_dont_install() {
+  local pkg="$1"
+
+  local pkg_dir="$system_dir/config/packages/$pkg"
+  local link="$pkg_dir/dont_install"
+
+  if [ ! -d "$pkg_dir" ]; then
+    mkdir -m 755 "$pkg_dir"
+  fi
+
+  rm -f "$link"
+
+  ln -s 1 "$link"
+}
+
+disable_dont_install() {
+  local pkg="$1"
+
+  local pkg_dir="$system_dir/config/packages/$pkg"
+  local link="$pkg_dir/dont_install"
+
+  rm -f "$link"
+}
+
 # main
 
 [ -z "$1" ] && usage
@@ -564,9 +703,10 @@ while getopts $getopt_flags OPTN; do
       if [ "$1" == "-h" -o "$1" == "--help" ]; then
         if [ -z "$2" ]; then
           usage
-        elif [[ "$2" =~ ^[A-Za-z0-9]+[A-Za-z0-9_]+$ ]]; then
-          if [ "$(type -t usage_$2)" == function ]; then
-            usage_$2
+        elif [[ "$2" =~ ^[A-Za-z0-9]+[A-Za-z0-9_-]+$ ]]; then
+          func=${2//-/_}
+          if [ "$(type -t usage_$func)" == function ]; then
+            usage_$func
           else
             error "unknown command '$2'"
           fi
@@ -866,7 +1006,7 @@ case "$op" in
 
     ;;
 
-  uninstall)
+  remove)
     [ -z "$1" ] && usage_$op
 
     package="$1"
@@ -887,6 +1027,117 @@ case "$op" in
     fi
 
     ;;
+
+  list-packages)
+    getopt_flags='n'
+    while getopts $getopt_flags OPTN; do
+      case $OPTN in
+        n)
+          only_names=1
+          ;;
+        h)
+          usage_list_packages
+          ;;
+        *)
+          exit 1
+          ;;
+      esac
+    done
+    [ $OPTIND -gt 1 ] && shift $(( $OPTIND - 1 ))
+
+    for _entry in $(get_list_of_packages ); do
+      pkg_str="$_entry"
+      if [ -z "$only_names" ]; then
+        pkg_str+=" ("
+        version=$(get_package_version "$_entry")
+        if [ $? -eq 0 ]; then
+          pkg_str+="version: $version"
+        fi
+
+        serial=$(get_package_serial "$_entry" )
+        if [ $? -eq 0 ]; then
+          [ -n "$version" ] && pkg_str+=", "
+          pkg_str+="serial: $serial"
+        fi
+
+        pkg_str+=")"
+      fi
+
+      echo "$pkg_str"
+    done
+    
+    ;;
+
+  enable-option|disable-option)
+    if [[ $op == enable-option ]]; then
+      sub_op=enable
+    else
+      sub_op=disable
+    fi
+
+    [ $# -eq 0 -o -z "$1" ] && usage_${sub_op}_option
+    unset package opts_ar
+    declare -a opts_ar=()
+    getopt_flags='p:o:'
+    while getopts $getopt_flags OPTN; do
+      case $OPTN in
+        p)
+          package="$OPTARG"
+          ;;
+
+        o)
+          opts_ar+=( "$OPTARG" )
+          ;;
+        *)
+          exit 1
+          ;;
+      esac
+    done
+    [ $OPTIND -gt 1 ] && shift $(( $OPTIND - 1 ))
+
+    if [ -z "$package" ]; then
+      error "missing package option. Please specify it."
+    fi
+
+    if ! is_valid_package_name "$package"; then
+      error "name '$package' is not a valid package name."
+    fi
+
+    if [ -z "${#opts_ar[*]}" ]; then
+      error "missing option. Please specify at least one."
+    fi
+
+    for _opt in "${opts_ar[@]}"; do
+      case $_opt in
+        dont_update)
+          if ! is_installed "$package"; then
+            error "package '$package' is not installed"
+          fi
+
+          ${sub_op}_dont_update "$package"
+          if [ $? -eq 0 ]; then
+            echo "Successfully ${sub_op}d option $_opt for $package."
+          fi
+          ;;
+
+        dont_install)
+          if [ "$sub_op" == enable ] && is_installed "$package"; then
+            echo "Warning: package is already installed" 1>&2
+          fi
+
+          ${sub_op}_dont_install "$package"
+          if [ $? -eq 0 ]; then
+            echo "Successfully ${sub_op}d option $_opt for $package."
+          fi
+          ;;
+
+        *)
+          error "unknown option '$_opt'"
+          ;;
+      esac
+    done
+    ;;
+
   *)
     error "unknown operation"
     ;;
