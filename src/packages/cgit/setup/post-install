@@ -42,7 +42,10 @@ cgit_cgi_bin="$system_dir/bin/utils.$arch/$pkg_name/current/cgi-bin"
 www_curr="$system_dir/compat/w_/public_html/$pkg_name/current"
 
 rm -f -- "$cgit_curr"
-ln -sf "$pkg_ver"  "$cgit_curr"
+
+[ -d "${cgit_curr%/*}/$pkg_ver"  ] && ln -sf "$pkg_ver"  "$cgit_curr"
+[ -d "${cgit_curr%/*}/v$pkg_ver" ] && ln -sf "v$pkg_ver" "$cgit_curr"
+
 ln -sf "$cgit_cgi_bin" "$www_curr"
 
 hash -p "$system_dir/config/os/pathnames/sbin/apachectl" apachectl

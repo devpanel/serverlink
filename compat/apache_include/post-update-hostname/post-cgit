@@ -9,11 +9,11 @@ if [ -z "$new_hostname" ]; then
 fi
 
 self_bin=`readlink -e "$0"`
-dir_bin=`dirname "$self_bin"`
-system_dir=`readlink -e "$dir_bin/../../.."`
+dir_bin=${self_bin%/*}
+system_dir=${dir_bin%/*/*/*}
 
 apache_include_dir="$system_dir/compat/apache_include"
-git_vhost_file="$apache_include_dir/virtwww/default_git_vhost.conf"
+git_vhost_file="$apache_include_dir/global-includes/cgit.conf"
 if [ ! -f "$git_vhost_file" ]; then
   exit 0 # file missing, no update needed
 fi
