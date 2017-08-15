@@ -10,7 +10,8 @@
 	postrotate
                 if systemctl status apache2.service > /dev/null ; then \
                     systemctl reload apache2 > /dev/null; \
-                fi;
+                fi; \
+                /opt/webenabled/libexec/fix-vhost-logs-ownshp-n-perms -y ; \
 	endscript
 	prerotate
 		if systemctl status apache2.service >/dev/null; then \
