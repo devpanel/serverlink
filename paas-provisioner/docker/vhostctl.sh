@@ -224,6 +224,9 @@ if [ ! -f /usr/sbin/nginx ]; then
 
   ${sudo} ${installation_tool} nginx
 
+  # Fix : https://help.webstandard.com/issues/7588
+  create_admin-ctl_config_in_nginx
+
   # move apache port, rewrite all apache vhost files and restarts it
   move_apache_ports
 fi
