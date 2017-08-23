@@ -2,7 +2,14 @@
 # Options:
 # -u VHOST -- place the archive in ~w_VHOST/gen/archive
 
-mydir=`dirname $0`
+self_bin=`readlink -e "$0"`
+if [ $? -ne 0 ]; then
+  echo "Error: unable to get self path" 1>&2
+  exit 1
+fi
+
+mydir="${self_bin%/*}"
+sys_dir="${mydir%/*}"
 
 error()
 {
@@ -35,6 +42,10 @@ esac
 path2="`echo \"$path\"|tr -d '\n'`" || error
 
 [ o"$path" = o"$path2" ] || error "path must not contain new lines"
+
+if ! . "$sys_dir/lib/functions"; then
+  error "unable to include file lib/functions"
+fi
 
 if [ -z "$opt_u" ]
 then
