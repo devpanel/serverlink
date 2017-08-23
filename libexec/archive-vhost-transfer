@@ -13,10 +13,9 @@ case "$0" in
   *-transfer) action=transfer;;
   *) error "invalid action";;
 esac
+
 # using mode archive: it's OK to operate on a locked vhost
 $dir/check-vhost-name archive "$vhost" || exit 1
-home="`eval \"echo ~$user\"`" || error
-[ -d "$home" ] || error "Home dir $home does not exist"
 
 lib_f="$dir/../lib/functions"
 if ! source "$lib_f"; then
@@ -30,6 +29,8 @@ if [ $? -ne 0 ]; then
   error "unable to get the linux username from vhost $vhost"
 fi
 
+home="`eval \"echo ~$user\"`" || error
+[ -d "$home" ] || error "Home dir $home does not exist"
 
 if [ -n "$label" ]; then $dir/check-archive-pathname -u"$vhost" restore "$home/public_html/gen/archive/$label" || exit 1; fi
 echo -n "$label"|su -l -c "$dir_bin/archive-vhost-action $action" "$user"
