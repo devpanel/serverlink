@@ -1,0 +1,61 @@
+#!/bin/bash
+
+set_usage_msg \
+  "Usage: $bin_name ${cmd_ar[*]} --vhost name --yes
+
+  Options:
+    --vhost name          name of the vhost in which to stop skipping the
+                          nginx config
+    --yes                 confirm the intent to proceed
+
+  Stop skipping the writing of the nginx config file for the specified
+  vhost. After this command is run, nginx vhost will start being written
+  again when needed.
+"
+
+devpanel_cmd__stop_skipping_nginx_vhost() {
+  [ $# -eq 0 ] && usage
+
+  local name confirmed
+
+  while [ -n "$1" ]; do
+    name="$1"
+    case "$name" in
+      --yes)
+        confirmed=yes
+        shift
+        ;;
+      --vhost)
+        [ -z "$2" ] && error_missing_value "$name"
+        vhost="$2"
+        shift 2
+        ;;
+      --)
+        shift
+        break
+        ;;
+      --help|*)
+        usage
+        ;;
+    esac
+  done
+
+  [ -z "$confirmed" -o "$confirmed" != yes ] && usage
+  [ -z "$vhost" ] && usage
+
+  if ! vhost_exists "$vhost"; then
+    error "the specified vhost doesn't exist." -
+    return $?
+  fi
+
+  echo "rm skip_nginx_vhost" | \
+    "$sys_dir/libexec/apache-metadata-handler" -q "$vhost"
+
+  if [ $? -eq 0 ]; then
+    echo "Successfully stopped skipping the writing of nginx config for vhost $vhost."
+    return 0
+  else
+    error "unable to remove the metadata to stop skipping of nginx vhost." -
+    return $?
+  fi
+}

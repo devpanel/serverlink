@@ -25,6 +25,8 @@ Usage: @self_basename@ <command> [args]
     manage root ssh keys        manages ssh keys for the user root
     set apache port             sets the HTTP and HTTPS ports of Apache
 
+    skip nginx vhost            Skips the writing of nginx config for the specified vhost
+    stop skipping nginx vhost   Stops skipping writing of nginx config for the given vhost
 
  For help with a specific command, please run:
  # @self_basename@ <command> --help

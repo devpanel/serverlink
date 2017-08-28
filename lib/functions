@@ -3347,3 +3347,15 @@ server {
     return 1
   fi
 }
+
+should_skip_nginx_vhost() {
+  local vhost="$1"
+
+  if get_vhost_key_value skip_nginx_vhost "$vhost" &>/dev/null; then
+    # key present, skip it
+    return 0
+  else
+    # key not present, don't skip it (write it)
+    return 1
+  fi
+}

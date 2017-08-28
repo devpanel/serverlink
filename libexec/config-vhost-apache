@@ -988,7 +988,7 @@ fi
 
 # compatibility fix when vhost was created by vhostctl.sh and nginx is
 # listening on port 80 (need to create/update the vhost on nginx)
-if is_nginx_on_port80 ; then
+if is_nginx_on_port80 && ! should_skip_nginx_vhost "$vhost" ; then
   write_nginx_local_vhost "$vhost"
   if [ $? -eq 0 ]; then
     service nginx reload || service nginx restart

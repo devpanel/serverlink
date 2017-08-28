@@ -1,0 +1,59 @@
+#!/bin/bash
+
+set_usage_msg \
+  "Usage: $bin_name ${cmd_ar[*]} --vhost name --yes
+
+  Options:
+    --vhost name          name of the vhost in which to skip writing the
+                          nginx config
+    --yes                 confirm the intent to enable
+
+  Disable writing of the nginx config file for the specified vhost.
+"
+
+devpanel_cmd__skip_nginx_vhost() {
+  [ $# -eq 0 ] && usage
+
+  local name confirmed
+
+  while [ -n "$1" ]; do
+    name="$1"
+    case "$name" in
+      --yes)
+        confirmed=yes
+        shift
+        ;;
+      --vhost)
+        [ -z "$2" ] && error_missing_value "$name"
+        vhost="$2"
+        shift 2
+        ;;
+      --)
+        shift
+        break
+        ;;
+      --help|*)
+        usage
+        ;;
+    esac
+  done
+
+  [ -z "$confirmed" -o "$confirmed" != yes ] && usage
+  [ -z "$vhost" ] && usage
+
+  if ! vhost_exists "$vhost"; then
+    error "the specified vhost doesn't exist." -
+    return $?
+  fi
+
+  echo "set skip_nginx_vhost yes" | \
+    "$sys_dir/libexec/apache-metadata-handler" -q "$vhost"
+
+  if [ $? -eq 0 ]; then
+    echo "Successfully configured to skip writing of nginx config for vhost $vhost."
+    return 0
+  else
+    error "unable to configure skipping of nginx vhost for vhost '$vhost'" -
+    return $?
+  fi
+}
