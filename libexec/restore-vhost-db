@@ -147,7 +147,7 @@ do
     fi
 
     echo "Granting all privileges on $database to $user_web"
-    if ! run2 $dir/dbmgr-mysql-as-root "$user" mysql "-B -e \"grant all privileges on $database.* to '$user_web'@'%';\""; then
+    if ! run2 $dir/dbmgr-mysql-as-root "$user" mysql "-B -e \"grant all privileges on \\\`$database\\\`.* to '$user_web'@'%';\""; then
       error "unable to grant all privileges on database \`$database\` to user '$user_web'"
     fi
   else
