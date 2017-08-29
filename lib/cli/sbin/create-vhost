@@ -6,6 +6,7 @@ set_usage_msg \
   Options:
     --vhost <vhost>           name of the vhost
     --from  <source>          source from where to create the app
+                              (can be a filename or a public git url)
 
     --title <site_title>      sets the website title for the apps that
                               support it
