@@ -2824,6 +2824,10 @@ Htpasswd: @htpasswd_status@
 Snapshots: @snapshots_txt@
 "
 
+  if should_skip_nginx_vhost "$vhost"; then
+    summ_txt+="Skipping nginx vhost: Yes"$'\n'
+  fi
+
   local -a domains_ar=( $(get_hostnames_from_vhost "$vhost") )
   local domains_txt="" out_txt=""
   local main_url ssh_host ssh_user db_name db_host_port db_name app_type
