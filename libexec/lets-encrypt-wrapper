@@ -264,12 +264,10 @@ case "$op" in
       exit 0
     fi
 
-    if [ -z "$domain" ]; then
-      domain=$(get_vhost_default_hostname "$vhost") || exit $?
-    fi
-
     le_dir="$sys_dir/config/vhosts/$vhost/lets-encrypt"
-    acme.sh --home "$le_dir" --renew ${force:+--force} -d "$domain"
+
+    acme.sh --home "$le_dir" --cron ${force:+--force} \
+      ${domain:+ -d "$domain"}
 
     ;;
 
