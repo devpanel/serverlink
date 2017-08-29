@@ -50,7 +50,7 @@ devpanel_cmd__help() {
 
   local cmds_regex usage_msgs_dir section_file includes_str
 
-  cmds_regex='^[[:space:]][[:space:]]+[A-Za-z0-9-]+[[:space:]]+[^[:space:]]+'
+  cmds_regex='^[[:space:]]{4}[A-Za-z0-9-]+[[:space:]]+[^[:space:]]+'
   usage_msgs_dir="$sys_dir/lib/cli/.usage-msgs"
 
   if [ -n "$search_term" ]; then
