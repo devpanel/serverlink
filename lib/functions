@@ -3319,6 +3319,10 @@ write_nginx_local_vhost() {
   apache_http_port=$(get_apache_http_port )           || return $?
 
   nginx_vhost_dir="/etc/nginx/sites-available"
+  if [ ! -d "$nginx_vhost_dir" ]
+  then
+      mkdir -p $nginx_vhost_dir
+  fi
   nginx_vhost_lnk_dir="/etc/nginx/sites-enabled"
 
   vhost_file="$nginx_vhost_dir/$vhost_base_domain.conf"
