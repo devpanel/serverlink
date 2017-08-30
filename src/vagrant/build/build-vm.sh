@@ -82,16 +82,33 @@ fi
 
 export VAGRANT_CWD="$temp_dir"
 
+# start the machine
 vagrant up
 if [ $? -ne 0 ]; then
   error "unable to create vagrant VM"
 fi
 
-vagrant ssh -- 'curl -sS -L https://www.devpanel.com/install.sh | sudo -i bash -s'
+# stop the machine after provisioning (the provider code contains software
+# updates, so we halt it after the updates in case any update needs a
+# reboot)
+vagrant halt
+if [ $? -ne 0 ]; then
+  error "unable to halt VM after provisioning"
+fi
+
+# start the VM again
+vagrant up
+if [ $? -ne 0 ]; then
+  error "unable to bring the VM up again."
+fi
+
+# install the devPanel software
+vagrant ssh -- 'sudo -i bash -s' < "$self_dir/install-devpanel.sh"
 if [ $? -ne 0 ]; then
   error "unable to make a clean install of devPanel software"
 fi
 
+# create the .box file from the just installed VM
 vagrant package --vagrantfile "$vgr_package_file" --output "$box_file"
 if [ $? -ne 0 ]; then
   error "failed to create box file."
