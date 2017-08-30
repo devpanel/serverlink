@@ -229,6 +229,9 @@ if [ ! -f /usr/sbin/nginx ]; then
 
   # move apache port, rewrite all apache vhost files and restarts it
   move_apache_ports
+
+  # Make sure nginx is running
+  service nginx restart
 fi
 
 # check for AWS CLI installation
