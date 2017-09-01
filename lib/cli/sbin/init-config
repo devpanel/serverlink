@@ -14,6 +14,8 @@ set_usage_msg \
 
     --no-update                     don't try to update devPanel software now
 
+    --show-intro                    show text with introductory guidance
+
   Initializes the basic config of a devPanel installation.
 "
 
@@ -159,6 +161,7 @@ devpanel_cmd__init_config() {
   [ $# -eq 0 -o -z "$1" ] && usage
 
   local arg hostname ipv4 domain vagrant_net_workaround auto_gen_hostname
+  local show_intro st
   local do_update=1
 
   while [ -n "$1" ]; do
@@ -183,6 +186,11 @@ devpanel_cmd__init_config() {
 
       --no-update)
         unset do_update
+        shift
+        ;;
+
+      --show-intro)
+        show_intro=1
         shift
         ;;
 
@@ -222,8 +230,15 @@ devpanel_cmd__init_config() {
 
 
   if [ -n "$do_update" ]; then
-    devpanel_run update
+    devpanel_run update || return $?
   fi
 
   devpanel_run set base hostname --name "$hostname"
+  st=$?
+
+  if [ -n "$show_intro" ]; then
+    devpanel_run help --section intro
+  fi
+
+  return $st
 }
