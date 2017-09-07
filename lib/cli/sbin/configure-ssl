@@ -51,7 +51,7 @@ devpanel_cmd__configure_ssl() {
       --help)
         usage
         ;;
-      --overwrite)
+      --overwrite|-o)
         cmd_args+=( -o )
         shift
         ;;
@@ -68,7 +68,7 @@ devpanel_cmd__configure_ssl() {
 
   local param
   for param in vhost cert_file priv_key_file; do
-    [ -z "${!param}" ] && error_missing_param $param
+    [ -z "${!param}" ] && error_missing_param ${param//_/-}
   done
 
   if [ -z "$ca_file" ]; then
