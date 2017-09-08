@@ -11,7 +11,7 @@ $ vagrant up
 
 To start without cloning this repository, run:
 ```
-$ vagrant box add https://www.devpanel.com/vagrant/boxes.json
+$ vagrant box add https://files.devpanel.com/vagrant/box.json
 $ mkdir my-devpanel-box
 $ cd my-devpanel-box
 $ vagrant init -m devpanel/ubuntu64

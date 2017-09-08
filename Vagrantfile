@@ -11,5 +11,5 @@
 Vagrant.configure("2") do |config|
   config.vm.define "test-1.devpanel.net"
   config.vm.box = "devpanel/ubuntu64"
-  config.vm.box_url = "https://www.devpanel.com/vagrant/boxes.json"
+  config.vm.box_url = "https://files.devpanel.com/vagrant/box.json"
 end
