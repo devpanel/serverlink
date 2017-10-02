@@ -38,6 +38,17 @@ error() {
   exit $ex
 }
 
+nginx_ssl_on() {
+
+  vhost_base_domain=$(get_vhost_base_domain "$vhost") || return $?
+  nginx_vhost_lnk_dir="/etc/nginx/sites-enabled"
+
+  vhost_file="$nginx_vhost_lnk_dir/$vhost_base_domain.conf"
+  sed -i '/server_name/ i   listen 443 ssl;' $vhost_file
+  sed -i "/listen 443/ a   ssl_certificate $cert_link;" $vhost_file
+  sed -i "/listen 443/ a   ssl_certificate_key $key_link;" $vhost_file
+}
+
 # main
 
 unset skip_CA previous_buffer backup_existing quiet
@@ -182,6 +193,7 @@ if [ $? -ne 0 ]; then
 fi
 
 "$curr_dir/config-vhost-apache" "$vhost"
+nginx_ssl_on
 if [ $? -eq 0 ]; then
   echo
   echo "Successfully applied SSL configuration for vhost $vhost"
