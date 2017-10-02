@@ -47,6 +47,7 @@ nginx_ssl_on() {
   sed -i '/server_name/ i   listen 443 ssl;' $vhost_file
   sed -i "/listen 443/ a   ssl_certificate $cert_link;" $vhost_file
   sed -i "/listen 443/ a   ssl_certificate_key $key_link;" $vhost_file
+  service nginx restart
 }
 
 # main
