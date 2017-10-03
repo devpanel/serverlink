@@ -36,4 +36,29 @@ if [ "$PS1" = '\s-\v\$ ' ]; then
   PS1='[\u@\h:\w]\$ '
 fi
 
+# rubygems utils
+#
+# for users that use rubygems
+#   - add GEM_HOME variable to avoid gem install failing
+if hash gem >/dev/null 2>&1; then
+  if [ -z "$GEM_HOME" ]; then
+    GEM_HOME="$HOME/lib/ruby/gems"
+    if [ ! -d "$GEM_HOME" ]; then
+      mkdir -m 755 -p "$GEM_HOME"
+    fi
+  fi
+
+  if [ -d "$GEM_HOME" ]; then
+    export GEM_HOME
+
+    if [ -d "$GEM_HOME/bin" ]; then
+      # add $GEM_HOME/bin to the user's PATH
+      if ! echo "$PATH" | egrep -q "$GEM_HOME/bin" ; then
+        PATH="$GEM_HOME/bin:$PATH"
+      fi
+    fi
+  fi
+fi
+# // rubygem utils
+
 /bin/true
