@@ -71,14 +71,11 @@ centos_post_software_install() {
 
 centos_adjust_system_config() {
   local install_dir="$1"
-  # fuser fails on slicehost CentOS  (/proc/net/tcp is empty)
-  #if fuser 443/tcp >/dev/null || netstat -ln --tcp|grep -q :443
-  #then
-  #  :
-  #else
-  #  echo 'Listen 443' >> /etc/httpd/conf.d/webenabled.conf
-  #fi
+
   [ -e "$_apache_includes_dir"/php.conf ] && mv -f "$_apache_includes_dir"/php.conf{,.disabled}
+
+  echo '# disabled. With devPanel PHP must run as suexec, not as mod_php.' \
+    >"$_apache_includes_dir/php.conf"
 
   if [ -f /etc/php.ini ]; then
     sed -i 's/^\(session.save_path.\+\)/;\1/' /etc/php.ini
