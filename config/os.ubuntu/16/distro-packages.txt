@@ -17,6 +17,7 @@ php5.6-cgi
 php5.6-cli
 php5.6-curl
 php5.6-gd
+php5.6-intl
 php5.6-mbstring
 php5.6-mcrypt
 php5.6-mysql
@@ -28,6 +29,7 @@ php7.1-cgi
 php7.1-cli
 php7.1-curl
 php7.1-gd
+php7.1-intl
 php7.1-mbstring
 php7.1-mcrypt
 php7.1-mysql

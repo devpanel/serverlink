@@ -19,6 +19,7 @@ perl-core
 perl-devel
 php56
 php56-php-gd 
+php56-php-intl
 php56-php-ldap 
 php56-php-mysqlnd 
 php56-php-pecl-mysqlnd-ms 
@@ -37,6 +38,7 @@ php56-php-pecl-zip
 php56-php-pear
 php71
 php71-php-gd 
+php71-php-intl
 php71-php-ldap 
 php71-php-mysqlnd 
 php71-php-pdo 
