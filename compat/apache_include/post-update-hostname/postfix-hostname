@@ -1,0 +1,25 @@
+#!/bin/bash
+
+usage() {
+  echo "Usage: ${0##*/} <new_hostname> [old_hostname]"
+  exit 1
+}
+
+[ $# -eq 0 -o -z "$1" ] && usage
+
+new_hostname="$1"
+# old_hostname="$2"
+
+if ! hash postfix &>/dev/null; then
+  exit 0
+fi
+
+postconf -e "myhostname = $new_hostname" || exit $?
+
+if hash debconf-communicate &>/dev/null && \
+  echo "get postfix/mailname" | debconf-communicate >/dev/null; then
+
+  echo "set postfix/mailname $new_hostname" | debconf-communicate
+fi
+
+postfix reload

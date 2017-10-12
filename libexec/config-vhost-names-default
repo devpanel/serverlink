@@ -98,4 +98,6 @@ if [ ${#ex_local_vhosts_ar[@]} -gt 0 ]; then
   fi
 fi
 
+echo
+echo "Successfully updated vhost base domain."
 exit 0
