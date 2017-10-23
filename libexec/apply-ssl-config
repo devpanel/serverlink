@@ -193,13 +193,18 @@ if [ $? -ne 0 ]; then
   error "failed to set vhost metadata links"
 fi
 
-"$curr_dir/config-vhost-apache" "$vhost"
-nginx_ssl_on
-if [ $? -eq 0 ]; then
-  echo
-  echo "Successfully applied SSL configuration for vhost $vhost"
-  exit 0
-else
+if ! "$curr_dir/config-vhost-apache" "$vhost"; then
   echo
   error "failed to apply SSL configuration for vhost $vhost"
 fi
+
+if is_nginx_on_port80 ; then
+  if ! nginx_ssl_on; then
+    echo
+    error "failed to apply SSL configuration for vhost $vhost"
+  fi
+fi
+
+echo
+echo "Successfully applied SSL configuration for vhost $vhost"
+exit 0
