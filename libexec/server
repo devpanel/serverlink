@@ -8,7 +8,7 @@ my $log = "/var/log/webenabled.log";
 $|++;
 my $dir = dirname $0;
 die "Directory not found\n" unless -d $dir;
-$ENV{PATH}='/bin:/usr/bin:/usr/sbin:/usr/local/bin:/usr/local/sbin';
+$ENV{PATH}='/bin:/usr/bin:/usr/sbin:/usr/local/bin:/usr/local/sbin:/sbin';
 
 my @allowed_basename = qw(
   audit-entries
