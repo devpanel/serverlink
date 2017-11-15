@@ -71,6 +71,8 @@ generate_serveralias() {
 
     hostname_fmt=`format_to_apache "$server_hostname" "$alias_hostname"`
 
+    [ "$hostname_fmt" == "$vhost_base_domain" ] && continue
+
     aliases_str+="$hostname_fmt"
   done
 

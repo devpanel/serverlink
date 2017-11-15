@@ -12,6 +12,8 @@ Usage: @self_basename@ <command> [args]
     remove vhost                    removes an existing application
     enter                           start a shell for the specified vhost
     restart mysql                   restarts mysql for the specified vhost or domain
+    add domain                      adds a domain to a vhost
+    remove domain                   adds a domain from a vhost
     find domain                     finds the vhost with a specific domain name
     manage domains                  manages domains associated with a vhost
     enable  fastcgi                 enables FastCGI for the specified vhost
