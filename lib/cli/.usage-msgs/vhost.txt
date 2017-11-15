@@ -15,7 +15,6 @@ Usage: @self_basename@ <command> [args]
     add domain                      adds a domain to a vhost
     remove domain                   adds a domain from a vhost
     find domain                     finds the vhost with a specific domain name
-    manage domains                  manages domains associated with a vhost
     enable  fastcgi                 enables FastCGI for the specified vhost
     disable fastcgi                 disables FastCGI for the specified vhost
     enable htpasswd                 enables htpasswd password protection for the

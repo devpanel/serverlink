@@ -158,7 +158,7 @@ Reset the password of the admin user of the application.
 ## Adding a domain to a virtual host
 
 ```
-# devpanel manage domains --vhost d7new --add whatever.com
+# devpanel add domain --vhost d7new --domain whatever.com
 ```
 
 ## Enabling Let's Encrypt SSL certificates for a virtual host
