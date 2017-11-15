@@ -1,0 +1,108 @@
+#!/bin/bash
+
+set_usage_msg \
+  "Usage: $bin_name ${cmd_ar[*]} [opts] --vhost <vhost> --domain <domain>
+
+  Options:
+    --vhost <vhost>           the vhost to backup
+
+    --domain <domain>         adds the domain to vhost (to add multiple
+                              domains, use this option multiple times)
+
+    --default <domain>        sets the specified domain as the default for
+                              the virtualhost on Apache
+
+    --no-reload               write the configuration files, but don't
+                              reload Apache now
+
+  Adds one or more domains to the specified vhost.
+"
+
+devpanel_cmd__add_domain() {
+  [ $# -eq 0 -o -z "$1" ] && usage
+
+  local name vhost
+  local server_domain curr_default_domain new_default_domain
+  local -a cmd_args_ar=() vhost_args_ar=() domains_ar=()
+
+  while [ -n "$1" ]; do
+    name="$1"
+    case "$name" in
+      --vhost)
+        [ -z "$2" ] && error_missing_value vhost
+        vhost="$2"
+        shift 2
+        ;;
+
+      --domain)
+        [ -z "$2" ] && error_missing_value "$name"
+        domains_ar+=( "$2" )
+        shift 2
+        ;;
+
+      --default)
+        [ -z "$2" ] && error_missing_value "$name"
+        new_default_domain="$2"
+        shift 2
+        ;;
+
+      --no-reload)
+        cmd_args_ar+=( -N )
+        shift
+        ;;
+
+      --help)
+        usage
+        ;;
+
+      --)
+        shift
+        break
+        ;;
+
+      *)
+        error "unknown option '$name'"
+        ;;
+    esac
+  done
+
+  [ -z "${domains_ar[*]}" -a -z "$new_default_domain" ] || \
+    [ -z "$vhost" ] && usage
+
+  if ! vhost_exists "$vhost"; then
+    error "vhost '$vhost' doesn't exist." -
+    return $?
+  fi
+
+  server_domain=$(get_server_base_domain) || return $?
+
+  curr_default_domain=$( get_vhost_default_hostname "$vhost" ) || return $?
+
+  if [ -z "$new_default_domain" ]; then
+    if [[ "$curr_default_domain" == *."$server_domain" ]] && \
+       [[ "${domains_ar[0]}"     != *."$server_domain" ]]; then
+
+      new_default_domain="${domains_ar[0]}"
+      unset domains_ar[0]
+    fi
+  fi
+
+  if [ -n "$new_default_domain" ]; then
+    vhost_args_ar+=( '*' "$new_default_domain" )
+  fi
+
+  if [ -n "${domains_ar[*]}" ]; then
+    local _domain
+    for _domain in "${domains_ar[@]}"; do
+      [ -z "$_domain" ] && continue
+      [ "$_domain" == "$new_default_domain" ] && continue
+
+      vhost_args_ar+=( '+' "$_domain" )
+    done
+  fi
+
+  cmd_args_ar+=( -n )
+
+  "$sys_dir/libexec/config-vhost-names" "${cmd_args_ar[@]}" "$vhost" \
+    "${vhost_args_ar[@]}"
+}
