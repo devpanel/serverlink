@@ -1,0 +1,77 @@
+#!/bin/bash
+
+set_usage_msg \
+  "Usage: $bin_name ${cmd_ar[*]} [opts] --vhost <vhost> --domain <domain>
+
+  Options:
+    --vhost <vhost>           the vhost to backup
+
+    --domain <domain>         removes the domain from vhost (to remove multiple
+                              domains, use this option multiple times)
+
+    --no-reload               write the configuration files, but don't
+                              reload Apache now
+
+  Removes one or more domains from the specified vhost.
+"
+
+devpanel_cmd__remove_domain() {
+  [ $# -eq 0 -o -z "$1" ] && usage
+
+  local name vhost
+  local -a cmd_args_ar=() vhost_args_ar=() domains_ar=()
+
+  while [ -n "$1" ]; do
+    name="$1"
+    case "$name" in
+      --vhost)
+        [ -z "$2" ] && error_missing_value vhost
+        vhost="$2"
+        shift 2
+        ;;
+
+      --domain)
+        [ -z "$2" ] && error_missing_value "$name"
+        domains_ar+=( "$2" )
+        shift 2
+        ;;
+
+      --no-reload)
+        cmd_args_ar+=( -N )
+        shift
+        ;;
+
+      --help)
+        usage
+        ;;
+
+      --)
+        shift
+        break
+        ;;
+
+      *)
+        error "unknown option '$name'"
+        ;;
+    esac
+  done
+
+  [ -z "${domains_ar[*]}" -o -z "$vhost" ] && usage
+
+  if ! vhost_exists "$vhost"; then
+    error "vhost '$vhost' doesn't exist." -
+    return $?
+  fi
+
+  local _domain
+  for _domain in "${domains_ar[@]}"; do
+    [ -z "$_domain" ] && continue
+
+    vhost_args_ar+=( '-' "$_domain" )
+  done
+
+  cmd_args_ar+=( -n )
+
+  "$sys_dir/libexec/config-vhost-names" "${cmd_args_ar[@]}" "$vhost" \
+    "${vhost_args_ar[@]}"
+}
