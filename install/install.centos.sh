@@ -45,6 +45,26 @@ centos_install_distro_packages() {
     rpm -Uvh "$repos_rpm_file"
   done
 
+  ###############################################
+  # workaround for mysql on low memory servers  #
+  ###############################################
+  # copy /etc/my.cnf.d/ in place with the lower memory defaults, so that the
+  # mysqld is able to start just after install (that is the distro default
+  # behavior) and not fail due to lack of memory that happens on low memory
+  # servers + the salt client.
+  #
+  local mysql_dir_1="$source_dir/install/skel/common/etc/my.cnf.d"
+  local mysql_dir_2="$source_dir/install/skel/$distro/$distro_ver_major/etc/my.cnf.d"
+  local mysql_dir_3="$source_dir/install/skel/$distro/$distro_ver/etc/my.cnf.d"
+  local mysql_dir
+
+  for mysql_dir in "$mysql_dir_1" "$mysql_dir_2" "$mysql_dir_3"; do
+    if [ -d "$mysql_dir" ]; then
+      cp -R "$mysql_dir" /etc
+    fi
+  done
+  # // workaround for mysql
+
   local pkg_list_file
   pkg_list_file="$source_dir/config/os.$distro/$distro_ver_major/distro-packages.txt"
 
