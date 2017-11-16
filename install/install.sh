@@ -25,7 +25,6 @@ Usage: $prog [ options ]
     -A tasks_url      URL of the tasks api
     -h                Displays this help message
     -d                print verbose debug messages
-    -R                enable auto-register
     -b                from bootstrap (don't update devpanel.conf and don't
                       restart taskd)
     -V version        Specify the version of the linux distro (optional)
@@ -371,14 +370,6 @@ ServerName $dp_server_hostname
     fi
   fi
 
-  if [ -n "$dp_auto_register" ]; then
-    ini_section_add_key_value "$dp_config_file" global auto_register 1
-    if [ $? -ne 0 ]; then
-      echo -e "\n\nWarning: unable to set auto_register on '$dp_config_file'\n\n"
-      sleep 3
-    fi
-  fi
-
   if [ -n "$dp_tasks_api_url" ]; then
     ini_section_replace_key_value "$dp_config_file" taskd api_url "$dp_tasks_api_url"
     if [ $? -ne 0 ]; then
@@ -503,7 +494,7 @@ fi
 trap 'ex=$?; rm -f "$lock_file" ; trap - EXIT INT HUP TERM; exit $ex' EXIT INT HUP TERM
 
 
-getopt_flags="I:L:V:H:U:K:u:A:hdRbW"
+getopt_flags="I:L:V:H:U:K:u:A:hdbW"
 
 unset from_bootstrap we_v1_compat
 while getopts $getopt_flags OPTS; do
@@ -534,9 +525,6 @@ while getopts $getopt_flags OPTS; do
       ;;
     A)
       dp_tasks_api_url="$OPTARG"
-      ;;
-    R)
-      dp_auto_register=1
       ;;
     b)
       from_bootstrap=1
