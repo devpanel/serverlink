@@ -1,0 +1,57 @@
+#!/bin/bash
+
+set_usage_msg \
+  "Usage: $bin_name ${cmd_ar[*]} [opts] --version <version>
+
+  Options:
+    --version <version>     the the specified version
+    --help                  display the command usage
+
+  Sets the platform version to which this host will connect to.
+
+"
+
+devpanel_cmd__set_platform_version() {
+  [ $# -eq 0 -o -z "$1" ] && usage
+
+  local name version
+  local -a cmd_args_ar=()
+
+  while [ -n "$1" ]; do
+    name="$1"
+    case "$name" in
+      --version)
+        [ -z "$2" ] && error_missing_value "$name"
+        # validation is done on the function
+        version="$2"
+        shift 2
+        ;;
+
+      --help)
+        usage
+        ;;
+
+      --)
+        shift
+        break
+        ;;
+
+      *)
+        error "unknown option $name"
+        ;;
+    esac
+  done
+
+  [ -z "$version" ] && error_missing_param version
+
+  set_platform_version "$version"
+  local st=$?
+
+  if [ $st -eq 0 ]; then
+    echo "Successfully set the platform version to $version."
+  else
+    echo "Failed to set platform version." 1>&2
+    return $st
+  fi
+
+}

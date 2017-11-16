@@ -25,6 +25,8 @@ Usage: @self_basename@ <command> [args]
     debug taskd                     starts devPanel taskd in debug mode
     manage root ssh keys            manages ssh keys for the user root
     set apache port                 sets the HTTP and HTTPS ports of Apache
+    set platform version            sets the platform version to which this
+                                    host will connect to
 
     skip nginx vhost                Skips the writing of nginx config for the
                                     specified vhost

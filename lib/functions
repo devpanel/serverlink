@@ -3277,6 +3277,22 @@ get_default_php_version() {
   deref_os_prop "$DEVPANEL_HOME" php_default_version
 }
 
+get_platform_version() {
+  deref_os_prop "$DEVPANEL_HOME" platform_version
+}
+
+set_platform_version() {
+  local version="$1"
+
+  if [[ ! "$version" =~ ^[1-9]$ ]]; then
+    echo "$FUNCNAME(): invalid version string specified (must be [1-9])" 1>&2
+    return 1
+  fi
+
+  echo "set-local platform_version $version" | \
+    "$DEVPANEL_HOME/libexec/system-metadata-handler" -q
+}
+
 is_nginx_on_port80() {
   local apache_port pids_on_port80 tst_pid pid_exe
 

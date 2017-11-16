@@ -16,6 +16,8 @@ usage() {
 Usage: $prog [ options ]
 
   Options:
+    -2                this host will connect to platform version 2
+    -3                this host will connect to platform version 3
     -L distro         Assume the specified distro, don't try to auto-detect
     -I directory      Install the software in the specified directory
     -H hostname       hostname to use on the network services
@@ -418,7 +420,7 @@ ServerName $dp_server_hostname
   fi
 
   #Install Zabbix Agent
-  if [ -z "$we_v1_compat" ]; then
+  if [ -n "$platform_version" -a "$platform_version" == 2 ]; then
     $webenabled_install_dir/install/install-zabbix on $dp_server_hostname
   fi
 
@@ -494,11 +496,17 @@ fi
 trap 'ex=$?; rm -f "$lock_file" ; trap - EXIT INT HUP TERM; exit $ex' EXIT INT HUP TERM
 
 
-getopt_flags="I:L:V:H:U:K:u:A:hdbW"
+getopt_flags="I:L:V:H:U:K:u:A:hdbW23"
 
-unset from_bootstrap we_v1_compat
+unset from_bootstrap we_v1_compat platform_version
 while getopts $getopt_flags OPTS; do
   case "$OPTS" in
+    2|3)
+      if [ -n "$platform_version" -a "$platform_version" != $OPTS ]; then
+        error "only one platform version can be specified at a time."
+      fi
+      platform_version=$OPTS
+      ;;
     d)
       set -x
       ;;
@@ -530,6 +538,7 @@ while getopts $getopt_flags OPTS; do
       from_bootstrap=1
       ;;
     W)
+      platform_version=1
       we_v1_compat=1
       ;;
     h|*)
@@ -666,6 +675,13 @@ fi
 if [ -n "$we_v1_compat" ]; then
   # WE v1.0 backwards compatibility
   devpanel enable webenabled compat --yes
+fi
+
+if [ -n "$platform_version" ]; then
+  devpanel set platform version --version $platform_version
+  if [ "$platform_version" == 3 ]; then
+    devpanel enable long vhost names --yes
+  fi
 fi
 
 echo
