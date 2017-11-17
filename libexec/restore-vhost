@@ -160,15 +160,6 @@ if ! source "$aux_lib_file"; then
   error "unable to load auxiliary functions from $aux_lib_file"
 fi
 
-# Move to here to fix issue https://help.webstandard.com/issues/7237
-get_linux_username_from_vhost "$vhost" && user_web="$_dp_value"
-if [ $? -ne 0 ]; then
-  error "unable to get the linux username from vhost $vhost"
-fi
-
-home="`eval \"echo ~$user_web\"`" || error "unable to get \$HOME of user $user_web"
-user_db="b_${user_web#w_}"
-
 assign_deref_os_prop_or_exit sys_datadir "$we_base_dir" data_dir
 
 if [ -n "$subsystem" ]; then
@@ -233,6 +224,14 @@ elif [ ! -e "$archive_label" -a $create_vhost -eq 0 \
   -a $try_archive_in_user_home -eq 1 \
   -a "${archive_label:0:1}" != "/" -a "${archive_label:0:2}" != "./" \
   -a "${archive_label:0:3}" != "../" ]; then
+
+  # need the variable \$home earlier
+  get_linux_username_from_vhost "$vhost" && \
+  user_web="$_dp_value"
+  if [ $? -ne 0 ]; then
+    error "unable to get the linux username from vhost $vhost"
+  fi
+  home=~$user_web
 
   base_label=$(basename "$archive_label")
   path_in_home="$home/public_html/gen/archive/$base_label"
@@ -304,6 +303,14 @@ fi
 echo Processing web...
 run $0-web $web_options "$vhost" "$archive_dir/web" "$@" || exit 1
 
+# when the vhost is created, the username information is only available now
+get_linux_username_from_vhost "$vhost" && \
+user_web="$_dp_value"
+if [ $? -ne 0 ]; then
+  error "unable to get the linux username from vhost $vhost"
+fi
+home=~$user_web
+user_db="b_${user_web#w_}"
 
 if ! [ -d "$archive_dir/db" ]
 then
