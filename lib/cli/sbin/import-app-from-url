@@ -1,0 +1,120 @@
+#!/bin/bash
+
+set_usage_msg \
+  "Usage: $bin_name ${cmd_ar[*]} <opts>
+
+  Options:
+    --vhost      <name>           the name of the virtual host to be created [*]
+
+    --file-url <url>              URL of the file with the website contents
+                                  (must be .zip or .tar.gz) [*]
+
+    --file-type <type>            the type of the app of the app (e.g. 
+                                  tar.gz, zip)
+
+    --database-url <url>          URL of the mysqldump file of the database (must
+                                  be either .sql, .zip or .gz). If it's .zip the
+                                  file inside it must be named database.sql. [*]
+
+    --database-file-type          the type of the database file (e.g. sql,
+                                  zip, gz)
+
+    --subsystem <name>            the subsystem type of the app (e.g.
+                                  drupal, wordpress, magento, etc)           [*]
+
+    --pack-file <filename>        download and pack the app and database
+                                  files in a single file ready to be
+                                  imported, but don't actually create the
+                                  vhost. Only use this option if you want to
+                                  generate an archive in the right format,
+                                  but to be used later.
+
+  Options marked with [*] are required.
+
+
+  Imports a site from the specified archive files.
+"
+
+devpanel_cmd__import_app_from_url() {
+  [ $# -eq 0 -o -z "$1" ] && usage
+
+  local name vhost file_url file_type db_file_url db_file_type
+  local subsystem pack_file
+  local -a cmd_args_ar=()
+
+  while [ -n "$1" ]; do
+    name="$1"
+    case "$name" in
+      --vhost)
+        [ -z "$2" ] && error_missing_value "$name"
+        vhost="$2"
+        shift 2
+        ;;
+
+      --file-url)
+        [ -z "$2" ] && error_missing_value "$name"
+        file_url="$2"
+        shift 2
+        ;;
+
+      --file-type)
+        [ -z "$2" ] && error_missing_value "$name"
+        file_type="$2"
+        shift 2
+        ;;
+
+      --database-url)
+        [ -z "$2" ] && error_missing_value "$name"
+        db_file_url="$2"
+        shift 2
+        ;;
+
+      --database-file-type)
+        [ -z "$2" ] && error_missing_value "$name"
+        db_file_type="$2"
+        shift 2
+        ;;
+
+      --subsystem)
+        [ -z "$2" ] && error_missing_value "$name"
+        subsystem="$2"
+        shift 2
+        ;;
+       
+      --pack-file)
+        [ -z "$2" ] && error_missing_value "$name"
+        pack_file="$2"
+        shift 2
+        ;;
+
+      --help)
+        usage
+        ;;
+
+      --)
+        shift
+        break
+        ;;
+
+      *)
+        error "unknown option $name"
+        ;;
+    esac
+  done
+
+  local _param
+  for _param in vhost file_url file_type db_file_url db_file_type subsystem; do
+    [ -z "${!_param}" ] && error_missing_param $_param
+  done
+
+  cmd_args_ar+=( -f "$file_type:$file_url" )
+  cmd_args_ar+=( -d "$db_file_type:$db_file_url" )
+  cmd_args_ar+=( -s "$subsystem" )
+
+  if [ -n "$pack_file" ]; then
+    cmd_args_ar+=( -p "$pack_file" )
+  fi
+
+  "$sys_dir/libexec/import-site-from-url" "${cmd_args_ar[@]}" \
+    "$vhost"
+}
