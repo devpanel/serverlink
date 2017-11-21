@@ -70,6 +70,11 @@ centos_install_distro_packages() {
 
   install_distro_pkgs "$distro" "$distro_ver_major" "$pkg_list_file"
 
+  if [ "$distro_ver_major" == 6 ]; then
+    # on CentOS 6 it comes with httpd disabled on boot by default
+    chkconfig httpd on
+  fi
+
   # Disable selinux
   setenforce 0
   sed -i 's/SELINUX=enforcing/SELINUX=disabled/g' /etc/sysconfig/selinux
