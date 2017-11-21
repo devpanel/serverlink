@@ -26,6 +26,9 @@ usage() {
                              this option if you want to generate an archive
                              in the right format, but to be used later.
 
+    -T version               PHP version to use on the new vhost (e.g. 5.6,
+                             7.1)
+
     Example usage:
     
     # $cmd -f tar.gz:https://someurl.com/download/asdfasdfasdf \\
@@ -57,11 +60,11 @@ fi
 
 unset archive_file_url archive_file_url_raw
 unset db_dump_file_url db_dump_file_url_raw
-unset subsystem temp_dir just_pack pack_file
+unset subsystem temp_dir just_pack pack_file php_version
 
 declare -a cmd_args=()
 
-getopt_flags='f:d:s:p:h'
+getopt_flags='f:d:s:p:T:h'
 while getopts $getopt_flags OPTN; do
   case $OPTN in
     f)
@@ -87,6 +90,9 @@ while getopts $getopt_flags OPTN; do
       ;;
     h)
       usage
+      ;;
+    T)
+      php_version="$OPTARG"
       ;;
     *)
       exit 1
@@ -175,6 +181,10 @@ if ! download_file "$archive_file_url" "$public_files"; then
   error "failed to download URL $archive_file_url to $public_files"
 elif ! download_file "$db_dump_file_url" "$db_dump_file"; then
   error "failed to download URL '$db_dump_file_url' to $db_dump_file"
+fi
+
+if [ -n "$php_version" ]; then
+  cmd_args+=( -T "$php_version" )
 fi
 
 cmd_args+=( -f "$public_files" -d "$db_dump_file" )

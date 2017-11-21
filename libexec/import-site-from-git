@@ -28,6 +28,9 @@ usage() {
 
     -O name=value             options to pass to restore-vhost (e.g
                               site_title, site_email,etc)
+
+    -T php_version            PHP version to use on the imported site (e.g.
+                              5.6, 7.1)
 "
   exit 1
 }
@@ -98,8 +101,8 @@ if ! source "$lib_file"; then
   error "unable to source file $lib_file"
 fi
 
-getopt_flags='hb:d:s:p:I:t:O:'
-unset orig_archive_file subsystem
+getopt_flags='hb:d:s:p:I:t:O:T:'
+unset orig_archive_file subsystem php_version
 unset db_dump_type db_dump_file orig_db_dump_file
 unset temp_dir just_pack pack_file clone_vhost_db ref_vhost_db
 unset install_profile db_url download_db
@@ -150,6 +153,9 @@ while getopts $getopt_flags OPTN; do
       ;;
     O)
       restore_args+=( -O "$OPTARG" )
+      ;;
+    T)
+      php_version="$OPTARG"
       ;;
     h)
       usage
@@ -317,6 +323,10 @@ fi
 
 if [ -z "$db_dump_type" -o -n "$install_profile" ]; then
   restore_args+=( -O config_function="setup_from_git" )
+fi
+
+if [ -n "$php_version" ]; then
+  restore_args+=( -T "$php_version" )
 fi
 
 "$self_dir/restore-vhost" "${restore_args[@]}" -s "$subsystem" \

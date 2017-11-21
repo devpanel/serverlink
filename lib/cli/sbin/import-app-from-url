@@ -29,6 +29,9 @@ set_usage_msg \
                                   generate an archive in the right format,
                                   but to be used later.
 
+    --php-version <version>       PHP version to use on the vhost (e.g. 5.6,
+                                  7.1)
+
   Options marked with [*] are required.
 
 
@@ -39,7 +42,7 @@ devpanel_cmd__import_app_from_url() {
   [ $# -eq 0 -o -z "$1" ] && usage
 
   local name vhost file_url file_type db_file_url db_file_type
-  local subsystem pack_file
+  local subsystem pack_file php_version
   local -a cmd_args_ar=()
 
   while [ -n "$1" ]; do
@@ -87,6 +90,12 @@ devpanel_cmd__import_app_from_url() {
         shift 2
         ;;
 
+      --php-version)
+        [ -z "$2" ] && error_missing_value "$name"
+        php_version="$2"
+        shift 2
+        ;;
+
       --help)
         usage
         ;;
@@ -113,6 +122,10 @@ devpanel_cmd__import_app_from_url() {
 
   if [ -n "$pack_file" ]; then
     cmd_args_ar+=( -p "$pack_file" )
+  fi
+
+  if [ -n "$php_version" ]; then
+    cmd_args_ar+=( -T "$php_version" )
   fi
 
   "$sys_dir/libexec/import-site-from-url" "${cmd_args_ar[@]}" \

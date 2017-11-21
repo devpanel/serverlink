@@ -78,6 +78,7 @@ Usage: restore-vhost [ OPTIONS ] VHOST ARCHIVE_LABEL
                       restore-vhost-subsystem that this is the initial 
                       deployment of the app
     -O name=value     subsystem values
+    -T version        PHP version to use on this vhost (e.g. 5.6, 7.1)
 
   VHOST is the 6 characters of after w_ of the linux username to be used
   ARCHIVE_LABEL can be any of: .tgz file, a directory, or a http/https/ftp url of a .tgz file
@@ -104,8 +105,9 @@ app_cmd_options=""
 opt_i=0 opt_p=0
 try_archive_in_user_home=0
 create_vhost=1
+php_version=""
 
-while getopts "NHPpinFS:O:s:" OPTOPT
+while getopts "NHPpinFS:O:s:T:" OPTOPT
 do
   case "$OPTOPT" in
     P) options="$options${options+ }-P";;
@@ -134,6 +136,9 @@ do
       ;;
     s)
       subsystem="$OPTARG"
+      ;;
+    T)
+      php_version="$OPTARG"
       ;;
     *) exit 1;
   esac
@@ -302,6 +307,10 @@ fi
 
 echo Processing web...
 run $0-web $web_options "$vhost" "$archive_dir/web" "$@" || exit 1
+
+if [ -n "$php_version" ]; then
+  devpanel set php version --version "$php_version" --vhost "$vhost"
+fi
 
 # when the vhost is created, the username information is only available now
 get_linux_username_from_vhost "$vhost" && \

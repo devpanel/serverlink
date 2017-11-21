@@ -20,6 +20,9 @@ usage() {
                               but don't actually create the vhost. Only use
                               this option if you want to generate an archive
                               in the right format, but to be used later.
+
+    -T php_version            PHP version to use on the vhost (e.g. 5.6,
+                              7.1)
 "
   exit 1
 }
@@ -60,9 +63,11 @@ if ! source "$lib_file"; then
   error "unable to source file $lib_file"
 fi
 
-getopt_flags='f:d:s:p:h'
+getopt_flags='f:d:s:p:T:h'
 unset orig_archive_file orig_db_dump_file subsystem
-unset temp_dir just_pack pack_file
+unset temp_dir just_pack pack_file php_version
+declare -a restore_args=()
+
 while getopts $getopt_flags OPTN; do
   case $OPTN in
     f)
@@ -89,6 +94,10 @@ while getopts $getopt_flags OPTN; do
 
       just_pack=1
       pack_file="$OPTARG"
+      ;;
+
+    T)
+      php_version="$OPTARG"
       ;;
     h)
       usage
@@ -247,7 +256,11 @@ if [ -n "$just_pack" ]; then
   exit 0
 fi
 
-"$self_dir/restore-vhost" -p "$vhost" "$final_archive_file"
+if [ -n "$php_version" ]; then
+  restore_args+=( -T "$php_version" )
+fi
+
+"$self_dir/restore-vhost" "${restore_args[@]}" -p "$vhost" "$final_archive_file"
 if [ $? -eq 0 ]; then
   echo
   echo "Successfully imported files and created vhost $vhost"

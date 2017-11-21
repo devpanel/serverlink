@@ -9,6 +9,7 @@ set_usage_msg \
     --vhost <name>             the name of the vhost where to install
     --desc <description>       a short description of the apps's purpose
     --password-stdin           read the app admin password from stdin
+    --php-version <version>    the PHP version to use (e.g. 5.6, 7.1)
 
   Installs the specified application in a new virtual host.
 "
@@ -16,7 +17,7 @@ set_usage_msg \
 devpanel_cmd__install_app(){
   [ -z "$1" ] && usage
 
-  local name vhost arg publisher app app_url desc
+  local name vhost arg publisher app app_url desc php_version
   local read_pw_stdin
   local -a cmd_args=()
 
@@ -55,6 +56,13 @@ devpanel_cmd__install_app(){
         read_pw_stdin=1
         shift
         ;;
+
+      --php-version)
+        [ -z "$2" ] && error_missing_value "$name"
+        php_version="$2"
+        shift 2
+        ;;
+
       --help)
         usage
         ;;
@@ -97,7 +105,8 @@ devpanel_cmd__install_app(){
   fi
 
   echo "$app_password" | devpanel_run create vhost --vhost "$vhost" --from "$app_url" \
-    ${desc:+--desc "$desc"} --password-stdin
+    ${php_version:+--php-version $php_version} ${desc:+--desc "$desc"} \
+    --password-stdin
 
   if [ $? -eq 0 ]; then
     local vhost_url
