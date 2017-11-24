@@ -4,17 +4,19 @@ set_usage_msg \
   "Usage: $bin_name $action [opts] [--vhost <vhost>] [--domain <domain>]
 
   Options:
-    --vhost  <vhost>          the vhost
-    --domain <domain>         find the vhost associated with the
-                              specified domain
-    --conditional             only try to restart if the vhost is enabled
+    --vhost  <vhost>         the vhost
+    --domain <domain>        find the vhost associated with the
+                             specified domain
+    --conditional            only start if the vhost is not disabled and
+                             if mysql was not intentionally stopped
 
-  Restarts mysqld associated with the specified domain or vhost.
+  Starts mysqld associated with the specified domain or vhost.
 "
 
-devpanel_cmd__restart_mysql() {
-  local param vhost domain vhost_user db_user  
+devpanel_cmd__start_mysql() {
+  local param vhost vhost_user db_user domain
   local conditional
+  
   [ $# -eq 0 -o -z "$1" ] && usage
 
   while [ -n "$1" ]; do
@@ -31,16 +33,16 @@ devpanel_cmd__restart_mysql() {
         domain="$2"
         shift 2
         ;;
+      --conditional)
+        conditional=1
+        shift
+        ;;
       --help)
         usage
         ;;
       --)
         shift
         break
-        ;;
-      --conditional)
-        conditional=1
-        shift
         ;;
       *)
         error "unknown parameter: $param"
@@ -59,30 +61,25 @@ devpanel_cmd__restart_mysql() {
     fi
   fi
 
-  if ! vhost_exists "$vhost"; then
-    error "vhost doesn't exist."
+  get_linux_username_from_vhost "$vhost" && \
+    vhost_user="$_dp_value"
+  if [ $? -ne 0 ]; then
+    error "unable to get linux user for vhost '$vhost'"
   fi
 
+  db_user="b_${vhost_user#w_}"
+     
+  local action
   if [ -n "$conditional" ]; then
     if ! is_vhost_enabled "$vhost"; then
+      # vhost is disabled, don't start it
       return 0
     fi
-  fi
 
-  get_linux_username_from_vhost "$vhost" && \
-  vhost_user="$_dp_value" || return $?
-  db_user="b_${vhost_user#w_}"
-
-  local actions_bin="$sys_dir/compat/dbmgr/current/bin/daemon-action"
-
-  "$actions_bin" stop-politely-or-force "$db_user"
-
-  echo "Starting mysql for vhost $vhost..."
-  echo -n "  "
-  "$actions_bin" start "$db_user"
-  if [ $? -eq 0 ]; then
-    return 0
+    action="cond-start"
   else
-    error "unable to start mysql for vhost $vhost"
+    action=start
   fi
+
+  "$sys_dir/compat/dbmgr/current/bin/daemon-action" "$action" "$db_user"
 }

@@ -1,0 +1,254 @@
+#!/bin/bash
+
+usage() {
+  echo "Usage: ${0##*/} <action> <db_name>
+
+  Run an action on a MySQL instance.
+
+  Known actions:
+    start
+    stop
+    status
+    restart
+    cond-start
+    force-stop
+    stop-politely-or-force
+"
+  exit 1
+}
+
+error() {
+  local msg="$1"
+  local exit_code="${2:-1}"
+
+  [ -n "$msg" ] && echo "Error: $msg" 1>&2
+
+  if [ "$exit_code" == - ]; then
+    return 1
+  else
+    exit $exit_code
+  fi
+}
+
+is_valid_instance_str() {
+  local str="$1"
+  local rgx='^[a-z0-9_-]{1,32}$'
+
+  if [[ "$str" =~ $rgx ]]; then
+    return 0
+  else
+    return 1
+  fi
+}
+
+instance_exists() {
+  local instance="$1"
+
+  if ! is_valid_instance_str "$instance"; then
+    echo "$FUNCNAME(): invalid syntax on instance name" 1>&2
+    return 1
+  fi
+
+  local config_dir="$dbmgr_dir/config/mysql/$instance"
+
+  if [ -d "$config_dir" ]; then
+    return 0
+  else
+    return 1
+  fi
+}
+
+_get_lock_file_name() {
+  local instance="$1"
+
+  unset _lock_file
+
+  local lock_dir_1="/run/devpanel/lock"
+  local lock_dir_2="/var/run/devpanel/lock"
+  local lock_dir
+
+  if [ -d "$lock_dir_1" ]; then
+    lock_dir="$lock_dir_1"
+  elif [ -d "$lock_dir_2" ]; then
+    lock_dir="$lock_dir_2"
+  else
+    echo "$FUNCNAME(): no lock dir found, not creating lock file" 1>&2
+    return 1
+  fi
+
+  _lock_file="$lock_dir/mysql.$instance"
+
+  return 0
+}
+
+get_db_home() {
+  local instance="$1"
+  local line home config_file
+  config_file="$dbmgr_dir/config/db-daemons.conf"
+
+  if line=$(egrep -m 1 "^$instance:" "$config_file") && [ -n "$line" ]; then
+    db_home=$(echo "$line" | cut -d: -f 4)
+    if [ -n "$db_home" ]; then
+      echo "$db_home"
+      return 0
+    fi
+  fi
+
+  echo "$FUNCNAME(): unable to get db_home for $instance" 1>&2
+  return 1
+}
+
+create_conditional_lock() {
+  local instance="$1"
+
+  _get_lock_file_name "$instance" 2>/dev/null && \
+  lock_file="$_lock_file"
+  if [ $? -ne 0 ]; then
+    # unable to get lock file, maybe the basic dirs don't exist. Try to
+    # create it and then do another attempt
+    #
+    # this is a "temporary" workaround for systems that don't have the basic
+    # dirs created yet
+    "$sys_dir/sbin/create-base-dirs"
+    _get_lock_file_name "$instance" && \
+    lock_file="$_lock_file" || return $?
+  fi
+
+  # race condition not a problem, so just using touch
+  touch "$lock_file"
+}
+
+remove_conditional_lock() {
+  local instance="$1"
+
+  _get_lock_file_name "$instance" && \
+  lock_file="$_lock_file" || return $?
+
+  rm -f "$lock_file"
+}
+
+has_conditional_lock() {
+  local instance="$1"
+
+  _get_lock_file_name "$instance" && \
+  lock_file="$_lock_file" || return $?
+
+  if [ -f "$lock_file" ]; then
+    return 0
+  else
+    return 1
+  fi
+}
+
+ping_mysql_instance() {
+  local instance="$1"
+  local config_file="$dbmgr_dir/config/mysql/$instance/root.client.cnf"
+
+  mysqladmin --defaults-file="$config_file" ping
+}
+
+start_mysql_instance() {
+  local instance="$1"
+
+  "$self_dir/daemon-start" --user="$instance"
+}
+
+stop_mysql_instance() {
+  local instance="$1"
+
+  local config_file="$dbmgr_dir/config/mysql/$instance/root.client.cnf"
+
+  mysqladmin --defaults-file="$config_file" --verbose shutdown
+}
+
+restart_mysql_instance() {
+  local instance="$1"
+
+  ping_mysql_instance "$instance" && stop_mysql_instance "$instance"
+
+  start_mysql_instance "$instance"
+}
+
+force_stop_mysql_instance() {
+  local instance="$1"
+
+  local db_home
+
+  db_home=$(get_db_home "$instance" ) || return $?
+
+  if [ ! -d "$db_home" ]; then
+    echo "$FUNCNAME(): missing database directory $db_home" 1>&2
+    return 1
+  fi
+
+  local mysql_known_file="$db_home/mysql/error.log"
+  if [ ! -f "$mysql_known_file" ]; then
+    echo "$FUNCNAME(): missing file $mysql_known_file" 1>&2
+    return 1
+  fi
+
+  if fuser -s "$mysql_known_file" 2>/dev/null; then
+    echo "$FUNCNAME(): Stopping mysql forcefully..." 1>&2
+    fuser -k -KILL "$mysql_known_file" 2>/dev/null
+  else
+    return 1
+  fi
+}
+
+# main
+[ $# -lt 2 ] && usage
+
+self_bin=`readlink -e "$0"`
+if [ $? -ne 0 ]; then
+  error "unable to get self path"
+fi
+self_dir="${self_bin%/*}"
+dbmgr_dir="${self_dir%/*/*}"
+sys_dir="${dbmgr_dir%/*/*}"
+
+action="$1"
+instance="$2"
+
+if ! instance_exists "$instance"; then
+  error "mysql instance doesn't exist."
+fi
+
+case "$action" in
+  status)
+    ping_mysql_instance "$instance"
+    ;;
+  start)
+    start_mysql_instance "$instance"
+    remove_conditional_lock "$instance"
+    ;;
+  restart)
+    restart_mysql_instance "$instance"
+    remove_conditional_lock "$instance"
+    ;;
+  stop)
+    stop_mysql_instance "$instance"
+    create_conditional_lock "$instance"
+    ;;
+  cond-start)
+    if has_conditional_lock "$instance"; then
+      exit 0
+    fi
+
+    restart_mysql_instance "$instance"
+    ;;
+  force-stop)
+    force_stop_mysql_instance "$instance"
+    ;;
+  stop-politely-or-force)
+    # first try the non-forced stop
+    if stop_mysql_instance "$instance" >/dev/null; then
+      exit 0
+    fi
+
+    force_stop_mysql_instance "$instance"
+    ;;
+  *)
+    echo "Error: unknown action." 1>&2
+    exit 1
+    ;;
+esac

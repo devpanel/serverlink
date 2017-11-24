@@ -1,0 +1,50 @@
+#!/bin/bash
+
+state_dir_1="/run/devpanel"
+state_dir_2="/var/run/devpanel"
+
+unset state_dir lock_dir
+for _tmp_state_dir in "$state_dir_1" "$state_dir_2"; do
+  if [ -d "$_tmp_state_dir" ]; then
+    # directory already exists, just use it
+    state_dir="$_tmp_state_dir"
+    break
+  fi
+
+  _tmp_up=${_tmp_state_dir%/*}
+  if [ -d "$_tmp_up" ]; then
+    if mkdir -m 711 "$_tmp_state_dir"; then
+      state_dir="$_tmp_state_dir"
+      break
+    fi
+  fi
+done
+
+if [ -n "$state_dir" -a -d "$state_dir" ]; then
+  lock_dir_1="$state_dir/lock"
+  lock_dir_2="$state_dir/lock"
+  for _tmp_lock_dir in "$lock_dir_1" "$lock_dir_2"; do
+    if [ -d "$_tmp_lock_dir" ]; then
+      lock_dir="$_tmp_lock_dir"
+      break
+    fi
+
+    _tmp_up="${_tmp_lock_dir%/*}"
+    if [ -d "$_tmp_up" ]; then
+      if mkdir -m 711 "$_tmp_lock_dir"; then
+        lock_dir="$_tmp_lock_dir"
+        break
+      fi
+    fi
+  done
+else
+  echo "Warning: unable to determine state_dir, many devPanel apps" \
+       "will misbehave" 1>&2
+fi
+
+if [ -z "$lock_dir" -o ! -d "$lock_dir" ]; then
+  echo "Warning: unable to determine lock_dir, many devPanel apps" \
+       "will misbehave" 1>&2
+fi
+
+exit 0
