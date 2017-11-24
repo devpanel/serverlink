@@ -11,7 +11,7 @@ set_usage_msg \
 "
 
 devpanel_cmd__config_app() {
-  [ $# -eq 0 -o -z "$1" ] && usage
+  [ $EUID -eq 0 ] && [ $# -eq 0 -o -z "$1" ] && usage
 
   local name vhost admin_pw
 
@@ -44,6 +44,10 @@ devpanel_cmd__config_app() {
       --help)
         usage
         ;;
+      --)
+        shift
+        break
+        ;;
       --[A-Za-z0-9_-]*)
         error "unknown option $name"
         ;;
@@ -54,21 +58,42 @@ devpanel_cmd__config_app() {
     esac
   done
 
-  [ -z "$vhost" ] && error_missing_param vhost
-
   if [ ${#opts_ar[*]} -eq 0 -a -z "$admin_pw" ]; then
     usage
   fi
 
-  user="w_${vhost}"
+  if [ $EUID -eq 0 ]; then
+    [ -z "$vhost" ] && error_missing_param vhost
+
+    if ! vhost_exists "$vhost"; then
+      error "vhost doesn't exist."
+    fi
+
+    get_linux_username_from_vhost "$vhost" && \
+    user="$_dp_value" || error "unable to get linux user for vhost '$vhost'"
+  else
+    if vhost=$(get_vhost_from_linuxuser); then
+      user="$USER"
+    else
+      error "unable to determine vhost for current user"
+    fi
+  fi
 
   local exec_bin="$sys_dir/bin/restore-vhost-subsystem"
 
   if [ -n "$admin_pw" ]; then
-    echo "$admin_pw" | su -l -c "$exec_bin -i -p" "$user"
+    if [ $EUID -eq 0 ]; then
+      echo "$admin_pw" | su -l -c "$exec_bin -i -p" "$user"
+    else
+      "$exec_bin" -i -p
+    fi
   fi
 
   if [ ${#opts_ar[*]} -gt 0 ]; then
-    su -l -c "$exec_bin"\ "${cmd_args[*]}"\ "${opts_ar[*]}" "$user"
+    if [ $EUID -eq 0 ]; then
+      su -l -c "$exec_bin"\ "${cmd_args[*]}"\ "${opts_ar[*]}" "$user"
+    else
+      "$exec_bin" "${cmd_args[@]}" "${opts_ar[@]}"
+    fi
   fi
 }

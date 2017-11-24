@@ -10,11 +10,11 @@ set_usage_msg \
 "
 
 devpanel_cmd__clear_app_cache() {
-  [ $# -eq 0 -o -z "$1" ] && usage
+  [ $EUID -eq 0 ] && [ $# -eq 0 -o -z "$1" ] && usage
 
-  local name vhost
+  local name vhost user
 
-  local -a cmd_args=()
+  local -a cmd_args_ar=()
   local -a opts_ar=( )
 
   while [ -n "$1" ]; do
@@ -28,17 +28,40 @@ devpanel_cmd__clear_app_cache() {
       --help)
         usage
         ;;
+      --)
+        shift
+        break
+        ;;
       *)
         usage
         ;;
     esac
   done
 
-  [ -z "$vhost" ] && error_missing_param vhost
+  if [ $EUID -eq 0 ]; then
+    [ -z "$vhost" ] && error_missing_param vhost
 
-  user="w_${vhost}"
+    if ! vhost_exists "$vhost"; then
+      error "vhost doesn't exist."
+    fi
+
+    get_linux_username_from_vhost "$vhost" && \
+    user="$_dp_value" || error "unable to get linux user from vhost"
+  else
+    if vhost=$(get_vhost_from_linuxuser); then
+      user="$USER"
+    else
+      error "unable to determine vhost for current user"
+    fi
+  fi
 
   local exec_bin="$sys_dir/bin/restore-vhost-subsystem"
 
-  su -l -c "$exec_bin -C" "$user"
+  cmd_args_ar=( "$exec_bin" -C )
+
+  if [ $EUID -eq 0 ]; then
+    su -l -c "${cmd_args_ar[*]}" "$user"
+  else
+    "${cmd_args_ar[@]}"
+  fi
 }
