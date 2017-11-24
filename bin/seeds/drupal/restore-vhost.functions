@@ -588,7 +588,14 @@ drupal_custom()
 }
 
 drupal_clear_cache() {
-  drush -r "$home/public_html/$vhost" cache-clear all
+  local version
+  version=`drupal_detect_version "$database"`
+
+  if [ "$version" == 8 ]; then
+    drush -r "$public_html_dir" cache-rebuild
+  else
+    drush -r "$home/public_html/$vhost" cache-clear all
+  fi
 }
 
 drupal_setup_from_git() {
