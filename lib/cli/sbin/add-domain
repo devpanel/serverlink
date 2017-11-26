@@ -88,6 +88,12 @@ devpanel_cmd__add_domain() {
   fi
 
   if [ -n "$new_default_domain" ]; then
+    if [[ ! "$new_default_domain" == *.* ]]; then
+      # if the domain string doesn't include a dot, then include a dot in
+      # the end to identify it as a fully qualified name
+      new_default_domain+="."
+    fi
+
     vhost_args_ar+=( '*' "$new_default_domain" )
   fi
 
@@ -97,6 +103,11 @@ devpanel_cmd__add_domain() {
       [ -z "$_domain" ] && continue
       [ "$_domain" == "$new_default_domain" ] && continue
 
+      if [[ ! "$_domain" == *.* ]]; then
+        # if the domain string doesn't include a dot, then include a dot in
+        # the end to identify it as a fully qualified name
+        _domain+="."
+      fi
       vhost_args_ar+=( '+' "$_domain" )
     done
   fi

@@ -67,6 +67,12 @@ devpanel_cmd__remove_domain() {
   for _domain in "${domains_ar[@]}"; do
     [ -z "$_domain" ] && continue
 
+    if [[ ! "$_domain" == *.* ]]; then
+      # if the domain string doesn't include a dot, then include a dot in
+      # the end to identify it as a fully qualified name
+      _domain+="."
+    fi
+
     vhost_args_ar+=( '-' "$_domain" )
   done
 
