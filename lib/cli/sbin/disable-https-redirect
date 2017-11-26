@@ -1,0 +1,73 @@
+#!/bin/bash
+
+set_usage_msg \
+  "Usage: $bin_name ${cmd_ar[*]} <opts>
+
+  Options:
+    --vhost <vhost>           the vhost to apply it
+
+    --no-reload               write the configuration files, but don't
+                              reload Apache now
+
+  Disable HTTP to HTTPS redirect for vhosts that have SSL or Let's Encrypt
+  enabled.
+
+  Notes:
+    - The redirect applies to all domains in a vhost.
+"
+
+devpanel_cmd__disable_https_redirect() {
+  [ $# -eq 0 -o -z "$1" ] && usage
+
+  local name vhost domain
+  local -a cmd_args_ar=()
+  local reload=1
+
+  while [ -n "$1" ]; do
+    name="$1"
+    case "$name" in
+      --vhost)
+        [ -z "$2" ] && error_missing_value vhost
+        vhost="$2"
+        shift 2
+        ;;
+
+      --no-reload)
+        unset reload
+        cmd_args_ar+=( -N )
+        shift
+        ;;
+
+      --help)
+        usage
+        ;;
+
+      --)
+        shift
+        break
+        ;;
+
+      *)
+        error "unknown option '$name'"
+        ;;
+    esac
+  done
+
+  if ! vhost_exists "$vhost"; then
+    error "vhost '$vhost' doesn't exist." -
+    return $?
+  fi
+
+  if ! is_ssl_enabled_on_vhost "$vhost"; then
+    echo "Warning: SSL is not enabled for this vhost" 1>&2
+    return 0
+  fi
+
+  if unset_https_redirect_metadata "$vhost"; then
+    "$sys_dir/libexec/config-vhost-apache" "${cmd_args_ar[@]}" "$vhost" || \
+      return $?
+  else
+    error "unable to set https metadata"
+  fi
+
+}

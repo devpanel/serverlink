@@ -29,6 +29,8 @@ Usage: @self_basename@ <command> [args]
     manage ssh keys                 manage ssh keys on the specified vhost
     configure ssl                   configures SSL for the specified site
     disable   ssl                   disable SSL for the specified site
+    enable https redirect           enables HTTP to HTTPS redirect for the vhost
+    disable https redirect          disables HTTP to HTTPS redirect for the vhost
     enable  lets-encrypt            enable Let's Encrypt SSL certificates on the vhost
     disable lets-encrypt            disable Let's Encrypt SSL certificates on the vhost
     renew   lets-encrypt            renew Let's Encrypt SSL certificates on the vhost

@@ -193,6 +193,10 @@ if [ $? -ne 0 ]; then
   error "failed to set vhost metadata links"
 fi
 
+if is_https_redirect_enabled_by_default ; then
+  set_https_redirect_metadata "$vhost"
+fi
+
 if ! "$curr_dir/config-vhost-apache" "$vhost"; then
   echo
   error "failed to apply SSL configuration for vhost $vhost"

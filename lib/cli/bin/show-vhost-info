@@ -20,7 +20,7 @@ devpanel_cmd__show_vhost_info() {
     case "$arg" in
       --vhost)
         [ -z "$2" ] && error_missing_value "$arg" && return 1
-        if [[ "$2" =~ ^[A-Za-z0-9_]+$ ]]; then
+        if is_valid_vhost_string "$2"; then
           vhost="$2"
           shift 2
         else

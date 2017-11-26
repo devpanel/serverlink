@@ -1123,6 +1123,12 @@ assign_deref_os_prop_or_exit() {
   fi
 }
 
+get_system_key() {
+  local key="$1"
+
+  deref_os_prop "$DEVPANEL_HOME" "$key"
+}
+
 deref_os_fs_path() {
   local base_dir="$1"
   local key_name="$2"
@@ -2914,6 +2920,17 @@ Snapshots: @snapshots_txt@
                               2>/dev/null )
       [ $? -eq 0 ] && ssl_txt+="  Expires On:  $ssl_cert_exp_date"$'\n'
 
+      ssl_txt+="  HTTP to HTTPS redirect: "
+      if is_https_redirect_enabled_for_vhost "$vhost"; then
+        local https_redirect_domain
+        ssl_txt+="yes"
+        if https_redirect_domain=$(get_https_redirect_target_domain "$vhost"); then
+          ssl_txt+=", targeted redirect to https://$https_redirect_domain"
+        fi
+        ssl_txt+=$'\n'
+      else
+        ssl_txt+="no"$'\n'
+      fi
     fi
   else
     ssl_txt="disabled"
@@ -2947,6 +2964,96 @@ Snapshots: @snapshots_txt@
   out_txt=${out_txt//@snapshots_txt@/$snapshots_txt}
 
   echo "$out_txt"
+}
+
+is_https_redirect_enabled_by_default() {
+  local https_redirect
+
+  https_redir=$(get_system_key https_redirect_enabled 2>/dev/null)
+  if [ $? -eq 0 -a "$https_redir" == yes ]; then
+    return 0
+  else
+    return 1
+  fi
+}
+
+is_https_redirect_enabled_for_vhost() {
+  local vhost="$1"
+  local key value
+
+  key="apache_vhost:0:_:https_redirect"
+
+  value=$(get_vhost_key_value "$key" "$vhost" 2>/dev/null)
+  if [ $? -eq 0 -a "$value" == yes ]; then
+    return 0
+  else
+    return 1
+  fi
+}
+
+set_https_redirect_metadata() {
+  local vhost="$1"
+  local domain="$2"
+
+  local metadata_str tmpl tmpl_key
+  local tmpl_key_all="names/https_redirect_template"
+  local tmpl_key_domain="names/https_redirect_targeted_template"
+
+  if [ -n "$domain" ]; then
+    tmpl_key="$tmpl_key_domain"
+  else
+    tmpl_key="$tmpl_key_all"
+  fi
+
+  if tmpl=$(get_system_key "$tmpl_key"); then
+    metadata_str+="set apache_vhost:0:_:https_redirect yes"$'\n'
+    metadata_str+="set apache_vhost:0:_:template_ref $tmpl_key"$'\n'
+
+    if [ -n "$domain" ]; then
+      metadata_str+="set apache_vhost:0:var:https_redirect_target_domain $domain"$'\n'
+    fi
+
+    echo "$metadata_str" | "$DEVPANEL_HOME/libexec/apache-metadata-handler" \
+      -q "$vhost"
+  else
+    echo "$FUNCNAME(): unable to get template name for https_redirect" 1>&2
+    return 1
+  fi
+}
+
+unset_https_redirect_metadata() {
+  local vhost="$1"
+
+  local metadata_str tmpl
+  local tmpl_key="names/apache_vhost_template"
+
+  if tmpl=$(get_system_key "$tmpl_key"); then
+    metadata_str+="rm  apache_vhost:0:_:https_redirect"$'\n'
+    metadata_str+="rm  apache_vhost:0:var:https_redirect_target_domain"$'\n'
+    metadata_str+="set apache_vhost:0:_:template_ref $tmpl_key"$'\n'
+
+    echo "$metadata_str" | "$DEVPANEL_HOME/libexec/apache-metadata-handler" \
+      -q "$vhost"
+  else
+    echo "$FUNCNAME(): unable to get template name for apache_vhost_template" 1>&2
+    return 1
+  fi
+}
+
+get_https_redirect_target_domain() {
+  local vhost="$1"
+
+  local key value
+  key="apache_vhost:0:var:https_redirect_target_domain"
+
+  value=$(get_vhost_key_value "$key" "$vhost" 2>/dev/null)
+  if [ $? -eq 0 -a -n "$value" ]; then
+    echo "$value"
+    return 0
+  else
+    return 1
+  fi
+
 }
 
 ltsv_get_value() {

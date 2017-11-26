@@ -732,7 +732,11 @@ for this_vhost_prefix in "$vhost_prefix_f:"[0-9] "$vhost_prefix_f:"[0-9][0-9]; d
 
     while read tmp_var_entry; do
       tmp_var_basename=`basename "$tmp_var_entry"`
-      tmp_var_name=${tmp_var_basename#var:}
+      if [[ "$tmp_var_basename" == var* ]]; then
+        tmp_var_name=${tmp_var_basename#var:}
+      else
+        tmp_var_name=${tmp_var_basename##*:}
+      fi
 
       tmp_link=`get_vhost_data_link "$we_base_dir" "$vhost" "$vhost_name" \
                                     "$tmpl_name" var "$tmp_var_name"`
@@ -755,7 +759,11 @@ for this_vhost_prefix in "$vhost_prefix_f:"[0-9] "$vhost_prefix_f:"[0-9][0-9]; d
 
       while read tmp_var_entry; do
         tmp_var_basename=`basename "$tmp_var_entry"`
-        tmp_var_name=${tmp_var_basename#var:}
+        if [[ "$tmp_var_basename" == var* ]]; then
+          tmp_var_name=${tmp_var_basename#var:}
+        else
+          tmp_var_name=${tmp_var_basename##*:}
+        fi
 
         tmp_link=`get_vhost_data_link "$we_base_dir" "$vhost" "$vhost_name" \
                                       "$tmpl_name" var "$tmp_var_name"`
@@ -908,7 +916,11 @@ for this_vhost_prefix in "$vhost_prefix_f:"[0-9] "$vhost_prefix_f:"[0-9][0-9]; d
   # variables
   for var_link in ${vhost_var_links_ar[@]} ${vhost_rpl_var_links_ar[@]}; do
     var_basename=`basename "$var_link"`
-    var_name=${var_basename##var:}
+    if [[ "$var_basename" == var* ]]; then
+      var_name=${var_basename#var:}
+    else
+      var_name=${var_basename##*:}
+    fi
     var_value=`readlink "$var_link"`
 
     var_name_escaped=`escape_sed "${var_name^^}"`

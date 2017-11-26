@@ -1,0 +1,88 @@
+#!/bin/bash
+
+set_usage_msg \
+  "Usage: $bin_name ${cmd_ar[*]} <opts>
+
+  Options:
+    --vhost <vhost>           the vhost to apply it
+
+    --domain <domain>         redirect any HTTP URL to the specified domain
+                              (this option is not required, by default it
+                              redirects to the domain from the request)
+
+    --no-reload               write the configuration files, but don't
+                              reload Apache now
+
+  Enable HTTP to HTTPS redirect for vhosts that have SSL or Let's Encrypt
+  enabled.
+
+  Notes:
+    - The redirect applies to all domains in a vhost.
+    - To redirect all HTTP requests to a specific domain, use the --domain
+      option, otherwise the domain used is the one received in the request.
+"
+
+devpanel_cmd__enable_https_redirect() {
+  [ $# -eq 0 -o -z "$1" ] && usage
+
+  local name vhost domain
+  local -a cmd_args_ar=()
+  local reload=1 write_vhost_config=1
+
+  while [ -n "$1" ]; do
+    name="$1"
+    case "$name" in
+      --vhost)
+        [ -z "$2" ] && error_missing_value vhost
+        vhost="$2"
+        shift 2
+        ;;
+
+      --domain)
+        [ -z "$2" ] && error_missing_value "$name"
+        domain="$2"
+        shift 2
+        ;;
+
+      --no-reload)
+        unset reload
+        cmd_args_ar+=( -N )
+        shift
+        ;;
+
+      --help)
+        usage
+        ;;
+
+      --)
+        shift
+        break
+        ;;
+
+      *)
+        error "unknown option '$name'"
+        ;;
+    esac
+  done
+
+  if ! vhost_exists "$vhost"; then
+    error "vhost '$vhost' doesn't exist." -
+    return $?
+  fi
+
+  if ! is_ssl_enabled_on_vhost "$vhost"; then
+    echo "Warning: SSL is not enabled for this vhost" 1>&2
+    return 0
+  fi
+
+  if set_https_redirect_metadata "$vhost" ${domain:+$domain}; then
+    "$sys_dir/libexec/config-vhost-apache" "${cmd_args_ar[@]}" "$vhost" || \
+      return $?
+
+    echo "Successfully enabled HTTPS redirect on vhost $vhost."
+    return 0
+  else
+    error "unable to set https metadata"
+  fi
+
+}
