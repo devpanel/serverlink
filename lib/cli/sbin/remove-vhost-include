@@ -9,17 +9,13 @@ set_usage_msg \
     --no-reload               write the configuration files, but don't
                               reload Apache now
 
-  Disable HTTP to HTTPS redirect for vhosts that have SSL or Let's Encrypt
-  enabled.
-
-  Notes:
-    - The redirect applies to all domains in a vhost.
+  Remove custom Apache configuration lines from the specified vhost.
 "
 
-devpanel_cmd__disable_https_redirect() {
+devpanel_cmd__remove_vhost_include() {
   [ $# -eq 0 -o -z "$1" ] && usage
 
-  local name vhost domain
+  local name vhost include_file
   local -a cmd_args_ar=()
   local reload=1
 
@@ -60,16 +56,26 @@ devpanel_cmd__disable_https_redirect() {
     return $?
   fi
 
-  if ! is_ssl_enabled_on_vhost "$vhost"; then
-    echo "Warning: SSL is not enabled for this vhost" 1>&2
+  if ! has_user_includes "$vhost"; then
+    echo "Warning: vhost doesn't contain custom user includes" 1>&2
     return 0
   fi
 
-  if unset_https_redirect_metadata "$vhost"; then
-    "$sys_dir/libexec/config-vhost-apache" "${cmd_args_ar[@]}" "$vhost" || \
-      return $?
-  else
-    error "unable to set https metadata"
-  fi
+  include_file=$(get_vhost_include_filename "$vhost" ) || return $?
 
+  if unset_user_include_metadata "$vhost" user_includes; then
+    rm -f "$include_file"
+    devpanel_run rewrite vhost config --vhost "$vhost" --no-restart
+    if [ -n "$reload" ]; then
+      if ! apache_ctl reload; then
+        echo "Warnings: removed vhost includes, but Apache reload failed" 1>&2
+        return 0
+      fi
+    fi
+
+    echo "Successfully removed custom Apache includes from vhost $vhost."
+    return 0
+  else
+    error "unable to disable vhost includes"
+  fi
 }

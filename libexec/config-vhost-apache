@@ -209,6 +209,23 @@ get_template_include_file() {
   echo -n "$tmpl_file"
 }
 
+get_user_include_file() {
+  # echo's the full filename of the template basename
+  local base_dir="$1"
+  local tmpl_name="$2"
+  local vhost="${3:-$vhost}"
+
+  local config_dir="$base_dir/config/vhosts/$vhost"
+  local tmpl_file="$config_dir/$tmpl_name.inc"
+
+  if [ -f "$tmpl_file" ]; then
+    echo "$tmpl_file"
+    return 0
+  else
+    return 1
+  fi
+}
+
 get_list_of_items() {
   local base_dir="$1"
   local vhost="$2"
@@ -529,33 +546,6 @@ for this_vhost_prefix in "$vhost_prefix_f:"[0-9] "$vhost_prefix_f:"[0-9][0-9]; d
     exit 1
   fi
 
-  # generic Apache parameters for the template, available system wide.
-  # Have the same intent of the previous one, to make it easy to distribute
-  # mass updates on system templates
-  # for P in "$system_templates_prefix:$tmpl_name:param:"[0-9]:*; do
-  #  [ "$P" == "$system_templates_prefix:$tmpl_name:param:[0-9]:*" ] && break
-  #
-  #  get_vhost_param_link
-  #  vhost_tmpl_param_links_ar+=( "$P" )
-  #done
-
-  # if this vhost is a replica of another, then check if there are parameters 
-  # to be imported from the template of the original vhost
-  #if [ -n "$repl_name" ]; then
-  #  for P in "$system_templates_prefix:$repl_template:param:"[0-9]:*; do
-  #    [ "$P" == "$system_templates_prefix:$repl_template:param:[0-9]:*" ] && break
-#
-#      p_name=${P##*:}
-#      p_number_step_1=${P##$system_templates_prefix:$repl_template:param:}
-#      p_number=${p_number_step_1%:*}
-#
-#      sys_p="$system_templates_prefix:$tmpl_name:param"
-#      if [ ! -L "$sys_p:$p_number:$p_name" ]; then
-#        vhost_rpl_tmpl_param_links_ar+=( "$P" )
-#      fi
-#    done
-#  fi
-
   # other less important (or less widely-distributed parameters)
   param_inc_list=`get_list_of_items "$we_base_dir" "$vhost" "$vhost_name" \
                                   "$tmpl_name" "param:"`
@@ -612,44 +602,7 @@ for this_vhost_prefix in "$vhost_prefix_f:"[0-9] "$vhost_prefix_f:"[0-9][0-9]; d
     fi
   fi
 
-  # old code, never committed
-  # for P in "$this_vhost_prefix:param:"[0-9]:*; do
-  #  [ "$P" == "$this_vhost_prefix:param:[0-9]:*" ] && break
-  #
-  # tmp_param_n_name=${P#$this_vhost_prefix:param:}
-  #  tmp_param_n=${tmp_param_n_name%%:*}
-  #  tmp_param_name=${tmp_param_n_name##*:}
-  #
-  #  tmp_p_link=`get_vhost_param_link "$we_base_dir" "$vhost" "$vhost_name" \
-  #                   "$tmpl_name" "$tmp_param_n" "$tmp_param_name"`
-  #
-  # if [ $? -eq 0 ]; then
-  #    vhost_param_links_ar+=( "$tmp_p_link" )
-  #  fi
-  # done
-  #
-  # if this vhost is a replica of another, then check if there are parameters 
-  # to be imported from the template of the original vhost
-  # 
-  # NOTE: this is right, it's not a duplication of the previous section
-  #
-  # if [ -n "$repl_name" ]; then
-  #   for P in "$repl_prefix:param:"[0-9]:*; do
-  #     [ "$P" == "$repl_prefix:param:[0-9]:*" ] && break
-  #
-  #   p_n_name=${P#$repl_prefix:param:}
-  #    p_name=${p_n_name##*:}
-  #    p_number=${p_n_name%%:*}
-  #
-  #    # check if this parameter is set on the original vhost
-  #    tmp_tmpl_link=`get_vhost_param_link "$we_base_dir" "$vhost" "$vhost_name" \
-  #      "$tmpl_name" "$p_number" "$p_name"`
-  #    if [ $? -ne 0 ]; then # if not set, then add it
-  #      vhost_rpl_tmpl_param_links_ar+=( "$P" )
-  #    fi
-  #  done
-  #fi
-
+  # parse the list of system wide includes in the vhost
   sys_inc_list=`get_list_of_items "$we_base_dir" "$vhost" "$vhost_name" \
                                   "$tmpl_name" "include:"`
 
@@ -671,24 +624,6 @@ for this_vhost_prefix in "$vhost_prefix_f:"[0-9] "$vhost_prefix_f:"[0-9][0-9]; d
       fi
     done <<< "$sys_inc_list"
   fi
-
-  # old code, never committed
-  #sys_inc_base="$system_templates_prefix:$tmpl_name:include"
-  #
-  # for inc in "$sys_inc_base":*; do
-  #  [ "$inc" == "$sys_inc_base:*" ] && break
-  #
-  #  tmp_tmpl_str=`readlink "$inc"`
-  #  tmp_tmpl_name=`basename "$tmp_tmpl_str"`
-
-  #  tmp_file=`get_vhost_data_link "$we_base_dir" "$vhost" "$vhost_name" \
-  #            "$tmpl_name" include "$tmp_tmpl_name"`
-  #  if [ $? -ne 0 ]; then
-  #    error "unable to find the file for template name '$tmp_tmpl_name' on vhost $vhn"
-  #  fi
-
-  #  vhost_sys_includes_ar+=( "$tmp_file" )
-  #done
 
   # if this template is marked as a replica of another template, then re-use
   # the system included templates from the replica
@@ -723,7 +658,67 @@ for this_vhost_prefix in "$vhost_prefix_f:"[0-9] "$vhost_prefix_f:"[0-9][0-9]; d
       done <<< "$repl_incl_list"
     fi
   fi
+  # // system defined includes
 
+  # parse the list of user defined includes in the vhost
+  usr_inc_list=`get_list_of_items "$we_base_dir" "$vhost" "$vhost_name" \
+                                  "$tmpl_name" "user_include:"`
+
+  if [ $? -eq 0 ]; then
+    declare -a tmp_usr_inc_list=()
+
+    while read tmp_sys_entry; do
+      tmp_inc_basename=`basename "$tmp_sys_entry"`
+      tmp_inc_name=${tmp_inc_basename##*:}
+
+      tmp_link=`get_vhost_data_link "$we_base_dir" "$vhost" "$vhost_name" \
+                                    "$tmpl_name" user_include "$tmp_inc_name"`
+
+      if [ $? -eq 0 ]; then
+        if ! in_array "$tmp_inc_name" "${tmp_usr_inc_list[*]}"; then
+          tmp_usr_inc_list+=( "$tmp_inc_name" )
+          vhost_usr_includes_ar+=( "$tmp_link" )
+        fi
+      fi
+    done <<< "$usr_inc_list"
+  fi
+
+  # if this template is marked as a replica of another template, then re-use
+  # the user included templates from the replica
+  # It takes care not to duplicate includes that are already included into
+  # this one
+  if [ -n "$repl_name" ]; then
+    repl_incl_list=`get_list_of_items "$we_base_dir" "$vhost" "$repl_name" \
+                   "$repl_template" "user_include:"`
+
+    if [ $? -eq 0 ]; then
+      declare -a tmp_rpl_inc_list=()
+      while read tmp_inc; do
+        tmp_inc_basename=`basename "$tmp_inc"`
+        tmp_inc_name=${tmp_inc_basename##*:}
+
+        tmp_usr_file=`get_vhost_data_link "$we_base_dir" "$vhost" \
+                        "$vhost_name" "$tmpl_name" user_include "$tmp_inc_name"`
+        if [ $? -eq 0 ]; then
+          # found the same template on the main vhost, skipping
+          continue
+        else
+          tmp_file=`get_vhost_data_link "$we_base_dir" "$vhost" \
+                    "$repl_name" "$repl_template" user_include "$tmp_inc_name"`
+
+          if [ $? -ne 0 ]; then
+            error "unable to find template $repl_template for vhost $vhn"
+          elif ! in_array "$tmp_inc_name" ${tmp_rpl_inc_list[@]}; then
+            tmp_rpl_inc_list+=( "$tmp_inc_name" )
+            vhost_rpl_usr_includes_ar+=( "$tmp_file" )
+          fi
+        fi
+      done <<< "$repl_incl_list"
+    fi
+  fi
+  # // user defined includes
+
+  # get the list of variables defined on the vhost (key-value definitions)
   var_inc_list=`get_list_of_items "$we_base_dir" "$vhost" "$vhost_name" \
                                   "$tmpl_name" "var:"`
 
@@ -782,26 +777,7 @@ for this_vhost_prefix in "$vhost_prefix_f:"[0-9] "$vhost_prefix_f:"[0-9][0-9]; d
       done <<< "$repl_var_inc_list"
     fi
   fi
-
-  # old code, never committed
-  #
-  # for V in "$this_vhost_prefix:var:"*; do
-  #   [ "$V" == "$this_vhost_prefix:var:*" ] && break
-  #
-  #  vhost_var_links_ar+=( "$V" )
-  # done
-  #
-  # if [ -n "$repl_name" ]; then
-  #  for V in "$repl_prefix:var:"*; do
-  #    [ "$V" == "$repl_prefix:var:*" ] && break
-  #
-  #    repl_var_basename=${V##*:}
-  #    if [ ! -L "$this_vhost_prefix:var:$repl_var_basename" ]; then
-  #      vhost_rpl_var_links_ar+=( "$V" )
-  #    fi
-  #  done
-  #fi
-
+  # // variables
 
   #####
   # replace all parameters collected previously
@@ -810,11 +786,6 @@ for this_vhost_prefix in "$vhost_prefix_f:"[0-9] "$vhost_prefix_f:"[0-9][0-9]; d
   # parameters
   for param_link in ${vhost_param_links_ar[@]} ${vhost_rpl_param_links_ar[@]} \
         ${vhost_tmpl_param_links_ar[@]} ${vhost_rpl_tmpl_param_links_ar[@]}; do
-
-    # WTF!?
-    # param_n_name=${param_link##*:param:}
-    # param_n=${param_n_name%%:*}
-    # param_name=${param_n_name##*:}
 
     param_name=${param_link##*:}
     param_name_escaped=`escape_sed "${param_name^^}"`
@@ -880,13 +851,13 @@ for this_vhost_prefix in "$vhost_prefix_f:"[0-9] "$vhost_prefix_f:"[0-9][0-9]; d
   # user defined includes
   usr_include_str=""
   for usr_inc in ${vhost_usr_includes_ar[@]} ${vhost_rpl_usr_includes_ar[@]}; do
-    tmp_tmpl_file=`readlink "$inc"`
+    include_file=`readlink "$usr_inc"`
     if [ $? -ne 0 -o -z "$include_file" ]; then
-      error "unable to de-reference file '$inc'"
+      error "unable to de-reference file '$usr_inc'"
     fi
     tmp_tmpl_name=`basename "$include_file"`
 
-    if ! tmpl_file=`get_template_include_file "$we_base_dir" "$tmp_tmpl_name"`; then
+    if ! tmpl_file=`get_user_include_file "$we_base_dir" "$tmp_tmpl_name"`; then
       error "unable to get include file for template name $tmp_tmpl_name"
     fi
 

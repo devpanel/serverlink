@@ -49,6 +49,8 @@ Usage: @self_basename@ <command> [args]
     tail mysql log                  shows the last lines of the MySQL log files
     change sftp password            changes SFTP/SSH password of the vhost
 
+    add vhost include               include custom Apache config lines into vhost
+    remove vhost include            remove Apache custom config lines from vhost
 
   For help with a specific command, please run:
   @sb@ @self_basename@ <command> --help

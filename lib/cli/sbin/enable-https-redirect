@@ -65,6 +65,8 @@ devpanel_cmd__enable_https_redirect() {
     esac
   done
 
+  [ -z "$vhost" ] && usage
+
   if ! vhost_exists "$vhost"; then
     error "vhost '$vhost' doesn't exist." -
     return $?

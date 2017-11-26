@@ -2945,7 +2945,11 @@ Snapshots: @snapshots_txt@
       php_ver+=" ($sys_php_ver)"
     fi
   fi
-    
+
+  if has_user_includes "$vhost"; then
+    summ_txt+="Custom Includes: yes"$'\n'
+  fi
+ 
   ssh_host=$(get_server_base_domain)
 
   out_txt="$summ_txt"
@@ -3054,6 +3058,63 @@ get_https_redirect_target_domain() {
     return 1
   fi
 
+}
+
+set_user_include_metadata() {
+  local vhost="$1"
+  local tmpl_name="$2"
+
+  local metadata_str
+
+  metadata_str="set apache_vhost:0:user_include:$tmpl_name $tmpl_name"$'\n'
+
+  echo "$metadata_str" | "$DEVPANEL_HOME/libexec/apache-metadata-handler" \
+    -q "$vhost"
+
+}
+
+unset_user_include_metadata() {
+  local vhost="$1"
+  local tmpl_name="$2"
+
+  local metadata_str
+
+  metadata_str="rm apache_vhost:0:user_include:$tmpl_name"$'\n'
+
+  echo "$metadata_str" | "$DEVPANEL_HOME/libexec/apache-metadata-handler" \
+    -q "$vhost"
+}
+
+get_user_include_metadata() {
+  local vhost="$1"
+  local tmpl_name="$2"
+
+  local key="apache_vhost:0:user_include:$tmpl_name"
+
+  get_vhost_key_value "$key" "$vhost" 
+}
+
+get_vhost_include_filename() {
+  local vhost="$1"
+
+  local file_base
+  local config_dir="$DEVPANEL_HOME/config/vhosts/$vhost"
+
+  file_base=$(get_user_include_metadata "$vhost" user_includes)
+  if [ $? -ne 0 ]; then
+    echo "$FUNCNAME(): unable to get user include base name" 1>&2
+    return 1
+  fi
+
+  local config_file="$config_dir/$file_base.inc"
+
+  echo "$config_file"
+}
+
+has_user_includes() {
+  local vhost="$1"
+
+  get_user_include_metadata "$vhost" user_includes &>/dev/null
 }
 
 ltsv_get_value() {
