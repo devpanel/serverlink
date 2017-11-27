@@ -8,14 +8,16 @@
 	create 640 root adm
 	sharedscripts
 	postrotate
-                if systemctl status apache2.service > /dev/null ; then \
-                    systemctl reload apache2 > /dev/null; \
-                fi; \
-                /opt/webenabled/libexec/fix-vhost-logs-ownshp-n-perms -y ; \
+		if systemctl status apache2.service > /dev/null ; then \
+			systemctl reload apache2 > /dev/null; \
+		fi; \
+		/opt/webenabled/libexec/fix-vhost-logs-ownshp-n-perms -y ; \
 	endscript
 	prerotate
 		if systemctl status apache2.service >/dev/null; then \
-			run-parts /etc/logrotate.d/httpd-prerotate; \
+			[ -d /etc/logrotate.d/httpd-prerotate ] && \
+				run-parts /etc/logrotate.d/httpd-prerotate; \
+                   true ; \
 		fi; \
 	endscript
 }
