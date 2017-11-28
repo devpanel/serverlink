@@ -149,16 +149,32 @@ if ! old_vhost=`head -1 "$archive_id"` || [ -z "$old_vhost" ]; then
   exit 1
 fi
 
-old_user="w_$old_vhost"
 date=`date  +'%Y%m%d'`
-archive_file="$archive_dir/$old_user.tgz"
+archive_file_1="$archive_dir/w_$old_vhost.tgz"
+archive_file_2="$archive_dir/$old_vhost.tgz"
+if [ -f "$archive_file_1" ]; then
+  # backwards compatibility when only short vhost names were allowed
+  archive_file="$archive_file_1"
+elif [ -f "$archive_file_2" ]; then
+  archive_file="$archive_file_2"
+else
+  error "unable to find an archive file to restore"
+fi
 
 conf="$apache_config_dir/$user.conf"
 archive_conf="$archive_dir/apache_$old_vhost.conf"
 logs_dir="$apache_logs_dir/$user"
 archive_logs="$archive_dir/logs_$old_vhost.tgz"
-archive_shadow="$archive_dir/$old_user.shadow"
 archive_crontab="$archive_dir/crontab"
+
+archive_shadow_1="$archive_dir/w_$old_vhost.shadow"
+archive_shadow_2="$archive_dir/$old_vhost.shadow"
+if [ -f "$archive_shadow_1" ]; then
+  # backwards compatibility when only short vhost names were allowed
+  archive_shadow="$archive_shadow_1"
+elif [ -f "$archive_shadow_2" ]; then
+  archive_shadow="$archive_shadow_2"
+fi
 
 config_dir="$WEBENABLED_BASE_DIR/config/vhosts/$vhost"
 

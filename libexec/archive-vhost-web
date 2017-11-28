@@ -2,7 +2,7 @@
 
 opt_P=0
 
-unset exclude_file
+unset exclude_file compat_archive_file compat_shadow_file
 while getopts "Pe:" OPTOPT
 do
   case "$OPTOPT" in
@@ -52,15 +52,22 @@ fi
 archive_dir="$2"
 home="`eval \"echo ~$user\"`"
 date=`date  +'%Y%m%d'`
-archive_file="$archive_dir/$user.tgz"
+archive_file="$archive_dir/$vhost.tgz"
 conf=`readlink -m "$sys_dir/config/os/pathnames/etc/apache_vhosts/$user.conf"` # -m because it might have been removed
 conf_removed="$conf.removed"
-archive_shadow="$archive_dir/$user.shadow"
+archive_shadow="$archive_dir/$vhost.shadow"
 archive_conf="$archive_dir/apache_$vhost.conf"
 logs_dir=`readlink -e "$dir/../config/os/pathnames/var/log/apache_vhosts/$user"`
 archive_logs="$archive_dir/logs_$vhost.tgz"
 archive_id="$archive_dir/id"
 archive_crontab="$archive_dir/crontab"
+
+if [ ${#vhost} -gt 6 ]; then
+  # backwards compatibility for systems not updated to be able to restore
+  # files
+  compat_archive_file="w_$vhost.tgz"
+  compat_shadow_file="w_$vhost.shadow"
+fi
 
 if ! `id -u "$user" 2>/dev/null >/dev/null`
 then
@@ -126,6 +133,13 @@ if ! run tar --exclude ./public_html/gen/archive --exclude ./logs \
   exit 1
 fi
 
+if [ -n "$compat_archive_file" ]; then
+  # backwards compatibility for systems not updated to be able to restore
+  # files
+  tmp_archive_dir="${archive_file%/*}"
+  ln -s "${archive_file##*/}" "$tmp_archive_dir/$compat_archive_file"
+fi
+
 if [ ! -f "$conf" -a -f "$conf_removed" ]; then
   virtwww_file="$conf_removed"
 else
@@ -168,5 +182,8 @@ if [ $opt_P = 1 ]; then
     echo "Error: unable to archive shadow file for user '$user'" 1>&2
     exit 1
   fi
+  if [ -n "$compat_shadow_file" ]; then
+    tmp_shadow_dir="${archive_shadow%/*}"
+    ln -s "${archive_shadow##*/}" "$tmp_shadow_dir/$compat_shadow_file"
+  fi
 fi
-
