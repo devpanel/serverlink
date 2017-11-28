@@ -2954,11 +2954,10 @@ Snapshots: @snapshots_txt@
 
   php_ver=$(get_php_version_from_vhost "$vhost" 2>/dev/null )
   if [ $? -ne 0 ]; then
-    php_ver='system default'
     local sys_php_ver
     sys_php_ver=$(get_default_php_version 2>/dev/null )
     if [ $? -eq 0 ]; then
-      php_ver+=" ($sys_php_ver)"
+      php_ver="$sys_php_ver (system default)"
     fi
   fi
 
