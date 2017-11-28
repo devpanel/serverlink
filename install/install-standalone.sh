@@ -14,6 +14,8 @@ usage() {
     -b <branch>           clone the code from the specified git branch
     -H <hostname>         hostname of the server (used as the base domain
                           for virtual hosts)
+    -2                    enable extensions for platform version 2
+    -3                    enable extensions for platform version 3
     -h                    show this help message
 "
   exit 1
@@ -120,9 +122,9 @@ git_url="https://github.com/devpanel/serverlink.git"
 
 # main
 
-unset git_branch has_tty
+unset git_branch has_tty platform_version
 autogen_hostname=1
-getopt_flags='hGb:H:'
+getopt_flags='23hGb:H:'
 while getopts $getopt_flags OPTN; do
   case $OPTN in
     h)
@@ -133,6 +135,9 @@ while getopts $getopt_flags OPTN; do
       ;;
     H)
       server_hostname="$OPTARG"
+      ;;
+    [23])
+      platform_version="$OPTARG"
       ;;
     *)
       exit 1
@@ -214,6 +219,7 @@ fi
 "$source_dir/install/install.sh" -I "$install_dir" \
  ${from_bootstrap:+-b} ${tasks_url:+-A "$tasks_url"} \
  ${server_hostname:+-H "$server_hostname"} \
+ ${platform_version:+-$platform_version} \
  ${server_uuid:+-U "$server_uuid"} ${server_key:+-K "$server_key"}
 
 status=$?
