@@ -32,6 +32,10 @@ set_usage_msg \
     --php-version <version>       PHP version to use on the vhost (e.g. 5.6,
                                   7.1)
 
+    --password-stdin              read the app password from stdin
+
+    --password-inline <pass>      set the app password
+
   Options marked with [*] are required.
 
 
@@ -43,6 +47,7 @@ devpanel_cmd__import_app_from_url() {
 
   local name vhost file_url file_type db_file_url db_file_type
   local subsystem pack_file php_version
+  local st password_origin app_password
   local -a cmd_args_ar=()
 
   while [ -n "$1" ]; do
@@ -96,6 +101,22 @@ devpanel_cmd__import_app_from_url() {
         shift 2
         ;;
 
+      --password-stdin)
+        [ -n "$password_origin" ] && \
+          error "please specify only one password option."
+        password_origin=stdin
+        shift
+        ;;
+
+      --password-inline)
+        [ -n "$password_origin" ] && \
+          error "please specify only one password option."
+        [ -z "$2" ] && error_missing_value "$name"
+        app_password="$2"
+        password_origin=inline
+        shift 2
+        ;;
+
       --help)
         usage
         ;;
@@ -130,4 +151,20 @@ devpanel_cmd__import_app_from_url() {
 
   "$sys_dir/libexec/import-site-from-url" "${cmd_args_ar[@]}" \
     "$vhost"
+  st=$?
+  if [ $st -eq 0 ]; then
+    if [ -n "$password_origin" ]; then
+      if [ "$password_origin" == inline ]; then
+        echo "$app_password" | devpanel_run reset app password --vhost "$vhost"
+      elif [ "$password_origin" == stdin ]; then
+        devpanel_run reset app password --vhost "$vhost"
+      fi
+    fi
+
+    devpanel_run show vhost info --vhost "$vhost"
+
+    echo "Successfully imported site."
+  fi
+
+  return $st
 }

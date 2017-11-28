@@ -28,6 +28,10 @@ set_usage_msg \
                                  this option if you want to generate an archive
                                  in the right format, but to be used later.
 
+    --password-stdin             read the app password from stdin
+
+    --password-inline <pass>     set the app password
+
     --option <name=value>        options to pass to restore-vhost (e.g site_title, 
                                  site_email,etc)
 
@@ -42,6 +46,8 @@ devpanel_cmd__import_from_git() {
 
   local name vhost mysql_file mysql_file_type subsystem app_profile
   local pack_file git_branch
+  local password_origin app_password
+  local st
   local -a cmd_args_ar=()
 
   while [ -n "$1" ]; do
@@ -107,6 +113,22 @@ devpanel_cmd__import_from_git() {
         shift 2
         ;;
 
+      --password-stdin)
+        [ -n "$password_origin" ] && \
+          error "please specify only one password option."
+        password_origin=stdin
+        shift
+        ;;
+       
+      --password-inline)
+        [ -n "$password_origin" ] && \
+          error "please specify only one password option."
+        [ -z "$2" ] && error_missing_value "$name"
+        app_password="$2"
+        password_origin=inline
+        shift 2
+        ;;
+
       --help)
         usage
         ;;
@@ -129,4 +151,20 @@ devpanel_cmd__import_from_git() {
 
   "$sys_dir/libexec/import-site-from-git" "${cmd_args_ar[@]}" \
     "$vhost" "$git_url"
+  st=$?
+  if [ $st -eq 0 ]; then
+    if [ -n "$password_origin" ]; then
+      if [ "$password_origin" == inline ]; then
+        echo "$app_password" | devpanel_run reset app password --vhost "$vhost"
+      elif [ "$password_origin" == stdin ]; then
+        devpanel_run reset app password --vhost "$vhost"
+      fi
+    fi
+
+    devpanel_run show vhost info --vhost "$vhost"
+
+    echo "Successfully imported site."
+  fi
+
+  return $st
 }
