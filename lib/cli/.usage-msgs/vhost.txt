@@ -8,6 +8,7 @@ Usage: @self_basename@ <command> [args]
                                     vhost
     create vhost                    creates a new site with the specified application
     backup vhost                    creates a backup of the app files and database
+    clone vhost                     creates a new vhost based on an existing one
     extract backup                  extracts the contents of a backup file
     remove vhost                    removes an existing application
     enter                           start a shell for the specified vhost

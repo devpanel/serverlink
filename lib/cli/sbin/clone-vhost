@@ -1,0 +1,80 @@
+#!/bin/bash
+
+set_usage_msg \
+  "Usage: $bin_name $action <opts>
+
+  Options:
+    --source-vhost  <vhost>         the source vhost from where to copy
+                                    files and database
+
+    --target-vhost  <vhost>         the new vhost to be created
+
+  Clones a vhost to a new virtual host (copies the files and databases to a
+  new virtual host).
+"
+
+devpanel_cmd__clone_vhost() {
+  local name source_vhost target_vhost
+  local st php_ver
+  
+  [ $# -eq 0 -o -z "$1" ] && usage
+
+  while [ -n "$1" ]; do
+    name="$1"
+
+    case $name in
+      --source-vhost)
+        [ -z "$2" ] && error_missing_value "$name"
+        source_vhost="$2"
+        shift 2
+        ;;
+      --target-vhost)
+        [ -z "$2" ] && error_missing_value "$name"
+        target_vhost="$2"
+        shift 2
+        ;;
+      --help)
+        usage
+        shift
+        ;;
+      --)
+        shift
+        break
+        ;;
+      *)
+        error "unknown parameter: $name"
+        ;;
+    esac
+  done
+
+  [ -z "$source_vhost" -o -z "$target_vhost" ] && usage
+
+  if ! vhost_exists "$source_vhost"; then
+    error "source vhost doesn't exist."
+  fi
+
+  if vhost_exists "$target_vhost"; then
+    error "target vhost already exists. Can't clone to an existing vhost."
+  fi
+
+  "$sys_dir/libexec/clone-vhost-local" "$source_vhost" "$target_vhost"
+  st=$?
+
+  if [ $st -ne 0 ]; then
+    return $st
+  fi
+
+  if is_htpasswd_enabled_on_vhost "$source_vhost"; then
+    devpanel_run enable htpasswd --vhost "$target_vhost"
+  fi
+
+  if php_ver=$(get_php_version_from_vhost "$source_vhost" ); then
+    devpanel_run set php version --vhost "$target_vhost" --version $php_ver
+  fi
+ 
+  devpanel_run show vhost info --vhost "$target_vhost"
+
+  echo "Successfully cloned vhost '$source_vhost' to '$target_vhost'"
+  return 0
+
+}
