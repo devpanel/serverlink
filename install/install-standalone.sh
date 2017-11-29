@@ -137,7 +137,7 @@ while getopts $getopt_flags OPTN; do
       server_hostname="$OPTARG"
       ;;
     [23])
-      platform_version="$OPTARG"
+      platform_version="$OPTN"
       ;;
     *)
       exit 1
