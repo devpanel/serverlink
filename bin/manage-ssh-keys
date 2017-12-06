@@ -241,7 +241,7 @@ while [ $n_eval -ne $n_add ]; do
   new_key="${add_keys_ar[$n_eval]}"
   n_eval+=1
 
-  echo "$new_key" >"$tmp_key_file"
+  echo "$new_key" >>"$tmp_key_file"
   if [ $? -ne 0 ]; then
     echo "Error: unable to add key '$new_key'" 1>&2
     exit 1
