@@ -7,6 +7,8 @@ set_usage_msg \
     --vhost  <vhost>         the vhost to restore
     --domain <domain>        enter the vhost associated with the
                              specified domain
+    --shell <path>           use the specified path as the shell, instead of
+                             the user's shell
 
   Starts a shell for the specified vhost or domain.
 "
