@@ -1,0 +1,91 @@
+#!/bin/bash
+
+set_usage_msg \
+  "Usage: $bin_name $action <opts> <command> [args]
+
+  Options:
+    --vhost  <vhost>         the vhost to restore
+    --domain <domain>        find the vhost associated with the
+                             specified domain
+    --shell <path>           use the specified path as the shell, instead of
+                             the user's shell
+
+  Executes the command on the specified vhost.
+"
+
+devpanel_cmd__exec() {
+  local param vhost user domain user_shell
+  
+  [ $# -eq 0 -o -z "$1" ] && usage
+
+  local -a run_opts_ar=()
+  while [ -n "$1" -a "${1:0:1}" == - ]; do
+    param="$1"
+
+    case $param in
+      --vhost)
+        [ -z "$2" ] && error_missing_value $param
+        vhost="$2"
+        shift 2
+        ;;
+      --domain)
+        [ -z "$2" ] && error_missing_value $param
+        domain="$2"
+        shift 2
+        ;;
+      --shell)
+        [ -z "$2" ] && error_missing_value $param
+        user_shell="$2"
+        if [ ! -f "$user_shell" -a ! -x "$user_shell" ]; then
+          error "path '$user_shell' must be an executable file" -
+          return 1
+        fi
+        shift 2
+        ;;
+      --help)
+        usage
+        ;;
+      --)
+        shift
+        break
+        ;;
+      *)
+        error "unknown parameter: $param"
+        ;;
+    esac
+  done
+
+  if [ -z "$vhost" -a -z "$domain" ]; then
+    error "either --vhost or --domain needs to be specified" -
+    return 1
+  fi
+
+  [ -z "$1" ] && usage # missing the command
+
+  if [ -z "$vhost" ]; then
+    vhost=$(get_vhost_with_hostname "$domain")
+    if [ $? -ne 0 ]; then
+      error "didn't find any vhost with the specified hostname" -
+      return 1
+    fi
+  fi
+
+  if ! vhost_exists "$vhost"; then
+    error "vhost doesn't exist." -
+    return 1
+  fi
+
+  if ! { get_linux_username_from_vhost "$vhost" && \
+          user="$_dp_value" ; }; then
+    error "unable to get linux username from vhost" -
+    return 1
+  fi
+
+  if [ -n "$user_shell" ]; then
+    run_opts_ar+=( --shell "$user_shell" )
+  fi
+
+  run_opts_ar+=( --login )
+
+  run_as_user "${run_opts_ar[@]}" "$user" "$@"
+}

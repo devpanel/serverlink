@@ -507,14 +507,49 @@ get_shell_from_user() {
 }
 
 run_as_user() {
+  local -a exec_args_ar=()
+  local opt_name
+  local shell_bin
+  while [ -n "$1" -a "${1:0:1}" == - ]; do
+    opt_name="$1"
+    case $opt_name in
+      --shell)
+        if [ -z "$2" ]; then
+          echo "$FUNCNAME(): missing arg for --shell option" 1>&2
+          return 1
+        fi
+
+        shell_bin="$2"
+        if [ -f "$2" -a -x "$2" ]; then
+          exec_args_ar+=( -s "$shell_bin" )
+        else
+          echo "$FUNCNAME(): '$2' is not a executable file" 1>&2
+          return 1
+        fi
+
+        shift 2
+        ;;
+
+      --login)
+        exec_args_ar+=( -l )
+        shift
+        ;;
+      *)
+        echo "$FUNCNAME(): unknown option '$opt_name' received" 1>&2
+        return 1
+        ;;
+    esac
+  done
+
   local user="$1"
   shift
+
   local -a cmd_ar=( "$@" )
 
   if hash runuser &>/dev/null; then
-    runuser -c "${cmd_ar[*]}" "$user"
+    runuser "${exec_args_ar[@]}" -c "${cmd_ar[*]}" "$user"
   else
-    su -c "${cmd_ar[*]}" "$user"
+    su "${exec_args_ar[@]}" -c "${cmd_ar[*]}" "$user"
   fi
 }
 
