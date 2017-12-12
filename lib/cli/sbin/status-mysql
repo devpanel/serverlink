@@ -1,0 +1,66 @@
+#!/bin/bash
+
+set_usage_msg \
+  "Usage: $bin_name $action [opts] <--vhost vhost | --domain domain.tld>
+
+  Options:
+    --vhost  <vhost>         the vhost
+    --domain <domain>        find the vhost associated with the
+                             specified domain
+
+  Returns the status of the mysql instance of a vhost.
+"
+
+devpanel_cmd__status_mysql() {
+  local param vhost vhost_user db_user domain
+  
+  [ $# -eq 0 -o -z "$1" ] && usage
+
+  while [ -n "$1" ]; do
+    param="$1"
+
+    case $param in
+      --vhost)
+        [ -z "$2" ] && error_missing_value vhost
+        vhost="$2"
+        shift 2
+        ;;
+      --domain)
+        [ -z "$2" ] && error_missing_value domain
+        domain="$2"
+        shift 2
+        ;;
+      --help)
+        usage
+        ;;
+      --)
+        shift
+        break
+        ;;
+      *)
+        error "unknown parameter: $param"
+        ;;
+    esac
+  done
+
+  if [ -z "$vhost" -a -z "$domain" ]; then
+    error "either --vhost or --domain needs to be specified"
+  fi
+
+  if [ -n "$domain" ]; then
+    vhost=$(get_vhost_with_hostname "$domain")
+    if [ $? -ne 0 ]; then
+      error "didn't find any vhost with the specified hostname"
+    fi
+  fi
+
+  get_linux_username_from_vhost "$vhost" && \
+    vhost_user="$_dp_value"
+  if [ $? -ne 0 ]; then
+    error "unable to get linux user for vhost '$vhost'"
+  fi
+
+  db_user="b_${vhost_user#w_}"
+     
+  "$sys_dir/compat/dbmgr/current/bin/daemon-action" status "$db_user"
+}
