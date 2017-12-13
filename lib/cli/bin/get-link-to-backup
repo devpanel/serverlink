@@ -1,0 +1,63 @@
+#!/bin/bash
+
+set_usage_msg \
+  "Usage: $bin_name $action <opts>
+
+  Options:
+    --vhost  <vhost>         the vhost
+    --file <filename>        the basename of the archive file to download
+
+  Returns a temporary link to download the specified archive.
+"
+
+devpanel_cmd__get_link_to_backup() {
+  local param vhost file
+  
+  [ $# -eq 0 -o -z "$1" ] && usage
+
+  while [ -n "$1" ]; do
+    param="$1"
+
+    case $param in
+      --vhost)
+        [ -z "$2" ] && error_missing_value "$param"
+        vhost="$2"
+        shift 2
+        ;;
+      --file)
+        [ -z "$2" ] && error_missing_value "$param"
+        file="$2"
+        shift 2
+        ;;
+      --help)
+        usage
+        ;;
+      --)
+        shift
+        break
+        ;;
+      *)
+        error "unknown parameter: $param"
+        ;;
+    esac
+  done
+
+  if [ $EUID -eq 0 ]; then
+    [ -z "$vhost" -o -z "$file" ] && usage
+  else
+    [ -z "$file" ] && usage
+    if [ -z "$vhost" ]; then
+      if ! vhost=$(get_vhost_from_linuxuser); then
+        error "unable to get vhost for current user" -
+        return $?
+      fi
+    fi
+  fi
+
+  if ! vhost_exists "$vhost"; then
+    error "the specified vhost doesn't exist." -
+    return $?
+  fi
+
+  "$sys_dir/libexec/gen-archive-download-token" "$vhost" "$file"
+}

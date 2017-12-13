@@ -10,6 +10,7 @@ Usage: @self_basename@ <command> [args]
     backup vhost                    creates a backup of the app files and database
     clone vhost                     creates a new vhost based on an existing one
     extract backup                  extracts the contents of a backup file
+    get link to backup              get a temporary link to download a backup file
     remove vhost                    removes an existing application
     enter                           start a shell for the specified vhost
     start mysql                     starts mysql for the specified vhost or domain

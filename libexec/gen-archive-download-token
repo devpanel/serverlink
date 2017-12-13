@@ -79,4 +79,8 @@ declare -a cmd_ar=( "$token_bin" -e +10m \
   -P archive_file="$archive_file" \
   -P devpanel_app=download-vhost-archive -O "$url" )
 
-su -l -c "${cmd_ar[*]}" "$user"
+if [ $EUID -eq 0 ]; then
+  su -l -c "${cmd_ar[*]}" "$user"
+else
+  "${cmd_ar[@]}"
+fi
