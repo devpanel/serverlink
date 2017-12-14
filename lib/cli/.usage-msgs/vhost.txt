@@ -28,7 +28,7 @@ Usage: @self_basename@ <command> [args]
     manage htpasswd                 manage htpasswd users (add and delete users, change
                                     passwords)
     import from git                 import a new virtual host from git
-    import from file                import a new virtual host from files
+    import from files               import a new virtual host from files
     import app from url             import a new virtual host from a URL
     manage ssh keys                 manage ssh keys on the specified vhost
     configure ssl                   configures SSL for the specified site
