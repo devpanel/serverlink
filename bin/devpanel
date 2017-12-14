@@ -110,11 +110,17 @@ devpanel_run() {
   local -a cmd_ar=()
   local -a non_opts_ar=()
   local -a extra_args_ar=()
+  local action
 
   while [ -n "$1" ] && [ "${1:0:1}" != "-" ] && [[ "$1" =~ ^[A-Za-z0-9_.-]+$ ]]; do
     non_opts_ar+=( "$1" )
     shift
   done
+
+  # NOTE: this variable $action is used on imported files to display the
+  # command in the usage line. So don't remove or rename it (unless you
+  # update all the files that use it).
+  action="${non_opts_ar[*]}"
 
   local arg filename n_last_arg
   local test_bin full_bin_path found_bin run_bin
