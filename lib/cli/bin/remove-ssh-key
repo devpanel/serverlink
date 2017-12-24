@@ -1,0 +1,100 @@
+#!/bin/bash
+
+set_usage_msg \
+  "Usage: $bin_name ${cmd_ar[*]} <opts>
+
+  Options:
+    --vhost <name>      vhost name
+
+    --file <file>       read ssh keys from file (when this option is
+                        missing it reads the keys from STDIN)
+
+  Remove ssh keys from the specified vhost. It reads the ssh keys from the specified
+  file and removes it from the authorized_keys file on the vhost user.
+"
+
+devpanel_cmd__remove_ssh_key() {
+
+  local vhost arg file
+  local -a cmd_args_ar=( "$sys_dir/bin/manage-ssh-keys" )
+
+  while [ -n "$1" ]; do
+    arg="$1"
+    case "$arg" in
+      --vhost)
+        [ -z "$2" ] && { error_missing_value "$arg"; return 1; }
+        vhost="$2"
+        shift 2
+        ;;
+
+      --file)
+        [ -z "$2" ] && { error_missing_value "$arg"; return 1; }
+        file="$2"
+        shift 2
+        ;;
+
+      --)
+        shift
+        break
+        ;;
+
+      --help)
+        usage
+        ;;
+
+      *)
+        error "unknown option $arg"
+        ;;
+    esac
+  done
+
+  if [ -n "$file" -a "$file" != - ]; then
+    if [ ! -f "$file" ]; then
+      error "missing file '$file'" -
+      return $?
+    elif [ ! -s "$file" ]; then
+      echo "Warning: input file is empty." 1>&2
+      return 0
+    fi
+  elif [ -z "$file" ]; then
+    file="-"
+  elif [ ! -s "$file" ]; then
+    echo "Warning: input file is empty" 1>&2
+    return 0
+  fi
+
+  local linux_user
+  if [ $EUID -eq 0 ]; then
+    [ -z "$vhost" ] && { error_missing_param vhost ; return $?; }
+
+    if get_linux_username_from_vhost "$vhost"; then
+      linux_user="$_dp_value"
+    else
+      error "unable to get the linux user from vhost $vhost" -
+      return $?
+    fi
+
+    if ! vhost_exists_and_is_enabled "$vhost"; then
+      return 1
+    fi
+
+    if [ "$file" != - ]; then
+      # run from stdin to be sure the vhost's user won't have permission
+      # denied to read the file
+      if ! exec 0<$file; then
+        error "unable to open file '$file'" -
+        return $?
+      fi
+    fi
+
+    key_file=$(eval echo -n ~$linux_user/.ssh/authorized_keys)
+    cmd_args_ar+=( --target-file "$key_file" --rm - )
+
+    run_as_user --login "$linux_user" "${cmd_args_ar[@]}"
+  else
+    key_file="$HOME/.ssh/authorized_keys"
+    cmd_args_ar+=( --target-file "$key_file" --rm "$file" )
+
+    "${cmd_args_ar[@]}"
+  fi
+}

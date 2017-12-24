@@ -1451,6 +1451,20 @@ vhost_exists() {
   fi
 }
 
+vhost_exists_and_is_enabled() {
+  if ! vhost_exists "$@"; then
+    echo "$FUNCNAME(): vhost doesn't exist" 1>&2
+    return 1
+  fi
+
+  if is_vhost_enabled "$@"; then
+    return 0
+  else
+    echo "$FUNCNAME(): vhost is not enabled" 1>&2
+    return 1
+  fi
+}
+
 linuxuser_exists() {
   local user="$1"
 

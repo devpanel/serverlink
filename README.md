@@ -133,7 +133,7 @@ Each virtual host created has a dedicated linux user. The access is authenticate
 To add a ssh key to access a virtual host (copying and pasting it from standard input), run:
 
 ```
-# devpanel manage ssh keys --vhost d7new --add -
+# devpanel add ssh key --vhost d7new
 ```
 ### Setting a password to the SSH user
 
