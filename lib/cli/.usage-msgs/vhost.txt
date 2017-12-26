@@ -57,6 +57,7 @@ Usage: @self_basename@ <command> [args]
     add vhost include               include custom Apache config lines into vhost
     remove vhost include            remove Apache custom config lines from vhost
     exec                            execute commands with the vhost user
+    edit vhost crontab              edits/updates the crontab of the specified vhost
 
   For help with a specific command, please run:
   @sb@ @self_basename@ <command> --help
