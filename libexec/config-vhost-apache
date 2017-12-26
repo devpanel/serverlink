@@ -480,10 +480,12 @@ for this_vhost_prefix in "$vhost_prefix_f:"[0-9] "$vhost_prefix_f:"[0-9][0-9]; d
 
   template_file=`get_template_file "$we_base_dir" "$vhost" "$vhost_name" 2>/dev/null`
   if [ $? -ne 0 ]; then
-    # didn't find a template on this vhost. So check the replicate vhost as
-    # the last chance
-    template_file=`get_template_file "$we_base_dir" "$vhost" "$repl_name" 2>/dev/null`
-    if [ $? -ne 0 ]; then
+    if [ -n "$repl_name" ]; then
+      # didn't find a template on this vhost. So check the replicate vhost as
+      # the last chance
+      template_file=`get_template_file "$we_base_dir" "$vhost" "$repl_name"` \
+                      || exit 1
+    else
       error "unable to de-reference template for vhost $vhn"
     fi
   fi
