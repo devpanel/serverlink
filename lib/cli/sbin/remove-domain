@@ -18,7 +18,7 @@ set_usage_msg \
 devpanel_cmd__remove_domain() {
   [ $# -eq 0 -o -z "$1" ] && usage
 
-  local name vhost
+  local name vhost default_domain base_domain
   local -a cmd_args_ar=() vhost_args_ar=() domains_ar=()
 
   while [ -n "$1" ]; do
@@ -58,14 +58,29 @@ devpanel_cmd__remove_domain() {
 
   [ -z "${domains_ar[*]}" -o -z "$vhost" ] && usage
 
-  if ! vhost_exists "$vhost"; then
-    error "vhost '$vhost' doesn't exist." -
-    return $?
+  if ! vhost_exists_and_is_enabled "$vhost"; then
+    return 1
   fi
+
+  default_domain=$(get_vhost_default_hostname "$vhost" ) || return $?
+  base_domain=$(get_vhost_base_domain "$vhost" ) || return $?
 
   local _domain
   for _domain in "${domains_ar[@]}"; do
     [ -z "$_domain" ] && continue
+
+    if [ "$_domain" == "$base_domain" ]; then
+      # it's not allowed to remove the base domain, as it's used for other
+      # internal operations
+      error "can't remove base domain '$base_domain'" -
+      return $?
+    fi
+
+    if [ "$_domain" == "$default_domain" ]; then
+      # if the domain is the default domain, then set the base domain as the new
+      # default hostname for that domain
+      vhost_args_ar=( '*' "$base_domain" "${vhost_args_ar[@]}" )
+    fi
 
     if [[ ! "$_domain" == *.* ]]; then
       # if the domain string doesn't include a dot, then include a dot in

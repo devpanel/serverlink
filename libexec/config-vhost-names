@@ -255,6 +255,7 @@ for i; do
 
         # overwriting the existing value
         set_vhost_default_hostname "$vhost" "$default_name_apache" || exit $?
+        default_name="$default_name_apache"
 
         if [ -n "$prefix_with_www" ]; then
           if [[ ! "$this_hostname" == www.* ]]; then

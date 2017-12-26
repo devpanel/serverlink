@@ -2009,6 +2009,25 @@ get_hostnames_from_vhost() {
   echo "${hosts_ar[*]}"
 }
 
+has_custom_domain() {
+  local vhost="$1"
+  local hosts_ar=()
+
+  local vhosts_basedomain
+  vhosts_basedomain=$(get_server_base_domain ) || return $?
+
+  hosts_ar=( $(get_hostnames_from_vhost "$vhost") ) || return $?
+
+  local tmp_host
+  for tmp_host in "${hosts_ar[@]}"; do
+    if [[ ! "$tmp_host" == *.$vhosts_basedomain ]]; then
+      return 0
+    fi
+  done
+
+  return 1
+}
+
 translate_archive_placeholders() {
   local orig="$1"
   local final
