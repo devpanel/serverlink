@@ -1379,7 +1379,7 @@ get_apache_metadata_value() {
 is_vhost_enabled() {
   local vhost="$1"
 
-  is_vhost_locked "$vhost" >/dev/null 2>&1
+  ! is_vhost_locked "$vhost" >/dev/null 2>&1
 }
 
 is_vhost_locked() {
@@ -1910,6 +1910,27 @@ get_list_of_vhosts() {
 
 get_list_of_local_vhosts() {
   get_list_of_vhosts "$@"
+}
+
+get_list_of_enabled_vhosts() {
+  local -a vhosts_ar=() en_vhosts_ar=()
+  local vhost
+
+  vhosts_ar=( $(get_list_of_vhosts) )
+
+  if [ ${#vhosts_ar[*]} -gt 0 ]; then
+    for vhost in "${vhosts_ar[@]}"; do
+      if is_vhost_enabled "$vhost"; then
+        en_vhosts_ar+=( "$vhost" )
+      fi
+    done
+  fi
+
+  if [ ${#en_vhosts_ar[*]} -gt 0 ]; then
+    echo "${en_vhosts_ar[@]}"
+  fi
+
+  return 0
 }
 
 get_vhost_with_hostname() {
@@ -2880,6 +2901,7 @@ print_vhost_summary() {
   local summ_txt="
 Information about vhost @vhost@
 
+Status: @status_str@
 Main URL: @main_url@
 
 Domains: @domains@
@@ -2900,11 +2922,17 @@ Snapshots: @snapshots_txt@
   fi
 
   local -a domains_ar=( $(get_hostnames_from_vhost "$vhost") )
-  local domains_txt="" out_txt=""
+  local domains_txt="" out_txt="" status_str=""
   local main_url ssh_host ssh_user db_name db_host_port db_name app_type
   local fastcgi_status htpasswd_status
   local snapshots_txt snap_daily_txt snap_weekly_txt snap_monthly_txt
   local ssl_txt php_ver
+
+  if is_vhost_enabled "$vhost"; then
+    status_str=enabled
+  else
+    status_str=disabled
+  fi
 
   main_url=$(get_main_url_of_vhost "$vhost")
   app_type=$(get_app_type_from_vhost "$vhost")
@@ -3017,6 +3045,7 @@ Snapshots: @snapshots_txt@
   ssh_host=$(get_server_base_domain)
 
   out_txt="$summ_txt"
+  out_txt=${out_txt//@status_str@/$status_str}
   out_txt=${out_txt//@main_url@/$main_url}
   out_txt=${out_txt//@vhost@/$vhost}
   out_txt=${out_txt//@domains@/$domains_txt}

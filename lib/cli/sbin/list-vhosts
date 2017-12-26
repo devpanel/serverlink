@@ -3,11 +3,15 @@
 set_usage_msg \
   "Usage: $bin_name ${cmd_ar[*]} [opts] --vhost <vhost>
 
+  Options:
+    --all             display all vhosts (including vhosts disabled. By default
+                      it only displays the vhosts that are enabled)
+
   Lists the vhosts on this server.
 "
 
 devpanel_cmd__list_vhosts() {
-  local vhost vhosts_ar name app default_host url
+  local vhost vhosts_ar name app status default_host url show_all
 
   while [ -n "$1" ]; do
     name="$1"
@@ -15,36 +19,67 @@ devpanel_cmd__list_vhosts() {
       --help)
         usage
         ;;
+
+      --all)
+        show_all=1
+        shift
+        ;;
+
+      --)
+        shift
+        break
+        ;;
+
       *)
         usage
         ;;
     esac
   done
 
-
-  vhosts_ar=( $(get_list_of_vhosts) )
+  if [ -n "$show_all" ]; then
+    vhosts_ar=( $(get_list_of_vhosts) )
+  else
+    vhosts_ar=( $(get_list_of_enabled_vhosts) )
+  fi
 
   if [ ${#vhosts_ar[@]} -eq 0 ]; then
     echo "No vhost on this server."
     return 0
   fi
 
-  local format_str
+  local format_str vh_len
   
   if is_longer_vhost_names_enabled; then
-    format_str="%-16s %-40s %-35s\n"
+    vh_len=16
   else
-    format_str="%-8s %-40s %-35s\n"
+    vh_len=8
   fi
 
-  printf "$format_str\n" Vhost Domain Description
+  # enabled
+  if [ -n "$show_all" ]; then
+    format_str="%-${vh_len}s %-10s %-35s %-35s\n"
+    printf "$format_str\n" Vhost Status Domain Description
+  else
+    format_str="%-${vh_len}s %-35s %-35s\n"
+    printf "$format_str\n" Vhost Domain Description
+  fi
+
   for vhost in ${vhosts_ar[@]}; do
     domain=$(get_vhost_default_hostname "$vhost")
     desc=$(get_vhost_description "$vhost")
     desc="${desc:-(no description set)}"
 
-    # printf "  vhost: %-8s domain: %-40s desc: %-35s\n" \
-     printf "$format_str" "$vhost" "$domain" "$desc"
+    if is_vhost_enabled "$vhost"; then
+      status=enabled
+    else
+      status=disabled
+    fi
+
+    if [ -n "$show_all" ]; then
+      printf "$format_str" "$vhost" "$status" "$domain" "$desc"
+    else
+      printf "$format_str" "$vhost" "$domain" "$desc"
+    fi
   done
 
   echo
