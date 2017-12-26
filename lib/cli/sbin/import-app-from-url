@@ -132,6 +132,29 @@ devpanel_cmd__import_app_from_url() {
     esac
   done
 
+  
+  # when opt --file-type is not specified, try to guess it from the URL
+  if [ -z "$file_type" ]; then
+    if [[ "$file_url" == *.[Tt][Aa][Rr].[Gg][Zz] ]]; then
+      file_type=tar.gz
+    elif [[ "$file_url" == *.[Tt][Gg][Zz] ]]; then
+      file_type=tar.gz
+    elif [[ "$file_url" == *.[Zz][Ii][Pp] ]]; then
+      file_type=zip
+    fi
+  fi
+
+  # when opt --db-file-type is not specified, try to guess it from the URL
+  if [ -z "$db_file_type" ]; then
+    if [[ "$db_file_url" == *.[Gg][Zz] ]]; then
+      db_file_type=gz
+    elif [[ "$db_file_url" == *.[Zz][Ii][Pp] ]]; then
+      db_file_type=zip
+    elif [[ "$db_file_url" == *.[Ss][Qq][Ll] ]]; then
+      db_file_type=sql
+    fi
+  fi
+
   local _param
   for _param in vhost file_url file_type db_file_url db_file_type subsystem; do
     [ -z "${!_param}" ] && error_missing_param $_param
