@@ -18,7 +18,8 @@ set_usage_msg \
     --virtualbox-net-workaround     try to find an IP of an interface that is
                                     not the NAT one
 
-    --no-update                     don't try to update devPanel software now
+    --update                        update devPanel software before doing
+                                    the initializations
 
     --show-intro                    show text with introductory guidance
 
@@ -218,7 +219,7 @@ devpanel_cmd__init_config() {
   local arg hostname ipv4 domain
   local auto_gen_hostname ipv4_detect_type
   local show_intro st
-  local do_update=1
+  local do_update
 
   while [ -n "$1" ]; do
     arg="$1"
@@ -247,7 +248,14 @@ devpanel_cmd__init_config() {
         ;;
 
       --no-update)
+        # kept this option for backwards compatibility, not to break
+        # possible use. Though not listing it in the usage msg.
         unset do_update
+        shift
+        ;;
+
+      --update)
+        do_update=1
         shift
         ;;
 

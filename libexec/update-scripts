@@ -1,20 +1,25 @@
 #!/bin/bash
 
 usage() {
-  echo "Usage: `basename "$0" [ version_str ]`
+  echo "Usage: `basename "$0" [git_ref]`
   
   This script updates the DevPanel scripts to the latest version if none is
-  specified, or updates to the specified version.
+  specified, or updates to the specified git ref.
 "
   exit 1
 }
 
-curr_dir=`dirname "${BASH_SOURCE[0]}"`
-lib_file="$curr_dir/../lib/functions"
-
 # main
-
 [ "$1" == "-h" ] && usage
+
+self_bin=$(readlink -e "${BASH_SOURCE[0]}")
+if [ $? -ne 0 ]; then
+  echo "Error: unable to get self path" 1>&2
+  exit 1
+fi
+self_dir=${self_bin%/*}
+sys_dir=${self_dir%/*}
+lib_file="$sys_dir/lib/functions"
 
 if ! source "$lib_file"; then
   echo "Error: unable to source file '$lib_file'" 1>&2
@@ -23,7 +28,14 @@ fi
 
 ref="${1:-master}"
 
-cd "$curr_dir/../"
+GIT_DIR="$sys_dir/.git"
+GIT_WORK_TREE="$sys_dir"
+export GIT_DIR GIT_WORK_TREE
+
+if [ ! -d "$GIT_DIR" ]; then
+  echo "Error: path '$GIT_DIR' is not a directory. Can't update."
+  exit 1
+fi
 
 if ! git fetch; then
   error "unable to fetch updates from git"
@@ -33,7 +45,11 @@ if ! git fetch --tags; then
   error "unable to fetch tags from git"
 fi
 
-if ! git pull origin "$ref"; then
+if ! git checkout -f "$ref"; then
+  error "unable to switch/cleanup local code to ref '$ref'"
+fi
+
+if ! git pull --rebase origin "$ref"; then
   error "unable to merge changes from origin/$ref"
 fi
 
