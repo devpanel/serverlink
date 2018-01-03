@@ -1,0 +1,36 @@
+#!/bin/bash
+
+set_usage_msg \
+  "Usage: $bin_name $action $object
+
+  Dumps the server metadata to STDOUT in JSON format.
+"
+
+devpanel_cmd__dump_metadata() {
+  local name
+
+  while [ -n "$1" ]; do
+    name="$1"
+    case "$name" in
+      --help)
+        usage
+        ;;
+
+      --[A-Za-z0-9_-]*)
+        error "unknown option $name"
+        ;;
+
+      --)
+        shift
+        break
+        ;;
+
+      *)
+        error "unknown option '$name'" -
+        return $?
+        ;;
+    esac
+  done
+
+  print_server_metadata_json
+}

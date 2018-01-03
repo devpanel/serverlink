@@ -1,3 +1,5 @@
+/bin/utils.i686/ binary
+/bin/utils.x86_64/ binary
 *.rpm binary
 *.gpg binary
 *.crt binary

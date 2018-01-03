@@ -1,0 +1,47 @@
+#!/bin/bash
+
+set_usage_msg \
+  "Usage: $bin_name $action $object
+
+  Dumps the vhost metadata to STDOUT in JSON format.
+"
+
+devpanel_cmd__dump_vhost_metadata() {
+  [ -z "$1" ] && usage
+
+  local name vhost
+
+  while [ -n "$1" ]; do
+    name="$1"
+    case "$name" in
+      --help)
+        usage
+        ;;
+
+      --vhost)
+        [ -z "$2" ] && error_missing_value "$name"
+        vhost="$2"
+        shift 2
+        ;;
+
+      --)
+        shift
+        break
+        ;;
+
+      *)
+        error "unknown option '$name'" -
+        return $?
+        ;;
+    esac
+  done
+
+  [ -z "$vhost" ] && usage
+
+  if ! vhost_exists "$vhost"; then
+    error "unknown vhost" -
+    return 1
+  fi
+
+  print_vhost_metadata_json --pretty "$vhost"
+}

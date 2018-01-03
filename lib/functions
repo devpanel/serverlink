@@ -8,6 +8,10 @@ if [ -z "$DEVPANEL_HOME" ]; then
   unset tmp_self tmp_self_dir
 fi
 
+if [ -f "$DEVPANEL_HOME/bin/utils/jo" -a -x "$DEVPANEL_HOME/bin/utils/jo" ]; then
+  hash -p "$DEVPANEL_HOME/bin/utils/jo" jo
+fi
+
 # avoid a warning on MacOS X because md5sum doesn't exist
 if [ -n "$OSTYPE" ] && [[ "$OSTYPE" =~ ^darwin ]] && hash md5 &>/dev/null; then
   hash -p $(which md5) md5sum
@@ -38,11 +42,15 @@ devpanel_auto_detect_distro() {
   # can't use local -l below because of systems with bash 3
   local lsb_distro_str="" lsb_distro_raw=""
 
-  if hash lsb_release &>/dev/null; then
+  if distro=$(get_field_from_os_release ID 2>/dev/null ); then
+    printf '%s\n' "$distro"
+    return 0
+  elif hash lsb_release &>/dev/null; then
     lsb_distro_raw=`lsb_release -si 2>/dev/null`
     lsb_distro_str=`echo -n "$lsb_distro_raw" | tr A-Z a-z`
   fi
 
+  # didn't detect with any of the above, try alternative methods
   if [ -n "$lsb_distro_str" ]; then
     distro="$lsb_distro_str"
   elif [ -r /etc/debian_version ] && apt-cache show lsb-base | egrep -q '^Maintainer: .+debian\.org>'; then
@@ -65,6 +73,10 @@ devpanel_auto_detect_distro() {
   else
     return 1
   fi
+}
+
+devpanel_auto_detect_distro_version() {
+  wedp_auto_detect_distro_version "$@"
 }
 
 wedp_auto_detect_distro() {
@@ -127,6 +139,8 @@ wedp_auto_detect_distro_version() {
       # systems
       version_number=`echo "$version_str" | egrep -i 'centos .*release' | \
                         egrep -o '[0-9]+\.[0-9]+(\.[0-9]+)?' 2>/dev/null`
+  elif version_str=$(get_field_from_os_release VERSION 2>/dev/null ); then
+    version_number=${version_str%%[^0-9.]*}
   fi
 
   if [ -n "$version_number" ]; then
@@ -136,6 +150,23 @@ wedp_auto_detect_distro_version() {
     echo "$FUNCNAME(): unable to detect distro version" 1>&2
     return 1
   fi
+}
+
+get_field_from_os_release() {
+  local field="$1"
+  local file=/etc/os-release
+  local output
+
+  output=$(egrep -x -m 1 "^$field=\"?[^\"]+\"?" "$file" )
+  if [ $? -ne 0 ]; then
+    return 1
+  fi
+
+  output=${output#$field=}
+  output=${output#\"}
+  output=${output%\"}
+
+  printf '%s' "$output"
 }
 
 get_linux_distro_string() {
@@ -161,6 +192,25 @@ get_linux_distro_string() {
   fi
 
   echo "$distro_str"
+}
+
+get_linux_distro_name_pretty() {
+  local pretty_name
+
+  if pretty_name=$(get_field_from_os_release PRETTY_NAME 2>/dev/null ); then
+    :
+  elif hash lsb_release &>/dev/null; then
+    pretty_name=$(lsb_release -sd)
+  else
+    echo "$FUNCNAME(): don't know how to get info about linux distro" 1>&2
+    return 1
+  fi
+
+  if [ $? -eq 0 ]; then
+    printf '%s' "$pretty_name"
+  else
+    return 1
+  fi
 }
 
 get_apache_ssl_template_name() {
@@ -2914,6 +2964,146 @@ get_mysql_db_host_port_from_vhost() {
   fi
 }
 
+get_mysql_db_user_from_vhost() {
+  local vhost="$1"
+
+  get_1st_level_field_value_from_app "$vhost" db_user
+}
+
+get_mysql_db_password_from_vhost() {
+  local vhost="$1"
+
+  get_1st_level_field_value_from_app "$vhost" db_password
+}
+
+can_do_fp_calcs() {
+  # can do floiting point calculations?
+
+  if hash bc &>/dev/null; then 
+    # yes
+    return 0
+  else
+    # no
+    return 1
+  fi
+}
+
+get_list_of_backup_files_from_vhost() {
+  local basename_only
+
+  while [ -n "$1" -a ${1:0:1} == - ]; do
+    case "$1" in
+      --basename)
+        basename_only=1
+        shift
+        ;;
+      *)
+        echo "$FUNCNAME(): unknown option '$1'" 1>&2
+        return 1
+        ;;
+    esac
+  done
+
+  local vhost="$1"
+
+  if ! vhost_exists "$vhost"; then
+    echo "$FUNCNAME(): vhost doesn't exist" 1>&2
+    return 1
+  fi
+
+  local data_dir files_dir archive_file
+
+  data_dir=$(deref_os_prop "$DEVPANEL_HOME" data_dir ) || return $?
+
+  files_dir="$data_dir/vhost_archives/$vhost"
+
+  if [ ! -d "$files_dir" ]; then
+    return 0
+  fi
+
+  local last_mod_e stat_output f_bname
+  local size_bytes display_name
+
+  for f_bname in $(ls -rt $files_dir); do
+    archive_file="$files_dir/$f_bname"
+    [ ! -f "$archive_file" ] && continue
+    if [[ "$archive_file" != *.tgz ]]; then
+      continue
+    fi
+
+    stat_output=$(stat --printf='%Y\t%s' "$archive_file")
+    IFS=$'\t' read last_mod_e size_bytes <<< "$stat_output"
+
+    if [ -n "$basename_only" ]; then
+      display_name="${archive_file##*/}"
+    else
+      display_name="$archive_file"
+    fi
+
+    printf '%s\t%s\t%s\n' "$last_mod_e" "$size_bytes" "$display_name"
+  done
+}
+
+get_list_of_backup_files_from_vhost_hr() {
+  # return the list of backup files with human readable fields
+  local -a args_ar=( "$@" )
+  local line mtime size_bytes filename
+  local fp
+  local size_fmt mtime_fmt
+
+  if can_do_fp_calcs; then
+    fp=1
+  fi
+
+  # for line in $(get_list_of_backup_files_from_vhost "${args_ar[@]}"); do
+  while read line; do
+    IFS=$'\t' read mtime size_bytes filename <<< "$line"
+
+    if [ -n "$fp" ]; then
+      size_fmt=$(bytes_to_human "$size_bytes" )
+    else
+      size_fmt="$size_bytes bytes"
+    fi
+
+    mtime_fmt=$(date -d@$mtime +'%b %d %Y %H:%M UTC%:z')
+
+    # mtime mtime_fmt size_bytes size_fmt $filename
+    printf "%s\t%s\t%s\t%s\t%s\n" \
+      "$mtime" "$mtime_fmt" "$size_bytes" "$size_fmt" "$filename"
+
+  done < <(get_list_of_backup_files_from_vhost "${args_ar[@]}" )
+}
+
+get_list_of_backup_files_from_vhost_json() {
+  local mtime mtime_fmt size_bytes size_fmt filename
+  local line _info_json tmp_file st
+
+  if ! tmp_file=$(mktemp); then
+    echo "$FUNCNAME(): unable to create temporary file" 1>&2
+    return 1
+  fi
+
+  local bkp_dir file_basename
+  while read line; do
+    IFS=$'\t' read mtime mtime_fmt size_bytes size_fmt filename <<< "$line"
+    bkp_dir=${filename%/*}
+    file_basename=${filename##*/}
+
+    jo name="$file_basename" dir=$bkp_dir                  \
+       size_bytes="$size_bytes" size_human="$size_fmt"     \
+       mtime="$mtime" mtime_human="$mtime_fmt"             \
+    >> "$tmp_file"
+
+  done < <(get_list_of_backup_files_from_vhost_hr "$@" )
+
+  jo -a < "$tmp_file"
+  st=$?
+
+  rm -f "$tmp_file"
+
+  return $st
+}
+
 print_vhost_summary() {
   local vhost="$1"
 
@@ -3080,6 +3270,198 @@ Snapshots: @snapshots_txt@
   out_txt=${out_txt//@snapshots_txt@/$snapshots_txt}
 
   echo "$out_txt"
+}
+
+print_server_metadata_json() {
+  local distro_updates_st distro_id distro_name_pretty distro_version
+  local vhosts_base_domain
+  local tmp_vhost tmp_vhost_json
+  local tmp_dir_d tmp_vhosts_f tmp_vhosts_json_af
+  local -a vhosts_ar
+  local -i n_vhosts
+  local -i st
+
+  if is_distro_updates_enabled ; then
+    distro_updates_st=1
+  else
+    distro_updates_st=0
+  fi
+
+  distro_id=$(devpanel_auto_detect_distro )
+  distro_version=$(devpanel_auto_detect_distro_version "$distro_id")
+  distro_name_pretty=$(get_linux_distro_name_pretty )
+
+  vhosts_ar=( $(get_list_of_vhosts) )
+  n_vhosts=${#vhosts_ar[*]}
+
+  if ! tmp_dir_1=$(mktemp -d); then
+    echo "$FUNCNAME(): unable to create temp dir" 1>&2
+    return 1
+  fi
+
+  tmp_vhosts_f="$tmp_dir_1/vhosts_1_obj_per_line.txt"
+  tmp_vhosts_json_af="$tmp_dir_1/vhosts_ar.json"
+
+  if [ $n_vhosts -eq 0 ]; then
+    # save an empty array of vhosts
+    echo -n '[]' > $tmp_vhosts_json_af
+  else
+    for((i=0; i < $n_vhosts; i++)); do
+      tmp_vhost="${vhosts_ar[$i]}"
+      print_vhost_metadata_json "$tmp_vhost"  >>$tmp_vhosts_f
+      if [ $i -lt $(( $n_vhosts - 2 )) ]; then
+        echo >> "$tmp_vhosts_f"
+      fi
+    done
+
+    # create a json formatted array of vhosts
+    jo -a < $tmp_vhosts_f >$tmp_vhosts_json_af
+  fi
+
+  vhosts_base_domain=$(get_server_base_domain )
+
+  jo -p -d . devpanel.metadata.version=1 \
+    vhosts:=$tmp_vhosts_json_af \
+    server.distro.id="$distro_id" server.distro.version="$distro_version" \
+    server.distro.title="$distro_name_pretty" \
+    server.distro.updates.enabled@$distro_updates_st \
+    server.vhosts_base_domain=$vhosts_base_domain
+
+  st=$?
+
+  rm -rf "$tmp_dir_1"
+  
+  return $st
+}
+
+print_vhost_metadata_json() {
+  if [ $# -eq 0 ]; then
+    echo "$FUNCNAME(): missing arguments" 1>&2
+    return 1
+  fi
+
+  local opt_name pretty
+  while [ -n "$1" -a "${1:0:1}" == - ]; do
+    opt_name="$1"
+
+    case $opt_name in
+      --pretty)
+        pretty=1
+        shift
+        ;;
+      *)
+        echo "$FUNCNAME(): unknown option $opt_name" 1>&2
+        return 1
+        ;;
+    esac
+  done
+
+  local vhost="$1"
+
+  if ! vhost_exists "$vhost"; then 
+    echo "$FUNCNAME(): vhost doesn't exist" 1>&2
+    return 1
+  fi
+
+  if ! tmp_dir_1=$(mktemp -d); then
+    echo "$FUNCNAME(): unable to create temp dir" 1>&2
+    return 1
+  fi
+
+  local tmp_domains_f="$tmp_dir_1/domains_1_per_line.txt"
+  local tmp_domains_json_af="$tmp_dir_1/domains_ar.json"
+  local tmp_bkp_files_json_ar="$tmp_dir_1/bkp_files_ar.json"
+
+  local vhost_st fastcgi_st htpasswd_st st
+  local -a ssl_opts_ar
+  local app_type db_name doc_root user_inc_st https_redir_st
+  local mysql_host mysql_user mysql_port mysql_password
+  local linux_user
+  local ssl_st ssl_type
+  local php_version stack
+
+  get_hostnames_from_vhost "$vhost" >$tmp_domains_f
+  jo -a < $tmp_domains_f >$tmp_domains_json_af
+
+  get_list_of_backup_files_from_vhost_json "$vhost" >$tmp_bkp_files_json_ar
+
+  doc_root=$(get_docroot_from_vhost "$vhost" )
+
+  if is_vhost_enabled "$vhost"; then
+    vhost_st=1
+  else
+    vhost_st=0
+  fi
+
+  app_type=$(get_app_type_from_vhost "$vhost")
+  db_name=$(get_mysql_db_name_from_vhost "$vhost")
+  mysql_host=$(get_mysql_db_host_from_vhost "$vhost")
+  mysql_port=$(get_mysql_db_port_from_vhost "$vhost")
+  mysql_user=$(get_mysql_db_user_from_vhost "$vhost")
+
+  get_linux_username_from_vhost "$vhost" && \
+  linux_user="$_dp_value"
+
+  if is_fastcgi_enabled_on_vhost "$vhost"; then
+    fastcgi_st=1
+  else
+    fastcgi_st=0
+  fi
+
+  if is_htpasswd_enabled_on_vhost "$vhost"; then
+    htpasswd_st=1
+  else
+    htpasswd_st=0
+  fi
+
+  if is_ssl_enabled_on_vhost "$vhost"; then
+    sst_st=1
+    if is_lets_encrypt_enabled_for_vhost "$vhost"; then
+      ssl_type="lets-encrypt"
+    else
+      ssl_type="manual"
+    fi
+    ssl_opts_ar+=( "ssl.type=$ssl_type" )
+
+    if is_https_redirect_enabled_for_vhost "$vhost"; then
+      https_redir_st=1
+    else
+      https_redir_st=0
+    fi
+    ssl_opts_ar+=( "ssl.https_redirect@$https_redir_st" )
+  else
+    ssl_st=0
+  fi
+  ssl_opts_ar+=( "ssl.enabled@$ssl_st" )
+
+  if php_version=$(get_php_version_from_vhost "$vhost"); then
+    # specific PHP version for this vhost
+    stack="$php_version"
+  else
+    # use server wide PHP version
+    php_version=$(get_default_php_version)
+    stack="$php_version"
+  fi
+
+  if has_user_includes "$vhost"; then
+    user_inc_st=1
+  else
+    user_inc_st=0
+  fi
+
+  jo ${pretty:+-p} -d . name=$vhost enabled@$vhost_st stack=$stack \
+    domains:=$tmp_domains_json_af document_root="$doc_root" \
+    backup_files:=$tmp_bkp_files_json_ar user_includes@$user_inc_st \
+    fastcgi.enabled@$fastcgi_st htpasswd.enabled@$htpasswd_st \
+    app.linux_user="$linux_user" app.type=$app_type app.database_name=$db_name \
+    app.mysql_host=$mysql_host app.mysql_port=$mysql_port \
+    app.mysql_user=$mysql_user \
+    "${ssl_opts_ar[@]}"
+  st=$?
+
+  rm -rf "$tmp_dir_1"
+
+  return $st
 }
 
 is_https_redirect_enabled_by_default() {

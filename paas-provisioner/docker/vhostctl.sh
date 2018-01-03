@@ -244,20 +244,8 @@ if [ ! -f /usr/bin/jq ]; then
   ${sudo} ${installation_tool} jq
 fi
 
-# check for jo installation
-if [ ! -f /usr/bin/jo ]; then
-  if [ -f /usr/bin/apt-get ]; then
-    ${sudo} apt-add-repository ppa:duggan/jo --yes
-    ${sudo} apt-get update -q
-    ${sudo} apt-get install -y jo
-  else
-    yum -y install automake autoconf wget
-    yum -y groupinstall "Development Tools"
-    wget https://github.com/jpmens/jo/archive/master.zip && unzip master.zip && cd jo-master && \
-    autoreconf -i && ./configure --prefix=/usr && make check && make install && \
-    cd ../ && rm -fr jo-master master.zip 
-  fi
-fi
+# use jo included in devPanel
+hash -p "$sys_dir/bin/utils/jo" jo
 
 # check for swap
 if [ `free -m|grep Mem|awk '{print $4}'` -lt 130 -a `free -m|grep Swap|awk '{print $4}'` -eq 0 ]; then

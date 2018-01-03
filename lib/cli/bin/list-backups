@@ -6,12 +6,14 @@ set_usage_msg \
   Options:
     --vhost <vhost>         the vhost to restore
     --full-path             display the full path of the files
+    --json                  return the output in JSON format
 
   Lists the backup files available for the specified vhost.
 "
 
 devpanel_cmd__list_backups() {
-  local name vhost file full_path
+  local name vhost file json
+  local basename_only=1
 
   while [ -n "$1" ]; do
     name="$1"
@@ -22,7 +24,12 @@ devpanel_cmd__list_backups() {
         shift 2
         ;;
       --full-path)
-        full_path=1
+        unset basename_only
+        shift
+        ;;
+      --json)
+        json=1
+        unset basename_only
         shift
         ;;
       --help)
@@ -50,50 +57,17 @@ devpanel_cmd__list_backups() {
     [ -z "${!param}" ] && error_missing_param $param
   done
 
-
-  local sys_bkp_dir bkp_src_dir archive_file
-  assign_deref_os_prop_or_exit sys_bkp_dir "$sys_dir" data_dir
-
-  bkp_src_dir="$sys_bkp_dir/vhost_archives/$vhost"
-
-  if [ ! -d "$bkp_src_dir" ]; then
-    echo "No backups for vhost (backup dir $bkp_src_dir is missing)" 1>&2
-    exit 0
+  if [ -n "$json" ]; then
+    get_list_of_backup_files_from_vhost_json ${basename_only:+--basename} "$vhost"
+    return $?
   fi
 
-  local has_bc
-  if hash bc &>/dev/null; then
-    has_bc=1
-  fi
-
-  local last_mod_e stat_output f_bname last_mod_friendly
-  local size_bytes size_txt display_name
-
-  for f_bname in $(ls -rt $bkp_src_dir); do
-    archive_file="$bkp_src_dir/$f_bname"
-    [ ! -f "$archive_file" ] && continue
-    if [[ "$archive_file" != *.tgz ]]; then
-      continue
-    fi
-
-    stat_output=$(stat --printf='%Y\t%s' "$archive_file")
-    IFS=$'\t' read last_mod_e size_bytes <<< "$stat_output"
-    last_mod_friendly=$(date -d@$last_mod_e +'%b %d %Y %H:%M')
-
-    if [ -n "$has_bc" ]; then
-      size_txt="$(bytes_to_human "$size_bytes")"
-    else
-      size_txt="$size_bytes bytes"
-    fi
-
-    if [ -n "$full_path" ]; then
-      display_name="$archive_file"
-    else
-      display_name="$f_bname"
-    fi
+  local line mtime mtime_fmt size size_fmt filename
+  while read line; do
+    IFS=$'\t' read mtime mtime_fmt size size_fmt filename <<< "$line"
 
     printf '%s\t%s (%s)\n' \
-      "$last_mod_friendly" "$display_name" "$size_txt"
+      "$mtime_fmt" "$filename" "$size_fmt"
+  done < <(get_list_of_backup_files_from_vhost_hr ${basename_only:+--basename} "$vhost")
 
-  done
 }
