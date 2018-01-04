@@ -52,8 +52,7 @@ devpanel_cmd__tail_vhost_logs() {
     esac
   done
 
-  assign_deref_os_prop_or_exit virtwww_log_dir "$sys_dir" \
-    pathnames/var/log/apache_vhosts
+  virtwww_log_dir=$(get_apache_virtwww_log_dir ) || return $?
 
   local linux_user
   local access_log_file error_log_file

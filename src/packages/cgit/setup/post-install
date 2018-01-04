@@ -23,8 +23,7 @@ if ! source "$lib_file"; then
   echo "Error: unable to source lib file '$lib_file'"
 fi
 
-assign_deref_os_prop_or_exit git_vhost_template "$system_dir" \
-  names/git_vhost_template
+git_vhost_template=$(get_git_vhost_template ) || exit $?
 
 apache_include_dir="$system_dir/compat/apache_include"
 git_vhost_file="$apache_include_dir/global-includes/cgit.conf"

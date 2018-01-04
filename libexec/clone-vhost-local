@@ -69,7 +69,7 @@ if [ $? -ne 0 ]; then
   error "unable to get the linux username from vhost $src_vhost"
 fi
 
-assign_deref_os_prop_or_exit archive_dir "$sys_dir" data_dir
+archive_dir=$(get_devpanel_datadir ) || exit 1
 
 tmp_archive="tmp_archive_$src_vhost-$(date +%b-%d-%Y--%H-%M).tgz"
 tmp_archive_fp="$archive_dir/vhost_archives/$src_vhost/$tmp_archive"

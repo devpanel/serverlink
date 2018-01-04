@@ -70,7 +70,7 @@ else
   exit 1
 fi
 
-assign_deref_os_prop_or_exit logs_dir "$sys_dir" pathnames/var/log/apache_vhosts
+logs_dir=$(get_apache_virtwww_log_dir ) || exit $?
 
 for vhost in ${vhost_ar[*]}; do
   if ! "$self_dir/check-vhost-name" name-only "$vhost"; then

@@ -160,7 +160,7 @@ trap 'exit 1 ' HUP INT QUIT ILL TRAP ABRT BUS FPE KILL SEGV \
   PIPE STOP ALRM TERM
 trap 'cleanup' EXIT
 
-assign_deref_os_prop_or_exit sys_data_dir "$sys_dir" data_dir
+sys_data_dir=$(get_devpanel_datadir ) || exit 1
 sys_data_dir=$(readlink -e "$sys_data_dir")
 if [ $? -ne 0 ]; then
   if   [ ! -e "$sys_data_dir" ]; then
@@ -172,14 +172,12 @@ if [ $? -ne 0 ]; then
   fi
 fi
 
-assign_deref_os_prop_or_exit archive_template_str "$sys_dir" \
-  vhost_archive_template_str
+archive_template_str=$(get_vhost_archive_template_str ) || exit 1
 
-assign_deref_os_prop_or_exit apache_group "$sys_dir" \
-  names/apache.group
+apache_group=$(get_apache_group_name ) || exit 1
 
 unset to_stdout webenabled_backwards
-if deref_os_prop "$sys_dir" webenabled_backwards &>/dev/null; then
+if is_webenabled_backwards_compat_enabled; then
   webenabled_backwards=1
 fi
 

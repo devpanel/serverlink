@@ -39,7 +39,7 @@ SHELLINABOX_ARGS=\"--no-beep --service=/:SSH --localhost-only --disable-ssl\"
 " > /etc/default/shellinabox
         /etc/init.d/shellinabox restart
 # Stop apache to install SSL
-        assign_deref_os_fs_path_ex_or_exit apachectl "$sys_dir" pathnames/sbin/apachectl
+        apachectl=$(get_path_of_apachectl )
         ## VALIDATION TO CHECK IF APACHE HAS GOOD CONFIGURATIONS
         #
         #
@@ -123,7 +123,6 @@ if [ "$DEVPANELOS" == "ubuntu" ] || [ "$DEVPANELOS" == "debian" ];then
         rm -rf /etc/letsencrypt
         rm -rf /opt/letsencrypt
         rm -f $SHELLVHOST
-        assign_deref_os_fs_path_ex_or_exit apachectl "$sys_dir" pathnames/sbin/apachectl
         $apachectl restart
 
 ##### INITIATE SERVICE WHEN SYSTEM STARTS

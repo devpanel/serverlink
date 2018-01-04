@@ -21,8 +21,8 @@ usage() {
 load_defaults() {
   local base_dir="$1"
 
-  local apache_virtwww_domain=`deref_os_prop "$base_dir" apache_virtwww_domain`
-  local apache_virtwww_homedir=`deref_os_prop "$base_dir" apache_virtwww_homedir`
+  local apache_virtwww_domain=`get_server_base_domain`
+  local apache_virtwww_homedir=`get_vhosts_homedir`
 
   echo "s/@@__APACHE_VIRTWWW_DOMAIN__@@/`escape_sed "$apache_virtwww_domain"`/g;"
   echo "s/@@__APACHE_VIRTWWW_HOMEDIR__@@/`escape_sed "$apache_virtwww_homedir"`/g;"

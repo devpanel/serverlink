@@ -165,7 +165,7 @@ if ! source "$aux_lib_file"; then
   error "unable to load auxiliary functions from $aux_lib_file"
 fi
 
-assign_deref_os_prop_or_exit sys_datadir "$we_base_dir" data_dir
+sys_datadir=$(get_devpanel_datadir ) || exit 1
 
 if [ -n "$subsystem" ]; then
   if ! is_known_seedapp_subsystem "$subsystem"; then
@@ -197,8 +197,7 @@ elif [ ${#archive_label}  -gt 10 -a "${archive_label:0:7}" == "http://"    \
      ]; then
 
   if [[ "$archive_label" == we://* ]]; then
-    assign_deref_os_prop_or_exit seedapp_base_url "$we_base_dir" \
-      webenabled_seedapps_base_url
+    seedapp_base_url=$(get_vendor_seedapps_base_url webenabled ) || return $?
 
     tmp_rel_url=${archive_label#*://}
     archive_url="${seedapp_base_url%/}/$tmp_rel_url"
@@ -206,8 +205,7 @@ elif [ ${#archive_label}  -gt 10 -a "${archive_label:0:7}" == "http://"    \
       archive_url+=".tgz"
     fi
   elif [[ "$archive_label" == devpanel://* ]]; then
-    assign_deref_os_prop_or_exit seedapp_base_url "$we_base_dir" \
-      devpanel_seedapps_base_url
+    seedapp_base_url=$(get_vendor_seedapps_base_url devpanel ) || return $?
 
     tmp_rel_url=${archive_label#*://}
     archive_url="${seedapp_base_url%/}/$tmp_rel_url"

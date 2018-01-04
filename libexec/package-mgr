@@ -743,7 +743,7 @@ if ! source "$lib_file"; then
   exit 1
 fi
 
-assign_deref_os_prop_or_exit packages_url "$system_dir" packages_url
+packages_url=$(get_package_metadata_url ) || exit 1
 
 if ! lock_path "$lock_file" >/dev/null; then
   error "unable to lock. There's probably another instance running."
@@ -773,7 +773,7 @@ case "$op" in
       usage_update_all
     fi
 
-    if deref_os_prop "$system_dir" no_package_updates &>/dev/null; then
+    if is_package_updates_disabled; then
       error "this system is configured not to have automated updates."
     fi
 

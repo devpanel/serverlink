@@ -113,8 +113,7 @@ if ! source "$lib_file"; then
   exit 1
 fi
 
-assign_deref_os_prop_or_exit virtwww_log_dir "$sys_dir" \
-  pathnames/var/log/apache_vhosts
+virtwww_log_dir=$(get_apache_virtwww_log_dir ) || exit 1
 
 if tty -s; then
   has_tty=1

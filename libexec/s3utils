@@ -150,12 +150,11 @@ case "$op" in
       error "can't enable and disable at the same time"
     fi
 
-    system_wide_enabled=$(deref_os_prop "$sys_dir" upload_archives_to_s3 \
-                          2>/dev/null )
+    system_wide_enabled=$(is_global_s3_uploads_enabled 2>/dev/null )
+
     # just used to check whether there's a global bucket defined, in case
     # the specific vhost bucket is not defined
-    system_wide_bucket=$(deref_os_prop "$sys_dir" s3_bucket_vhost_archives \
-                          2>/dev/null )
+    system_wide_bucket=$(get_global_s3_bucket 2>/dev/null)
 
     upd_str=""
     if [ -n "$do_enable" ]; then

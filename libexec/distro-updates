@@ -139,7 +139,7 @@ case  $op  in
                 fi
                 ;;
         run-from-crontab)
-                if deref_os_prop "$sys_dir" automatic_distro_updates &>/dev/null; then
+                if is_distro_updates_enabled 2>/dev/null; then
                   "$self_bin" run -Y
                   exit $?
                 fi

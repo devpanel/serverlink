@@ -63,7 +63,7 @@ if [ $? -eq 0 -a -n "$vhost_opt" ]; then
 
   yes_upload=1
   s3cmd_cfg="$vhost_conf_dir/s3cfg"
-elif deref_os_prop "$sys_dir" upload_archives_to_s3 &>/dev/null; then
+elif is_global_s3_uploads_enabled 2>/dev/null; then
   yes_upload=1
   s3cmd_cfg="$sys_dir/etc/s3cfg"
 fi
@@ -77,26 +77,23 @@ if [ ! -f "$s3cmd_cfg" ]; then
   error "Missing s3cmd configuration file $s3cmd_cfg"
 fi
 
-assign_deref_os_prop_or_exit virtwww_domain "$sys_dir" \
-  apache_virtwww_domain
+virtwww_domain=$(get_server_base_domain ) || exit 1
 
 if s3_bucket=$(get_metadata_value "$vhost_conf_dir" \
                         config.s3_bucket 2>/dev/null ); then
   : # ok
 else
-  assign_deref_os_prop_or_exit s3_bucket "$sys_dir" \
-    s3_bucket_vhost_archives
+  s3_bucket=$(get_global_s3_bucket )
 fi
 
 if s3_baseaddr_tmpl=$(get_metadata_value "$vhost_conf_dir" \
                         config.s3_baseaddr_tmpl 2>/dev/null ); then
   : # ok
 else
-  assign_deref_os_prop_or_exit s3_baseaddr_tmpl "$sys_dir" \
-    s3_baseaddr_vhost_tmpl
+  s3_baseaddr_tmpl=$(get_global_s3_base_addr_template ) || exit $?
 fi
 
-speed_limit=$(deref_os_prop "$sys_dir" s3_upload_speed_limit 2>/dev/null)
+speed_limit=$(get_s3_upload_speed_limit 2>/dev/null )
 if [ $? -eq 0 ]; then
   # check if s3cmd command is recent enough, and supports the limit rate option
   # to control the speed limit

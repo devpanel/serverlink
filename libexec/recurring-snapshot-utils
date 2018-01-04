@@ -182,7 +182,7 @@ if ! source "$lib_file"; then
   error "unable to source file $lib_file"
 fi
 
-assign_deref_os_prop_or_exit system_data_dir "$sys_dir" data_dir
+system_data_dir=$(get_devpanel_datadir ) || exit 1
 
 # make file expansions return empty when no match is found
 shopt -s nullglob
@@ -232,8 +232,7 @@ case $op in
 		fi
 		vhost_group="$vhost_user"
 
-    assign_deref_os_prop_or_exit archive_template_str "$sys_dir" \
-      vhost_snapshot_${frequency}_template_str
+    archive_template_str=$(get_template_str_for_recurring_archive_snapshot "$frequency" ) || exit 1
 
     if ! should_run_backup_now "$frequency" "$hour" "$day"; then
       exit 0

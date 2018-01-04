@@ -12,8 +12,8 @@ if ! source "$lib_file"; then
   exit 1
 fi
 
-assign_deref_os_prop_or_exit region   "$we_base_dir" aws_cluster_region
-assign_deref_os_prop_or_exit stack_name "$we_base_dir" aws_cluster_stack_id
+region=$(get_aws_cluster_region ) || exit $?
+stack_name=$(get_aws_cluster_stack_id ) || exit $?
 
 tmp_file=`mktemp`
 if [ $? -ne 0 ]; then

@@ -97,14 +97,10 @@ if ! "$curr_dir/check-vhost-name" archive "$vhost"; then
   error "Invalid vhost name"
 fi
 
-assign_deref_os_fs_path_ex_or_exit ssl_cert_dir "$we_base_dir" \
-  pathnames/etc/ssl/certs
+ssl_cert_dir=$(get_ssl_cert_dir ) || return $?
+ssl_key_dir=$(get_ssl_key_dir   ) || return $?
 
-assign_deref_os_fs_path_ex_or_exit ssl_key_dir "$we_base_dir" \
-  pathnames/etc/ssl/keys
-
-assign_deref_os_prop_or_exit ssl_template_basename "$we_base_dir" \
-  names/apache_vhost_ssl_template
+ssl_template_basename=$( get_ssl_template_basename ) || return $?
 
 umask 077
 

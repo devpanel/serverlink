@@ -59,7 +59,7 @@ if [ $? -ne 0 ]; then
 fi
 
 
-assign_deref_os_prop_or_exit url_tmpl "$sys_dir" tools_base_url_tmpl
+url_tmpl=$(get_tools_base_url_template ) || exit $?
 
 virtwww_base_domain=$(get_server_base_domain) || exit 1
 

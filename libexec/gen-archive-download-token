@@ -57,8 +57,8 @@ if [ $? -ne 0 ]; then
   error "unable to get the linux username from vhost $vhost"
 fi
 
-assign_deref_os_prop_or_exit url_tmpl "$sys_dir" archive_download_url_tmpl
-assign_deref_os_prop_or_exit data_dir "$sys_dir" data_dir
+url_tmpl=$(get_template_url_for_archive_download ) || exit $?
+data_dir=$(get_devpanel_datadir ) || exit 1
 
 archives_dir=$(readlink -m "$data_dir/vhost_archives/$vhost")
 archive_file=$(readlink -m "$archives_dir/$archive_file_in")

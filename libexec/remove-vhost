@@ -70,10 +70,9 @@ if ! source "$lib_file"; then
   exit 1
 fi
 
-assign_deref_os_prop_or_exit sys_data_dir "$sys_dir" data_dir
+sys_data_dir=$(get_devpanel_datadir ) || exit 1
 
-assign_deref_os_fs_path_ex_or_exit apache_base_log_dir "$sys_dir" \
-  pathnames/var/log/apache_vhosts
+apache_base_log_dir=$(get_apache_virtwww_log_dir ) || exit 1
 
 get_linux_username_from_vhost "$vhost" && \
 user_web="$_dp_value"

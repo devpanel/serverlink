@@ -53,7 +53,7 @@ fi
 if [ -n "$1" ]; then
   backups_dir="$1"
 elif [ -z "$1" -a ${#USER} -gt 2 -a "${USER:0:2}" == "w_" ]; then
-  assign_deref_os_prop_or_exit data_dir "$sys_dir" data_dir
+  data_dir=$(get_devpanel_datadir ) || exit 1
 
   vhost=$(get_vhost_from_linuxuser)
   backups_dir="$data_dir/vhost_archives/$vhost"

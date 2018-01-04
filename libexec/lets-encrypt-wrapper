@@ -272,8 +272,7 @@ case "$op" in
     ;;
 
   post-renew)
-    assign_deref_os_prop_or_exit apache_service "$sys_dir" \
-      names/apache_service_name
+    apache_service=$(get_apache_service_name ) || exit $?
 
     services_bin="$sys_dir/libexec/system-services"
 

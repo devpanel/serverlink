@@ -90,7 +90,7 @@ for post_run_script in "$post_update_dir/"*; do
 done
 
 if [ ${#ex_local_vhosts_ar[@]} -gt 0 ]; then
-  apache_service=$(deref_os_prop "$sys_dir" names/apache_service_name )
+  apache_service=$(get_apache_service_name )
   if [ $? -eq 0 ]; then
     services_bin="$sys_dir/libexec/system-services"
 

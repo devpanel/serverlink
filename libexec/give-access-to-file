@@ -50,8 +50,8 @@ out_fifo_esc=${out_fifo//\//-} # replace slashes(/) with dash(-)
 
 download_basename="${4##*/}" # optional
 
-assign_deref_os_prop_or_exit server_domain "$sys_dir" apache_virtwww_domain
-assign_deref_os_prop_or_exit admin_apps_base_url "$sys_dir" admin_apps_base_url
+server_domain=$(get_server_base_domain )        || exit $?
+admin_apps_base_url=$(get_admin_apps_base_url ) || exit $?
 
 if [ ! -f "$file" ]; then
   error "file path is not a regular file: $file"

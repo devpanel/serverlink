@@ -349,9 +349,9 @@ if [ $? -ne 0 -o -z "$user_home" ]; then
   error "unable to get home directory of user '$user'"
 fi
 
-assign_deref_os_fs_path_ex_or_exit apachectl "$we_base_dir" pathnames/sbin/apachectl
-assign_deref_os_fs_path_ex_or_exit virtwww_dir "$we_base_dir" pathnames/etc/apache_vhosts
-assign_deref_os_prop_or_exit websites_basedir "$we_base_dir" apache_virtwww_homedir
+apachectl=$(get_path_of_apachectl ) || exit 1
+websites_basedir=$(get_vhosts_homedir ) || exit 1
+virtwww_dir=$(get_apache_virtwww_config_dir ) || exit 1
 
 if [ -f "$apachectl" -a -x "$apachectl" ]; then
   hash -p "$apachectl" apachectl
@@ -401,7 +401,7 @@ fi
 
 unset is_htpasswd_locked
 if get_metadata_value "$config_dir" "$DEVPANEL_VHOST_HTPASSWD_LOCK_FLAG" &>/dev/null; then
-  if ! htpasswd_tmpl_name=`deref_os_prop "$we_base_dir" names/apache_htpasswd_template`; then
+  if ! htpasswd_tmpl_name=`get_htpasswd_vhost_template`; then
     error "couldn't get htpasswd template name"
   fi
 
@@ -422,7 +422,7 @@ if [ -f "$virtwww_file" ] && ! cat "$virtwww_file" > "$vhost_bkp_file"; then
   error "unable to write a copy of '$virtwww_file' into '$vhost_bkp_file'"
 fi
 
-if ! server_hostname=`deref_os_prop "$we_base_dir" apache_virtwww_domain`; then
+if ! server_hostname=`get_server_base_domain`; then
   error "unable to default domain name for apache virtual host"
 fi
 

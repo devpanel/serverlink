@@ -114,22 +114,17 @@ if [ $status -ne 0 ]; then
   error "unable to detect the system distribution"
 fi
 
-assign_deref_os_prop_or_exit data_dir "$install_dir" data_dir
+data_dir=$(get_devpanel_datadir ) || exit 1
 
-assign_deref_os_prop_or_exit vhosts_home_dir "$install_dir" \
-  apache_virtwww_homedir
+vhosts_home_dir=$(get_vhosts_homedir ) || exit 1
 
-assign_deref_os_prop_or_exit mysqls_dir "$install_dir" \
-  mysql_instances_homedir
+mysqls_dir=$(get_mysql_instances_homedir ) || exit $?
 
-assign_deref_os_prop_or_exit apache_vhost_logs_dir "$install_dir" \
-  pathnames/var/log/apache_vhosts
+apache_vhost_logs_dir=$(get_apache_virtwww_log_dir ) || exit $?
 
-assign_deref_os_prop_or_exit apache_base_dir "$install_dir" \
-  pathnames/etc/apache_base_dir
+apache_base_dir=$(get_apache_main_config_dir ) || exit $?
 
-assign_deref_os_prop_or_exit apache_includes_dir "$install_dir" \
-  pathnames/etc/apache_includes_dir
+apache_includes_dir=$(get_apache_global_includes_dir ) || exit $?
 
 mysql_inc_dir=$(deref_os_fs_path_ex "$install_dir" pathnames/etc/mysql_conf_d)
 php_inc_dir=$(deref_os_fs_path_ex "$install_dir" pathnames/etc/php_ini_d)
@@ -166,7 +161,7 @@ if [ "$linux_distro" == "macosx" ]; then
 fi
 
 # Linux removal logic
-apache_ctl="$install_dir/config/os/pathnames/sbin/apachectl"
+apache_ctl=$(get_path_of_apachectl ) || exit 1
 
 # Stop apache before anything else
 [ -x "$apache_ctl" ] && "$apache_ctl" stop
