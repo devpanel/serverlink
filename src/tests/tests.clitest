@@ -1,0 +1,51 @@
+$ [ -d /opt/webenabled ] || { tar_f=/root/serverlink.tar ; [ ! -f $tar_f ] || tar -xf $tar_f && ./serverlink/install/install.sh -3 ;} #=> --exit 0
+$ [ -d /opt/webenabled ] || { i_f=/root/install.sh ; [ ! -f $i_f ] || $i_f -3 ;} #=> --exit 0
+$ [ -d /opt/webenabled ] || { curl -sSL https://www.devpanel.com/install.sh | bash -s -- -3 ;} #=> --exit 0
+$ devpanel get server info | egrep -q '^Vhosts base domain: [^ ]+$' || devpanel init config --gen-hostname-from-ip #=> --exit 0
+
+$ fuser -v http/tcp                                 #=> --exit 0
+$ fuser -v smtp/tcp                                 #=> --exit 0
+$ fuser -v ssh/tcp                                  #=> --exit 0
+$ pidof cron || pidof crond                         #=> --exit 0
+$ devpanel dump metadata #=> --exit 0
+$ devpanel list apps     #=> --exit 0
+$ devpanel install app --vhost d7t1 --app drupal-v7 #=> --exit 0
+$ devpanel test http --vhost d7t1                   #=> --exit 0
+$ devpanel status mysql --vhost d7t1                #=> --exit 0
+$ devpanel stop   mysql --vhost d7t1                #=> --exit 0
+$ devpanel start mysql --vhost d7t1 < /dev/null     #=> --exit 0
+$ sleep 2; devpanel status mysql --vhost d7t1       #=> --exit 0
+$ devpanel enable htpasswd --vhost d7t1             #=> --exit 0
+$ devpanel test http --vhost d7t1 --http-code 401   #=> --exit 0
+$ echo test_pw | devpanel manage htpasswd --add-user test --vhost d7t1 #=> --exit 0
+$ devpanel test http --vhost d7t1 --http-user-pass test:test_pw   #=> --exit 0
+$ devpanel disable htpasswd --vhost d7t1            #=> --exit 0
+$ devpanel test http --vhost d7t1                   #=> --exit 0
+$ devpanel backup vhost --vhost d7t1                #=> --exit 0
+$ devpanel disable vhost --vhost d7t1               #=> --exit 0
+$ devpanel test http --vhost d7t1 --uri /index.php --http-code 404  #=> --exit 0
+$ devpanel enable vhost --vhost d7t1                #=> --exit 0
+$ devpanel test http --vhost d7t1 --uri /index.php  #=> --exit 0
+$ devpanel test http --vhost d7t1                   #=> --exit 0
+
+# ssh keys
+$ : ssh_add ; kf=$(mktemp) && rm -f $kf && trap 'rm -f $kf' EXIT && ssh-keygen -f $kf -t rsa -b 4096 -P '' && devpanel add ssh key --vhost d7t1 --file $kf.pub #=> --exit 0
+$ : ssh_add ; kf=$(mktemp) && rm -f $kf && trap 'rm -f $kf' EXIT && ssh-keygen -f $kf -t rsa -b 4096 -P '' && devpanel add ssh key --vhost d7t1 --file $kf.pub #=> --exit 0
+$ devpanel exec --vhost d7t1 wc -l \< .ssh/authorized_keys #=> 2
+$ : ssh_rm  ; kf=$(mktemp) && rm -f $kf && trap 'rm -f $kf' EXIT && ssh-keygen -f $kf -t rsa -b 4096 -P '' && devpanel add ssh key --vhost d7t1 --file $kf.pub && devpanel remove ssh key --vhost d7t1 --file $kf.pub #=> --exit 0
+
+$ devpanel install app  --vhost wp4t1 --app wordpress-v4 #=> --exit 0
+$ devpanel status mysql --vhost wp4t1                   #=> --exit 0
+$ devpanel test http --vhost wp4t1                      #=> --exit 0
+#$ devpanel stop   mysql --vhost wp4t1                   #=> --exit 0
+#$ devpanel start  mysql --vhost wp4t1                   #=> --exit 0
+#$ devpanel status mysql --vhost wp4t1                   #=> --exit 0
+
+$ devpanel install app  --vhost grav1 --app grav-v1  #=> --exit 0
+$ devpanel status mysql --vhost grav1                #=> --exit 0
+$ devpanel test http --vhost grav1                   #=> --exit 0
+
+#$ devpanel stop   mysql --vhost grav1               #=> --exit 0
+#$ devpanel start  mysql --vhost grav1               #=> --exit 0
+#$ devpanel status mysql --vhost grav1               #=> --exit 0
+

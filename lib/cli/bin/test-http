@@ -1,0 +1,158 @@
+#!/bin/bash
+
+set_usage_msg \
+  "Usage: $bin_name ${cmd_ar[*]} [opts] --vhost <vhost>
+
+  Options:
+    --vhost vhost                   test the default url of the vhost
+    --http-code NNN                 expect http code NNN
+    --http-user-pass user:pass      do HTTP authentication with user and pass
+    --follow-redirects              follow http redirects
+    --uri path                      use the specified path as URI on the
+                                    vhost address (default: / )
+
+    --url url                       test the following url (this assumes the
+                                    URL to be absolute (i.e. host + uri, 
+                                    the --uri option would be ignored if
+                                    used along with --url)
+
+    --verbose                       show verbose information about the
+                                    connection
+
+  Run a test HTTP connection.
+"
+
+devpanel_cmd__test_http() {
+  [ $# -eq 0 -o -z "$1" ] && usage
+
+  local name vhost url uri user_pass follow_redirects verbose
+  local exp_http_code
+  local output
+  local -a curl_args_ar=()
+
+  while [ -n "$1" ]; do
+    name="$1"
+    case "$name" in
+      --vhost)
+        [ -z "$2" ] && error_missing_value "$name"
+        vhost="$2"
+        shift 2
+        ;;
+
+      --http-code)
+        [ -z "$2" ] && error_missing_value "$name"
+        exp_http_code="$2"
+        shift 2
+        ;;
+
+      --http-user-pass)
+        [ -z "$2" ] && error_missing_value "$name"
+        user_pass="$2"
+        shift 2
+        ;;
+
+      --follow-redirects)
+        follow_redirects=1
+        shift
+        ;;
+
+      --url)
+        [ -z "$2" ] && error_missing_value "$name"
+        url="$2"
+        shift 2
+        ;;
+
+      --uri)
+        [ -z "$2" ] && error_missing_value "$name"
+        user_pass="$2"
+        shift 2
+        ;;
+
+      --verbose)
+        verbose=1
+        shift
+        ;;
+
+      --help)
+        usage
+        ;;
+
+      --)
+        shift
+        break
+        ;;
+
+      *)
+        error "unknown option $name"
+        ;;
+    esac
+  done
+
+  if [ -n "$vhost" -a -n "$url" ]; then
+    error "can't use --vhost and --url at the same time. Use only one" -
+    return $?
+  fi
+
+  if ! vhost_exists "$vhost"; then
+    error "vhost doesn't exist." -
+    return $?
+  elif ! is_vhost_enabled "$vhost"; then
+    # it's ok to test a vhost that is not enabled, but let's just warn just
+    # in case
+    echo "Warning: vhost is not enabled" 1>&2
+  fi
+
+  if [ -n "$vhost" ]; then
+    url=$(get_main_url_of_vhost "$vhost" ) || return $?
+    uri=${uri:-/}
+    url="${url%/}/${uri#/}"
+  fi
+
+  exp_http_code=${exp_http_code:-200}
+ 
+  if [ -n "$follow_redirects" ]; then
+    curl_args_ar+=( -L )
+  fi
+
+  if [ -n "$verbose" ]; then
+    curl_args_ar+=( -v )
+  fi
+
+  if [ -n "$user_pass" ]; then
+    curl_args_ar+=( -u "$user_pass" )
+  fi
+
+  local output_str="" printf_str=""
+
+  output_str+='%{http_code} %{size_download} %{time_namelookup} %{time_connect}'
+  output_str+=' %{time_pretransfer} %{time_starttransfer} %{time_total}'
+
+  printf_str+="%s -- http_code: %s, size: %s bytes. Time(sec): DNS lookup: %s, connect: %s,"
+  printf_str+=" header: %s, first byte: %s, total time: %s\n"
+  
+  local st
+  local recvd_http_code size 
+  local time_nlookup time_connect time_header time_1st_byte time_total
+
+  output=$(curl -sS -o /dev/null -w "$output_str" "${curl_args_ar[@]}" "$url")
+  st=$?
+
+  IFS=' ' read recvd_http_code size time_nlookup time_connect time_header \
+                time_1st_byte time_total <<< "$output"
+
+  if [ $st -eq 0 ]; then
+    local status_txt
+    if [ "$recvd_http_code" == "$exp_http_code" ]; then
+      status_txt=OK
+    else
+      status_txt=FAILED
+    fi
+  else
+    status_txt=FAILED
+  fi
+
+  printf "$printf_str" $status_txt $recvd_http_code $size $time_nlookup \
+                    $time_connect $time_header $time_1st_byte $time_total
+
+  return $st
+}

@@ -4,3 +4,4 @@
 *.gpg binary
 *.crt binary
 *.key binary
+/src/tests/clitest binary
