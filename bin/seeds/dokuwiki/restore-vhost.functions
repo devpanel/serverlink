@@ -1,0 +1,79 @@
+#!/bin/bash
+
+dokuwiki_encrypt()
+{
+  local password="$1"
+  echo -n "$password"|"$we_base_dir/bin/seeds/dokuwiki/dokuwiki-crypt.php"
+}
+
+dokuwiki_set_password()
+{ 
+  local user="$1" password="$2"
+
+  local pw_encrypted pw_enc_sed_escaped
+
+  pw_encrypted="$password"
+  pw_enc_sed_escaped=$(escape_sed "$pw_encrypted")
+
+  sed -i -e "s/^$user:[^:]\+/$user:$pw_enc_sed_escaped/" \
+    "$public_html_dir/conf/users.auth.php"
+}
+
+dokuwiki_set_email()
+{
+  local user="$1" email="$2"
+  local email_esc
+
+  email_esc=$(escape_sed "$email" )
+
+  sed -i -e "s/^$user:\([^:]\+\):\([^:]\+\):\([^:]\+\):$email_esc/;" \
+    "$public_html_dir/conf/users.auth.php"
+}
+
+dokuwiki_get_email()
+{
+  local user="$1"
+  local line
+
+  line=$(egrep -m 1 "^$user:" "$public_html_dir/conf/users.auth.php" )
+  if [ $? -ne 0 ]; then
+    echo "$FUNCNAME(): didn't find user $user" 1>&2
+    return 1
+  fi
+
+  echo "$line" | cut -d: -f 4
+}
+
+dokuwiki_get_admin_user()
+{
+  local user=admin
+
+  if egrep -q -m 1 "^$user:" "$public_html_dir/conf/users.auth.php"; then
+    echo "$user"
+  else
+    echo "$FUNCNAME(): didn't find user $user" 1>&2
+    return 1
+  fi
+}
+
+dokuwiki_detect_version() {
+  # dokuwiki_detect_version_from_dir "$public_html_dir"
+  :
+}
+
+dokuwiki_custom()
+{
+  :
+}
+
+dokuwiki_clear_cache() {
+  :
+}
+
+dokuwiki_setup_from_git() {
+  :
+}
+
+dokuwiki_setup_from_cli() {
+  dokuwiki_setup_from_git
+}
