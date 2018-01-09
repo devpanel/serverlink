@@ -3415,7 +3415,7 @@ print_vhost_metadata_json() {
   fi
 
   if is_ssl_enabled_on_vhost "$vhost"; then
-    sst_st=1
+    ssl_st=1
     if is_lets_encrypt_enabled_for_vhost "$vhost"; then
       ssl_type="lets-encrypt"
     else
