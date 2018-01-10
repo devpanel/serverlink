@@ -20,6 +20,11 @@ set_usage_msg \
     --only-databases            extract only the databases (skip the other
                                 files)
 
+    --extract-raw               extract the files as is in the tar ball
+                                (don't create a user friendlier layout)
+
+    --quiet                     don't show progress/success msgs
+
   Extracts the contents of a backup file into the specified target dir.
 "
 
@@ -27,6 +32,7 @@ devpanel_cmd__extract_backup() {
   [ $# -eq 0 -o -z "$1" ] && usage
 
   local name vhost filename target_dir skip_files skip_dbs public_files
+  local temp_dir extract_raw quiet
 
   while [ -n "$1" ]; do
     name="$1"
@@ -56,6 +62,14 @@ devpanel_cmd__extract_backup() {
         ;;
       --public-files)
         public_files=1
+        shift
+        ;;
+      --extract-raw)
+        extract_raw=1
+        shift
+        ;;
+      --quiet)
+        quiet=1
         shift
         ;;
       --help)
@@ -94,8 +108,9 @@ devpanel_cmd__extract_backup() {
   bkp_src_dir="$sys_bkp_dir/vhost_archives/$vhost"
 
   if [ ! -d "$bkp_src_dir" ]; then
+    [ -z "$quiet" ] && \
     echo "No backups for vhost (backup dir $bkp_src_dir is missing)" 1>&2
-    exit 0
+    return 0
   fi
 
   if [ ! -e "$target_dir" ]; then
@@ -108,7 +123,7 @@ devpanel_cmd__extract_backup() {
     return $?
   elif [ -d "$target_dir" ]; then
     local -i n_entries=$(ls -a "$target_dir" | wc -l)
-    if [ $n_entries -ge 2 ]; then
+    if [ $n_entries -gt 2 ]; then
       error "directory '$target_dir' is not empty." -
       return $?
     fi
@@ -140,12 +155,26 @@ devpanel_cmd__extract_backup() {
   temp_dirs_ar+=( "$temp_dir" )
 
   local -a tar_opts_ar=()
-  [ -n "$skip_files" ] && tar_opts_ar+=( --exclude=./web )
-  [ -n "$skip_dbs"   ] && tar_opts_ar+=( --exclude=./db  )
+  if [ -z "$extract_raw" ]; then
+    # not a raw extract. Add some options for a friendlier dir layout
+    [ -n "$skip_files" ] && tar_opts_ar+=( --exclude=./web )
+    [ -n "$skip_dbs"   ] && tar_opts_ar+=( --exclude=./db  )
+  fi
 
-  echo "Extracting file $archive_file ..." 1>&2
+  [ -z "$quiet" ] && \
+    echo "Extracting file $archive_file ..." 1>&2
+
   tar -zxf "$archive_file" -C "$temp_dir" "${tar_opts_ar[@]}"
-  if [ $? -ne 0 ]; then
+  if [ $? -eq 0 ]; then
+    if [ -n "$extract_raw" ]; then
+      mv -n $temp_dir/* $target_dir
+      mv -n $temp_dir/.[^.]* $target_dir 2>/dev/null
+   
+      [ -z "$quiet" ] && \
+        echo "Successfully extracted raw files on $target_dir."
+      return 0
+    fi
+  else
     error "unable to extract file '$archive_file' to temp dir $temp_dir" -
     return $?
   fi
@@ -172,7 +201,8 @@ devpanel_cmd__extract_backup() {
     web_archive="$temp_dir/web/w_$tmp_vhost.tgz"
     files_dir="$target_dir/files"
     mkdir "$files_dir"
-    echo "Extracting files in $files_dir/ ..." 1>&2
+    [ -z "$quiet" ] && \
+      echo "Extracting files in $files_dir/ ..." 1>&2
     tar -zxf "$web_archive" -C "$files_dir" "${tar_web_opts_ar[@]}"
     if [ $? -ne 0 ]; then
       error "unable to extract '$web_archive' to dir '$files_dir'" -
@@ -205,6 +235,8 @@ devpanel_cmd__extract_backup() {
     fi
   fi
 
-  echo "Successfully extracted files on directory $target_dir/" 1>&2
+  [ -z "$quiet" ] && \
+    echo "Successfully extracted files on directory $target_dir/" 1>&2
+
   return 0
 }

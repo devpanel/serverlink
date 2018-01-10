@@ -1,0 +1,185 @@
+#!/bin/bash
+
+set_usage_msg \
+  "Usage: $bin_name ${cmd_ar[*]} <opts> <--filename file>
+
+  Options:
+    --vhost    <vhost>          the vhost to restore
+
+    --filename <filename>       name of the archive file to extract
+
+  Restore the contents of a backup of the vhost.
+
+  NOTE: it overwrites the current data.
+"
+
+devpanel_cmd__restore_backup() {
+  [ $# -eq 0 -o -z "$1" ] && usage
+
+  local name vhost filename skip_files skip_dbs public_files
+  local temp_dir
+  local vhost_home_dir web_user doc_root st
+  local -a extract_args_ar=()
+
+  while [ -n "$1" ]; do
+    name="$1"
+    case "$name" in
+      --vhost)
+        [ -z "$2" ] && error_missing_value vhost
+        vhost="$2"
+        extract_args_ar+=( "$name" "$2" )
+        shift 2
+        ;;
+
+      --filename)
+        [ -z "$2" ] && error_missing_value "$name"
+        filename="$2"
+        extract_args_ar+=( "$name" "$2" )
+        shift 2
+        ;;
+
+      --help)
+        usage
+        ;;
+      --)
+        extract_args_ar+=( "$name" )
+        shift
+        break
+        ;;
+      *)
+        error "unknown option $name"
+        ;;
+    esac
+  done
+
+  local param
+  for param in filename; do
+    [ -z "${!param}" ] && error_missing_param $param
+  done
+
+  if [ $EUID -eq 0 ]; then
+    [ -z "$vhost" ] && error_missing_param vhost
+  else
+    if ! vhost=$(get_vhost_from_linuxuser); then
+      error "unable to get vhost for current user" -
+      return $?
+    fi
+  fi
+
+  if ! vhost_exists_and_is_enabled "$vhost"; then
+    return $?
+  fi
+
+  get_linux_username_from_vhost "$vhost" && \
+  web_user="$_dp_value" || return $?
+
+  vhost_home_dir=$(eval echo -n ~$web_user )
+  if [ ! -d "$vhost_home_dir" ]; then
+    error "unable to find home dir of vhost" -
+    return $?
+  fi
+
+  doc_root=$(get_docroot_from_vhost "$vhost" ) || return $?
+
+  temp_dir=$(mktemp -d)
+  if [ $? -ne 0 ]; then
+    error "unable to create temporary directory" -
+    return $?
+  fi
+  temp_dirs_ar+=( "$temp_dir" )
+
+  extract_args_ar+=( --target-dir "$temp_dir" --extract-raw --quiet )
+
+  #
+  # disable the vhost on apache
+  #
+  # disable_vhost_on_apache "$vhost" || return $?
+  # TODO(enhance): disable vhost
+  # TODO(enhance): trap re-enable on failure
+
+  # TODO(enhance): check if there's enough disk space to extract the files
+  #       (it's actually better to do on 'extract backup' command)
+
+  devpanel_run extract backup "${extract_args_ar[@]}" || return $?
+
+  # if the user running this script is root
+  # 
+  #   check if vhost $HOME has dirs/files not writable, and chmod it
+  #
+  #find "$vhost_home_dir" ! -user "$web_user" -exec chown -v "$web_user" {} \;
+
+  if [ $EUID -eq 0 ]; then
+    chown -R -c "$web_user" "$vhost_home_dir"
+    chgrp -R "$web_user" "$temp_dir"
+    chmod 770 $temp_dir $temp_dir/db $temp_dir/web
+    chmod 640 $temp_dir/db/* $temp_dir/web/*
+  else
+    #TODO(enhance): test status of find and abort if there are files not
+    # writable by the user (to avoid restoring a partial state)
+    find "$vhost_home_dir" -type f -perm -0400 -exec chmod u+w {} \;
+    find "$vhost_home_dir" -type d -perm -0500 -exec chmod u+wx {} \;
+  fi
+
+  local import_dbs_bin="$sys_dir/bin/import-databases-from-dir"
+  local -a import_dbs_cmd_ar=( "$import_dbs_bin" --safer-overwrite "$temp_dir/db" )
+  if [ $EUID -eq 0 ]; then
+    run_as_user --login "$web_user" "${import_dbs_cmd_ar[@]}"
+  else
+    "${import_dbs_cmd_ar[@]}"
+  fi
+  st=$?
+
+  if [ $st -ne 0 ]; then
+    error "failed to import databases" -
+    return $st
+  fi
+
+  local -a remove_dirs_cmd_ar=(
+    rm -rf "$vhost_home_dir" \; mkdir -m 751 -p "$doc_root"
+  )
+
+  if [ $EUID -eq 0 ]; then
+    run_as_user "$web_user" "${remove_dirs_cmd_ar[@]}" \
+                  >$temp_dir/rm-output.txt 2>&1
+  else
+    # have to duplicate command here instead of using $remove_dirs_cmd_ar
+    # because the ';' is expanded as a quoted string
+    rm -rf "$vhost_home_dir" >$temp_dir/rm-output.txt 2>&1
+    mkdir -m 751 -p "$doc_root"
+  fi
+
+  # it'll warn about removing the user dir (the user doesn't have write
+  # permissions to the $vhost_home_dir/../ )
+  # 
+  # if there's only one warning, then it's ok. Otherwise show the warnings.
+  local rm_n_err=`wc -l < $temp_dir/rm-output.txt`
+  if [ $? -eq 0 -a $rm_n_err -gt 1 ]; then
+    cat $temp_dir/rm-output.txt 1>&2
+  fi
+
+  # TODO(enhance): regenerate prod specific files (e.g. ~/logs ~/.my.cnf )
+  mysql_write_my_cnf "$vhost" "$web_user" "$vhost_home_dir"
+
+  local extract_bin="$sys_dir/bin/extract-vhost-files-from-dir"
+  local -a extract_cmd_ar=()
+
+  extract_cmd_ar=( "$extract_bin" "$temp_dir/web" "$vhost" \
+                       "$vhost_home_dir" "$doc_root" )
+
+  echo "Extracting files..."
+  if [ $EUID -eq 0 ]; then
+    run_as_user --login "$web_user" "${extract_cmd_ar[@]}"
+  else
+    "${extract_cmd_ar[@]}"
+  fi
+  st=$?
+
+  # TODO(enhance): test extraction status
+
+  # TODO(enhance):
+  # enable_vhost_on_apache "$vhost" || return $?
+
+  echo "Successfully restored backup."
+
+  return $st
+}

@@ -1,0 +1,22 @@
+#!/bin/bash
+
+usage() {
+  echo "Usage: $0 <src_dir> <new_vhost> <vhost_home> <doc_root>
+  
+  Extracts the files from the web/ dir of an extracted archive dir.
+"
+  exit 1
+}
+
+[ $# -eq 0 ] && usage
+
+self_file="${BASH_SOURCE[0]}"
+self_dir=${self_file%/*}
+lib_file="$self_dir/../lib/functions"
+
+if ! . "$lib_file"; then
+  echo "Error: failed to import '$lib_file'" 1>&2
+  exit 1
+fi
+
+mysql_import_databases_from_dir "$@"

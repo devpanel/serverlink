@@ -4045,3 +4045,89 @@ should_skip_nginx_vhost() {
     return 1
   fi
 }
+
+extract_vhost_files_from_dir() {
+  local src_dir="$1"
+  local target_vhost="$2"
+  local vhost_home="$3"
+  local doc_root="$4"
+
+  local old_vhost old_doc_root old_vhost_file
+  local test_file_1 test_file_2 archive_file
+  local -a tar_args_ar=()
+
+  old_vhost_file="$src_dir/id"
+  
+  if ! old_vhost=`head -1 "$old_vhost_file"` || [ -z "$old_vhost" ]; then
+    echo "$FUNCNAME(): cannot read $old_vhost_file" >&2
+    return 1
+  fi 
+  old_doc_root="./public_html/$old_vhost"
+ 
+  test_file_1="$src_dir/w_$old_vhost.tgz" 
+  test_file_2="$src_dir/$old_vhost.tgz" 
+  if [ -f "$test_file_1" ]; then 
+    # backwards compatibility when only short vhost names were allowed 
+    archive_file="$test_file_1" 
+  elif [ -f "$test_file_2" ]; then 
+    archive_file="$test_file_2" 
+  else 
+    echo "$FUNCNAME(): unable to find an archive file to restore" 1>&2
+    return 1
+  fi 
+
+  tar_args_ar+=( --no-same-owner --exclude=.mysql.passwd \
+                 --exclude=./.my.cnf --exclude=./logs )
+
+  if [ "$old_vhost" != "$target_vhost" ]; then
+    tar_args_ar+=( --exclude="$old_doc_root" )
+
+    # now extract only the doc_root
+    if ! tar -zSxf "$archive_file" -C "$doc_root" --no-same-owner \
+      --strip-components 3 "$old_doc_root" ; then
+      echo "$FUNCNAME(): failed to extract doc_root '$old_doc_root'" \
+           "from '$archive_file'" 1>&2
+      return 1
+    fi
+  fi
+
+  if tar -zxSf "$archive_file" -C "$vhost_home" "${tar_args_ar[@]}"; then
+    return 0
+  else
+    echo "$FUNCNAME(): failed to extract files from '$archive_file'" 1>&2
+    return 1
+  fi
+}
+
+mysql_write_my_cnf() {
+  local vhost="$1"
+  local user="$2"
+  local dir="$3"
+
+  local host port user password
+  local contents
+  local -a cmd_ar=( 
+    "$DEVPANEL_HOME/bin/update-ini-file" -q -c "$dir/.my.cnf"
+  )
+
+  host=$(get_1st_level_field_value_from_app "$vhost" db_host )
+  port=$(get_1st_level_field_value_from_app "$vhost" db_port )
+  user=$(get_1st_level_field_value_from_app "$vhost" db_user )
+  password=$(get_1st_level_field_value_from_app "$vhost" db_password )
+
+  contents=$( \
+    printf 'client.host = %s\nclient.port = %s\nclient.user = %s\n' \
+        "$host" "$port" "$user" ;
+     printf 'client.password = %s\n' "$password"; \
+  )
+    
+  if [ $EUID -eq 0 ]; then
+    echo "$contents" | run_as_user "$user" "${cmd_ar[@]}"
+  else
+    echo "$contents" | "${cmd_ar[@]}"
+  fi
+}
+
+if [ -f "$DEVPANEL_HOME/lib/functions.mysql" ]; then
+  . "$DEVPANEL_HOME/lib/functions.mysql"
+fi
