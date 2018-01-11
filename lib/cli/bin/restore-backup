@@ -1,7 +1,7 @@
 #!/bin/bash
 
 set_usage_msg \
-  "Usage: $bin_name ${cmd_ar[*]} <opts> <--filename file>
+  "Usage: $bin_name ${cmd_ar[*]} <opts>
 
   Options:
     --vhost    <vhost>          the vhost to restore
