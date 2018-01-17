@@ -4,8 +4,26 @@
 #   -c# pass ~b_USER/.my.cnf via fd #
 #   -S engine  sets a specific default storage engine for tables
 
+get_db_port() {
+  local instance="$1"
+  local line db_port config_file
+  config_file="$DBMGR_HOME/config/db-daemons.conf"
+
+  if line=$(egrep -m 1 "^$instance:" "$config_file") && [ -n "$line" ]; then
+    db_port=$(echo "$line" | cut -d: -f 6)
+    if [ -n "$db_port" ]; then
+      echo "$db_port"
+      return 0
+    fi
+  fi
+
+  echo "$FUNCNAME(): unable to get db_port for $instance" 1>&2
+  return 1
+}
+
 self=$(readlink -e "$0")
 DBMGR_BINDIR="${self%/*}"
+DBMGR_HOME=${DBMGR_BINDIR%/*/*}
 sys_dir=$(readlink -e "$DBMGR_BINDIR/../../../..")
 DB_HOME_BASE="/home/clients/databases"
 
@@ -100,10 +118,27 @@ if [ "$?" -ne 0 ]; then
 	exit 5
 fi
 
+client_config_dir="$DBMGR_HOME/config/mysql/$USER"
 # this is a hack
 w_USER=${USER/b_/w_}
-"$DBMGR_BINDIR"user-add $opt_i -t "$TYPE" -u "$USER" -d "$DATA_DIR" "--db-user=$w_USER" --db-admin
-if [ "$?" -ne 0 ]; then
+web_password=$($DBMGR_BINDIR/passgen)
+echo "$web_password" | "$DBMGR_BINDIR"user-add $opt_i -t "$TYPE" -u "$USER" \
+  -d "$DATA_DIR" "--db-user=$w_USER" --db-admin --db-password-stdin
+if [ $? -eq 0 ]; then
+  web_my_cnf="$client_config_dir/web.client.cnf"
+  db_port=$(get_db_port "$USER" )
+  touch $web_my_cnf
+  chmod 640 $web_my_cnf
+  chgrp $w_USER $web_my_cnf
+
+  echo "
+[client]
+host = 127.0.0.1
+port = $db_port
+user = $w_USER
+password = $web_password
+  " >$web_my_cnf
+else
 	echo "Error adding w_user to the running daemon"
 	exit 5
 fi

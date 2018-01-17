@@ -46,14 +46,16 @@ fi
 tmp_init=$(mktemp $datadir/tmp_init.XXXXXX)
 trap 'shred -u "$tmp_init" || rm -f "$tmp_init"' EXIT
 
+w_group="w_${user#b_}"
+usermod -a -G "$w_group" "$user"
 mkdir -m 750 "$client_config_dir"
-chgrp "$user" "$client_config_dir"
+chgrp "$w_group" "$client_config_dir"
 
 root_client_cnf="$client_config_dir/root.client.cnf"
 
 touch "$root_client_cnf"
-chgrp "$user" "$root_client_cnf"
 chmod 640 "$root_client_cnf"
+chgrp "$user" "$root_client_cnf"
 
 chgrp "$user" "$tmp_init"
 chmod 640 "$tmp_init"
