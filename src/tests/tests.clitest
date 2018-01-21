@@ -1,5 +1,5 @@
-$ [ -d /opt/webenabled ] || { tar_f=/root/serverlink.tar ; [ ! -f $tar_f ] || tar -xf $tar_f && ./serverlink/install/install.sh -3 ;} #=> --exit 0
-$ [ -d /opt/webenabled ] || { i_f=/root/install.sh ; [ ! -f $i_f ] || $i_f -3 ;} #=> --exit 0
+$ [ -d /opt/webenabled ] || { tar_f=/root/serverlink.tar ; [ ! -f $tar_f ] && exit 0; tar -xf $tar_f && ./serverlink/install/install.sh -3 ;} #=> --exit 0
+$ [ -d /opt/webenabled ] || { i_f=/root/install.sh ; [ ! -f $i_f -a ! -x $i_f ] && exit 0 ; $i_f -3 ;} #=> --exit 0
 $ [ -d /opt/webenabled ] || { curl -sSL https://www.devpanel.com/install.sh | bash -s -- -3 ;} #=> --exit 0
 $ devpanel get server info | egrep -q '^Vhosts base domain: [^ ]+$' || devpanel init config --gen-hostname-from-ip #=> --exit 0
 
