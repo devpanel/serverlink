@@ -168,6 +168,8 @@ devpanel_run() {
 }
 
 _devpanel_cli_cleanup() {
+  exit_code=$?
+
   local _tmp_file _tmp_dir
   if [ ${#temp_files_ar[@]} -gt 0 ]; then
     for _tmp_file in "${temp_files_ar[@]}"; do
@@ -178,6 +180,14 @@ _devpanel_cli_cleanup() {
   if [ ${#temp_dirs_ar[@]} -gt 0 ]; then
     for _tmp_dir in "${temp_dirs_ar[@]}"; do
       rm_rf_safer "${_tmp_dir}"
+    done
+  fi
+
+  # execute the exit functions of the commands (if any defined)
+  local cmd
+  if [ -n "${devpanel_trap_exit_cmds_ar[*]}" ]; then
+    for cmd in "${devpanel_trap_exit_cmds_ar[@]}"; do
+      eval $cmd
     done
   fi
 }
