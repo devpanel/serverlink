@@ -67,7 +67,7 @@ devpanel_cmd__remove_vhost_include() {
     rm -f "$include_file"
     devpanel_run rewrite vhost config --vhost "$vhost" --no-restart
     if [ -n "$reload" ]; then
-      if ! apache_ctl reload; then
+      if ! reload_or_start_apache; then
         echo "Warnings: removed vhost includes, but Apache reload failed" 1>&2
         return 0
       fi

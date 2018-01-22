@@ -24,7 +24,7 @@ if ! source "$lib_file"; then
   exit 1
 fi
 
-SHELLVHOST="/opt/webenabled/compat/apache_include/global-includes/shellinabox.conf"
+SHELLVHOST="$sys_dir/compat/apache_include/global-includes/shellinabox.conf"
 installshell(){
 local DEVPANELOS=$(devpanel_auto_detect_distro)
 local SHELLDOMAIN="shell.$(hostname)"
@@ -39,12 +39,11 @@ SHELLINABOX_ARGS=\"--no-beep --service=/:SSH --localhost-only --disable-ssl\"
 " > /etc/default/shellinabox
         /etc/init.d/shellinabox restart
 # Stop apache to install SSL
-        apachectl=$(get_path_of_apachectl )
         ## VALIDATION TO CHECK IF APACHE HAS GOOD CONFIGURATIONS
         #
         #
         #
-        $apachectl stop
+        stop_apache
         git clone https://github.com/letsencrypt/letsencrypt /opt/letsencrypt
         /opt/letsencrypt/letsencrypt-auto certonly --renew-by-default --email email@devpanel.com --text --agree-tos --standalone -d $SHELLDOMAIN
 
@@ -65,7 +64,7 @@ echo "
 
 </VirtualHost>
 " > $SHELLVHOST
-        $apachectl start
+        reload_or_start_apache
         else 
         echo "You should have python 2.7 installed on your server."
         exit 1
@@ -123,7 +122,7 @@ if [ "$DEVPANELOS" == "ubuntu" ] || [ "$DEVPANELOS" == "debian" ];then
         rm -rf /etc/letsencrypt
         rm -rf /opt/letsencrypt
         rm -f $SHELLVHOST
-        $apachectl restart
+        reload_or_start_apache
 
 ##### INITIATE SERVICE WHEN SYSTEM STARTS
 

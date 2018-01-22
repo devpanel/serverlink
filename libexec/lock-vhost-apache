@@ -50,15 +50,12 @@ apache_config_dir=$(get_apache_virtwww_config_dir ) || exit $?
 
 apache_config="$apache_config_dir/$user.conf"
 
-apachectl=$(get_path_of_apachectl ) || exit 1
-hash -p "$apachectl" apachectl
-
 vhost_metadata_dir=`readlink -e "$devpanel_dir/config/vhosts/$vhost"`
 if [ $? -ne 0 ]; then
   error "couldn't find path '$devpanel_dir/config/vhosts/$vhost'"
 fi
 
-if ! run apachectl configtest;  then
+if ! apache_configtest;  then
   error "Apache config seems already broken, won't try to change anything."
 fi
 
@@ -80,8 +77,8 @@ if [ "$cmd_name" == "lock-vhost-apache" ]; then
     error "unable to update apache metadata"
   fi
 
-  if apachectl configtest;  then
-    apachectl graceful && echo "Successfully locked apache vhost"
+  if apache_configtest;  then
+    reload_or_start_apache && echo "Successfully locked apache vhost"
   else
     echo "Warning: apache vhost was locked, but Apache config is broken" 1>&2
   fi

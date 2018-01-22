@@ -349,15 +349,8 @@ if [ $? -ne 0 -o -z "$user_home" ]; then
   error "unable to get home directory of user '$user'"
 fi
 
-apachectl=$(get_path_of_apachectl ) || exit 1
 websites_basedir=$(get_vhosts_homedir ) || exit 1
 virtwww_dir=$(get_apache_virtwww_config_dir ) || exit 1
-
-if [ -f "$apachectl" -a -x "$apachectl" ]; then
-  hash -p "$apachectl" apachectl
-else
-  error "problem with $apachectl, doing nothing."
-fi
 
 if ! lock_path "$virtwww_dir" >/dev/null; then
   error "Apache configuration is locked. There should have"\
@@ -367,7 +360,7 @@ trap 'exit 1' HUP INT QUIT ILL TRAP ABRT BUS FPE KILL SEGV \
               PIPE STOP ALRM TERM
 trap 'cleanup' EXIT
 
-if ! apachectl configtest &>/dev/null; then
+if ! apache_configtest &>/dev/null; then
   error "Apache configuration is broken. Please check it."
 fi
 
@@ -380,7 +373,7 @@ if [ -n "$disable_vhost" ]; then
   if [ -f "$virtwww_file" ]; then
     mv -f "$virtwww_file" "$virtwww_file.removed"
     if [ $? -eq 0 ]; then
-      apache_ctl restart     # Fix bug in Ubuntu 16 and Centos graceful
+      reload_or_start_apache
       if [ $? -eq 0 ]; then
         echo "Successfully disabled vhost $vhost"
         exit 0
@@ -944,7 +937,7 @@ if ! cat "$tmp_new_vhost_file" > "$virtwww_file"; then
 " to '$virtwww_file'"
 fi
 
-if ! "$apachectl" configtest; then
+if ! apache_configtest; then
   echo Syntax validation failed, reverting the changes
   if [ -f "$virtwww_file" ] && ! cat "$vhost_bkp_file" >"$virtwww_file"; then
     error "unable to copy back the contents from $vhost_bkp_file"\
@@ -957,7 +950,7 @@ if ! "$apachectl" configtest; then
   echo "-- END OF TEMPLATE --"
   echo
 
-  if ! "$apachectl" configtest; then
+  if ! apache_configtest; then
     error "Apache config is broken, call a system administrator NOW!"
   fi
 
@@ -983,10 +976,9 @@ fi
 echo "Successfully updated vhost $vhost on file $virtwww_file"
 
 if [ -n "$restart_apache" ]; then
-  echo Restarting apache
+  echo Reloading apache
 
-  # Change gracefull for restart to fix issue with ubuntu 16
-  run apache_ctl restart || \
+  reload_or_start_apache || \
     error "Cannot restart apache, call a system administrator NOW!"
 fi
 

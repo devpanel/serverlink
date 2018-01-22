@@ -268,5 +268,3 @@ else
   echo
   error "failed to import vhost $vhost"
 fi
-# To sure apache webserver is running. Fix bug with ubuntu16
-apache_ctl restart

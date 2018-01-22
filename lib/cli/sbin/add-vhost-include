@@ -115,7 +115,7 @@ devpanel_cmd__add_vhost_include() {
   temp_files_ar+=( "$int_file" )
 
   if set_user_include_metadata "$vhost" tmp_include; then
-    if apache_ctl configtest; then
+    if apache_configtest; then
       if [ -n "$had_a_include" ]; then
         mv -f "$final_file" "$final_file.previous"
       fi
@@ -137,7 +137,7 @@ devpanel_cmd__add_vhost_include() {
         fi
 
         if [ -n "$reload" ]; then
-          if apache_ctl reload; then
+          if reload_or_start_apache; then
             echo "Successfully included file."
           else
             echo "Warning: included file, but apache reload failed." 1>&2

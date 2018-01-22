@@ -220,7 +220,7 @@ docker_build_or_pull_and_tag cache
 # check for nginx installation
 if [ ! -f /usr/sbin/nginx ]; then
   # stop apache before installing nginx
-  apache_ctl stop
+  stop_apache
 
   ${sudo} ${installation_tool} nginx
 

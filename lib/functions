@@ -4278,6 +4278,61 @@ mysql_write_my_cnf() {
   fi
 }
 
+is_apache_running() {
+  local port
+
+  port=$(get_apache_http_port ) || return $?
+
+  fuser -s $port/tcp
+}
+
+start_apache() {
+  local svc_name
+
+  svc_name=$(get_apache_service_name 2>/dev/null) || return $?
+
+  service $svc_name start
+}
+
+stop_apache() {
+  local svc_name
+
+  svc_name=$(get_apache_service_name 2>/dev/null) || return $?
+
+  service $svc_name stop
+}
+
+reload_apache() {
+  local svc_name
+
+  svc_name=$(get_apache_service_name 2>/dev/null) || return $?
+
+  service $svc_name start
+}
+
+apache_configtest() {
+  local svc_name
+  local apachectl_bin
+
+  svc_name=$(get_apache_service_name 2>/dev/null) || return $?
+
+  if [ "$svc_name" == apache2 ]; then
+    apachectl_bin=apache2ctl
+  else
+    apachectl_bin=apachectl
+  fi
+
+  $apachectl_bin configtest
+}
+
+reload_or_start_apache() {
+  if is_apache_running; then
+    reload_apache
+  else
+    start_apache
+  fi
+}
+
 if [ -f "$DEVPANEL_HOME/lib/functions.mysql" ]; then
   . "$DEVPANEL_HOME/lib/functions.mysql"
 fi

@@ -661,15 +661,13 @@ if type -t "${linux_distro}_adjust_system_config" >/dev/null; then
 fi
 
 # reload Apache just before the end of the installation
-"$_apachectl_bin" configtest
+apache_configtest
 if [ $? -ne 0 ]; then
   echo
   echo "Warning: apache configuration test failed. Please verify!" >&2
   sleep 3
 else
-  "$_apachectl_bin" stop &>/dev/null
-  sleep 2 # on Debian if we don't sleep the start gets port already in use
-  "$_apachectl_bin" start
+  reload_or_start_apache
 fi
 
 if [ -n "$we_v1_compat" ]; then

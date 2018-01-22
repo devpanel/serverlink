@@ -161,10 +161,7 @@ if [ "$linux_distro" == "macosx" ]; then
 fi
 
 # Linux removal logic
-apache_ctl=$(get_path_of_apachectl ) || exit 1
-
-# Stop apache before anything else
-[ -x "$apache_ctl" ] && "$apache_ctl" stop
+stop_apache
 
 # remove databases and vhosts
 while read passwd_line; do

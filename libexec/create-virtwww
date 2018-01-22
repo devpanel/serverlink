@@ -34,7 +34,6 @@ if ! source "$lib_file"; then
 fi
 
 chcgi=$(get_path_of_chcgi ) || exit 1
-apachectl=$(get_path_of_apachectl ) || exit 1
 edquota=$(get_path_of_edquota ) || exit 1
 
 VIRTWWW_CFGDIR=$(get_apache_virtwww_config_dir ) || exit $?
@@ -292,8 +291,5 @@ for domain in $DOMAIN_NAMES; do
   fi 
   count=$(( $count + 1 ))
 done 
-# // apache
-#Be sure apache is running. Don't use apachectl.
-apache_ctl restart
 
 exit 0

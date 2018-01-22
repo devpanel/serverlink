@@ -47,9 +47,8 @@ rm -f -- "$cgit_curr"
 
 ln -sf "$cgit_cgi_bin" "$www_curr"
 
-hash -p "$system_dir/config/os/pathnames/sbin/apachectl" apachectl
-if apachectl configtest; then
-  apachectl graceful
+if apache_configtest; then
+  reload_or_start_apache
 else
   echo "Error: invalid apache configuration!!! This is an unknown error. You need to open a support ticket" 1>&2
   exit 1
