@@ -4307,7 +4307,7 @@ reload_apache() {
 
   svc_name=$(get_apache_service_name 2>/dev/null) || return $?
 
-  service $svc_name start
+  service $svc_name reload
 }
 
 apache_configtest() {
