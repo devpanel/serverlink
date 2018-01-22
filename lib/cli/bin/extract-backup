@@ -108,12 +108,6 @@ devpanel_cmd__extract_backup() {
 
   bkp_src_dir="$sys_bkp_dir/vhost_archives/$vhost"
 
-  if [ ! -d "$bkp_src_dir" ]; then
-    [ -z "$quiet" ] && \
-    echo "No backups for vhost (backup dir $bkp_src_dir is missing)" 1>&2
-    return 0
-  fi
-
   if [ ! -e "$target_dir" ]; then
     if ! mkdir -m 700 "$target_dir"; then
       error "unable to create dir '$target_dir'" -
