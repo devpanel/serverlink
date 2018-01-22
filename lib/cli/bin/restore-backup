@@ -13,6 +13,23 @@ set_usage_msg \
   NOTE: it overwrites the current data.
 "
 
+devpanel_cmd__restore_backup_on_exit() {
+  local vhost="$1"
+
+  # re-enable the vhost in case the user running it is root
+  if [ $EUID -eq 0 ]; then
+    devpanel_run rewrite vhost config --vhost $vhost
+  fi
+
+  if [ $exit_code -eq 0 ]; then
+    echo
+    echo "Successfully restored vhost $vhost."
+  else
+    echo
+    error "failed to restore vhost $vhost." -
+  fi
+}
+
 devpanel_cmd__restore_backup() {
   [ $# -eq 0 -o -z "$1" ] && usage
 
@@ -66,6 +83,13 @@ devpanel_cmd__restore_backup() {
     fi
   fi
 
+  if [ $EUID -eq 0 ] && ! vhost_exists "$vhost" ; then
+    # if the virtual host doesn't exist, then create it with contents from
+    # the file, and return the status
+    devpanel_run create vhost --from "$filename" --vhost "$vhost"
+    return $?
+  fi
+
   if ! vhost_exists_and_is_enabled "$vhost"; then
     return $?
   fi
@@ -90,12 +114,12 @@ devpanel_cmd__restore_backup() {
 
   extract_args_ar+=( --target-dir "$temp_dir" --extract-raw --quiet )
 
-  #
-  # disable the vhost on apache
-  #
-  # disable_vhost_on_apache "$vhost" || return $?
-  # TODO(enhance): disable vhost
-  # TODO(enhance): trap re-enable on failure
+  if [ $EUID -eq 0 ]; then
+    # temporarily disable the vhost on apache for the app not to be modified
+    # during the restore
+    "$sys_dir/libexec/config-vhost-apache" -D $vhost || return $?
+  fi
+  devpanel_trap_exit_cmds_ar+=( "devpanel_cmd__restore_backup_on_exit $vhost" )
 
   # TODO(enhance): check if there's enough disk space to extract the files
   #       (it's actually better to do on 'extract backup' command)
@@ -106,7 +130,6 @@ devpanel_cmd__restore_backup() {
   # 
   #   check if vhost $HOME has dirs/files not writable, and chmod it
   #
-  #find "$vhost_home_dir" ! -user "$web_user" -exec chown -v "$web_user" {} \;
 
   if [ $EUID -eq 0 ]; then
     chown -R -c "$web_user" "$vhost_home_dir"
@@ -174,12 +197,10 @@ devpanel_cmd__restore_backup() {
   fi
   st=$?
 
-  # TODO(enhance): test extraction status
-
-  # TODO(enhance):
-  # enable_vhost_on_apache "$vhost" || return $?
-
-  echo "Successfully restored backup."
+  # NOTE: status msg is sent by the function that traps the exit of the
+  # shell to properly display order of status msgs (because sometimes Apache
+  # needs to be reloaded on exit, and we don't want Apache msgs to be the
+  # last ones).
 
   return $st
 }
