@@ -3439,9 +3439,6 @@ print_server_metadata_json() {
     for((i=0; i < $n_vhosts; i++)); do
       tmp_vhost="${vhosts_ar[$i]}"
       print_vhost_metadata_json "$tmp_vhost"  >>$tmp_vhosts_f
-      if [ $i -lt $(( $n_vhosts - 2 )) ]; then
-        echo >> "$tmp_vhosts_f"
-      fi
     done
 
     # create a json formatted array of vhosts
