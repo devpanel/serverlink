@@ -38,14 +38,14 @@ devpanel_cmd__refresh_config() {
 
   [ -z "$vhost" -a $EUID -eq 0 ] && error_missing_param vhost
 
+  if [ $EUID -ne 0 ]; then
+    vhost=$(get_vhost_from_linuxuser) || return $?
+  fi
+
+  load_vhost_config "$vhost" || return $?
+
   if [ $EUID -eq 0 ]; then
-
-    local user
-
-    get_linux_username_from_vhost "$vhost"
-    if ! user="$_dp_value"; then
-      error "unable to get linux username for vhost $vhost"
-    fi
+    local user="$v__vhost__linux_user"
 
     su -l \
       -c "$sys_dir/bin/restore-vhost-subsystem"\ "${cmd_args[*]}"\ -n "$user"

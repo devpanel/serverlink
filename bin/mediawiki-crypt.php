@@ -1,4 +1,4 @@
-#!/opt/webenabled/config/os/pathnames/bin/php -q
+#!/usr/bin/env php
 <?php
 // integrated by Vinicius Mello  http://vmmello.eti.br/
 

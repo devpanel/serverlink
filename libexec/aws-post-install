@@ -37,6 +37,7 @@ if ! source "$lib_file"; then
   echo "Error: unable to load lib file $lib_file" 1>&2
   exit 1
 fi
+load_devpanel_config || exit $?
 
 distro=$(devpanel_auto_detect_distro)
 if [ $? -ne 0 ]; then

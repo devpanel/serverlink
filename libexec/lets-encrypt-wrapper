@@ -55,15 +55,17 @@ Usage: ${0##*/} $op [opts] <vhost>
 disable_lets_encrypt_for_vhost() {
   local vhost="$1"
 
-	echo "rm apache_vhost:_:config:lets_encrypt" | \
-    "$sys_dir/libexec/apache-metadata-handler" -q "$vhost"
+  save_opts_in_vhost_config "$vhost" \
+    "- ssl.enabled" \
+    "- ssl.type"
 }
 
 set_lets_encrypt_metadata_for_vhost() {
   local vhost="$1"
 
-  echo "set apache_vhost:_:config:lets_encrypt yes" | \
-    "$sys_dir/libexec/apache-metadata-handler" -q "$vhost"
+  save_opts_in_vhost_config "$vhost" \
+    "ssl.enabled = yes" \
+    "ssl.type = lets-encrypt"
 }
 
 cleanup() {
@@ -91,6 +93,7 @@ if ! . "$lib_f"; then
   echo "Error: unable to import $lib_f" 1>&2
   exit 1
 fi
+load_devpanel_config || exit $?
 
 acme_bin="$sys_dir/bin/packages/acme.sh/acme.sh"
 if [ ! -f "$acme_bin" -a -x "$acme_bin" ]; then
@@ -115,20 +118,20 @@ case "$op" in
       exit 1
     fi
 
+    if ! load_vhost_config "$vhost"; then
+      error "unable to load vhost configuration."
+    fi
+
     if is_ssl_enabled_on_vhost "$vhost"; then
       errmsg="SSL is already enabled on this vhost."
       errmsg+=" Please disable it first."
       error "$errmsg"
     fi
 
-		get_linux_username_from_vhost "$vhost" && linux_user="$_dp_value"
-		if [ $? -ne 0 ]; then
-			error "unable to get the linux username from vhost $vhost"
-		fi
+    linux_user="$v__vhost__linux_user"
+    server_base_domain="$lamp__apache_vhosts__virtwww_domain"
 
-    server_base_domain=$(get_server_base_domain) || exit 1
-
-    certs_dir="$sys_dir/config/vhosts/$vhost/lets-encrypt"
+    certs_dir="$v__vhost__ssl_dir/lets-encrypt"
     if [ -d "$certs_dir" ]; then
       chmod 700 "$certs_dir"
     else
@@ -139,19 +142,14 @@ case "$op" in
 
     acme_args+=( --home "$certs_dir" --renew-hook "$self_bin post-renew" )
 
-    public_dir=$(eval echo -n \~$linux_user/public_html/$vhost)
+    public_dir="$v__vhost__document_root"
     if [ ! -d "$public_dir" ]; then
       error "public directory not found: $public_dir"
     fi
 
-    tmp_domains=$(get_hostnames_from_vhost "$vhost")
-    if [ $? -ne 0 ]; then
-      error "unable to get domains from vhost $vhost"
-    fi
-
     declare -a domain_args=()
     unset first_domain
-    for tmp_domain in $tmp_domains; do
+    for tmp_domain in $v__vhost__domains; do
       if [[ "$tmp_domain" == *.$server_base_domain ]]; then
         continue
       else
@@ -223,7 +221,8 @@ case "$op" in
   cron)
     for vhost in $(get_list_of_vhosts); do
       if is_lets_encrypt_enabled_for_vhost "$vhost"; then
-        le_dir="$sys_dir/config/vhosts/$vhost/lets-encrypt"
+        load_vhost_config "$vhost" || continue
+        le_dir="$v__vhost__ssl_dir/lets-encrypt"
         if [ -d "$le_dir" ]; then
           acme.sh --home "$le_dir" --cron
         fi
@@ -259,12 +258,16 @@ case "$op" in
       exit 1
     fi
 
+    if ! load_vhost_config "$vhost"; then
+      error "unable to load vhost configuration."
+    fi
+
     if ! is_lets_encrypt_enabled_for_vhost "$vhost"; then
       echo "Warning: Let's Encrypt is not enabled for this vhost." 1>&2
       exit 0
     fi
 
-    le_dir="$sys_dir/config/vhosts/$vhost/lets-encrypt"
+    le_dir="$v__apache_conf__ssl_dir/lets-encrypt"
 
     acme.sh --home "$le_dir" --cron ${force:+--force} \
       ${domain:+ -d "$domain"}
@@ -272,11 +275,7 @@ case "$op" in
     ;;
 
   post-renew)
-    apache_service=$(get_apache_service_name ) || exit $?
-
-    services_bin="$sys_dir/libexec/system-services"
-
-    $services_bin $apache_service reload
+    reload_or_start_apache
     ;;
 
   disable)

@@ -20,7 +20,7 @@ devpanel_cmd__list_apps() {
     case "$arg" in
       --publisher)
         [ -z "$2" ] && error_missing_value publisher && return 1
-        if [[ "$publisher" =~ ^[A-Za-z0-9_]+$ ]]; then
+        if [[ "$2" =~ ^[A-Za-z0-9_]+$ ]]; then
           publisher="$2"
           shift 2
         else

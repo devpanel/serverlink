@@ -13,21 +13,6 @@ get_mysql_root_password() {
   echo "$output" | cut -d: -f 9
 }
 
-self_bin=`readlink -e "$0"`
-if [ $? -ne 0 ]; then
-  echo "Error: unable to get self path" 1>&2
-  exit 1
-fi
-
-self_dir="${self_bin%/*}"
-sys_dir="${self_dir%/*/*}"
-
-lib_f="$sys_dir/lib/functions"
-if ! source "$lib_f"; then
-  echo "Error: unable to import $lib_f" 1>&2
-  exit 1
-fi
-
 update_ini_bin="$sys_dir/bin/update-ini-file"
 if [ -f "$update_ini_bin" -a -x "$update_ini_bin" ]; then
   hash -p "$update_ini_bin" update-ini-file

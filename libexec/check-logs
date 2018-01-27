@@ -112,6 +112,7 @@ if ! source "$lib_file"; then
   echo "Error: unable to load lib file '$lib_file'"
   exit 1
 fi
+load_devpanel_config || exit $?
 
 virtwww_log_dir=$(get_apache_virtwww_log_dir ) || exit 1
 

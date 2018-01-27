@@ -108,28 +108,27 @@ if [ "${PWD##$install_dir}" != "$PWD" ]; then
   error "this shell is currently on the install dir. Please cd / before continuing."
 fi
 
+load_devpanel_config || exit $?
+
 linux_distro=$(wedp_auto_detect_distro)
 status=$?
 if [ $status -ne 0 ]; then
   error "unable to detect the system distribution"
 fi
 
-data_dir=$(get_devpanel_datadir ) || exit 1
+vhosts_home_dir="$lamp__apache_paths__virtwww_homedir"
+mysqls_dir="$lamp__apache_paths__instances_homedir"
 
-vhosts_home_dir=$(get_vhosts_homedir ) || exit 1
+apache_vhost_logs_dir="$lamp__apache_paths__vhost_logs_dir"
 
-mysqls_dir=$(get_mysql_instances_homedir ) || exit $?
+apache_base_dir="$lamp__apache_paths__base_dir"
 
-apache_vhost_logs_dir=$(get_apache_virtwww_log_dir ) || exit $?
+apache_includes_dir="$lamp__apache_paths__includes_dir"
 
-apache_base_dir=$(get_apache_main_config_dir ) || exit $?
-
-apache_includes_dir=$(get_apache_global_includes_dir ) || exit $?
-
-mysql_inc_dir=$(deref_os_fs_path_ex "$install_dir" pathnames/etc/mysql_conf_d)
+mysql_inc_dir="$conf__mysql_paths__conf_d"
 php_inc_dir=$(deref_os_fs_path_ex "$install_dir" pathnames/etc/php_ini_d)
 
-uninstall_base_dir="$data_dir/.previous_installs"
+uninstall_base_dir="$conf__paths__data_dir/.previous_installs"
 if [ ! -d "$uninstall_base_dir" ] && ! mkdir -m 700 "$uninstall_base_dir"; then
   error "unable to create archive directory $uninstall_base_dir"
 fi
@@ -143,8 +142,8 @@ uninstall_archive_dir="$uninstall_base_dir/$(date +%b-%d-%Y--%Hh%Mm-%Z)"
 if ! mkdir -m 700 "$uninstall_archive_dir"; then
   error "unable to create directory $uninstall_archive_dir"
 fi
-vhost_archives_dir="$data_dir/vhost_archives"
-old_removed_vhosts_dir="$data_dir/removed_vhosts"
+vhost_archives_dir="$conf__paths__data_dir/vhost_archives"
+old_removed_vhosts_dir="$conf__paths__data_dir/removed_vhosts"
 
 db_stale_dir="$uninstall_archive_dir/db_stale"
 vhost_stale_dir="$uninstall_archive_dir/www_stale"
@@ -313,8 +312,8 @@ rm -v -f /etc/default/devpanel*
 rm -v -f /etc/sudoers.d/devpanel*
 rm -f /usr/local/bin/devpanel* /usr/bin/devpanel*
 
-if [ -d "$data_dir/vhost_archives" ]; then
-  mv -f "$data_dir/vhost_archives" "$uninstall_archive_dir"
+if [ -d "$conf__paths__data_dir/vhost_archives" ]; then
+  mv -f "$conf__paths__data_dir/vhost_archives" "$uninstall_archive_dir"
 fi
 
 (

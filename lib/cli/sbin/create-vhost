@@ -21,6 +21,9 @@ set_usage_msg \
     --php-version <version>   the PHP version to use on this vhost (e.g.
                               5.6, 7.1)
 
+    --no-summary              don't print the summary information after
+                              creating the vhost
+
   Creates a new vhost from the specified source.
 "
 
@@ -30,6 +33,7 @@ devpanel_cmd__create_vhost() {
 
   local name vhost from source_type title desc
   local branch app_password read_pw_stdin php_version
+  local print_summary=yes
   local -a cmd_args=()
 
   # by default let's assume the source is a file
@@ -79,6 +83,12 @@ devpanel_cmd__create_vhost() {
         read_pw_stdin=1
         shift
         ;;
+
+      --no-summary)
+        unset print_summary
+        shift
+        ;;
+
       --[A-Za-z0-9_-]*)
         error "unknown argument $name"
         ;;
@@ -147,6 +157,10 @@ devpanel_cmd__create_vhost() {
   fi
 
   if [ $st -eq 0 ]; then
+    if ! load_vhost_config "$vhost"; then
+      echo "Warning: unable to load config for the newly created vhost" 1>&2
+    fi
+
     if [ -n "$app_password" ]; then
       echo "$app_password" | devpanel_run reset app password --vhost "$vhost"
       if [ $? -ne 0 ]; then
@@ -158,7 +172,8 @@ devpanel_cmd__create_vhost() {
       devpanel_run set vhost description --vhost "$vhost" --quiet --desc "$desc"
     fi
 
-    print_vhost_summary "$vhost"
+    [ -n "$print_summary" ] && print_vhost_summary "$vhost"
+
     echo "Successfully created vhost $vhost"
   fi
 

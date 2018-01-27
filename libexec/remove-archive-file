@@ -26,6 +26,7 @@ if ! source "$lib_f"; then
   echo "Error: unable to import $lib_f" 1>&2
   exit 1
 fi
+load_devpanel_config || exit $?
 
 [ -z "$1" -o -z "$2" ] && usage
 
@@ -33,14 +34,14 @@ vhost="$1"
 # using mode archive: it's OK to operate on a locked vhost
 "$self_dir/check-vhost-name" archive "$vhost" || exit 1
 
+load_vhost_config "$vhost" || exit $?
+
 archive_file_in="$2"
 
-data_dir=$(get_devpanel_datadir ) || exit 1
-
-archives_dir=$(readlink -m "$data_dir/vhost_archives/$vhost")
+archives_dir=$(readlink -m "$v__vhost__archives_dir")
 archive_file=$(readlink -m "$archives_dir/$archive_file_in")
 
-virtwww_base_domain=$(get_server_base_domain) || exit 1
+virtwww_base_domain="$lamp__apache_vhosts__virtwww_domain"
 
 # check whether the specified file is inside the archives_dir
 if [ "${archive_file#$archives_dir/}" == "$archive_file" ]; then

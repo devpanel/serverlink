@@ -54,27 +54,42 @@ devpanel_cmd__set_php_version() {
     return 1
   fi
 
+  load_vhost_config "$vhost" || return $?
+
   local vhost_user vhost_home
-  if get_linux_username_from_vhost "$vhost"; then
-    vhost_user="$_dp_value"
-  else
-    error "unable to get linux username for vhost" -
+  local php_bin php_cgi_bin phar_bin
+  local php_bin_var php_cgi_bin_var phar_bin_var
+
+  vhost_user="$v__vhost__linux_user"
+  vhost_home="$v__vhost__linux_user_home"
+
+  php_bin_var="lamp__php_paths__php_${version//./_}"
+  php_bin="${!php_bin_var}"
+  if [ -z "$php_bin" -o ! -f "$php_bin" -o ! -x "$php_bin" ]; then
+    error "unable to find PHP binary for version $version" -
     return 1
   fi
 
-  local php_bin php_cgi_bin phar_bin
+  php_cgi_bin_var="lamp__php_paths__php_cgi_${version//./_}"
+  php_cgi_bin="${!php_cgi_bin_var}"
+  if [ -z "$php_cgi_bin" -o ! -f "$php_cgi_bin" -o ! -x "$php_cgi_bin" ]; then
+    error "unable to find PHP-CGI binary for version $version" -
+    return 1
+  fi
+
+  phar_bin_var="lamp__php_paths__phar_${version//./_}"
+  phar_bin="${!phar_bin_var}"
 
   if [ "$version" == default ]; then
-    local php_curr_ver
-    php_curr_ver=$(get_php_version_from_vhost "$vhost" 2>/dev/null )
-    if [ $? -ne 0 ]; then
+    if [ -n "$v__php__version" -a \
+            "$v__php_version" == "$lamp__php__default_version" ]; then
       echo "Ok, no action. This vhost is already using the default."
       return 0
     fi
 
     run_as_user "$vhost_user" "rm -f ~/bin/php ~/bin/php-cgi ~/bin/phar"
     if [ $? -eq 0 ]; then
-      rm_php_version_metadata_for_vhost "$vhost"
+      save_opts_in_vhost_config "$vhost" "- php.version"
       if [ $? -ne 0 ]; then
         echo "Warning: unable to remove PHP metadata" 1>&2
       fi
@@ -87,22 +102,6 @@ devpanel_cmd__set_php_version() {
     fi
   fi
 
-  php_bin=$(deref_os_prop "$sys_dir" pathnames/bin/php-$version 2>/dev/null)
-  if [ $? -ne 0 ]; then
-    error "unable to find PHP binary for version $version" -
-    return 1
-  fi
-
-  php_cgi_bin=$(deref_os_prop "$sys_dir" pathnames/bin/php-cgi-$version \
-                  2>/dev/null )
-  if [ $? -ne 0 ]; then
-    error "unable to find PHP-CGI binary for version $version" -
-    return 1
-  fi
-
-  phar_bin=$(deref_os_prop "$sys_dir" pathnames/bin/phar-$version \
-              2>/dev/null )
-
   run_as_user "$vhost_user" "
                ln -sf $php_cgi_bin ~/bin/php-cgi; ex=\$? ;          \
                ln -sf $php_bin ~/bin/php ;                          \
@@ -110,7 +109,7 @@ devpanel_cmd__set_php_version() {
               exit \$ex"
   if [ $? -eq 0 ]; then
     # set metadata for vhost
-    if set_php_version_metadata_for_vhost "$vhost" "$version"; then
+    if save_opts_in_vhost_config "$vhost" "php.version = $version"; then
       echo "Successfully set vhost PHP version to $version."
     else
       echo "Warning: PHP version set, but failed to update vhost metadata." 1>&2

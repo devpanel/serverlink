@@ -1,0 +1,3 @@
+<IfModule mod_alias.c>
+  Alias /robots.txt @@__WEBSITES_BASEDIR__@@/w_/public_html/robots-no-index.txt
+</IfModule>

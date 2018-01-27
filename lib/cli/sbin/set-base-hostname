@@ -12,29 +12,164 @@ set_usage_msg \
 devpanel_cmd__set_base_hostname() {
   [ $# -eq 0 -o -z "$1" ] && usage
 
-  local arg name
+  local arg name new_domain old_domain old_domain_esc
 
   while [ -n "$1" ]; do
     arg="$1"
     case "$arg" in
       --name)
         [ -z "$2" ] && error_missing_value name
-        name="$2"
+        new_domain="$2"
         shift 2
         ;;
+
       --help)
         usage
         ;;
-      --[A-Za-z0-9_-]*)
-        error "unknown option $arg"
+
+      --)
+        shift
+        break
         ;;
+
       *)
-        usage
+        error "unknown option '$arg'" -
+        return $?
         ;;
     esac
   done
 
-  [ -z "$name" ] && error_missing_param name
+  [ -z "$new_domain" ] && error_missing_param name
 
-  "$sys_dir/libexec/config-vhost-names-default" "$name"
+  if ! is_valid_domain_string "$new_domain"; then
+    error "invalid string to use as base domain name"
+  fi
+
+  if [ -n "$lamp__apache_vhosts__virtwww_domain" ]; then
+    old_domain="$lamp__apache_vhosts__virtwww_domain"
+    old_domain_esc=${old_domain//./\\.}
+  fi
+
+  if [ -n "$old_domain" -a "$old_domain" == "$new_domain" ]; then
+    echo "Warning: new domain is equal to current domain. No change needed." 1>&2
+    return 0
+  fi
+
+  if ! set_lamp_virtwww_domain "$new_domain"; then
+    error "unable to set base domain for virtual hosts" -
+    return $?
+  fi
+
+	# add the hostname to the apache main file, in case it's not configured
+	# to avoid the warning when restarting Apache
+	if egrep -qs '^[[:space:]]*ServerName' \
+        "$lamp__apache_paths__main_config_file"; then
+
+    sed -i -e "s/^ServerName .\+/ServerName $new_domain/g;" \
+      "$lamp__apache_paths__main_config_file"
+
+  else
+		sed -i -e "1 i\
+ServerName $new_domain
+;" "$lamp__apache_paths__main_config_file"
+	fi
+
+  "$sys_dir/bin/add-to-known-hosts" -a "127.0.0.1,$new_domain" localhost
+
+  if [ -n "$old_domain" ]; then
+    sed -i "s/\b$old_domain_esc\b//g;" /etc/hosts
+    sed -i "/\b$old_domain_esc\b/d; /,$old_domain_esc/d;" \
+      /etc/ssh/ssh_known_hosts
+
+    "$sys_dir/bin/update-dot-ssh-config" /etc/ssh/ssh_config \
+      remove_section "$old_domain *.$old_domain"
+  fi
+
+	"$sys_dir/bin/update-dot-ssh-config" /etc/ssh/ssh_config \
+		add_section "$new_domain *.$new_domain" "Hostname=127.0.0.1"
+
+	"$sys_dir/bin/template-tool" \
+		-o "$sys_dir/compat/apache_include/global-includes/admin-ctl.conf" \
+		   "$sys_dir/compat/apache_include/admin-ctl.conf.template"
+
+
+  local -a ex_local_vhosts_ar=( $(get_list_of_local_vhosts) )
+  local prev_base_domain new_base_domain prev_def_vh_domain
+  local -a vhost_opts_ar=() new_domains_ar=()
+
+
+  for vh in "${ex_local_vhosts_ar[@]}"; do
+    vhost_opts_ar=()
+    new_domains_ar=()
+
+    load_vhost_config "$vh" || continue
+
+    prev_base_domain=$v__vhost__base_domain
+    prev_def_vh_domain=$v__vhost__server_name
+
+    new_base_domain="$vh.$new_domain"
+    vhost_opts_ar+=( "vhost.base_domain = $new_base_domain" )
+    new_domains_ar+=( "$new_base_domain" )
+
+    if [[ "$prev_def_vh_domain" == *.$old_domain ]]; then
+      tmp_vh_domain=${prev_def_vh_domain%.$old_domain}
+      new_vh_domain="$tmp_vh_domain.$new_domain"
+
+      vhost_opts_ar+=( "vhost.server_name = $vh.$new_domain" )
+
+      if [ "$new_vh_domain" != "$new_base_domain" ]; then
+        new_domains_ar+=( "$new_vh_domain" )
+      fi
+    fi
+
+    for vh_domain in $v__vhost__domains; do
+      if [[ "$vh_domain" == *.$old_domain ]]; then
+        tmp_vh_domain=${vh_domain%.$old_domain}
+        new_vh_domain="$tmp_vh_domain.$new_domain"
+
+        if [ "$new_vh_domain" == "$new_base_domain" ]; then
+          continue
+        else
+          new_domains_ar+=( "$new_vh_domain" )
+        fi
+      elif [ "$vh_domain" == "$prev_base_domain" ]; then
+        continue
+      else
+        if ! is_word_in_string "$vh_domain" "${new_domains_ar[*]}"; then
+          new_domains_ar+=( "$vh_domain" )
+        fi
+      fi
+    done
+
+    vhost_opts_ar+=( "vhost.domains = ${new_domains_ar[*]}" )
+
+    if save_opts_in_vhost_config "$vh" "${vhost_opts_ar[@]}"; then
+      # run in a sub-shell not to overwrite vhost variables
+      ( devpanel_run rewrite vhost config --vhost "$vh" --no-restart )
+    fi
+  done
+
+  post_update_dir="$sys_dir/compat/apache_include/post-update-hostname"
+  # after changing hostname, run scripts from apps that are dependant on
+  # hostname
+  for post_run_script in "$post_update_dir/"*; do
+    [ ! -e "$post_run_script" ] && continue
+
+    if [ -f "$post_run_script" -a -x "$post_run_script" ]; then
+      "$post_run_script" "$new_domain" "$old_domain"
+      script_status=$?
+      if [ $script_status -ne 0 ]; then
+        echo "Warning: post update script $post_run_script returned $script_status" 1>&2
+        [ -t 0 ] && sleep 1
+      fi
+    fi
+  done
+
+
+  if [ ${#ex_local_vhosts_ar[@]} -gt 0 ]; then
+    reload_or_start_apache
+  fi
+
+  echo
+  echo "Successfully updated vhost base domain."
 }

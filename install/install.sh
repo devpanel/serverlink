@@ -4,16 +4,10 @@ umask 022
 # default install dir.  can be overwritten with -I
 webenabled_install_dir="/opt/webenabled"
 
-# default websites base dir
-homedir_base="${DP_HOMES_DIR:-/home/clients/websites}"
-
-# default databases base dir, can be overwritten with -D
-databasedir_base="${DP_DBS_DIR:-/home/clients/databases}"
-
 usage() {
   local prog=`basename "$0"`
   echo "
-Usage: $prog [ options ]
+Usage: $prog [ options ] -Y
 
   Options:
     -2                this host will connect to platform version 2
@@ -29,8 +23,9 @@ Usage: $prog [ options ]
     -d                print verbose debug messages
     -b                from bootstrap (don't update devpanel.conf and don't
                       restart taskd)
-    -V version        Specify the version of the linux distro (optional)
     -W                Webenabled v1.0 backwards compatibility
+    -Y                confirm the intent to install (just to avoid
+                      accidental start of installs)
 
 "
 
@@ -55,47 +50,32 @@ set_global_variables() {
   # main config file to be used by DevPanel
   dp_config_file="$target_dir/etc/devpanel.conf"
 
-  _apache_logs_dir=`deref_os_fs_path "$source_dir" \
-    pathnames/var/log/apache_logs_dir` || return 1
+  _apache_logs_dir="$lamp__apache_paths__logs_dir"
 
-  _apache_vhost_logs_dir=`deref_os_fs_path "$source_dir" \
-    pathnames/var/log/apache_vhosts` || return 1
+  _apache_vhost_logs_dir="$lamp__apache_paths__vhost_logs_dir"
 
-  _apache_base_dir=`deref_os_fs_path "$source_dir" \
-    pathnames/etc/apache_base_dir` || return 1
-  
-  _apache_includes_dir=`deref_os_fs_path "$source_dir" \
-    pathnames/etc/apache_includes_dir` || return 1
+  _apache_base_dir="$lamp__apache_paths__base_dir"
 
-  _apache_vhosts=`deref_os_fs_path "$source_dir" \
-    pathnames/etc/apache_vhosts` || return 1
+  _apache_includes_dir="$lamp__apache_paths__includes_dir"
 
-  _apache_vhosts_removed=`deref_os_fs_path "$source_dir" \
-    pathnames/etc/apache_vhosts_removed` || return 1
+  _apache_vhosts="$lamp__apache_paths__vhosts_include_dir"
 
-  _apache_main_config_file=`deref_os_fs_path "$source_dir" \
-    pathnames/etc/apache_main_config_file` || return 1
+  _apache_main_config_file="$lamp__apache_paths__main_config_file"
 
-  _apache_user=`deref_os_prop "$source_dir" names/apache.user` \
-    || return 1
+  _apache_main_include="$lamp__apache_includes__main"
 
-  _apache_group=`deref_os_prop "$source_dir" names/apache.group` \
-    || return 1
+  _apachectl_bin="$lamp__apache_paths__apachectl"
 
-  _apache_exec_group=`deref_os_prop "$source_dir" names/apache-exec.group` \
-    || return 1
 
-  _apache_main_include=`deref_os_prop "$source_dir" names/apache_main_include` \
-    || return 1
+  _apache_user="$lamp__apache__user"
 
-  _apachectl_bin=`deref_os_prop "$source_dir" pathnames/sbin/apachectl` \
-    || return 1
+  _apache_group="$lamp__apache__group"
 
-  [ -z "$homedir_base" ] && \
-  { homedir_base=`deref_os_prop "$source_dir" apache_virtwww_homedir` || return 1; }
+  _apache_exec_group="$lamp__apache__exec_group"
 
-  [ -z "$databasedir_base" ] && \
-  { databasedir_base=`deref_os_prop "$source_dir" mysql_instances_homedir` || return 1; }
+  homedir_base="$lamp__apache_paths__virtwww_homedir"
+
+  databasedir_base="$lamp__mysql_paths__instances_homedir"
 
   return 0
 }
@@ -193,8 +173,7 @@ install_ce_software() {
   ln -s "$webenabled_install_dir/compat/apache_include/global-includes" \
     "$_apache_base_dir/devpanel-global"
 
-  ln -s "$webenabled_install_dir/compat/apache_include/virtwww" \
-    "$_apache_base_dir/devpanel-virtwww"
+  ln -s /etc/devpanel/lamp/apache/virtwww "$lamp__apache_paths__vhosts_include_dir"
 
   ln -sf "$webenabled_install_dir/compat/apache_include/$_apache_main_include" \
     "$_apache_includes_dir/devpanel.conf"
@@ -258,32 +237,9 @@ post_software_install() {
   local status
 
   if [ -n "$dp_server_hostname" ]; then
-    "$webenabled_install_dir/libexec/config-vhost-names-default" \
-      "$dp_server_hostname"
-
-    # add the hostname to the apache main file, in case it's not configured
-    # to avoid the warning when restarting Apache
-    if ! egrep -qs '^[[:space:]]*ServerName' "$_apache_main_config_file"; then
-      sed -i -e "0,/^#[[:space:]]*ServerName[[:space:]]\+[A-Za-z0-9:.-]\+$/ {
-      /^#[[:space:]]*ServerName[[:space:]]\+[A-Za-z0-9:.-]\+$/ {
-      a\
-ServerName $dp_server_hostname
-;
-      }  }" "$_apache_main_config_file"
-    fi
-
-    "$webenabled_install_dir/bin/add-to-known-hosts" \
-      -a "$dp_server_hostname" localhost
-
-    "$webenabled_install_dir/bin/update-dot-ssh-config" /etc/ssh/ssh_config \
-      add_section "*.$dp_server_hostname" "Hostname=$dp_server_hostname"
-
-    "$target_dir/bin/template-tool" \
-      -o "$target_dir/compat/apache_include/global-includes/admin-ctl.conf" \
-      "$target_dir/compat/apache_include/admin-ctl.conf.template"
-
+    devpanel init config --hostname "$dp_server_hostname"
   else
-    "$webenabled_install_dir/bin/add-to-known-hosts" localhost
+    devpanel init config --gen-hostname-from-ip
   fi
 
   local custom_conf_d="$target_dir/install/utils"
@@ -294,8 +250,8 @@ ServerName $dp_server_hostname
     local mysql_ver_reduced=${mysql_version%.*}
     local my_cnf_src_dir="$custom_conf_d/my.cnf.d"
 
-    my_cnf_dir=$(deref_os_prop "$target_dir" pathnames/etc/mysql_conf_d)
-    if [ $? -eq 0 -a -d $my_cnf_dir ]; then
+    my_cnf_dir="$conf__mysql_paths__conf_d"
+    if [ -d "$my_cnf_dir" ]; then
       # special lines for VPSs running on OpenVZ
       local openvz_cnf openvz_cnf_full_ver openvz_cnf_reduced_ver
       openvz_cnf_full_ver="$my_cnf_src_dir/$mysql_version--openvz.cnf"
@@ -313,26 +269,6 @@ ServerName $dp_server_hostname
     fi
   else
     sleep 3; # show the warning from the function
-  fi
-
-  local php_version=$(get_php_version)
-  if [ $? -eq 0 ]; then
-    local php_ver_reduced=${php_version%.*}
-    local php_ini_src=""
-    local php_ini_src_dir="$custom_conf_d/php.ini.d"
-    local php_ini_src_full="$php_ini_src_dir/$php_version--php.ini"
-    local php_ini_src_short="$php_ini_src_dir/$php_ver_reduced--php.ini"
-
-    if [ -f "$php_ini_src_full" ]; then
-      php_ini_src="$php_ini_src_full"
-    elif [ -f "$php_ini_src_short" ]; then
-      php_ini_src="$php_ini_src_short"
-    fi
-    
-    local php_ini_d=$(deref_os_prop "$target_dir" pathnames/etc/php_ini_d)
-    if [ -n "$php_ini_src" -a -d "$php_ini_d" -a -f "$php_ini_src" ]; then
-      ln -s "$php_ini_src" "$php_ini_d/99-devpanel.ini"
-    fi
   fi
 
   # if the installation is not run from bootstrap then update devpanel.conf
@@ -411,12 +347,8 @@ ServerName $dp_server_hostname
 
   "$webenabled_install_dir/compat/suexec/chcgi" w_ +7
   
-  local default_php_ver
-  default_php_ver=$(deref_os_prop "$webenabled_install_dir" \
-                      names/php_default_version_on_install 2>/dev/null )
-
-  if [ $? -eq 0 ]; then
-    devpanel set default php --version "$default_php_ver"
+  if [ -n "$lamp__php__default_version_on_install" ]; then
+    devpanel set default php --version "$lamp__php__default_version_on_install"
   fi
 
   #Install Zabbix Agent
@@ -433,8 +365,8 @@ is_this_distro_version_supported() {
   local major="$3"
   local minor="$4"
 
-  local dir_1="$i_dir/config/os.$distro/$major"
-  local dir_2="$i_dir/config/os.$distro/$major.$minor"
+  local dir_1="$i_dir/stacks/lamp/distros/$distro/$major"
+  local dir_2="$i_dir/stacks/lamp/distros/$distro/$major.$minor"
 
   local t_dir found_config_dir
   for t_dir in $dir_1 $dir_2; do
@@ -471,34 +403,15 @@ fi
 
 shopt -s expand_aliases
 
-current_dir=`dirname "${BASH_SOURCE[0]}"`
-install_source_dir=`readlink -e "$current_dir/.."`
+[ -n "${BASH_SOURCE[0]}" ] && self_bin=`readlink -e "${BASH_SOURCE[0]}"`
 if [ $? -ne 0 ]; then
-  error "unable to determine local source dir"
+  error "unable to determine self path"
 fi
+install_source_dir="${self_bin%/*/*}"
 
-echo -e "\nStarting DevPanel installation from '$install_source_dir'\n" 1>&2
+getopt_flags="I:L:H:U:K:u:A:hdbW23Y"
 
-# load some utility functions required by the install
-. "$install_source_dir"/lib/variables || \
-  { echo "Error. Unable to load auxiliary variables" 1>&2; exit 1; }
-
-. "$install_source_dir"/lib/functions || \
-  { echo "Error. Unable to load auxiliary functions" 1>&2; exit 1; }
-
-
-# create a lock file to avoid multiple install attempts running at the same
-# time
-lock_file="/var/run/devpanel_install.lock"
-if ! ln -s /dev/null "$lock_file"; then
-  error "there seems to have another installation running. Cannot create lock file '$lock_file'."
-fi
-trap 'ex=$?; rm -f "$lock_file" ; trap - EXIT INT HUP TERM; exit $ex' EXIT INT HUP TERM
-
-
-getopt_flags="I:L:V:H:U:K:u:A:hdbW23"
-
-unset from_bootstrap we_v1_compat platform_version
+unset from_bootstrap we_v1_compat platform_version confirmed
 while getopts $getopt_flags OPTS; do
   case "$OPTS" in
     2|3)
@@ -515,9 +428,6 @@ while getopts $getopt_flags OPTS; do
       ;;
     I)
       webenabled_install_dir="$OPTARG"
-      ;;
-    V)
-      distro_version="$OPTARG"
       ;;
     H)
       dp_server_hostname="$OPTARG"
@@ -541,6 +451,9 @@ while getopts $getopt_flags OPTS; do
       platform_version=1
       we_v1_compat=1
       ;;
+    Y)
+      confirmed=yes
+      ;;
     h|*)
       usage
       ;;
@@ -548,44 +461,50 @@ while getopts $getopt_flags OPTS; do
 done
 [ -n "$OPTIND" -a $OPTIND -gt 1 ] && shift $(( $OPTIND - 1 )) 
 
-if [ -z "$webenabled_install_dir" ]; then
-  error "please specify the target installation directory with the -I option"
+# load some utility functions required by the install
+. "$install_source_dir"/lib/functions || \
+  { echo "Error. Unable to load auxiliary functions" 1>&2; exit 1; }
+
+# set the platform version if none was specified above
+platform_version=${platform_version:-3}
+
+if [ -z "$confirmed" ]; then
+  error "please add the -Y option to confirm the intent to install."
 fi
 
-if [[ "$webenabled_install_dir" =~ ^(/+\.*)+$ ]]; then
-  error "the install directory can't be equal /"
+# create a lock file to avoid multiple install attempts running at the same
+# time
+lock_file="/var/run/devpanel_install.lock"
+if ! ln -s /dev/null "$lock_file"; then
+  error "there seems to have another installation running. Cannot create lock file '$lock_file'."
+fi
+trap 'ex=$?; rm -f "$lock_file" ; trap - EXIT INT HUP TERM; exit $ex' EXIT INT HUP TERM
+
+if [ -n "$webenabled_install_dir" ]; then
+  if real_dir=$(readlink -m "$webenabled_install_dir"); then
+    if [ "$real_dir" == / ]; then
+      error "the install directory can't be equal to /"
+    fi
+  else
+    error "unable to dereference path '$webenabled_install_dir'"
+  fi
+else
+  error "please specify the target installation directory with the -I option"
 fi
 
 if [ -n "$from_bootstrap" -a -e "$webenabled_install_dir" ]; then
   rm -rf "$webenabled_install_dir"
 elif [ -z "$from_bootstrap" ] && [ -L "$webenabled_install_dir" -o -e "$webenabled_install_dir" ]; then
-  error "directory '$webenabled_install_dir' already exists"
+  error "destination directory '$webenabled_install_dir' already exists"
 fi
 
-if [ -e "$webenabled_install_dir/config/os" ]; then
-  error "this software seems to be already installed. To reinstall, please clean up the previous installation."
-fi
-
-# TODO: lsb_release install
+echo -e "\nStarting DevPanel installation from '$install_source_dir'\n" 1>&2
 
 if [ -z "$linux_distro" ]; then
   linux_distro=$(wedp_auto_detect_distro)
   status=$?
   if [ $status -ne 0 ]; then
     error "unable to detect linux distribution. If you know the distro, try using the -L option"
-  fi
-fi
-
-source_config_dir="$install_source_dir/config/os.$linux_distro"
-source_config_shortcut=`dirname "$source_config_dir"`/os
-if [ ! -e "$source_config_dir" ]; then
-  error "missing the configuration directory for distro '$linux_distro'.
-There seems to be a problem in this installation package."
-  exit 1
-else
-  # link the source dir /os/ link to be used by function set_variables
-  if ! ln -sf $(basename "$source_config_dir") "$source_config_shortcut"; then
-    error "unable to link source config shortcut $source_config_shortcut"
   fi
 fi
 
@@ -598,10 +517,32 @@ if ! is_this_distro_version_supported "$install_source_dir" \
   error "linux distribution not supported."
 fi
 
+load_devpanel_config || exit $?
+
+if [ -d "$lamp__paths__local_config_dir" ]; then
+  error "this software seems to be already installed." \
+"To reinstall, please clean up the previous installation."
+fi
+
 set_global_variables "$install_source_dir" "$webenabled_install_dir" \
   "$linux_distro" "$distro_version" "$distro_ver_major" "$distro_ver_minor"
 if [ $? -ne 0 ]; then
   error "unable to properly set global variables"
+fi
+
+# the linking to config/os/ below is almost obsolete. Though it's still used
+# by a few critical software like the suexec binary. So have to keep it.
+source_config_dir="$install_source_dir/config/os.$linux_distro"
+source_config_shortcut=`dirname "$source_config_dir"`/os
+if [ ! -e "$source_config_dir" ]; then
+  error "missing the configuration directory for distro '$linux_distro'.
+There seems to be a problem in this installation package."
+  exit 1
+else
+  # link the source dir /os/ link to be used by function set_variables
+  if ! ln -sf $(basename "$source_config_dir") "$source_config_shortcut"; then
+    error "unable to link source config shortcut $source_config_shortcut"
+  fi
 fi
 
 distro_install_script="$install_source_dir/install/install.$linux_distro.sh"
@@ -680,6 +621,12 @@ if [ -n "$platform_version" ]; then
   if [ "$platform_version" == 3 ]; then
     devpanel enable long vhost names --yes
   fi
+fi
+
+state_file=/var/spool/devpanel/state.ini
+if [ -n "$conf__migrations__latest_step" -a -f "$state_file" ]; then
+  write_ini_file "$state_file" \
+    "migrations.latest_step = $conf__migrations__latest_step"
 fi
 
 echo

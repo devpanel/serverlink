@@ -44,16 +44,14 @@ devpanel_cmd__update_app() {
     if ! vhost_exists "$vhost"; then
       error "vhost doesn't exist."
     fi
-
-    get_linux_username_from_vhost "$vhost" && \
-    user="$_dp_value" || error "unable to get linux user from vhost"
   else
-    if vhost=$(get_vhost_from_linuxuser); then
-      user="$USER"
-    else
+    if ! vhost=$(get_vhost_from_linuxuser); then
       error "unable to determine vhost for current user"
     fi
   fi
+
+  load_vhost_config "$vhost" || return $?
+  user="$v__vhost__linux_user"
 
   local exec_bin="$sys_dir/bin/restore-vhost-subsystem"
 
@@ -68,7 +66,7 @@ devpanel_cmd__update_app() {
   fi
 
   if [ $st -eq 0 ]; then
-    echo "Successfully update app."
+    echo "Successfully updated the app."
   fi
 
   return $st

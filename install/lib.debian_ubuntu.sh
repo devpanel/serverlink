@@ -1,6 +1,6 @@
 # this file contains shared functions common to Debian and Ubuntu
 
-add_apt_repositories() {
+old_add_apt_repositories() {
   local sys_dir="$1"
   local distro="$2"
   local distro_ver="$3"
@@ -52,6 +52,58 @@ add_apt_repositories() {
                     "$repos_dir_2"/preferences.* \
                     "$repos_dir_3"/preferences.* ; do
 
+    if [ ! -f "$pref_file" ]; then
+      continue
+    fi
+
+    pref_name="${pref_file##*.}"
+    cp -f "$pref_file" "/etc/apt/preferences.d/$pref_name"
+  done
+
+  if apt-get update; then
+    return 0
+  else
+    echo "$FUNCNAME(): apt-get update failed" 1>&2
+    return 1
+  fi
+}
+
+add_apt_repositories() {
+  local sys_dir="$1"
+  local distro="$2"
+  local distro_ver="$3"
+  local distro_ver_major="$4"
+  local distro_ver_minor="$5"
+
+  local repos_file repos_dir repos_name key_file
+  local pref_file pref_name
+
+  repos_dir="$lamp__paths__distro_defaults_dir"
+
+  for repos_name in $lamp__distro_repos__enabled ; do
+    repos_file="$repos_dir/repos.$repos_name"
+    if [ -f "$repos_file" ]; then
+      cp -f "$repos_file" "/etc/apt/sources.list.d/$repos_name.list"
+
+      key_file="$repos_dir/repos.$repos_name.key"
+      if [ -f "$key_file" ]; then
+        apt-key add "$key_file"
+        if [ $? -ne 0 ]; then
+          echo
+          echo "Warning: failed to import key for repos '$repos_name'" 1>&2
+          echo
+          sleep 3
+        fi
+      fi
+    else
+      echo
+      echo "Warning: missing file for repository '$repos_name'" 1>&2
+      echo
+      sleep 5
+    fi
+  done
+
+  for pref_file in "$repos_dir"/repos.preferences.* ; do
     if [ ! -f "$pref_file" ]; then
       continue
     fi

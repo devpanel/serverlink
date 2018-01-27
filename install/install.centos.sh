@@ -16,33 +16,24 @@ centos_install_distro_packages() {
   local distro_ver_major="$5"
   local distro_ver_minor="$6"
  
-  # install external repositories needed
-  local distro_config_dir="$source_dir/config/os.$distro"
-  local repos_dir_tmpl="$distro_config_dir/@version@/repositories"
-  local repos_link repos_dir_1 repos_dir_2 repos_dir_3 repos_rpm_file
-
-  local distro_ver_major_minor="$distro_ver_major.$distro_ver_minor"
-
-  repos_dir_1="${repos_dir_tmpl//@version@/$distro_ver}"
-  repos_dir_2="${repos_dir_tmpl//@version@/$distro_ver_major_minor}"
-  repos_dir_3="${repos_dir_tmpl//@version@/$distro_ver_major}"
-
-  for repos_link in "$repos_dir_1/repos."[0-9]*.* \
-                    "$repos_dir_2/repos."[0-9]*.* \
-                    "$repos_dir_3/repos."[0-9]*.* ; do
-
-    if [ ! -L "$repos_link" ]; then
-      continue
+  local repos_name repos_rpm_file
+ 
+  for repos_name in $lamp__distro_repos__enabled ; do
+    repos_rpm_file="$lamp__paths__distro_defaults_dir/repos.$repos_name.rpm"
+    if [ -f "$repos_rpm_file" ]; then
+      rpm -Uvh "$repos_rpm_file"
+      if [ $? -ne 0 ]; then
+        echo
+        echo "Error: failed to add repository $repos_name" 1>&2
+        echo
+        return 1
+      fi
+    else
+      echo
+      echo "Warning: missing file for repository '$repos_name'" 1>&2
+      echo
+      sleep 5
     fi
-
-    repos_rpm_file=$(readlink -e "$repos_link")
-    if [ $? -ne 0 ]; then
-      echo "$FUNCNAME(): warning, link $repos_link doesn't resolve" 1>&2
-      sleep 2
-      continue
-    fi
-
-    rpm -Uvh "$repos_rpm_file"
   done
 
   ###############################################
@@ -65,8 +56,7 @@ centos_install_distro_packages() {
   done
   # // workaround for mysql
 
-  local pkg_list_file
-  pkg_list_file="$source_dir/config/os.$distro/$distro_ver_major/distro-packages.txt"
+  local pkg_list_file="$lamp__paths__distro_defaults_dir/distro-packages.txt"
 
   install_distro_pkgs "$distro" "$distro_ver_major" "$pkg_list_file"
 
@@ -126,7 +116,7 @@ centos_adjust_system_config() {
   chkconfig --add /etc/init.d/devpanel-dbmgr
 
   # start crontab (if it's not running for any reason)
-  service cron restart
+  service "$conf__distro_services__crontab" restart
 
   return 0
 }

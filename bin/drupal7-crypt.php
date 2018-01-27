@@ -1,4 +1,4 @@
-#!/opt/webenabled/config/os/pathnames/bin/php -q
+#!/usr/bin/env php
 <?php
 // $Id: password.inc,v 1.4 2008/12/20 18:24:33 dries Exp $
 

@@ -23,36 +23,28 @@ devpanel_cmd__enable_fastcgi() {
         vhost="$2"
         shift 2
         ;;
+
       --help)
         usage
         ;;
-      --[A-Za-z0-9_-]*)
+
+      --)
+        shift
+        break
+        ;;
+
+      *)
         error "unknown option $name" - 
 				return $?
-        ;;
-      *)
-				usage
         ;;
     esac
   done
 
   [ -z "$vhost" ] && { error_missing_param vhost; return $?; }
 
-  metadata_str="set apache_vhost:0:include:fastcgi fastcgi"
+  save_opts_in_vhost_config "$vhost" "vhost.fastcgi = yes" || return $?
 
-  if is_fastcgi_enabled_on_vhost "$vhost"; then
-    echo "Warning: FastCGI is already enabled on vhost $vhost." 1>&2
-    return 0
-  else
-    echo "$metadata_str" | "$DEVPANEL_HOME/libexec/apache-metadata-handler" \
-                           -q "$vhost"
-    if [ $? -ne 0 ]; then
-      error "unable to write vhost metadata" -
-      return 1
-    fi
-  fi
-
-  devpanel_run rewrite vhost config --vhost "$vhost"
+  rewrite_vhost_apache_config "$vhost"
   if [ $? -eq 0 ]; then
     echo
     echo "Successfully enabled FastCGI on vhost $vhost."

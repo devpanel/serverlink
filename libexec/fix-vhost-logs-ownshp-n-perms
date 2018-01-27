@@ -49,6 +49,7 @@ if ! . "$lib_file"; then
   echo "Error: unable to source lib file $lib_file" 1>&2
   exit 1
 fi
+load_devpanel_config || exit $?
 
 declare -a vhost_ar=()
 if [ -z "$1" -a -n "$confirmed" ]; then
@@ -78,12 +79,8 @@ for vhost in ${vhost_ar[*]}; do
     continue
   fi
 
-  get_linux_username_from_vhost "$vhost" && \
-	vhost_user="$_dp_value"
-	if [ $? -ne 0 ]; then
-		echo "Warning: unable to get the linux username from vhost $vhost" 1>&2
-    continue
-	fi
+  load_vhost_config "$vhost" || exit $?
+  vhost_user="$v__vhost__linux_user"
 
   if ! getent passwd "$vhost_user" &>/dev/null; then
     echo "Warning: couldn't find user '$vhost_user'. Skipping..." 1>&2

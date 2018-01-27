@@ -748,8 +748,10 @@ if ! source "$lib_file"; then
   echo "Error: unable to source file '$lib_file'" 1>&2
   exit 1
 fi
+load_devpanel_config || exit $?
 
-packages_url=$(get_package_metadata_url ) || exit 1
+packages_url=$(get_packages_url_base )     || exit 1
+metadata_url=$(get_packages_metadata_url ) || exit 1
 
 if ! lock_path "$lock_file" >/dev/null; then
   error "unable to lock. There's probably another instance running."
@@ -790,10 +792,9 @@ case "$op" in
     fi
     trap 'exit 1' INT HUP TERM QUIT
 
-    pkg_index_url="${packages_url%/}/metadata.ltsv"
-    updates_file="$tmp_dir/package_index.ltsv"
+    updates_file="$tmp_dir/metadata.ltsv"
 
-    if ! download_file "$pkg_index_url" "$updates_file"; then
+    if ! download_file "$metadata_url" "$updates_file"; then
       error "unable to download update file"
     fi
 

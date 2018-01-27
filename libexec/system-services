@@ -93,15 +93,16 @@ macosx_service_action() {
 
 [ $# -lt 2 ] && usage
 
+if [ $EUID -ne 0 ]; then
+  error "this program requires ROOT privileges to run"
+fi
+
 current_dir=`dirname "${BASH_SOURCE[0]}"`
 if ! source "$current_dir/../lib/functions"; then
   echo "Error: unable to import auxiliary functions from '$current_dir/../lib/functions'" 1>&2
   exit 1
 fi
-
-if [ $EUID -ne 0 ]; then
-  error "this program requires ROOT privileges to run"
-fi
+load_devpanel_config || exit $?
 
 service="$1"
 action="$2"

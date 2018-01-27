@@ -75,11 +75,8 @@ devpanel_cmd__exec() {
     return 1
   fi
 
-  if ! { get_linux_username_from_vhost "$vhost" && \
-          user="$_dp_value" ; }; then
-    error "unable to get linux username from vhost" -
-    return 1
-  fi
+  load_vhost_config "$vhost" || return $?
+  user="$v__vhost__linux_user"
 
   if [ -n "$user_shell" ]; then
     run_opts_ar+=( --shell "$user_shell" )

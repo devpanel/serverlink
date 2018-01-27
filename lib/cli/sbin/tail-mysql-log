@@ -55,8 +55,9 @@ devpanel_cmd__tail_mysql_log() {
   fi
 
   local log_file db_user vhost_user
-  get_linux_username_from_vhost "$vhost" && \
-    vhost_user="$_dp_value" || return $?
+
+  load_vhost_config "$vhost" || return $?
+  vhost_user="$v__vhost__linux_user"
 
   db_user="b_${vhost_user#w_}"
   if ! linuxuser_exists "$db_user"; then

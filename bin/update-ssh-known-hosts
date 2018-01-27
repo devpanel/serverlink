@@ -40,6 +40,7 @@ lib_file="$sys_dir/lib/functions"
 if ! source "$lib_file"; then
   error "unable to import library file '$lib_file'"
 fi
+load_devpanel_config || exit $?
 
 getopt_flags='i'
 while getopts $getopt_flags OPTNAME; do

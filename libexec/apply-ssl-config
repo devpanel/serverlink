@@ -92,15 +92,19 @@ lib_file="$we_base_dir/lib/functions"
 if ! source "$lib_file"; then
   error "unable to source lib file $lib_file"
 fi
+load_devpanel_config || exit $?
 
 if ! "$curr_dir/check-vhost-name" archive "$vhost"; then
   error "Invalid vhost name"
 fi
 
+if ! load_vhost_config "$vhost"; then
+  error "unable to load vhost configuration."
+fi
+
 ssl_cert_dir=$(get_ssl_cert_dir ) || return $?
 ssl_key_dir=$(get_ssl_key_dir   ) || return $?
 
-ssl_template_basename=$( get_ssl_template_basename ) || return $?
 
 umask 077
 
@@ -151,16 +155,13 @@ if [ -n "$ca_bundle_file" ]; then
   fi
 fi
 
-vhost_prefix="apache_vhost:3"
-vhost_internal_name="default_ssl"
-
-cert_link="$ssl_cert_dir/$vhost.$vhost_internal_name.crt"
-key_link="$ssl_key_dir/$vhost.$vhost_internal_name.key"
+cert_link="$ssl_cert_dir/cert.crt"
+key_link="$ssl_key_dir/private-key.key"
 
 ln -sf "$cert_file_full_path" "$cert_link"
 ln -sf "$key_file_full_path" "$key_link"
 
-ca_bundle_link="$ssl_cert_dir/CA-bundle.$vhost.$vhost_internal_name.crt"
+ca_bundle_link="$ssl_cert_dir/ca-bundle.crt"
 if [ -n "$ca_bundle_file" ]; then
   ln -sf "$ca_bundle_file_full_path" "$ca_bundle_link"
 else
@@ -170,30 +171,13 @@ else
   fi
 fi
 
-metadata_op=""
-metadata_op+="set $vhost_prefix $vhost_internal_name"$'\n'
-metadata_op+="set apache_vhost:_:name:$vhost_internal_name 3"$'\n'
-metadata_op+="set $vhost_prefix:_:replicate devpanel_main"$'\n'
-metadata_op+="set $vhost_prefix:_:template $ssl_template_basename"$'\n'
-
-if [ -n "$ip_addr" ]; then
-  metadata_op+="set $vhost_prefix:_:IP $ip_addr"$'\n'
-fi
-
-if [ -n "$ca_bundle_file" ]; then
-  metadata_op+="set $vhost_prefix:param:2:SSLCACertificateFile $ca_bundle_link"$'\n'
-fi
-
-echo "$metadata_op" | "$curr_dir/apache-metadata-handler" "$vhost"
-if [ $? -ne 0 ]; then
-  error "failed to set vhost metadata links"
-fi
+save_opts_in_vhost_config "$vhost" "ssl.enabled = yes"
 
 if is_https_redirect_enabled_by_default ; then
   set_https_redirect_metadata "$vhost"
 fi
 
-if ! "$curr_dir/config-vhost-apache" "$vhost"; then
+if ! rewrite_vhost_apache_config "$vhost"; then
   echo
   error "failed to apply SSL configuration for vhost $vhost"
 fi

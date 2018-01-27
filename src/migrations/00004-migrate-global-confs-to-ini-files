@@ -1,0 +1,1150 @@
+#!/bin/bash
+
+old_get_real_hostname() {
+  local hostname="$1"
+
+  local host_fmt="" server_base_domain=""
+
+  if [ "${hostname: -1}" == "." ]; then
+    # $len_minus_one is a workaround for older bash versions that don't know
+    # negative lengths (e.g. CentOS 6.5 and previous)
+    local len_minus_one=$(( ${#hostname} - 1 ))
+    host_fmt="${hostname:0:$len_minus_one}" # remove the last dot
+  else
+    server_base_domain=$(old_get_server_base_domain) || return $?
+    host_fmt="$hostname.$server_base_domain"
+  fi
+
+  echo -n "$host_fmt"
+}
+
+old_get_system_key() {
+  local key="$1"
+
+  old_deref_os_prop "$DEVPANEL_HOME" "$key"
+}
+
+old_deref_contents() {
+  local path="$1"
+
+  local value=""
+
+  if [ -L "$path" ]; then
+    value=`readlink "$path"`
+  elif [ -f "$path" ]; then
+    value=`cat "$path"`
+  elif [ ! -e "$path" ]; then
+    echo "$FUNCNAME(): path doesn't exist $path" 1>&2
+    return 1
+  else
+    echo "$FUNCNAME(): don't know how to de-reference path $path" 1>&2
+    return 1
+  fi
+
+  echo -n "$value"
+}
+
+old_deref_os_prop() {
+  local base_dir="$1"
+  local key_name="$2"
+
+  local os_name="" os_version="" os_major=""
+  local base_path="" key_path="" v="" resolved="" local_value=""
+  local ver_specific="" ver_major="" os_specific="" devpanel_specific=""
+
+  os_version=`devpanel_get_os_version`
+  [ $? -ne 0 ] && return 1
+
+  os_major=`devpanel_get_os_version_major "$os_version"`
+  [ $? -ne 0 ] && return 1
+
+  base_path="$base_dir/config/os"
+
+  ver_specific="$base_path/$os_version/$key_name"
+  ver_major="$base_path/$os_major/$key_name"
+  os_specific="$base_path/$key_name"
+  local_value="$base_dir/config/key_value/local/$key_name"
+  devpanel_specific="$base_dir/config/key_value/$key_name"
+
+  # check in this order:
+  #   config/key_value/local/ -> local custom value
+  #   os/<specific_version>   -> for the specific version
+  #   os/<os_major>           -> for the specific major version
+  #   os/                     -> for the specific distro
+  #   config/key_value/       -> generic devPanel convention
+
+
+  for v in "$local_value" "$ver_specific" "$ver_major" \
+           "$os_specific" "$devpanel_specific"; do
+
+    if [ -L "$v" -o -f "$v" ]; then
+      key_path="$v"
+      break
+    fi
+  done
+
+  if [ -z "$key_path" ]; then
+    echo "$FUNCNAME(): unable to find key $key_name in $base_dir" 1>&2
+    return 1
+  fi
+
+  old_deref_contents "$key_path" || return 1
+}
+
+old_deref_os_fs_path() {
+  local base_dir="$1"
+  local key_name="$2"
+
+  local orig_value="" value="" value_norm="" key_dir=""
+
+  orig_value=`old_deref_os_prop "$base_dir" "$key_name"`
+  [ $? -ne 0 -o -z "$orig_value" ] && return 1
+
+  if [ "${orig_value:0:1}" != "/" ]; then
+    key_dir=`dirname "$base_dir/config/os/$key_name"`
+    value="$key_dir/$orig_value"
+  else
+    value="$orig_value"
+  fi
+
+  # existence of the target path not required
+  value_norm=`readlink -m "$value"`
+
+  echo -n "$value_norm"
+}
+
+old_get_vhost_key_value() {
+  local key="$1"
+  local vhost="$2"
+  local value=""
+
+  if [ -z "$vhost" ]; then
+    if ! vhost=$(old_get_vhost_from_linuxuser); then
+      echo "$FUNCNAME(): missing vhost, please specify it" 1>&2
+      return 1
+    fi
+  fi
+
+  is_valid_vhost_string "$vhost" || return $?
+
+  if ! old_vhost_exists "$vhost"; then
+    echo "$FUNCNAME(): vhost doesn't exist" 1>&2
+    return 1
+  fi
+
+  local key_link="$DEVPANEL_HOME/config/vhosts/$vhost/$key"
+
+  old_deref_contents "$key_link"
+}
+
+old_get_key_value_from_vhost() {
+  local key="$1"
+  local vhost="${2:-$_dp_vhost}"
+
+  old_deref_contents \
+    "$DEVPANEL_HOME/config/vhosts/$vhost/$key" 2>/dev/null
+}
+
+old_get_linux_username_from_vhost() {
+  local vhost="$1"
+
+  local user
+
+  if user=$(old_get_key_value_from_vhost \
+              apache_vhost:_:linux_user "$vhost"); then
+    :
+  else
+    user="w_$vhost"
+  fi
+
+  echo "$user"
+}
+
+old_get_vhost_from_linuxuser() {
+  local user="${1:-$USER}"
+  local vhost
+
+  if [ -z "$user" ]; then
+    echo "$FUNCNAME(): unable to get username information" 1>&2
+    return 1
+  fi
+
+  local map_dir map_link
+  map_dir=$(old_get_linuxuser_vhost_dir)
+  map_link="$map_dir/$user"
+  if [ -L "$map_link" ]; then
+    old_deref_contents "$map_link"
+    return $?
+  else
+    # for servers installed before the $map_link was created
+    if [ ${#user} -gt 2 -a "${user:0:2}" == w_ ]; then
+      vhost=${user#w_}
+      if old_vhost_exists "$vhost"; then
+        echo "$vhost"
+        return 0
+      fi
+    fi
+  fi
+
+  return 1
+}
+
+old_get_docroot_from_vhost() {
+  local vhost="$1"
+
+  local docroot_dir virtwww_homedir
+
+  old_get_key_value_from_vhost apache_vhost:_:document_root "$vhost" && \
+    docroot_dir="$_dp_value"
+
+  if [ $? -ne 0 ]; then
+    # backwards compatibility
+    virtwww_homedir=$(old_deref_os_prop "$DEVPANEL_HOME" apache_virtwww_homedir) \
+      || return 1
+
+    docroot_dir="$virtwww_homedir/w_$vhost/public_html/$vhost"
+  fi
+
+  echo "$docroot_dir"
+
+  return 0
+}
+
+old_get_docroot_from_user() {
+  local user="${1:-$USER}"
+  local vhost
+
+  vhost=$(old_get_vhost_from_linuxuser "$user") || return 1
+
+  old_get_docroot_from_vhost "$vhost"
+}
+
+old_get_linuxuser_vhost_dir() {
+  echo "$DEVPANEL_HOME/config/key_value/linuxuser-vhost"
+}
+
+old_get_metadata_value() {
+  local dir="$1"
+  local key="`basename "$2"`"
+
+  local user_def_path="$dir/local/$key"
+  local usual_path="$dir/$key"
+  local link_path="" link_value=""
+
+  if [ -L "$user_def_path" ]; then
+    link_path="$user_def_path"
+  elif [ -L "$usual_path" ]; then
+    link_path="$usual_path"
+  else
+    echo "$FUNCNAME(): didn't find key '$2'" 1>&2
+    return 1
+  fi
+
+  link_value="`readlink "$link_path"`"
+  if [ $? -eq 0 ]; then
+    echo "$link_value"
+    return 0
+  else
+    echo "$FUNCNAME(): found, but couldn't read link value on '$link_path'" 1>&2
+    return 1
+  fi
+}
+
+old_get_apache_metadata_value() {
+  local system_dir="$1"
+  local key="$2"
+
+  local apache_config_dir="$system_dir/config/vhosts"
+  local vhost
+  vhost=$(old_get_vhost_from_linuxuser) || return $?
+
+  local vhost_conf_dir="$apache_config_dir/$vhost"
+
+  if [ ! -d "$vhost_conf_dir" ]; then
+    echo "$FUNCNAME(): missing vhost conf dir $vhost_conf_dir" 1>&2
+    return 1
+  fi
+
+  old_get_metadata_value "$vhost_conf_dir" "$key"
+}
+
+old_is_vhost_enabled() {
+  local vhost="$1"
+
+  ! old_is_vhost_locked "$vhost" >/dev/null 2>&1
+}
+
+old_is_vhost_locked() {
+  local vhost="$1"
+
+  local key="flag:locked"
+
+  local value
+
+  old_get_vhost_key_value "$key" "$vhost" >/dev/null
+}
+
+old_vhost_exists() {
+  local test_str="$1"
+
+  if [ -z "$test_str" ]; then
+    echo "$FUNCNAME(): received an empty vhost string" 1>&2
+    return 1
+  fi
+
+  if ! is_valid_vhost_string "$test_str"; then
+    echo "$FUNCNAME(): invalid format of vhost name" 1>&2
+    return 1
+  fi
+
+  local config_dir="$DEVPANEL_HOME/config/vhosts/$test_str"
+  if [ -d "$config_dir" ]; then
+    return 0
+  else
+    return 1
+  fi
+}
+
+old_vhost_exists_and_is_enabled() {
+  if ! old_vhost_exists "$@"; then
+    echo "$FUNCNAME(): vhost doesn't exist" 1>&2
+    return 1
+  fi
+
+  if old_is_vhost_enabled "$@"; then
+    return 0
+  else
+    echo "$FUNCNAME(): vhost is not enabled" 1>&2
+    return 1
+  fi
+}
+
+old_get_1st_level_field_value_from_app() {
+  local vhost="$1"
+  local field="$2"
+  local prefix="app:0:_"
+  local value
+
+  value=$(old_get_vhost_key_value "$prefix:$field" "$vhost" 2>/dev/null)
+  if [ $? -eq 0 ]; then
+    echo -n "$value"
+    return 0
+  else
+    return 1
+  fi
+}
+
+old_is_distro_updates_enabled() {
+  old_deref_os_prop "$DEVPANEL_HOME" automatic_distro_updates &>/dev/null
+}
+
+old_are_snapshots_enabled_for_vhost() {
+  local vhost="$1"
+  local freq="$2"
+  local _var
+
+  for _var in vhost freq; do
+    if [ -z "${!_var}" ]; then
+      echo "$FUNCNAME(): missing $_var" 1>&2
+      return 1
+    fi
+  done
+
+  local key="config:backup_snapshot:$freq:enabled"
+  old_get_vhost_key_value "$key" "$vhost" &>/dev/null
+}
+
+old_get_snapshot_defs_for_vhost() {
+  # returns the definitions of a vhost snapshot in a single line, with
+  # elements separated by space. In the format: day hour retention_unit
+  # note: daily backups don't have the 'day' field 
+
+  local vhost="$1"
+  local freq="$2"
+  local _var
+
+  for _var in vhost freq; do
+    if [ -z "${!_var}" ]; then
+      echo "$FUNCNAME(): missing $_var" 1>&2
+      return 1
+    fi
+  done
+
+  if ! in_array "$freq" daily weekly monthly; then
+    echo "$FUNCNAME(): invalid frequency received" 1>&2
+    return 1
+  fi
+
+  if ! old_are_snapshots_enabled_for_vhost "$vhost" "$freq"; then
+    echo "$FUNCNAME(): $freq snapshots disabled for vhost $vhost" 1>&2
+    return 1
+  fi
+
+  local day day_name hour retention_unit
+  local key_prefix="config:backup_snapshot:$freq"
+
+  if [ "$freq" != daily ]; then
+    day=$(old_get_vhost_key_value "$key_prefix:day" "$vhost") || return $?
+    day_name=$(translate_daynumber_to_name "$day") || return $?
+  fi
+
+  hour=$(old_get_vhost_key_value "$key_prefix:hour" "$vhost") || return $?
+  retention_unit=$(old_get_vhost_key_value "$key_prefix:retention_unit" \
+                    "$vhost") || return $?
+
+  local out_str
+  if [ "$freq" != daily ]; then
+    out_str+="$day_name "
+  fi
+  out_str+="$hour $retention_unit"
+
+  echo "$out_str"
+}
+
+old_get_devpanel_datadir() {
+  old_deref_os_prop "$DEVPANEL_HOME" data_dir
+}
+
+old_get_apache_service_name() {
+  old_deref_os_prop "$DEVPANEL_HOME" names/apache_service_name
+}
+
+old_get_apache_vhost_template() {
+  old_deref_os_prop "$DEVPANEL_HOME" names/apache_vhost_template
+}
+
+old_get_vhosts_homedir() {
+  old_deref_os_prop "$DEVPANEL_HOME" apache_virtwww_homedir
+}
+
+old_get_apache_group_name() {
+  old_deref_os_prop "$DEVPANEL_HOME" names/apache.group
+}
+
+old_get_apache_main_config_dir() {
+  deref_os_fs_path_ex "$DEVPANEL_HOME" pathnames/etc/apache_base_dir
+}
+
+old_get_apache_virtwww_config_dir() {
+  deref_os_fs_path_ex "$DEVPANEL_HOME" pathnames/etc/apache_vhosts
+}
+
+old_get_apache_virtwww_log_dir() {
+  deref_os_fs_path_ex "$DEVPANEL_HOME" pathnames/var/log/apache_vhosts
+}
+
+old_get_apache_global_includes_dir() {
+  deref_os_fs_path_ex "$DEVPANEL_HOME" pathnames/etc/apache_includes_dir
+}
+
+old_get_tools_base_url_template() {
+  old_deref_os_prop "$DEVPANEL_HOME" tools_base_url_tmpl
+}
+
+old_get_template_url_for_archive_download() {
+  old_deref_os_prop "$DEVPANEL_HOME" archive_download_url_tmpl
+}
+
+old_get_apache_exec_group_name() {
+  old_deref_os_prop "$DEVPANEL_HOME" names/apache-exec.group
+}
+
+old_get_mysql_instances_homedir() {
+  old_deref_os_prop "$DEVPANEL_HOME" mysql_instances_homedir
+}
+
+old_is_webenabled_backwards_compat_enabled() {
+  old_deref_os_prop "$DEVPANEL_HOME" webenabled_backwards &>/dev/null
+}
+
+old_is_package_updates_disabled() {
+  old_deref_os_prop "$DEVPANEL_HOME" no_package_updates 2>/dev/null
+}
+
+old_get_vhost_base_domain() {
+  # returns the real base domain of a vhost
+  local vhost="$1"
+
+  local domain_int base_domain key
+
+  key="apache_vhost:0:_:base_domain"
+
+  if ! domain_int=$(old_get_vhost_key_value "$key" "$vhost" 2>/dev/null); then
+    domain_int="$vhost"
+  fi
+
+  base_domain=$(old_get_real_hostname "$domain_int") || return $?
+
+  echo "$base_domain"
+}
+
+old_get_vhost_default_hostname() {
+  # returns the default hostname of the vhost
+  # (i.e the one used on ServerName and in the app's config
+
+  local vhost="$1"
+
+  local key="apache_vhost:0:_:ServerName"
+  local hostname
+
+  hostname=$(old_get_vhost_key_value "$key" "$vhost") || return $?
+  if [ $? -eq 0 ]; then
+    echo "$hostname"
+  else
+    echo "$FUNCNAME(): unable to get default hostname from vhost $vhost" 1>&2
+    return 1
+  fi
+}
+
+old_is_ssl_enabled_on_vhost() {
+  local vhost="$1"
+
+  local conf_dir="$DEVPANEL_HOME/config/vhosts/$vhost"
+  local ssl_link="$conf_dir/apache_vhost:_:name:default_ssl"
+
+  if [ -L "$ssl_link" ]; then
+    return 0
+  else
+    return 1
+  fi
+}
+
+old_is_htpasswd_enabled_on_vhost() {
+  local vhost="$1"
+  local en
+
+  en=$(old_get_vhost_key_value flag:htpasswd_locked "$vhost" 2>/dev/null )
+  if [ $? -eq 0 ]; then
+    return 0
+  else
+    return 1
+  fi
+}
+
+old_is_lets_encrypt_enabled_for_vhost() {
+  local vhost="$1"
+
+  local enabled
+
+  enabled=$(old_get_vhost_key_value apache_vhost:_:config:lets_encrypt "$vhost" 2>/dev/null)
+  if [ -n "$enabled" ]; then
+    return 0
+  else
+    return 1
+  fi
+}
+
+old_has_user_includes() {
+  local vhost="$1"
+
+  old_get_user_include_metadata "$vhost" user_includes &>/dev/null
+}
+
+old_get_main_url_of_vhost() {
+  local vhost="$1"
+  local url domain
+
+  if old_is_ssl_enabled_on_vhost "$vhost"; then
+    url="https://"
+  else
+    url="http://"
+  fi
+
+  domain=$(old_get_vhost_default_hostname "$vhost") || return $?
+
+  url+="$domain"
+  url+="/"
+
+  echo "$url"
+}
+
+old_get_server_base_domain() {
+  local system_dir="${1:-$DEVPANEL_HOME}"
+  local domain
+
+  domain=$(old_deref_os_prop "$system_dir" apache_virtwww_domain)
+  if [ $? -eq 0 ]; then
+    echo "$domain"
+  else
+    echo "$FUNCNAME(): unable to get virtwww base domain" 1>&2
+    return 1
+  fi
+}
+
+old_get_list_of_vhosts() {
+  local vhost_config_dir="$DEVPANEL_HOME/config/vhosts"
+  local vhost vhost_dir
+  local -a vhosts_ar=()
+
+  if [ ! -d "$vhost_config_dir" ]; then
+    echo "$FUNCNAME(): missing config dir $vhost_config_dir" 1>&2
+    return 1
+  fi
+
+  for vhost_dir in "$vhost_config_dir/"*; do
+    [ ! -d "$vhost_dir" ] && continue
+    vhost=${vhost_dir##*/}
+    vhosts_ar+=( "$vhost" )
+  done
+
+  if [ ${#vhosts_ar[*]} -le 0 ]; then
+    return 0
+  else
+    echo "${vhosts_ar[@]}"
+  fi
+}
+
+old_get_hostnames_from_vhost() {
+  local vhost="$1"
+
+  local vhost_conf_dir="$DEVPANEL_HOME/config/vhosts/$vhost"
+
+  local base_domain default_domain
+  local tmp_link tmp_name tmp_fmt_name
+  local -a hosts_ar=()
+
+  base_domain=$(old_get_vhost_base_domain "$vhost") || return $?
+
+  default_domain=$(old_get_vhost_default_hostname "$vhost") || return $?
+
+  hosts_ar+=( "$base_domain" )
+  if [ "$base_domain" != "$default_domain" ]; then
+    hosts_ar+=( "$default_domain" )
+  fi
+
+  for tmp_link in "$vhost_conf_dir/apache_vhost:0:_:ServerAlias:"*; do
+    if [ ! -L "$tmp_link" ]; then
+      continue
+    fi
+
+    # apache_vhost:0:_:ServerAlias:domain.com.
+    tmp_name=${tmp_link##*:}
+    tmp_fmt_name=$(old_get_real_hostname "$tmp_name") || return $?
+
+    if [ "$tmp_fmt_name" == "$base_domain" ]; then
+      continue
+    fi
+
+    hosts_ar+=( $tmp_fmt_name )
+  done
+
+  local IFS=$'\n'
+  echo "${hosts_ar[*]}"
+}
+
+old_is_longer_vhost_names_enabled() {
+  old_deref_os_prop "$DEVPANEL_HOME" enable_long_vhost_names &>/dev/null
+}
+
+old_is_fastcgi_enabled_on_vhost() {
+  local vhost="$1"
+  local key="apache_vhost:0:include:fastcgi"
+  local en
+
+  en=$(old_get_vhost_key_value "$key" "$vhost" 2>/dev/null )
+  if [ $? -eq 0 ]; then
+    return 0
+  else
+    return 1
+  fi
+}
+
+old_get_vhost_description() {
+  local vhost="$1"
+  local key="apache_vhost:_:opt:description"
+
+  old_get_vhost_key_value "$key" "$vhost" 2>/dev/null
+}
+
+old_get_php_version_from_vhost() {
+  local vhost="$1"
+
+  old_get_1st_level_field_value_from_app "$vhost" php_version 2>/dev/null
+}
+
+old_get_default_php_version() {
+  old_deref_os_prop "$DEVPANEL_HOME" php_default_version 2>/dev/null
+}
+
+old_get_platform_version() {
+  old_deref_os_prop "$DEVPANEL_HOME" platform_version 2>/dev/null
+}
+
+old_is_https_redirect_enabled_by_default() {
+  local https_redirect
+
+  https_redir=$(old_get_system_key https_redirect_enabled 2>/dev/null)
+  if [ $? -eq 0 -a "$https_redir" == yes ]; then
+    return 0
+  else
+    return 1
+  fi
+}
+
+old_is_https_redirect_enabled_for_vhost() {
+  local vhost="$1"
+  local key value
+
+  key="apache_vhost:0:_:https_redirect"
+
+  value=$(old_get_vhost_key_value "$key" "$vhost" 2>/dev/null)
+  if [ $? -eq 0 -a "$value" == yes ]; then
+    return 0
+  else
+    return 1
+  fi
+}
+
+old_get_mysql_db_name_from_vhost() {
+  local vhost="$1"
+
+  old_get_1st_level_field_value_from_app "$vhost" db_name
+}
+
+old_get_app_type_from_vhost() {
+  local vhost="$1"
+
+  old_get_1st_level_field_value_from_app "$vhost" seed_app
+}
+
+old_get_https_redirect_target_domain() {
+  local vhost="$1"
+
+  local key value
+  key="apache_vhost:0:var:https_redirect_target_domain"
+
+  value=$(old_get_vhost_key_value "$key" "$vhost" 2>/dev/null)
+  if [ $? -eq 0 -a -n "$value" ]; then
+    echo "$value"
+    return 0
+  else
+    return 1
+  fi
+}
+
+old_are_snapshots_enabled_for_vhost() {
+  local vhost="$1"
+  local freq="$2"
+  local _var
+
+  for _var in vhost freq; do
+    if [ -z "${!_var}" ]; then
+      echo "$FUNCNAME(): missing $_var" 1>&2
+      return 1
+    fi
+  done
+
+  local key="config:backup_snapshot:$freq:enabled"
+  old_get_vhost_key_value "$key" "$vhost" &>/dev/null
+}
+
+old_get_snapshot_defs_for_vhost() {
+  # returns the definitions of a vhost snapshot in a single line, with
+  # elements separated by space. In the format: day hour retention_unit
+  # note: daily backups don't have the 'day' field 
+
+  local vhost="$1"
+  local freq="$2"
+  local _var
+
+  for _var in vhost freq; do
+    if [ -z "${!_var}" ]; then
+      echo "$FUNCNAME(): missing $_var" 1>&2
+      return 1
+    fi
+  done
+
+  if ! in_array "$freq" daily weekly monthly; then
+    echo "$FUNCNAME(): invalid frequency received" 1>&2
+    return 1
+  fi
+
+  if ! old_are_snapshots_enabled_for_vhost "$vhost" "$freq"; then
+    echo "$FUNCNAME(): $freq snapshots disabled for vhost $vhost" 1>&2
+    return 1
+  fi
+
+  local day day_name hour retention_unit
+  local key_prefix="config:backup_snapshot:$freq"
+
+  if [ "$freq" != daily ]; then
+    day=$(old_get_vhost_key_value "$key_prefix:day" "$vhost") || return $?
+    day_name=$(translate_daynumber_to_name "$day") || return $?
+  fi
+
+  hour=$(old_get_vhost_key_value "$key_prefix:hour" "$vhost") || return $?
+  retention_unit=$(old_get_vhost_key_value "$key_prefix:retention_unit" \
+                    "$vhost") || return $?
+
+  local out_str
+  if [ "$freq" != daily ]; then
+    out_str+="$day_name "
+  fi
+
+  out_str+="$hour $retention_unit"
+
+  echo "$out_str"
+}
+
+old_get_user_include_metadata() {
+  local vhost="$1"
+  local tmpl_name="$2"
+
+  local key="apache_vhost:0:user_include:$tmpl_name"
+
+  old_get_vhost_key_value "$key" "$vhost"
+}
+
+migrate_system_configs() {
+  local virtwww_domain  data_dir
+  local php_def_ver platform_version
+  local distro_updates_st we_compat_st long_vhost_names_st http_redirects_st
+  local pkg_updates_st
+  local -i n_err=0
+
+  local -a devpanel_opts_ar=() lamp_opts_ar=()
+
+  if [ -f /etc/devpanel/config.ini ]; then
+    echo "$FUNCNAME(): skipping migration, already done" 1>&2
+    return 0
+  fi
+
+  cp -a "$sys_dir/install/skel/common/var/spool/devpanel" \
+    /var/spool/
+
+  # load the default values from devpanel config after the code update
+  # the main config file has not been created yet, but it's ok to load
+  # only the defaults
+  #
+  if ! load_devpanel_config; then
+    echo "$FUNCNAME(): failed to reload devPanel config" 1>&2
+    return 1
+  fi
+
+  if virtwww_domain=$(old_get_server_base_domain); then
+    lamp_opts_ar+=( "apache vhosts.virtwww_domain = $virtwww_domain" )
+  else
+    n_err+=1
+    echo "$FUNCNAME(): failed to get virtwww_domain" 1>&2
+    return 1
+  fi
+
+
+  if data_dir=$(old_get_devpanel_datadir); then
+    if [ "$data_dir" != "$conf__paths__data_dir" ]; then
+      devpanel_opts_ar+=( "paths.data_dir = $data_dir" )
+    fi
+  else
+    n_err+=1
+    echo "$FUNCNAME(): failed to get data_dir" 1>&2
+    return 1
+  fi
+
+  if php_def_ver=$(old_get_default_php_version ); then
+    if [ "$php_def_ver" != "$lamp__php__default_version" ]; then
+      lamp_opts_ar+=( "php.default_version = $php_def_ver" )
+    fi
+  fi
+
+  if old_is_distro_updates_enabled; then
+    devpanel_opts_ar+=( "distro.updates_enabled = yes" )
+  fi
+
+  if old_is_package_updates_disabled; then
+    devpanel_opts_ar+=( "packages.updates_enabled = no" )
+  fi
+
+  if old_is_webenabled_backwards_compat_enabled; then
+    lamp_opts_ar+=( "apache.webenabled_backwards_compat = yes" )
+  fi
+
+  if old_is_longer_vhost_names_enabled ; then
+    lamp_opts_ar+=( "apache.enable_long_vhost_names = yes" )
+  fi
+
+  if ! old_is_https_redirect_enabled_by_default; then
+    lamp_opts_ar+=( "apache vhosts.https_redirect_enabled = no" )
+  fi
+
+  if platform_version=$(old_get_platform_version ) && \
+    [ "$platform_version" != 3 ]; then
+    devpanel_opts_ar+=( "platform.version = $platform_version" )
+  fi
+
+  if [ ${#devpanel_opts_ar[@]} -gt 0 ]; then
+    if save_opts_in_devpanel_config "${devpanel_opts_ar[@]}"; then
+      echo "$FUNCNAME(): successfully saved devpanel opts"
+    else
+      echo "$FUNCNAME(): failed to save devpanel opts" 1>&2
+    fi
+  fi
+
+  if [ ${#lamp_opts_ar[@]} -gt 0 ]; then
+    if save_opts_in_lamp_config "${lamp_opts_ar[@]}"; then
+      echo "$FUNCNAME(): successfully saved lamp config"
+    else
+      echo "$FUNCNAME(): failed to save lamp config" 1>&2
+    fi
+  fi
+
+
+  if [ $n_err -eq 0 ]; then
+    return 0
+  else
+    return 1
+  fi
+}
+
+migrate_vhost_configs() {
+  local vhost vhost_config_dir vhost_config_file
+  local vhost_apache_dir vhost_ssl_dir
+  local base_domain server_name doc_root domains_ar linux_user enabled_st
+  local db_name app_subsystem php_version https_domain desc
+  local old_vhost_config_dir
+  local -a opts_ar=()
+  local -i n_err=0
+
+  for vhost in $(old_get_list_of_vhosts ); do
+    opts_ar=()
+    vhost_config_dir="$lamp__paths__vhosts_config_dir/$vhost"
+    old_vhost_config_dir="$sys_dir/config/vhosts/$vhost"
+    vhost_apache_dir="$vhost_config_dir/apache"
+    vhost_ssl_dir="$vhost_config_dir/ssl"
+    vhost_config_file="$vhost_config_dir/config.ini"
+
+    if [ -f "$vhost_config_file" ]; then
+      # already migrated, go to the next one
+      continue
+    fi
+
+    if ! mkdir -m 750 -p "$vhost_apache_dir" "$vhost_ssl_dir" ; then
+      echo "$FUNCNAME(): failed to create vhost dirs on" \
+            "$lamp__paths__vhosts_config_dir" 1>&2
+      n_err+=1
+      continue
+    fi
+
+    if base_domain=$(old_get_vhost_base_domain "$vhost"); then
+      opts_ar+=( "vhost.base_domain = $base_domain" )
+    else
+      n_err+=1
+      echo "$FUNCNAME(): failed getting base domain for vhost '$vhost'.  Skipping..." 1>&2
+      continue
+    fi
+
+    if server_name=$(old_get_vhost_default_hostname "$vhost"); then
+      opts_ar+=( "vhost.server_name = $server_name" )
+    else
+      n_err+=1
+      echo "$FUNCNAME(): failed getting default domain for vhost '$vhost'.  Skipping..." 1>&2
+      continue
+    fi
+
+    if doc_root=$(old_get_docroot_from_vhost "$vhost"); then
+      opts_ar+=( "vhost.document_root = $doc_root" )
+    else
+      n_err+=1
+      echo "$FUNCNAME(): failed getting doc_root for vhost '$vhost'.  Skipping..." 1>&2
+      continue
+    fi
+
+    if domains_ar=( $(old_get_hostnames_from_vhost "$vhost" ) ); then
+      opts_ar+=( "vhost.domains = ${domains_ar[*]}" )
+    else
+      n_err+=1
+      echo "$FUNCNAME(): failed getting domains for vhost '$vhost'.  Skipping..." 1>&2
+      continue
+    fi
+
+    if linux_user=$(old_get_linux_username_from_vhost "$vhost"); then
+      opts_ar+=( "vhost.linux_user = $linux_user" )
+      opts_ar+=( "mysql.instance = b_${linux_user#w_}" )
+    else
+      n_err+=1
+      echo "$FUNCNAME(): failed getting linux_user for vhost '$vhost'.  Skipping..." 1>&2
+      continue
+    fi
+    
+    if old_is_vhost_enabled "$vhost"; then
+      opts_ar+=( "vhost.enabled = yes" )
+    else
+      opts_ar+=( "vhost.enabled = no" )
+    fi
+
+    if old_is_fastcgi_enabled_on_vhost "$vhost"; then
+      opts_ar+=( "vhost.fastcgi = yes" )
+    fi
+
+    if old_is_ssl_enabled_on_vhost "$vhost"; then
+      opts_ar+=( "ssl.enabled = yes" )
+
+      local orig_ssl_crt_dir orig_ssl_key_dir
+      local ssl_ca_file ssl_crt_file ssl_key_file
+
+      orig_ssl_crt_dir=$(old_deref_os_fs_path "$DEVPANEL_HOME" \
+                                         pathnames/etc/ssl/certs )
+
+      orig_ssl_key_dir=$(old_deref_os_fs_path "$DEVPANEL_HOME" \
+                                          pathnames/etc/ssl/keys )
+
+
+      ssl_ca_file="$orig_ssl_crt_dir/CA-bundle.$vhost.default_ssl.crt"
+      ssl_crt_file="$orig_ssl_crt_dir/$vhost.default_ssl.crt"
+      ssl_key_file="$orig_ssl_key_dir/$vhost.default_ssl.key"
+
+      if old_is_lets_encrypt_enabled_for_vhost "$vhost"; then
+        local tmp_le_ca_file tmp_le_crt_file tmp_le_key_file
+        local le_ca_file le_crt_file le_key_file
+        tmp_le_ca_file=$(readlink -e "$ssl_ca_file")
+        le_ca_file=${tmp_le_ca_file##*/lets-encrypt/}
+
+        tmp_le_crt_file=$(readlink -e "$ssl_crt_file")
+        le_crt_file=${tmp_le_crt_file##*/lets-encrypt/}
+
+        tmp_le_key_file=$(readlink -e "$ssl_key_file")
+        le_key_file=${tmp_le_key_file##*/lets-encrypt/}
+
+        cp -a "$old_vhost_config_dir/lets-encrypt/" \
+          "$vhost_ssl_dir"
+
+        ln -s "lets-encrypt/$le_ca_file" "$vhost_ssl_dir/ca-bundle.crt"
+        ln -s "lets-encrypt/$le_crt_file" "$vhost_ssl_dir/cert.crt"
+        ln -s "lets-encrypt/$le_key_file" "$vhost_ssl_dir/private-key.key"
+      else
+        if [ -f "$ssl_ca_file" ]; then
+          cp -p "$ssl_ca_file" "$vhost_ssl_dir/ca-bundle.crt"
+        fi
+
+        cp -p "$ssl_crt_file" "$vhost_ssl_dir/cert.crt"
+        cp -p "$ssl_key_file" "$vhost_ssl_dir/private-key.key"
+      fi
+
+      if old_is_https_redirect_enabled_for_vhost "$vhost"; then
+        opts_ar+=( "vhost.https_redirect = yes" )
+
+        if https_domain=$(old_get_https_redirect_target_domain "$vhost" ); then
+          opts_ar+=( "vhost.https_redirect_target_domain = $https_domain" )
+        fi
+      fi
+    fi # // ssl
+
+    if old_is_htpasswd_enabled_on_vhost "$vhost"; then
+      opts_ar+=( "vhost.htpasswd = yes" )
+    fi
+
+    if php_version=$(old_get_php_version_from_vhost "$vhost" ); then
+      opts_ar+=( "php.version = $php_version" )
+    fi
+
+    if db_name=$(old_get_mysql_db_name_from_vhost "$vhost" ); then
+      opts_ar+=( "app.database_name = $db_name" )
+    else
+      n_err+=1
+      echo "$FUNCNAME(): failed getting db_name for vhost '$vhost'.  Skipping..." 1>&2
+      continue
+    fi
+
+    if old_has_user_includes "$vhost" ; then
+      cp -p "$old_vhost_config_dir/user_includes.inc" \
+            "$vhost_config_dir/apache"
+
+      opts_ar+=( "vhost.user_includes = yes" )
+    fi
+
+    if desc=$(old_get_vhost_description "$vhost" ); then
+      opts_ar+=( "vhost.description = $desc" )
+    fi
+
+    if app_subsystem=$(old_get_app_type_from_vhost "$vhost" ); then
+      opts_ar+=( "app.subsystem = $app_subsystem" )
+    else
+      n_err+=1
+      echo "$FUNCNAME(): failed getting app_subsystem for vhost '$vhost'.  Skipping..." 1>&2
+      continue
+    fi
+
+    local raw_txt hour day day_txt retention_unit
+    if old_are_snapshots_enabled_for_vhost "$vhost" daily; then
+      raw_txt=$(old_get_snapshot_defs_for_vhost "$vhost" daily)
+      read hour retention_unit <<< "$raw_txt"
+      opts_ar+=( "recurring_snapshots daily.enabled = yes" )
+      opts_ar+=( "recurring_snapshots daily.hour = $hour" )
+      opts_ar+=( "recurring_snapshots daily.retention_unit = $retention_unit" )
+    fi
+    
+    if old_are_snapshots_enabled_for_vhost "$vhost" weekly; then
+      raw_txt=$(old_get_snapshot_defs_for_vhost "$vhost" weekly)
+      read day_txt hour retention_unit <<< "$raw_txt"
+      opts_ar+=( "recurring_snapshots weekly.enabled = yes" )
+      opts_ar+=( "recurring_snapshots weekly.day = $day_txt" )
+      opts_ar+=( "recurring_snapshots weekly.hour = $hour" )
+      opts_ar+=( "recurring_snapshots weekly.retention_unit = $retention_unit" )
+    fi
+
+    if old_are_snapshots_enabled_for_vhost "$vhost" monthly; then
+      raw_txt=$(old_get_snapshot_defs_for_vhost "$vhost" monthly)
+      read day_txt hour retention_unit <<< "$raw_txt"
+      opts_ar+=( "recurring_snapshots monthly.enabled = yes" )
+      opts_ar+=( "recurring_snapshots monthly.day = $day_txt" )
+      opts_ar+=( "recurring_snapshots monthly.hour = $hour" )
+      opts_ar+=( "recurring_snapshots monthly.retention_unit = $retention_unit" )
+    fi
+
+    local virtwww_file virtwww_link
+    virtwww_file="$vhost_apache_dir/vhost.conf"
+    virtwww_link="$lamp__paths__apache_local_virtwww_dir/$vhost.conf"
+
+    rm -f "$virtwww_link" && ln -s "$virtwww_file" "$virtwww_link" 
+
+    if save_opts_in_vhost_config "$vhost" "${opts_ar[@]}"; then
+      echo "Successfully migrated vhost '$vhost' to the new config layout."
+
+      tar -zcf "$vhost_config_dir/old-metadata.tar.gz" \
+        -C "${old_vhost_config_dir%/*}" "$vhost"
+      if [ $? -eq 0 ]; then
+        chmod 640 "$vhost_config_dir/old-metadata.tar.gz"
+        rm -rf "$old_vhost_config_dir"
+      fi
+
+      chgrp -R "$linux_user" "$vhost_config_dir"
+      chmod 640 "$vhost_config_dir/config.ini"
+
+      devpanel rewrite vhost config --vhost "$vhost" --no-restart
+    else
+      n_err+=1
+      echo "$FUNCNAME(): failed to migrate vhost '$vhost'" \
+           "to the new config layout" 1>&2
+      continue
+    fi
+  done
+
+  reload_or_start_apache
+
+  if [ $n_err -eq 0 ]; then
+    rm -f "$lamp__apache_paths__vhosts_include_dir"
+    ln -s "$lamp__paths__apache_local_virtwww_dir" \
+      "$lamp__apache_paths__vhosts_include_dir"
+      
+    return 0
+  else
+    return 1
+  fi
+}
+
+if [ -z "$DEVPANEL_HOME" ]; then
+  export DEVPANEL_HOME="$sys_dir"
+fi
+
+if migrate_system_configs; then
+  echo "Successfully migrated system configs."
+else
+  error "failed to migrate system configs"
+fi
+
+if migrate_vhost_configs; then
+  echo "Successfully migrated vhost configs."
+else
+  error "failed to migrate vhost configs."
+fi
+
+exit 0

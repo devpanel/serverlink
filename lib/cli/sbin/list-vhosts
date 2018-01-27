@@ -65,9 +65,14 @@ devpanel_cmd__list_vhosts() {
   fi
 
   for vhost in ${vhosts_ar[@]}; do
-    domain=$(get_vhost_default_hostname "$vhost")
-    desc=$(get_vhost_description "$vhost")
-    desc="${desc:-(no description set)}"
+    load_vhost_config "$vhost" || continue
+
+    domain="$v__vhost__server_name"
+    if [ -n "$v__vhost__description" ]; then
+      desc="$v__vhost__description"
+    else
+      desc="(no description set)"
+    fi
 
     if is_vhost_enabled "$vhost"; then
       status=enabled

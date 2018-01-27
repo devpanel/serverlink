@@ -63,14 +63,15 @@ devpanel_cmd__restart_mysql() {
     error "vhost doesn't exist."
   fi
 
+  load_vhost_config "$vhost" || return $?
+  vhost_user="$v__vhost__linux_user"
+
   if [ -n "$conditional" ]; then
     if ! is_vhost_enabled "$vhost"; then
       return 0
     fi
   fi
 
-  get_linux_username_from_vhost "$vhost" && \
-  vhost_user="$_dp_value" || return $?
   db_user="b_${vhost_user#w_}"
 
   local actions_bin="$sys_dir/compat/dbmgr/current/bin/daemon-action"

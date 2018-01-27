@@ -28,6 +28,7 @@ if ! source "$lib_file"; then
   echo "Error: unable to source file $lib_file"
   exit 1
 fi
+load_devpanel_config || exit $?
 
 user="$1"
 file="$2"

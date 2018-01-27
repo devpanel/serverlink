@@ -1,10 +1,10 @@
 <VirtualHost *:80>
-  ServerName git.@@__APACHE_VIRTWWW_DOMAIN__@@
-  DocumentRoot @@__APACHE_VIRTWWW_HOMEDIR__@@/w_/public_html/cgit/current
+  ServerName git.@@__LAMP__APACHE_VHOSTS__VIRTWWW_DOMAIN__@@
+  DocumentRoot @@__LAMP__APACHE_PATHS__VIRTWWW_HOMEDIR__@@/w_/public_html/cgit/current
   CustomLog webenabled-logs/git-access_log combined
   ErrorLog webenabled-logs/git-error_log
   SuexecUserGroup git git
 
-  Scriptalias /cgit @@__APACHE_VIRTWWW_HOMEDIR__@@/w_/public_html/cgi/cgit.cgi
-  Scriptalias /-ctl/cgit @@__APACHE_VIRTWWW_HOMEDIR__@@/w_/public_html/cgi/cgit.cgi
+  Scriptalias /cgit @@__LAMP__APACHE_PATHS__VIRTWWW_HOMEDIR__@@/w_/public_html/cgi/cgit.cgi
+  Scriptalias /-ctl/cgit @@__LAMP__APACHE_PATHS__VIRTWWW_HOMEDIR__@@/w_/public_html/cgi/cgit.cgi
 </VirtualHost>

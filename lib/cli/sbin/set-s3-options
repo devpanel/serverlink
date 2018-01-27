@@ -1,0 +1,182 @@
+#!/bin/bash
+
+set_usage_msg \
+  "Usage: $bin_name ${cmd_ar[*]} <opts>
+
+  Options:
+    --bucket <name>                 name of the bucket
+    --upload-by-default yes/no      upload vhost archives by default for all
+                                    vhosts (default: yes)
+
+    --delete-after-upload yes/no    whether local files should be deleted
+                                    after a successful upload or not
+                                    (default: no)
+
+    --region <region>               AWS region to use (e.g. us-west-2.
+                                    Default: us-east-1)
+
+    --key-id <id>                   key id on AWS
+
+    --secret-key <secret>           secret key on AWS
+
+    --host-base url                 URL to use as S3 host base
+                                    (Default: s3.amazonaws.com)
+
+    --host-bucket url               URL to use as S3 host bucket base
+                                    (Default: bucket.s3.amazonaws.com)
+
+  All options above are optional, except --bucket.
+
+  Sets options for Amazon S3 integration.
+"
+
+devpanel_cmd__set_s3_options() {
+  [ $# -eq 0 -o -z "$1" ] && usage
+
+  local bucket_name key_id secret_key host_base
+  local host_base host_bucket region
+  local delete_after_upload=no upload_by_default=yes
+  local var
+  local -a cmd_args=()
+
+  while [ -n "$1" ]; do
+    name="$1"
+    case "$name" in
+      --bucket)
+        [ -z "$2" ] && error_missing_value "$name"
+        bucket_name="$2"
+        shift 2
+        ;;
+
+      --key-id)
+        [ -z "$2" ] && error_missing_value "$name"
+        key_id="$2"
+        shift 2
+        ;;
+
+      --secret-key)
+        [ -z "$2" ] && error_missing_value "$name"
+        secret_key="$2"
+        shift 2
+        ;;
+
+      --host-base)
+        [ -z "$2" ] && error_missing_value "$name"
+        host_base="$2"
+        shift 2
+        ;;
+
+      --host-bucket)
+        [ -z "$2" ] && error_missing_value "$name"
+        host_bucket="$2"
+        shift 2
+        ;;
+
+      --upload-by-default)
+        [ -z "$2" ] && error_missing_value "$name"
+        if [ "$2" != yes -a "$2" != no ]; then
+          error "invalid value for --upload-by-default option. Must be yes/no." -
+          return 1
+        fi
+        upload_by_default="$2"
+        shift 2
+        ;;
+
+      --delete-after-upload)
+        [ -z "$2" ] && error_missing_value "$name"
+        if [ "$2" != yes -a "$2" != no ]; then
+          error "invalid value for --delete-after-upload option. Must be yes/no." -
+          return 1
+        fi
+        delete_after_upload="$2"
+        shift 2
+        ;;
+
+      --region)
+        [ -z "$2" ] && error_missing_value "$name"
+        region="$2"
+        shift 2
+        ;;
+
+      --help)
+        usage
+        ;;
+
+      --)
+        shift
+        break
+        ;;
+
+      *)
+        error "unknown option $name"
+        ;;
+    esac
+  done
+
+  if ! hash s3cmd &>/dev/null; then
+    error "command s3cmd is not installed." -
+    return $?
+  fi
+
+  if [ -z "$bucket_name" -a -z "$conf__s3__bucket_name" ]; then
+    error "missing bucket name. Please specify it." -
+    return $?
+  fi
+
+  if [ -n "$key_id" -a -z "$secret_key" ]; then
+    error "missing secret key." -
+    return $?
+  elif [ -n "$secret_key" -a -z "$key_id" ]; then
+    error "missing key_id." -
+    return $?
+  fi
+
+  local st
+  local -a opts_ar=() s3cfg_opts_ar=()
+  for var in bucket_name upload_by_default delete_after_upload; do
+    if [ -n "${!var}" ]; then
+      opts_ar+=( "s3.$var = ${!var}" )
+    fi
+  done
+
+  set_s3_options "${opts_ar[@]}"
+  st=$?
+
+  if [ $st -eq 0 ]; then
+    echo "Successfully saved S3 options."
+  else
+    error "failed to save s3 options" -
+    return $?
+  fi
+
+  if [ -n "$key_id" ]; then
+    s3cfg_opts_ar+=( default.access_key="$key_id"
+                      default.secret_key="$secret_key" )
+  fi
+
+  if [ -n "$host_base" ]; then
+    s3cfg_opts_ar+=( "default.host_base=$host_base" )
+    if [ -z "$host_bucket" ]; then
+      host_bucket="$host_base"
+    fi
+  fi
+
+  if [ -n "$host_bucket" ]; then
+    s3cfg_opts_ar+=( "default.host_bucket=$host_bucket" )
+  fi
+
+  if [ -n "$region" ]; then
+    s3cfg_opts_ar+=( "default.region=$region" )
+  fi
+
+  if [ ${#s3cfg_opts_ar[@]} -gt 0 ]; then
+    write_s3cfg @ "${s3cfg_opts_ar[@]}"
+    st=$?
+    if [ $st -ne 0 ]; then
+      error "failed to write s3cfg file" -
+      return $?
+    fi
+  fi
+
+  return 0
+}

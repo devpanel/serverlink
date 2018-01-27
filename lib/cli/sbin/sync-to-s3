@@ -1,0 +1,100 @@
+#!/bin/bash
+
+set_usage_msg \
+  "Usage: $bin_name ${cmd_ar[*]} <opts>
+
+  Options:
+    --vhost <name>              name of the vhost
+
+    --bucket <name>             name of the bucket (optional, if not
+                                specified the system default will be used)
+
+    --delete-after              delete the local files after the upload
+
+  Syncs the local vhost archive directory to S3.
+"
+
+devpanel_cmd__sync_to_s3() {
+  [ $# -eq 0 -o -z "$1" ] && usage
+
+  local vhost bucket delete_after
+  local var
+  local -a cmd_args=()
+
+  while [ -n "$1" ]; do
+    name="$1"
+    case "$name" in
+      --vhost)
+        [ -z "$2" ] && error_missing_value "$name"
+        vhost="$2"
+        shift 2
+        ;;
+
+      --bucket)
+        [ -z "$2" ] && error_missing_value "$name"
+        bucket="$2"
+        shift 2
+        ;;
+
+      --help)
+        usage
+        ;;
+
+      --delete-after)
+        delete_after=1
+        shift
+        ;;
+      --)
+        shift
+        break
+        ;;
+
+      *)
+        error "unknown option $name"
+        ;;
+    esac
+  done
+
+  if ! hash s3cmd &>/dev/null; then
+    error "command s3cmd is not installed." -
+    return $?
+  fi
+
+  local s3cfg_file=/etc/devpanel/provisioners/aws/.s3cfg/default
+  local -a s3cmd_opts_ar=( -c "$s3cfg_file" --exclude='*.md5'
+                            --exclude='*.sha1' )
+
+  local vhost_backups_dir s3_url_base
+
+  vhost_backups_dir=$(get_vhost_archives_dir "$vhost" )
+  if [ ! -d "$vhost_backups_dir" ]; then
+    [ -t 0 ] && echo "Warning: missing directory $vhost_backups_dir" 1>&2
+    return 0
+  fi
+
+  if [ -n "$conf__s3__upload_speed_limit" ]; then
+    if s3cmd --help 2>&1 | fgrep -q -- --limit-rate=; then
+      # check if s3cmd command is recent enough, and supports the limit rate option
+      # to control the speed limit
+      s3cmd_opts_ar+=( --limit-rate="$conf__s3__upload_speed_limit" )
+    fi
+  fi
+
+  s3_url_base=$(get_s3_url_base_for_vhost "$vhost" ) || return 1
+
+  if ! cd "$vhost_backups_dir" ; then
+    error "unable to chdir into $vhost_backups_dir" -
+    return $?
+  fi
+
+  local -i st
+  s3cmd "${s3cmd_opts_ar[@]}" sync ./ "$s3_url_base"
+  st=$?
+  if [ $st -eq 0 ]; then
+    if [ -n "$delete_after" -o "$conf__s3__delete_after_upload" == yes ]; then
+      devpanel_run clean synced files --vhost "$vhost"
+    fi
+  fi
+
+  return $st
+}

@@ -90,20 +90,22 @@ devpanel_cmd__restore_backup() {
     return $?
   fi
 
-  if ! vhost_exists_and_is_enabled "$vhost"; then
-    return $?
+  load_vhost_config "$vhost" || return $?
+
+  if ! is_vhost_enabled "$vhost"; then
+    error "this vhost is not enabled. Can't operate on a disabled vhost" -
+    return 1
   fi
 
-  get_linux_username_from_vhost "$vhost" && \
-  web_user="$_dp_value" || return $?
+  web_user="$v__vhost__linux_user"
 
-  vhost_home_dir=$(eval echo -n ~$web_user )
+  vhost_home_dir="$v__vhost__linux_user_home"
   if [ ! -d "$vhost_home_dir" ]; then
     error "unable to find home dir of vhost" -
     return $?
   fi
 
-  doc_root=$(get_docroot_from_vhost "$vhost" ) || return $?
+  doc_root="$v__vhost__document_root"
 
   temp_dir=$(mktemp -d)
   if [ $? -ne 0 ]; then
@@ -117,7 +119,7 @@ devpanel_cmd__restore_backup() {
   if [ $EUID -eq 0 ]; then
     # temporarily disable the vhost on apache for the app not to be modified
     # during the restore
-    "$sys_dir/libexec/config-vhost-apache" -D $vhost || return $?
+    "$sys_dir/libexec/rewrite-vhost-config" -D $vhost || return $?
   fi
   devpanel_trap_exit_cmds_ar+=( "devpanel_cmd__restore_backup_on_exit $vhost" )
 
@@ -181,7 +183,16 @@ devpanel_cmd__restore_backup() {
   fi
 
   # TODO(enhance): regenerate prod specific files (e.g. ~/logs ~/.my.cnf )
-  mysql_write_my_cnf "$vhost" "$web_user" "$vhost_home_dir"
+  if [ $EUID -eq 0 ]; then
+    run_as_user "$web_user" \
+      "rm -f $vhost_home_dir/{.my.cnf,logs} ; \
+       ln -s $v__vhost__logs_dir $vhost_home_dir/logs ; \
+       ln -s $v__mysql__client_file $vhost_home_dir/.my.cnf"
+  else
+    rm -f $vhost_home_dir/{.my.cnf,logs}
+    ln -s $v__vhost__logs_dir $vhost_home_dir/logs
+    ln -s $v__mysql__client_file $vhost_home_dir/.my.cnf
+  fi
 
   local extract_bin="$sys_dir/bin/extract-vhost-files-from-dir"
   local -a extract_cmd_ar=()

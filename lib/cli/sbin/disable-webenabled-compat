@@ -30,9 +30,7 @@ devpanel_cmd__disable_webenabled_compat() {
 
   [ -z "$confirmed" -o "$confirmed" != yes ] && usage
 
-  local metadata_str="rm-local webenabled_backwards"
-
-  echo "$metadata_str" | "$sys_dir/libexec/system-metadata-handler" -q
+  disable_webenabled_backwards_compat
   if [ $? -eq 0 ]; then
     echo "Successfully disabled Webenabled v1 compatibility."
   else

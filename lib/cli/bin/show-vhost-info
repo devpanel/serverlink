@@ -56,5 +56,7 @@ devpanel_cmd__show_vhost_info() {
     fi
   fi
 
+  load_vhost_config "$vhost" || return $?
+
   print_vhost_summary "$vhost"
 }

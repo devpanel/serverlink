@@ -95,16 +95,15 @@ if ! source "$lib_file"; then
   echo "Error: unable to load lib file $lib_file" 1>&2
   exit 1
 fi
+load_devpanel_config || exit $?
 
-get_linux_username_from_vhost "$vhost" && \
-user_web="$_dp_value"
-if [ $? -ne 0 ]; then
-  error "unable to get the linux username from vhost $vhost"
-fi
+load_vhost_config "$vhost" || exit $?
+
+user_web="$v__vhost__linux_user"
 user="b_${user_web#w_}"
 archive_list="$archive_dir/databases"
 archive_my_cnf="$archive_dir/b_.my.cnf"
-home="`eval \"echo ~$user\"`"
+home="$v__vhost__linux_user_home"
 date=`date  +'%Y%m%d'`
 vhost_config_dir="$sys_dir/config/vhosts/$vhost"
 

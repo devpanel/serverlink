@@ -65,12 +65,12 @@ devpanel_cmd__set_apache_port() {
   fi
 
   local ports_file
-  ports_file=$(get_apache_ports_file) || return $?
+  ports_file="$lamp__apache_includes__ports_file"
 
   if [ -n "$http_port" ]; then
-    curr_http_port=$(get_apache_http_port)
+    curr_http_port="$lamp__apache_vhosts__http_port"
     if [ "$curr_http_port" != "$http_port" ]; then
-      if set_apache_http_port "$http_port"; then
+      if save_opt_in_lamp_config "apache vhosts.http_port = $http_port"; then
         update_apache_port_file "$curr_http_port" "$http_port" "$ports_file"
         has_changed=1
       fi
@@ -78,9 +78,9 @@ devpanel_cmd__set_apache_port() {
   fi
 
   if [ -n "$https_port" ]; then
-    curr_https_port=$(get_apache_https_port)
+    curr_https_port="$lamp__apache_vhosts__https_port"
     if [ "$curr_https_port" != "$https_port" ]; then
-      if set_apache_https_port "$https_port"; then
+      if save_opt_in_lamp_config "apache vhosts.https_port = $https_port"; then
         update_apache_port_file "$curr_https_port" "$https_port" "$ports_file"
         has_changed=1
       fi

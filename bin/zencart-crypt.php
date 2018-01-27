@@ -1,4 +1,4 @@
-#!/opt/webenabled/config/os/pathnames/bin/php -q
+#!/usr/bin/env php
 <?php
   function zen_encrypt_password($plain) {
     $password = '';

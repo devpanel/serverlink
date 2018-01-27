@@ -57,6 +57,7 @@ lib_file="$sys_dir/lib/functions"
 if ! source "$lib_file"; then
   error "unable to source file $lib_file"
 fi
+load_devpanel_config || exit $?
 
 unset archive_file_url archive_file_url_raw
 unset db_dump_file_url db_dump_file_url_raw

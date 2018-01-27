@@ -1,0 +1,134 @@
+#!/bin/bash
+
+set_usage_msg \
+  "Usage: $bin_name ${cmd_ar[*]} --yes [opts]
+
+  Options:
+    --yes           confirm the intent to run the migrations
+    --start-n N     start at migration number N (when not specified, run
+                    from the last number executed, read from cache)
+
+  Run migration scripts.
+"
+
+devpanel_cmd__run_migrations() {
+  [ $# -eq 0 -o -z "$1" ] && usage
+
+  local name confirmed
+  local -i start_n
+  local scripts_dir="$sys_dir/src/migrations"
+
+  while [ -n "$1" ]; do
+    name="$1"
+    case "$name" in
+      --yes)
+        confirmed=yes
+        shift
+        ;;
+
+      --start-n)
+        [ -z "$2" ] && error_missing_value "$name"
+        if [[ "$2" =~ ^[0-9]{1,5}$ ]]; then
+          start_n=$2
+        else
+          error "invalid value passed to option $name" -
+          return $?
+        fi
+
+        shift 2
+        ;;
+
+      --help)
+        usage
+        ;;
+
+      --)
+        shift
+        break
+        ;;
+
+      *)
+        error "unknown option '$name'"
+        ;;
+    esac
+  done
+
+  [ -z "$confirmed" ] && usage
+
+  if [ -z "$conf__migrations__latest_step" ]; then
+    error "missing definition of 'conf__migrations__latest_step'" -
+    return 1
+  fi
+
+  if [ -z "$start_n" ]; then
+    load_state_data || return $?
+
+    if [ -n "$state__migrations__latest_step" ]; then
+      start_n=$(( $state__migrations__latest_step + 1 ))
+    else
+      error "didn't find the number from which to start. Please specify it." -
+      return $?
+    fi
+  fi
+
+  if [ $start_n -ge $conf__migrations__latest_step ]; then
+    echo "Ok. This server has already run all the required migrations."
+    return 0
+  fi
+
+  local file file_n
+  local -i curr_n=$start_n prev_n=0
+  local -i n_run=0
+
+  for file in $(ls "$scripts_dir"); do
+    if [ ! -f "$file" -a -x "$file" ]; then
+      continue
+    fi
+
+    if [[ ! "$file" =~ ^[0-9]{5}- ]]; then
+      continue
+    fi
+
+    file_n=${file%%-*}
+    if [ $file_n -gt $conf__migrations__latest_step ]; then
+      # run until the latest configured migration step
+      break
+    fi
+
+    if [ $file_n -lt $curr_n ]; then
+      continue
+    elif [ $file_n -gt $curr_n ]; then
+      prev_n=$curr_n
+      curr_n=$file_n
+    fi
+
+    echo "Executing migration script $file..."
+
+    # Design note:
+    #
+    # load the script as a import (instead of executing), so that it
+    # automatically has all the variables and libs imported (no need to
+    # write it again on each migration script. Also run it in a subshell so
+    # that it doesn't change variables in the current shell
+    #
+    n_run+=1
+    if ( . "$scripts_dir/$file" ); then
+      if [ $prev_n -ne $curr_n ]; then
+        save_opts_in_state "migrations.latest_step = $curr_n"
+        if [ $? -ne 0 ]; then
+          error "failed saving state information about step $curr_n" -
+          return $?
+        fi
+      fi
+    else
+      error "failed running file $file, step $curr_n" -
+      return $?
+    fi
+  done
+
+  if [ $n_run -eq 0 ]; then
+    echo "Ok. There's no migration to run."
+  fi
+
+  return 0
+}

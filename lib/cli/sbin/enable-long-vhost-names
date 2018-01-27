@@ -28,9 +28,7 @@ devpanel_cmd__enable_long_vhost_names() {
 
   [ -z "$confirmed" -o "$confirmed" != yes ] && usage
 
-  local metadata_str="set-local enable_long_vhost_names yes"
-
-  echo "$metadata_str" | "$sys_dir/libexec/system-metadata-handler" -q
+  enable_long_vhost_names
   if [ $? -eq 0 ]; then
     echo "Successfully enabled long vhost names."
   else

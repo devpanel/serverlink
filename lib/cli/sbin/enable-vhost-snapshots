@@ -29,7 +29,7 @@ devpanel_cmd__enable_vhost_snapshots() {
 
   local name vhost frequency hour day day_n retain metadata_str
   local -a allowed_freq_ar=( daily weekly monthly )
-  local -a cmd_args=()
+  local -a cmd_args=() opts_ar=()
 
   while [ -n "$1" ]; do
     name="$1"
@@ -106,19 +106,15 @@ devpanel_cmd__enable_vhost_snapshots() {
 
   "$sys_dir/libexec/check-vhost-name" archive "$vhost" || return $?
 
-  metadata_str="
-set config:backup_snapshot:$frequency:enabled 1
-set config:backup_snapshot:$frequency:hour $hour
-set config:backup_snapshot:$frequency:retention_unit $retain
-"
+  opts_ar+=( "recurring_snapshots $frequency.enabled = yes" )
+  opts_ar+=( "recurring_snapshots $frequency.hour = $hour" )
+  opts_ar+=( "recurring_snapshots $frequency.retention_unit = $retain" )
 
   if [ -n "$day" ]; then
-    metadata_str+=$'\n'
-    metadata_str+="set config:backup_snapshot:$frequency:day $day_n"$'\n'
+    opts_ar+=( "recurring_snapshots $frequency.day = $day" )
   fi
 
-  echo "$metadata_str" | "$sys_dir/libexec/apache-metadata-handler" -q "$vhost"
-  if [ $? -eq 0 ]; then
+  if save_opts_in_vhost_config "$vhost" "${opts_ar[@]}"; then
     echo "Successfully set $frequency snapshot options for vhost $vhost."
   else
     error "unable to apply snapshot options for vhost $vhost." -

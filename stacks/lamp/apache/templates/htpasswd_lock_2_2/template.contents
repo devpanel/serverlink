@@ -1,0 +1,19 @@
+  <Directory @@__VHOST__DOCUMENT_ROOT__@@>
+      AllowOverride AuthConfig FileInfo Indexes Limit Options
+      AuthUserFile "@@__VHOST__LINUX_USER_HOME__@@/.htpasswd"
+      AuthType Basic
+      AuthName "@@__VHOST__NAME__@@ authentication required"
+      Require valid-user
+      Satisfy any
+      Order Deny,Allow
+      Deny from all
+  </Directory>
+
+  # exception not to break the renewal of Let's encrypt certs for sites
+  # that are htpasswd protected
+  <Directory @@__VHOST__DOCUMENT_ROOT__@@/.well-known/acme-challenge/>
+      AuthType None
+      Require all granted
+      Order Allow,Deny
+      Allow from all
+  </Directory>

@@ -24,7 +24,6 @@ devpanel_cmd__add_vhost_include() {
 
   local name vhost file
   local tmp_file
-  local -a cmd_args_ar=()
   local reload=1 overwrite had_a_include
 
   while [ -n "$1" ]; do
@@ -49,7 +48,6 @@ devpanel_cmd__add_vhost_include() {
 
       --no-reload)
         unset reload
-        cmd_args_ar+=( -N )
         shift
         ;;
 
@@ -70,16 +68,12 @@ devpanel_cmd__add_vhost_include() {
 
   [ -z "$vhost" -o -z "$file" ] && usage
 
-  if ! vhost_exists "$vhost"; then
-    error "vhost '$vhost' doesn't exist." -
-    return $?
-  fi
+  load_vhost_config "$vhost" || return $?
 
-  if has_user_includes "$vhost"; then
-    had_a_include=1
-  fi
-  if  [ -n "$had_a_include" -a -z "$overwrite" ]; then
-    error "this vhost already has a include file. Please use --ovewrite to replace it."
+  if [ -n "$reload" ]; then
+    reload_opt=--
+  else
+    reload_opt=--no-reload
   fi
 
   if [ "$file" != - -a ! -f "$file" ]; then
@@ -88,7 +82,28 @@ devpanel_cmd__add_vhost_include() {
     error "include file is empty"
   fi
 
-  local config_dir="$sys_dir/config/vhosts/$vhost"
+  local config_dir="/etc/devpanel/lamp/vhosts/$vhost/apache"
+  local include_file="$config_dir/user_includes.inc"
+  local bkp_file="$include_file.bkp"
+
+  if [ -n "$v__vhost__user_includes" -a \
+          "$v__vhost__user_includes" == "yes" ]; then
+
+    had_a_include=1
+
+    if [ -z "$overwrite" ]; then
+      error "this vhost already has a include file. Please use --ovewrite to replace it." -
+      return $?
+    fi
+
+    if [ -f "$include_file" ] && ! cp -f "$include_file" "$bkp_file"; then
+      error "unable to make a copy of '$include_file'" -
+      return $?
+    elif [ -f "$bkp_file" ]; then
+      temp_files_ar+=( "$bkp_file" )
+    fi
+  fi
+
   tmp_file=$(mktemp "$config_dir/tmp_include.XXXXXX")
   if [ $? -eq 0 ]; then
     temp_files_ar+=( "$tmp_file" )
@@ -101,59 +116,53 @@ devpanel_cmd__add_vhost_include() {
   else
     cat "$file" >"$tmp_file"
   fi
-
   if [ $? -ne 0 ]; then
     error "unable to write to temporary file"
   fi
 
-  local int_file="${tmp_file%.*}.inc"
-  local final_file="$config_dir/user_includes.inc"
-
-  if ! mv -f "$tmp_file" "$int_file"; then
-    error "unable to move '$tmp_file' to $int_file"
+  local -a set_ar=( "vhost.user_includes = yes" )
+  if [ -z "$had_a_include" ]; then
+    if ! save_opts_in_vhost_config "$vhost" "${set_ar[@]}"; then
+      error "unable to save vhost configuration." -
+      return $?
+    fi
   fi
-  temp_files_ar+=( "$int_file" )
 
-  if set_user_include_metadata "$vhost" tmp_include; then
-    if apache_configtest; then
-      if [ -n "$had_a_include" ]; then
-        mv -f "$final_file" "$final_file.previous"
-      fi
+  if ! mv -f "$tmp_file" "$include_file"; then
+    error "unable to move '$tmp_file' to '$include_file'" -
+    return $?
+  fi
 
-      if mv -f "$int_file" "$final_file"; then
-        unset_user_include_metadata "$vhost" tmp_include
-        [ -z "$had_a_include" ] && set_user_include_metadata "$vhost" user_includes
-
-        if [ -n "$reload" ]; then
-          if ! devpanel_run rewrite vhost config --vhost "$vhost"; then
-            if [ -n "$had_a_include" ]; then
-              mv -f "$final_file.previous" "$final_file"
-            else
-              rm -f "$final_file"
-              unset_user_include_metadata "$vhost" user_includes
-            fi
-            return 1
-          fi
-        fi
-
-        if [ -n "$reload" ]; then
-          if reload_or_start_apache; then
-            echo "Successfully included file."
-          else
-            echo "Warning: included file, but apache reload failed." 1>&2
-          fi
-        fi
-
-        return 0
-      else
-        unset_user_include_metadata "$vhost" user_includes
-        error "unable to move $int_file to $final_file"
-      fi
-    else
-      unset_user_include_metadata "$vhost" tmp_include
-      error "this include created a malformed vhost config."
+  if devpanel_run rewrite vhost config --vhost "$vhost" $reload_opt; then
+    echo
+    echo -n "Successfully added include file."
+    if [ -n "$reload" ]; then
+      echo
+    else 
+      echo " Though Apache was not reloaded, as requested."
     fi
   else
-    error "unable to write vhost metadata."
+    if [ -n "$had_a_include" -a -f "$bkp_file" ]; then
+      mv -f "$bkp_file" "$include_file"
+    else
+      save_opts_in_vhost_config "$vhost" "- vhost.user_includes"
+      rm -f "$include_file"
+    fi
+
+    echo
+    if [ -n "$reload" ]; then
+      if devpanel_run rewrite vhost config --vhost "$vhost" $reload_opt; then
+        error "failed to add include file. It created an invalid Apache config." -
+        return $?
+      else
+        error "reverted vhost config, but Apache still has problems." -
+        return $?
+      fi
+    fi
+
+    error "failed to generate a valid Apache config file" -
+    return $?
   fi
+
+  return 0
 }

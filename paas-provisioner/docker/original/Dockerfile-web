@@ -7,7 +7,7 @@ ARG SEEDAPP_ARCHIVE=$SEEDAPP_ARCHIVE
 ARG DOMAIN=$DOMAIN
 
 # setup environment for the app
-RUN /opt/webenabled/libexec/config-vhost-names-default ${DOMAIN}
+RUN /opt/webenabled/bin/devpanel set base hostname --name ${DOMAIN}
 RUN /opt/webenabled/libexec/restore-vhost -F ${USER} /opt/webenabled/${APP}
 RUN mv /etc/mysql/my.cnf /etc/mysql/my.cnf.orig
 

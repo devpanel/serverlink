@@ -32,12 +32,15 @@ devpanel_cmd__rewrite_vhost_config() {
       --help)
         usage
         ;;
-      --[A-Za-z0-9_-]*)
-        error "unknown option $name" - 
-				return $?
+
+      --)
+        shift
+        break
         ;;
+
       *)
-				usage
+        error "unknown option $name" - 
+        return $?
         ;;
     esac
   done
@@ -48,5 +51,5 @@ devpanel_cmd__rewrite_vhost_config() {
     exit 1
   fi
 
-  "$sys_dir/libexec/config-vhost-apache" "${cmd_args[@]}" "$vhost"
+  "$sys_dir/libexec/rewrite-vhost-config" "${cmd_args[@]}" "$vhost"
 }

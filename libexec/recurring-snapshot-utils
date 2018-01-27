@@ -65,13 +65,18 @@ should_run_backup_now() {
   local frequency="$1"
   local hour="$2"
   local day="$3"
+  local day_n
 
-  if [ -z "$hour" -a -z "$day" ]; then
-    if [ -z "$quiet" ]; then
-      echo "Skipping: no $frequency snapshots defined for vhost $vhost"
+  if [ "$frequency" != daily ]; then
+    day_n=$(translate_dayname_to_number "$day" ) || return $?
+
+    if [ -z "$hour" -a -z "$day" ]; then
+      if [ -z "$quiet" ]; then
+        echo "Skipping: no $frequency snapshots defined for vhost $vhost"
+      fi
+
+      return 1
     fi
-
-    return 1
   fi
 
   local hour_now day_now day_of_week
@@ -107,22 +112,22 @@ should_run_backup_now() {
       fi
       ;;
     weekly)
-      if [ "$day_of_week" == "$day" ]; then
+      if [ "$day_of_week" == "$day_n" ]; then
         return 0
       else
         if [ -z "$quiet" ]; then
-          echo "Skipping: $frequency backup time is at day $day of the week"
+          echo "Skipping: $frequency backup time is on ${day}s"
         fi
 
         return 1
       fi
       ;;
     monthly)
-      if [ -n "$day" -a "$day_now" == "$day" ]; then
+      if [ -n "$day_n" -a "$day_now" == "$day_n" ]; then
         return 0
       else
         if [ -z "$quiet" ]; then
-          echo "Skipping: $frequency backup happens at day $day of the month"
+          echo "Skipping: $frequency backup happens on ${day}s"
         fi
         return 1
       fi
@@ -137,9 +142,14 @@ should_run_backup_now() {
 
 get_retention_unit_value() {
   local freq="$1"
+  local var="v__recurring_snapshots_${freq}__retention_unit"
 
-  get_metadata_value "$vhost_conf_dir" \
-    config:backup_snapshot:$freq:retention_unit 2>/dev/null
+  if [ -n "${!var}" ]; then
+    echo "${!var}"
+    return 0
+  else
+    return 1
+  fi
 }
 
 cleanup() {
@@ -173,14 +183,15 @@ self_bin=$(readlink -e "$0")
 if [ $? -ne 0 ]; then
   error "unable to identify the script path"
 fi
-self_dir=${self_bin%/*}
-sys_dir=$(readlink -m $self_dir/..)
+self_dir="${self_bin%/*}"
+sys_dir="${self_dir%/*}"
 lib_file="$sys_dir/lib/functions"
 system_cache_dir="$sys_dir/var/cache/vhost"
 
 if ! source "$lib_file"; then
   error "unable to source file $lib_file"
 fi
+load_devpanel_config || exit $?
 
 system_data_dir=$(get_devpanel_datadir ) || exit 1
 
@@ -204,17 +215,19 @@ case $op in
     vhost="$1"
     frequency="$2"
 
+    load_vhost_config "$vhost" || exit $?
+
     case $frequency in
       daily)
-        hour=$(get_recurring_backup_property $frequency hour "$vhost" 2>/dev/null)
+        hour="$v__recurring_snapshots_daily__hour"
         ;;
       weekly)
-        hour=$(get_recurring_backup_property $frequency hour "$vhost" 2>/dev/null)
-        day=$(get_recurring_backup_property  $frequency day  "$vhost" 2>/dev/null)
+        hour="$v__recurring_snapshots_weekly__hour"
+        day="$v__recurring_snapshots_weekly__day"
         ;;
       monthly)
-        hour=$(get_recurring_backup_property $frequency hour "$vhost" 2>/dev/null)
-        day=$(get_recurring_backup_property  $frequency day  "$vhost" 2>/dev/null)
+        hour="$v__recurring_snapshots_monthly__hour"
+        day="$v__recurring_snapshots_monthly__day"
         ;;
       *)
         error "invalid frequency specified. Valid ones are: daily, weekly or monthly"
@@ -225,23 +238,20 @@ case $op in
       exit 1
     fi
      
-		get_linux_username_from_vhost "$vhost" && \
-		vhost_user="$_dp_value"
-		if [ $? -ne 0 ]; then
-			error "unable to get the linux username from vhost $vhost"
-		fi
+    vhost_user="$v__vhost__linux_user"
 		vhost_group="$vhost_user"
 
-    archive_template_str=$(get_template_str_for_recurring_archive_snapshot "$frequency" ) || exit 1
+    tmpl_var="conf__template_strings__vhost_snapshot_${frequency}"
 
-    if ! should_run_backup_now "$frequency" "$hour" "$day"; then
+    archive_template_str="${!tmpl_var}"
+    vhost_archive_dir=$(get_vhost_archives_dir "$vhost" ) || exit $?
+
+    if ! are_snapshots_enabled_for_vhost "$vhost" "$frequency"; then
       exit 0
     fi
 
-    vhost_conf_dir="$sys_dir/config/vhosts/$vhost"
-    vhost_archive_dir="$system_data_dir/vhost_archives/$vhost"
-    if [ ! -d "$vhost_conf_dir" ]; then
-      error "missing vhost config directory $vhost_conf_dir"
+    if ! should_run_backup_now "$frequency" "$hour" "$day"; then
+      exit 0
     fi
 
     cache_dir="$system_cache_dir/$vhost"
@@ -264,7 +274,7 @@ case $op in
     # check exclude files for each frequency
     unset exclude_file
     declare -i n_excl_files=0
-    vhost_dir=$(eval echo \~$vhost_user)
+    vhost_dir="$v__vhost__linux_user_home"
     for _tmp_freq in daily weekly monthly; do
       _tmp_excl_f="$vhost_dir/.devpanel/recurring-snapshots.exclude-$_tmp_freq"
       if [ -f "$_tmp_excl_f" ]; then
@@ -376,13 +386,19 @@ case $op in
       exit 1
     fi
 
+    load_vhost_config "$vhost" || exit $?
+
     if [ -n "$verbose" ]; then
       echo "Evaluating vhost $vhost..."
     fi
 
-    vhost_conf_dir="$sys_dir/config/vhosts/$vhost"
-    vhost_archive_dir="$system_data_dir/vhost_archives/$vhost"
+    vhost_conf_dir="$v__vhost__config_dir"
+    vhost_archive_dir=$(get_vhost_archives_dir "$vhost" ) || exit $?
     cache_dir="$system_cache_dir/$vhost"
+
+    if [ ! -d "$cache_dir" ]; then
+      exit 0
+    fi
 
     if ! lock_path "$vhost_conf_dir" >/dev/null; then
       error "unable to lock vhost dir $vhost_conf_dir"

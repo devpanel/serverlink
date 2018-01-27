@@ -31,5 +31,9 @@ devpanel_cmd__enable_distro_updates() {
 
   [ -z "$confirmed" -o "$confirmed" != yes ] && usage
 
-  "$sys_dir/libexec/distro-updates" "${cmd_args[@]}" on
+  if save_opts_in_devpanel_config "distro.updates_enabled = yes"; then
+    echo "Successfully enabled distro updates."
+  else
+    error "unable to save config file" -
+  fi
 }

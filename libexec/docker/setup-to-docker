@@ -52,7 +52,7 @@ if [ $? -ne 0 ]; then
 elif ! source "$lib_file"; then
   error "failed to parse library file '$lib_file'"
 fi
-
+load_devpanel_config || exit $?
 
 tasks_url=${tasks_url:-"https://tasks.devpanel.com/"}
 

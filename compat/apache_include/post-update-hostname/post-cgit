@@ -24,10 +24,12 @@ if ! source "$lib_file"; then
   exit 1
 fi
 
-git_vhost_template=$(get_git_vhost_template ) || exit $?
+load_devpanel_config || exit $?
+
+git_vhost_template=$lamp__apache_templates__git_vhost
 
 "$system_dir/bin/template-tool" -o "$git_vhost_file" \
-  "$apache_include_dir/$git_vhost_template" apache_virtwww_domain
+  "$apache_include_dir/$git_vhost_template"
 
 if [ $? -ne 0 ]; then
   error "unable to update the server domain."

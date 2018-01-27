@@ -294,7 +294,7 @@ cleanup_import_split_db() {
 }
 
 guess_database_name() {
-  db_name=$(get_apache_metadata_value "$sys_dir" 'app:0:_:db_name')
+  db_name=$v__app__database_name
   if [ $? -eq 0 -a -n "$db_name" ]; then
     echo "$db_name"
     return 0
@@ -328,6 +328,13 @@ lib_file="$sys_dir/lib/functions"
 if ! source "$lib_file"; then
   echo "Error: unable to source lib file $lib_file" 1>&2
   exit 1
+fi
+load_devpanel_config || exit $?
+
+if vhost=$(get_vhost_from_linuxuser ); then
+  load_vhost_config "$vhost" || exit $?
+else
+  error "unable to get vhost for current user"
 fi
 
 case "$operation" in

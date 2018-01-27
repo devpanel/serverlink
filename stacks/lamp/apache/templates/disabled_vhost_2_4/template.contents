@@ -1,0 +1,8 @@
+<VirtualHost @@__VHOST__IP_ADDR__@@:@@__VHOST__HTTP_PORT__@@>
+  ServerName @@__VHOST__SERVER_NAME__@@
+  ServerAlias @@__VHOST__SERVER_ALIAS__@@
+
+  DocumentRoot /home/clients/websites/w_/public_html/disabled_vhost
+
+  Redirect 302 /index.html /index-disabled.html
+</VirtualHost>

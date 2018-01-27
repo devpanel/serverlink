@@ -30,6 +30,7 @@ if ! source "$dir/../lib/functions"; then
   echo "Error: unable to import functions" 1>&2
   exit 1
 fi
+load_devpanel_config || exit $?
 
 if ! hash curl &>/dev/null; then
   error "curl is not installed or not in the PATH"

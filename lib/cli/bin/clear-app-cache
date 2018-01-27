@@ -38,22 +38,14 @@ devpanel_cmd__clear_app_cache() {
     esac
   done
 
-  if [ $EUID -eq 0 ]; then
-    [ -z "$vhost" ] && error_missing_param vhost
+	[ $EUID -eq 0 -a -z "$vhost" ] && error_missing_param vhost
 
-    if ! vhost_exists "$vhost"; then
-      error "vhost doesn't exist."
-    fi
-
-    get_linux_username_from_vhost "$vhost" && \
-    user="$_dp_value" || error "unable to get linux user from vhost"
-  else
-    if vhost=$(get_vhost_from_linuxuser); then
-      user="$USER"
-    else
-      error "unable to determine vhost for current user"
-    fi
+  if [ $EUID -ne 0 ]; then
+    vhost=$(get_vhost_from_linuxuser ) || return $?
   fi
+
+  load_vhost_config "$vhost" || return $?
+  local user="$v__vhost__linux_user"
 
   local exec_bin="$sys_dir/bin/restore-vhost-subsystem"
 

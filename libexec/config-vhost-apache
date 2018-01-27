@@ -333,11 +333,10 @@ for inc_file in "$lib_file" "$vars_file"; do
   fi
 done
 
-get_linux_username_from_vhost "$vhost" && \
-user="$_dp_value"
-if [ $? -ne 0 ]; then
-  error "unable to get the linux username from vhost $vhost"
-fi
+load_devpanel_config || exit $?
+
+load_vhost_config "$vhost" || exit $?
+user="$v__vhost__linux_user"
 
 doc_root=$(get_docroot_from_vhost "$vhost")
 if [ $? -ne 0 -o -z "$doc_root" ]; then

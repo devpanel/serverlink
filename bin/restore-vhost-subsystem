@@ -115,21 +115,29 @@ is_valid_subsystem_name_format() {
 }
 
 set_database_variables() {
-  database=`deref_contents "$config_dir/app:0:_:db_name"`
-  if [ $? -ne 0 ]; then
-    database="$subsystem"
+  if [ -n "$v__app__database_name" ]; then
+    database="$v__app__database_name"
+  else
+    database=`deref_contents "$config_dir/app:0:_:db_name"`
+    if [ $? -ne 0 ]; then
+      database="$subsystem"
+    fi
   fi
 
   echo "Obtaining mysql credentials"
   if [ -n "$use_my_cnf" ]; then
-    mysql_host=`ini_section_get_key_value ~/.my.cnf client host`
-    mysql_user=`ini_section_get_key_value ~/.my.cnf client user`
-    mysql_port=`ini_section_get_key_value ~/.my.cnf client port`
-    mysql_password=`ini_section_get_key_value  ~/.my.cnf client password`
+    if [ -n "$v__mysql__client__host" ]; then
+      mysql_host="$v__mysql__client__host"
+      mysql_user="$v__mysql__client__user"
+      mysql_port="$v__mysql__client__port"
+      mysql_password="$v__mysql__client__password"
 
-    # remove leading and trailing quotes from the password
-    mysql_password=${mysql_password#[\"\']}
-    mysql_password=${mysql_password%[\"\']}
+      # remove leading and trailing quotes from the password
+      mysql_password=${mysql_password#[\"\']}
+      mysql_password=${mysql_password%[\"\']}
+    else
+      error "mysql information not available."
+    fi
   elif [ -L "$config_dir/app:0:_:db_host" ]; then
     mysql_host=`deref_contents "$config_dir/app:0:_:db_host"`
     mysql_port=`deref_contents "$config_dir/app:0:_:db_port"`
@@ -411,6 +419,7 @@ cleanup_env_vars
 # load auxiliary functions from devPanel library
 curr_dir="`dirname "${BASH_SOURCE[0]}"`"
 we_base_dir=`readlink -e "$curr_dir/.."`
+use_my_cnf=yes
 
 self_path_dir="$we_base_dir/bin/.path"
 if [[ "$PATH" != *"$self_path_dir"* ]]; then
@@ -425,6 +434,7 @@ fi
 if ! source "$lib_file"; then
   error "unable to load the external library file '$lib_file'"
 fi
+load_devpanel_config || exit $?
 
 while getopts 'pPMm:s:O:iInFCU' OPTOPT; do
   case $OPTOPT in
@@ -500,6 +510,8 @@ vhost_config_dir=.webenabled/private
 dir=`dirname "$0"`
 seeds_home_dir="$dir/seeds"
 
+load_vhost_config "$vhost" || exit $?
+
 if [ -z "$subsystem" ]; then
   subsystem=`get_app_type_from_vhost "$vhost"`
   if [ $? -ne 0 ]; then
@@ -528,7 +540,7 @@ fi
 test_flags_logic    || error "Inconsistency in the cmdline flags"
 test_target_account || error "Problems in target user account"
 
-fqdn=$(get_vhost_default_hostname "$vhost") || exit $?
+fqdn="$v__vhost__server_name"
 
 # some of the scripts of the seed apps use relative paths, and some users
 # add lines to .bash_profile and .bashrc to chdir to the public_html by
@@ -539,7 +551,7 @@ if ! cd "$HOME"; then
 fi
 
 # auxiliary variable to be used by the templates
-public_html_dir=$(get_docroot_from_vhost "$vhost") || exit $?
+public_html_dir="$v__vhost__document_root"
 
 export DEVPANEL_VHOST_PUBLIC_DIR="$public_html_dir"
 

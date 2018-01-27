@@ -1,7 +1,7 @@
 #!/bin/bash
 
 usage() {
-  echo "Usage: `basename "$0"` [ options ] [ directory ]
+  echo "Usage: "${0##*/}" [ options ] [ directory ]
 
   Options:
     -m <max_depth>        specify the maximum number of directories allowed to
@@ -49,16 +49,23 @@ if ! . "$lib_f"; then
   echo "Error: unable to import $lib_f" 1>&2
   exit 1
 fi
+load_devpanel_config || exit $?
+
+if [ $EUID -eq 0 -a -z "$1" ]; then
+  usage
+fi
 
 if [ -n "$1" ]; then
   backups_dir="$1"
-elif [ -z "$1" -a ${#USER} -gt 2 -a "${USER:0:2}" == "w_" ]; then
-  data_dir=$(get_devpanel_datadir ) || exit 1
-
+else
   vhost=$(get_vhost_from_linuxuser)
-  backups_dir="$data_dir/vhost_archives/$vhost"
-elif [ -z "$1" ]; then
-  error "unable to auto detect directory. Please specify it manually (see usage, use argument -h)."
+  if [ $? -ne 0 ]; then
+    error "unable to get vhost from linux user"
+  fi
+
+  load_vhost_config "$vhost" || exit $?
+
+  backups_dir="$v__vhost__archives_dir"
 fi
 
 if [ ! -d "$backups_dir" ]; then

@@ -62,17 +62,13 @@ if ! source "$lib_file"; then
   echo "Error: unable to load lib file '$lib_file'" 1>&2
   exit 1
 fi
+load_devpanel_config || exit $?
 
-get_linux_username_from_vhost "$src_vhost" && \
-source_vuser="$_dp_value"
-if [ $? -ne 0 ]; then
-  error "unable to get the linux username from vhost $src_vhost"
-fi
-
-archive_dir=$(get_devpanel_datadir ) || exit 1
+load_vhost_config "$src_vhost" || exit $?
+source_vuser="$v__vhost__linux_user"
 
 tmp_archive="tmp_archive_$src_vhost-$(date +%b-%d-%Y--%H-%M).tgz"
-tmp_archive_fp="$archive_dir/vhost_archives/$src_vhost/$tmp_archive"
+tmp_archive_fp="$v__vhost__archives_dir/$tmp_archive"
 
 echo "Cloning stage 1: archive $src_vhost to $tmp_archive"
 if ! $dir/archive-vhost "$src_vhost" "$tmp_archive"

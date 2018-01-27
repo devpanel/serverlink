@@ -240,19 +240,17 @@ case "$op" in
       error "can't enable and disable at the same time"
     fi
 
-    upd_str=""
-    if [ -n "$do_enable" ]; then
-      upd_str+="set upload_archives_to_s3 1"$'\n'
-    elif [ -n "$do_disable" ]; then
-      upd_str+="rm upload_archives_to_s3"$'\n'
+    if [ -n "$do_disable" ]; then
+      disable_s3_global_uploads
+      st=$?
     fi
 
     if [ -n "$do_enable" -a -n "$bucket_name" ]; then
-      upd_str+="set s3_bucket_vhost_archives $bucket_name"$'\n'
+      set_s3_bucket "$bucket_name"
+      st=$?
     fi
 
-    echo "$upd_str" | "$sys_dir/libexec/system-metadata-handler" -q
-    if [ $? -eq 0 ]; then
+    if [ $st -eq 0 ]; then
       echo "Successfully modified server options."
     else
       error "unable to update server options."
@@ -260,7 +258,7 @@ case "$op" in
 
     st=0
     if [ -n "$read_stdin" ]; then
-      s3cfg_file="$sys_dir/etc/s3cfg"
+      s3cfg_file="/etc/devpanel/.s3cfg"
 
       umask 077
       "$sys_dir/bin/update-ini-file" -c "$s3cfg_file"

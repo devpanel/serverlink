@@ -50,6 +50,7 @@ if ! source "$lib_file"; then
   echo "Error: unable to import functions from file $lib_file" 1>&2
   exit 1
 fi
+load_devpanel_config || exit $?
 
 vhost_conf_dir="$sys_dir/config/vhosts/$vhost"
 

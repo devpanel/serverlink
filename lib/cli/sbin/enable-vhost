@@ -12,7 +12,7 @@ set_usage_msg \
 devpanel_cmd__enable_vhost() {
   [ $# -eq 0 -o -z "$1" ] && usage
 
-  local name vhost file
+  local name vhost
   local -a cmd_args=()
 
   while [ -n "$1" ]; do
@@ -23,20 +23,55 @@ devpanel_cmd__enable_vhost() {
         vhost="$2"
         shift 2
         ;;
+
       --help)
         usage
         ;;
-      --[A-Za-z0-9_-]*)
-        error "unknown option $name"
-        ;;
-      *)
-        cmd_args+=( "$name" )
+
+      --)
         shift
+        break
+        ;;
+
+      *)
+        error "unknown option $name"
         ;;
     esac
   done
 
   [ -z "$vhost" ] && error_missing_param vhost
 
-  "$sys_dir/libexec/unlock-vhost" "${cmd_args[@]}" $vhost
+  load_vhost_config "$vhost" || return $?
+
+  if is_vhost_enabled "$vhost"; then
+    echo "Warning: vhost is already enabled. Doing nothing..." 1>&2
+    return 0
+  fi
+
+  user="$v__vhost__linux_user"
+
+  if "$sys_dir/libexec/ignore-quota" "$user" 8 \
+      usermod -U "$user"; then
+    echo "Unlocked user's password"
+  else
+    error "failed to lock user's password" -
+    return $?
+  fi
+
+  if run_as_user "$user" "$sys_dir/bin/unlock-vhost-ssh"; then
+    echo "Unlocked .ssh/authorized_keys"
+  else
+    echo "Warning: failed to unlock ssh authorized_keys file" 1>&2
+  fi
+
+  if "$sys_dir/libexec/ignore-quota" "$user" 8 \
+     su -l -c "$sys_dir/bin/unlock-vhost-crontab" "$user"; then
+    echo "Unlocked user's crontab"
+  else
+    echo "Warning: failed to unlock crontab" 1>&2
+  fi
+
+  save_opts_in_vhost_config "$vhost" "vhost.enabled = yes" || return $?
+
+  rewrite_vhost_apache_config "$vhost"
 }

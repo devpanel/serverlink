@@ -2,11 +2,14 @@
 # Options:
 #   -n - do not activate apache vhost, use the 'Vhost-simple-dummy' macro
 
-[ "$1" == '--help' ] && usage
+function usage() {
+  echo "Usage: ${0##*/} <vhost> [domain.tld,alias[,...]]"
+	exit 1
+}
 
-dummy=""
 
-unset custom_template
+[ -z "$1" -o "$1" == '--help' ] && usage
+
 while getopts "n" OPTOPT
 do
   case "$OPTOPT" in
@@ -14,282 +17,158 @@ do
     *) exit 1;;
   esac
 done
-shift `expr $OPTIND - 1`
+[ $OPTIND -gt 1 ] && shift `expr $OPTIND - 1`
 
-progname=$(basename "$0")
-dir=$(dirname "$0")
+[ -z "$1" ] && usage
 
-we_base=`readlink -e "$dir/.."`
-dir_bin="$we_base/bin"
+self_bin=`readlink -e "$0"`
+if [ $? -ne 0 ]; then
+  echo "Error: unable to get self path" 1>&2
+  exit 1
+fi
 
-apache_metadata_bin="$we_base/libexec/apache-metadata-handler"
+self_dir="${self_bin%/*}"
+sys_dir="${self_dir%/*}"
 
-pathnames="$dir/../config/os/pathnames"
-#macro_file="$dir/../config/names/apache-macro"
-
-lib_file="$we_base/lib/functions"
+lib_file="$sys_dir/lib/functions"
 if ! source "$lib_file"; then
   echo "Error: unable to source lib file '$lib_file'" 1>&2
   exit 1
 fi
 
-chcgi=$(get_path_of_chcgi ) || exit 1
-edquota=$(get_path_of_edquota ) || exit 1
+load_devpanel_config || exit $?
 
-VIRTWWW_CFGDIR=$(get_apache_virtwww_config_dir ) || exit $?
-VIRTWWW_LOGDIR=$(get_apache_virtwww_log_dir ) || exit $?
-
-apache_group=$(get_apache_exec_group_name ) || exit 1
-WEBSITES_HOME=$(get_vhosts_homedir ) || exit 1
-
-server_base_domain=$(get_server_base_domain) || exit $?
-
-template_file="$we_base/config/packages/apache_vhost/_:template"
-if [ -f "$template_file" ]; then
-  assign_deref_contents_or_exit apache_vhost_template "$template_file"
-else
-  apache_vhost_template=$(get_apache_vhost_template ) || exit $?
-fi
-
-linuxuser_vhost_dir=$(get_linuxuser_vhost_dir)
-
-passgen="$dir_bin/genpass"
-
-ADDON_GROUPS=
-ADDON_GROUPS_FILE="$dir/../config/os/names/groups"
-
-if [ -s "$ADDON_GROUPS_FILE" ]
-then
-  ADDON_GROUPS=`paste -sd, <"$ADDON_GROUPS_FILE"`
-fi
-MYSQL_LOCAL=yes
-
-
-function usage() {
-    cat << EOF
-Usage: $progname [[account_name_base] [domain.tld[,alias[,...]]]]
-
-EOF
-    exit 1
-}
-
-function check_domain_name() {
-    local DOMAIN_NAMES IFS
-    DOMAIN_NAMES="$*"
-    IFS=', '
-    for name in $DOMAIN_NAMES ; do
-        result=$(echo "$name" | tr -d '[:alnum:].-')
-        if [ -n "$result" ]; then
-          echo "$FUNCNAME(): '$name' contains invalid characters '$result'"
-          return 1
-        fi
-    done
-    return 0
-}
-
-unset ACCOUNT_NAME
+unset domains_list_raw domains_list domains_txt
 vhost="$1"
-DOMAIN_NAMES="$2"
+[ -n "$2" ] && domains_list_raw="$2"
 
-"$we_base/libexec/check-vhost-name" restore "$vhost" || exit $?
+"$sys_dir/libexec/check-vhost-name" restore "$vhost" || exit $?
 
-if [ -n "$DOMAIN_NAMES" ] && ! check_domain_name "$DOMAIN_NAMES"; then
-  exit 1
+base_domain="$vhost.$lamp__apache_vhosts__virtwww_domain"
+domains_txt="$base_domain"
+
+if [ -n "$domains_list_raw" ]; then
+  domains_list=${domains_list_raw//,/ }
+  for domain in $domains_list; do
+    if ! is_valid_domain_string "$domain"; then
+      error "invalid domain string '$domain'"
+    elif curr_vhost_with_domain=$(get_vhost_with_hostname "$domain"); then
+      error "domain '$domain' is already on vhost '$curr_vhost_with_domain'"
+    fi
+
+    if [ -n "$domains_txt" ]; then
+      if ! in_array "$domain" $domains_txt; then
+        domains_txt+=" $domain"
+      fi
+    else
+      domains_txt="$domain"
+    fi
+  done
 fi
 
-generate_linux_username_for_vhost "$vhost" && ACCOUNT_NAME="$_dp_value"
+generate_linux_username_for_vhost "$vhost" && web_user="$_dp_value"
 if [ $? -ne 0 ]; then
   error "unable to generate linux username for vhost"
 fi
 
-DB_ACCOUNT_NAME="b_$ACCOUNT_NAME"
-VHOST_HOME="$WEBSITES_HOME/$ACCOUNT_NAME"
-VHOST_DOC_ROOT="$VHOST_HOME/public_html/$vhost"
-
-# stack stuff
-config_base_dir="$we_base/config/vhosts"
-config_dir="$config_base_dir/$vhost"
-vhost_cache_dir="$we_base/var/cache/vhost/$vhost"
-if [ ! -e "$config_base_dir" ] && \
-  ! mkdir -m 755 "$config_base_dir"; then
-  error "unable to create directory '$config_base_dir'"
-fi
-# /stack stuff
-
-echo "System account: $ACCOUNT_NAME"
-
-echo '---[ creating new virtual host ]---'
-
 # apache vhost
-  # create vhost group
-echo -n "+ checking for '$ACCOUNT_NAME' group ... "
-if grep -E "^$ACCOUNT_NAME:" /etc/group &>/dev/null; then
-    echo 'found'
-else
-    echo 'not found'
-    echo -n "+ creating '$ACCOUNT_NAME' group ... "
-    if ! groupadd "$ACCOUNT_NAME" ; then
-        echo
-        echo 'Aborting'
-        exit 2
-    fi
-    echo 'done'
+# create vhost group
+if ! getent group "$web_user"; then
+  if groupadd "$web_user"; then
+    echo "Created group: $web_user"
+  else
+    error "failed to create group '$web_user'"
+  fi
 fi
 
 # create linux user for vhost
-echo -n "+ checking for '$ACCOUNT_NAME' account ... "
-if [ x$(id -un "$ACCOUNT_NAME" 2>/dev/null) == "x$ACCOUNT_NAME" ]; then
-    echo 'found'
-    echo -n "+ checking primary group of '$ACCOUNT_NAME' account ... "
-    if [ x$(id -gn "$ACCOUNT_NAME" 2>/dev/null) != x"$apache_group" ]; then
-        echo 'failed'
-        echo
-        echo "Error: although '$ACCOUNT_NAME' account exists, it's primary group isn't '$apache_group'"
-        echo 'Aborting'
-        exit 2
-    fi
-    echo "ok, '$apache_group'"
-else
-    echo 'not found'
-    echo -n "+ creating '$ACCOUNT_NAME' account ... "
-    if ! useradd -g "$apache_group" -G "$ACCOUNT_NAME${ADDON_GROUPS:+,$ADDON_GROUPS}" \
-        -m -d "$VHOST_HOME" "$ACCOUNT_NAME"; then
-        echo
-        echo 'Aborting'
-        exit 2
-    fi
-    echo 'done'
+vhost_home="$lamp__apache_paths__virtwww_homedir/$web_user"
+doc_root="$vhost_home/public_html/$vhost"
+
+if ! getent passwd "$web_user"; then
+  if useradd -m -d "$vhost_home" -g "$lamp__apache__exec_group" \
+     -G "$web_user" "$web_user"; then
+    echo "Created user: $web_user"
+  else
+    error "failed to create web user '$web_user'"
+  fi
 fi
+
+ln -s "$vhost" "$lamp__paths__user_vhost_map/$web_user"
 # /linux user
 
-# stack stuff: chown stuff dir to just created user
+config_dir="$lamp__paths__vhosts_config_dir/$vhost"
 if ! mkdir -m 750 "$config_dir"; then
-  echo "Error: unable to create directory '$config_dir'" 1>&2
-  exit 1
+  error "unable to create directory '$config_dir'"
 fi
 
-if ! chown "root":"$ACCOUNT_NAME" "$config_dir"; then
-  echo "Error: unable to chown dir '$config_dir' to user '$ACCOUNT_NAME'" 1>&2
-  exit 1
+if ! mkdir -m 750 "$config_dir/apache" "$config_dir/ssl"; then
+  error "unable to create auxiliary dirs"
 fi
 
+touch "$config_dir/config.ini"
+chmod 640 "$config_dir/config.ini"
+chgrp -R "$web_user" "$config_dir"
+
+vhost_cache_dir="$sys_dir/var/cache/vhost/$vhost"
 mkdir -m 2750 $vhost_cache_dir
-chown root:$ACCOUNT_NAME $vhost_cache_dir
-
-set_vhost_base_domain      "$vhost" || exit $?
-
-# /stack stuff
-
-# apache vhost: create the basic directory structure
-echo -n '+ configuring home directory for virtual host ... '
-chgrp $apache_group "$VHOST_HOME" || exit 2
-su - -c "
-set -e
-chmod 0710 \"$VHOST_HOME\"
-mkdir -m 0711 ~/.webenabled ~/.webenabled/private
-# start of PHP hack (added by (GM) on 20050923)
-mkdir -p \"$VHOST_HOME/bin\"
-chmod 0700 \"$VHOST_HOME/bin\"
-# end of PHP hack
-mkdir -m 0755 -p \"$VHOST_HOME/public_html/$vhost\"
-mkdir -p \"$VHOST_HOME/public_html/gen\"
-mkdir -m 711 -p \"$VHOST_HOME/public_html/gen/archive\"
-chmod 0755 \"$VHOST_HOME/public_html/gen\"
-chmod 0711 \"$VHOST_HOME/public_html\"
-test -h \"$VHOST_HOME/logs\" && rm \"$VHOST_HOME/logs\"
-ln -s \"$VIRTWWW_LOGDIR/$ACCOUNT_NAME\" \"$VHOST_HOME/logs\"
-
-[ ! -d ~/.ssh ] && mkdir -m 700 ~/.ssh
-echo 'Host *
-  UserKnownHostsFile /dev/null
-  StrictHostKeyChecking no' >~/.ssh/config
-
-$we_base/bin/gen-vhost-ssh-priv-key -o
-
-mkdir -m 700 ~/.devpanel
-" -s /bin/bash "$ACCOUNT_NAME"
-if [ "$?" -eq 0 ]; then
-    echo 'done'
-else
-    echo 'failed'
-fi
-# // apache vhost
-
-# Fri May 20 2005 10:22 AM (fen@civicactions.com): added this section
-echo -n '+ setting up .php directory ... '
-su - -c "
-set -e
-test ! -d \"$VHOST_HOME/.php\" && mkdir \"$VHOST_HOME/.php\"
-chmod 0700 \"$VHOST_HOME/.php\"
-echo '# memory_limit = 24M;' >> \"$VHOST_HOME/.php/php.ini\"
-chmod 0600 \"$VHOST_HOME/.php/php.ini\"
-set +e
-" -s /bin/bash "$ACCOUNT_NAME"
-if [ "$?" -eq 0 ]; then
-    echo 'done'
-else
-    echo 'failed'
-fi
+chown root:$web_user $vhost_cache_dir
 
 # apache log dir setup
-echo -n '+ configuring httpd log directory for virtual host ... '
-set -e
-mkdir -p -m 0750 "$VIRTWWW_LOGDIR/$ACCOUNT_NAME"
-chown "root:$ACCOUNT_NAME" "$VIRTWWW_LOGDIR/$ACCOUNT_NAME"
-touch "$VIRTWWW_LOGDIR/$ACCOUNT_NAME/"{access,error}_log
-chmod 0644 "$VIRTWWW_LOGDIR/$ACCOUNT_NAME/"{access,error}_log
-touch "$VIRTWWW_LOGDIR/$ACCOUNT_NAME/$vhost-"{access,error}_log
-chmod 0644 "$VIRTWWW_LOGDIR/$ACCOUNT_NAME/$vhost-"{access,error}_log
-set +e
-echo 'done'
+vhost_log_dir="$lamp__apache_paths__vhost_logs_dir/$web_user"
+mkdir -p -m 0750 "$vhost_log_dir"
+touch "$vhost_log_dir/"{access,error}_log
+touch "$vhost_log_dir/$vhost-"{access,error}_log
+chmod 0640 "$vhost_log_dir/"{access,error}_log
+chmod 0640 "$vhost_log_dir/$vhost-"{access,error}_log
+chgrp -R "$web_user" "$vhost_log_dir"
 # // apache log dir setup
 
 # stack stuff
-echo '+ enabling personal CGIs:'
-"$chcgi" "$ACCOUNT_NAME" +0
+"$sys_dir/compat/suexec/chcgi" "$web_user" +0
+"$sys_dir/compat/suexec/chcgi" "$web_user" +2
+"$sys_dir/compat/suexec/chcgi" "$web_user" +7
 
-echo -n '+ setting default quotas (using w_ as a template) ... '
-if "$edquota" -p w_ "$ACCOUNT_NAME"; then
-    echo 'done'
+hash edquota &>/dev/null && edquota -p w_ "$web_user"
+# /stack stuff
+
+# apache vhost: create the basic directory structure
+chgrp -- $lamp__apache__group "$vhost_home"
+su - -c "
+chmod 0710 \"$vhost_home\"
+mkdir -m 0711 ~/.webenabled ~/.webenabled/private
+mkdir -p \"$vhost_home/bin\"
+chmod 0700 \"$vhost_home/bin\"
+mkdir -m 0755 -p \"$vhost_home/public_html/$vhost\"
+mkdir -p \"$vhost_home/public_html/gen\"
+mkdir -m 711 -p \"$vhost_home/public_html/gen/archive\"
+chmod 0755 \"$vhost_home/public_html/gen\"
+chmod 0711 \"$vhost_home/public_html\"
+rm -f \"$vhost_home/logs\"
+ln -s \"$vhost_log_dir\" \"$vhost_home/logs\"
+
+[ ! -d ~/.ssh ] && mkdir -m 700 ~/.ssh
+touch ~/.ssh/authorized_keys
+chmod 600 ~/.ssh/authorized_keys
+
+$sys_dir/bin/gen-vhost-ssh-priv-key -o
+
+mkdir -m 700 ~/.devpanel
+" -s /bin/bash "$web_user"
+# // apache vhost
+
+declare -a vhost_opts_ar=(
+  "vhost.base_domain = $base_domain"     \
+  "vhost.domains = $domains_txt"         \
+  "vhost.document_root = $doc_root"      \
+  "vhost.linux_user = $web_user"         \
+  "vhost.enabled = yes"                  \
+  "vhost.server_name = $base_domain"
+)
+
+save_opts_in_vhost_config "$vhost" "${vhost_opts_ar[@]}"
+if [ $? -eq 0 ]; then
+  echo "Successfully created vhost $vhost."
+else
+  error "failed to save config for '$vhost'"
 fi
-
-vhost_prefix_f="$config_dir/apache_vhost"
-metadata_str="
-set $vhost_prefix_f:_:linux_user $ACCOUNT_NAME
-set $vhost_prefix_f:_:document_root $VHOST_DOC_ROOT
-set $vhost_prefix_f:0 devpanel_main
-set $vhost_prefix_f:_:name:devpanel_main 0
-set $vhost_prefix_f:0:_:template_ref names/apache_vhost_template
-set $vhost_prefix_f:1 devpanel_tools
-set $vhost_prefix_f:_:name:devpanel_tools 1
-set $vhost_prefix_f:1:_:template_ref names/tools_vhost_template
-"
-
-echo "$metadata_str" | "$apache_metadata_bin" -q "$vhost" || exit $?
-
-ln -s "$vhost" "$linuxuser_vhost_dir/$ACCOUNT_NAME"
-
-echo '---[ end of creating new virtual host ]---'
-echo
-echo "Don't forget to set password for '$ACCOUNT_NAME' :)"
-echo "Bye"
-# //stack stuff
-
-# apache: add default domain to apache
-count=0
-for domain in $DOMAIN_NAMES; do
-  if [ $count -eq 0 ]; then
-    "$dir/config-vhost-names" "$vhost" '*' "$domain"
-    if [ $? -ne 0 ]; then
-      error "unable to set the ServerName for vhost $vhost"
-    fi
-  else
-    "$dir/config-vhost-names" "$vhost" '+' "$domain"
-    if [ $? -ne 0 ]; then
-      error "unable to add domain $domain to vhost $vhost"
-    fi
-  fi 
-  count=$(( $count + 1 ))
-done 
-
-exit 0

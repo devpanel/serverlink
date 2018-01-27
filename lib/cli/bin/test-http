@@ -93,10 +93,9 @@ devpanel_cmd__test_http() {
     return $?
   fi
 
-  if ! vhost_exists "$vhost"; then
-    error "vhost doesn't exist." -
-    return $?
-  elif ! is_vhost_enabled "$vhost"; then
+  load_vhost_config "$vhost" || return $?
+
+  if ! is_vhost_enabled "$vhost"; then
     # it's ok to test a vhost that is not enabled, but let's just warn just
     # in case
     echo "Warning: vhost is not enabled" 1>&2
@@ -133,12 +132,21 @@ devpanel_cmd__test_http() {
   local st
   local recvd_http_code size 
   local time_nlookup time_connect time_header time_1st_byte time_total
+  local tmp_file
 
-  output=$(curl -sS -o /dev/null -w "$output_str" "${curl_args_ar[@]}" "$url")
+  if tmp_file=$(mktemp); then
+    temp_files_ar+=( "$tmp_file" )
+  else
+    error "unable to create temporary file" -
+    return $?
+  fi
+
+  curl -sSN -o /dev/null -w "$output_str" "${curl_args_ar[@]}" "$url" \
+    >$tmp_file
   st=$?
 
   IFS=' ' read recvd_http_code size time_nlookup time_connect time_header \
-                time_1st_byte time_total <<< "$output"
+                time_1st_byte time_total < $tmp_file
 
   if [ $st -eq 0 ]; then
     local status_txt

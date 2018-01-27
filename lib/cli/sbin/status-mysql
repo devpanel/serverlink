@@ -54,12 +54,8 @@ devpanel_cmd__status_mysql() {
     fi
   fi
 
-  get_linux_username_from_vhost "$vhost" && \
-    vhost_user="$_dp_value"
-  if [ $? -ne 0 ]; then
-    error "unable to get linux user for vhost '$vhost'"
-  fi
-
+  load_vhost_config "$vhost" || return $?
+  vhost_user="$v__vhost__linux_user"
   db_user="b_${vhost_user#w_}"
      
   "$sys_dir/compat/dbmgr/current/bin/daemon-action" status "$db_user"

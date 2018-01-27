@@ -1,0 +1,296 @@
+#!/bin/bash
+
+usage() {
+  echo "
+  Usage: ${0##*/} [options] <vhost>
+
+  Options:
+    -D        disable the specified vhost
+    -n        only write the config file, but don't restart apache
+
+  This script generates the Apache configuration file for the specified
+  vhost.
+"
+
+  exit 1
+}
+
+cleanup() {
+  if [ -n "$tmp_output_dir" -a -d "$tmp_output_dir" ]; then
+    rm -rf "$tmp_output_dir"
+  fi
+}
+
+# main
+[ -z "$1" ] && usage
+
+if [ $EUID -ne 0 ]; then
+  error "this script requires ROOT privileges to run."
+fi
+
+reload_apache=yes
+unset disable_vhost
+getopt_flags='DnN'
+while getopts $getopt_flags OPTN; do
+  case $OPTN in
+    [nN])
+      unset reload_apache
+      ;;
+
+    D)
+      disable_vhost=yes
+      ;;
+    *)
+      error "unknown option '$OPTN'"
+      ;;
+  esac
+done
+[ $OPTIND -gt 1 ] && shift $(( $OPTIND - 1 ))
+
+self_bin=$(readlink -e "${BASH_SOURCE[0]}")
+if [ $? -ne 0 ]; then
+  echo "Error: unable to get self path" 1>&2
+  exit 1
+fi
+self_dir=${self_bin%/*}
+sys_dir=${self_dir%/*}
+lib_file="$sys_dir/lib/functions"
+
+if ! source "$lib_file"; then
+  echo "Error: unable to source file '$lib_file'" 1>&2
+  exit 1
+fi
+
+load_devpanel_config || exit $?
+
+vhost="$1"
+if ! vhost_exists "$vhost"; then
+  error "vhost doesn't exist."
+fi
+
+load_vhost_config "$vhost" || exit $?
+
+templates_root_dir="$sys_dir/stacks/lamp/apache/templates"
+
+if is_vhost_enabled "$vhost" && [ -z "$disable_vhost" ]; then
+  if [ "$v__ssl__enabled" == yes ]; then
+    if [ "$v__ssl__https_redirect" == yes ]; then
+      # ssl is enabled and automatic redirects also enabled
+      if [ -n "$v__vhost__https_redirect_target_domain" ]; then
+        template_name="$lamp__apache_templates__https_redirect_targeted"
+      else
+        template_name="$lamp__apache_templates__https_redirect"
+      fi
+    else
+      # redirect not enabled, just use the regular vhost template
+      template_name="$lamp__apache_templates__default_vhost"
+    fi
+  else
+    template_name="$lamp__apache_templates__default_vhost"
+  fi
+else
+  # vhost is disabled, or -D option received on command line
+  template_name="$lamp__apache_templates__disabled_vhost"
+fi
+
+template_file="$templates_root_dir/$template_name/template.contents"
+
+tmp_output_dir=$(mktemp -d) || exit 1
+trap 'cleanup' EXIT
+
+tmp_output_file="$tmp_output_dir/vhost.conf"
+sed_expr_file="$tmp_output_dir/sed-expr.sed"
+
+cat "$template_file" >"$tmp_output_file"
+
+outer_includes_str=""
+system_includes_str=""
+user_includes_str=""
+
+if [ "$lamp__apache_vhosts__tools_enabled" == yes ]; then
+  tools_template_file="$templates_root_dir/$lamp__apache_templates__tools_vhost/template.contents"
+  outer_includes_str+=$'\n'
+  outer_includes_str+="# start of template $tools_template_file"$'\n'
+  outer_includes_str+=$(cat "$tools_template_file") || exit 1
+  outer_includes_str+=$'\n'"# end of template $tools_template_file"
+fi
+
+if [ "$v__ssl__enabled" == yes ]; then
+  ssl_template_file="$templates_root_dir/$lamp__apache_templates__vhost_ssl/template.contents"
+  outer_includes_str+=$'\n'
+  outer_includes_str+="# start of template $ssl_template_file"$'\n'
+  outer_includes_str+=$(cat "$ssl_template_file")
+  outer_includes_str+=$'\n'"# end of template $ssl_template_file"
+fi
+
+if [ "$v__vhost__fastcgi" == yes ]; then
+  fastcgi_template_file="$templates_root_dir/$lamp__apache_templates__fastcgi/template.contents"
+  system_includes_str+=$'\n'
+  system_includes_str+="# start of template $fastcgi_template_file"$'\n'
+  system_includes_str+=$(cat "$fastcgi_template_file")
+  system_includes_str+=$'\n'"# end of template $fastcgi_template_file"
+fi
+
+if [ "$v__vhost__htpasswd" == yes ]; then
+  htpasswd_template_file="$templates_root_dir/$lamp__apache_templates__htpasswd/template.contents"
+  system_includes_str+=$'\n'
+  system_includes_str+="# start of template $htpasswd_template_file"$'\n'
+  system_includes_str+=$(cat "$htpasswd_template_file")
+  system_includes_str+=$'\n'"# end of template $htpasswd_template_file"
+fi
+
+if [ "$v__vhost__user_includes" == yes ]; then
+  user_includes_str+=$'\n'
+  user_includes_str+="# start of template $v__vhost__user_include_file"$'\n'
+  user_includes_str+=$(cat "$v__vhost__user_include_file")
+  user_includes_str+=$'\n'"# end of template $v__vhost__user_include_file"$'\n'
+fi
+
+declare -a undef_includes_ar=()
+for var in system user outer ; do
+  real_var="${var}_includes_str"
+
+  value="${!real_var}"
+  if [ -n "$value" ]; then
+    value_esc=$(escape_sed "$value" )
+    echo "s/^[[:space:]]*#[[:space:]]*@@__${var^^}_INCLUDES__@@[[:space:]]*$/$value_esc/g;" >>"$sed_expr_file"
+  else
+    undef_includes_ar+=( "$var" )
+  fi
+done
+
+for var in "${undef_includes_ar[@]}"; do
+  echo "/^[[:space:]]*#[[:space:]]*@@__${var^^}_INCLUDES__@@[[:space:]]*$/d;" >>"$sed_expr_file"
+done
+
+if ! sed -i -f "$sed_expr_file" "$tmp_output_file"; then
+  error "unable to run sed on tmp output file '$tmp_output_file'"
+fi
+
+for var in ${!v__*}; do
+  if [ -z "${!var}" ]; then
+    echo "Warning: empty variable $var"
+    [ -t 0 ] && sleep 1
+    continue
+  fi
+  
+  value_esc=$(escape_sed "${!var}" )
+  ref_var="${var#v__}"
+  echo "s/@@__${ref_var^^}__@@/$value_esc/g;" >>$sed_expr_file
+done
+
+for var in ${!lamp__*}; do
+  if [ -z "${!var}" ]; then
+    echo "Warning: empty variable $var"
+    sleep 1
+    continue
+  fi
+  
+  value_esc=$(escape_sed "${!var}" )
+  echo "s/@@__${var^^}__@@/$value_esc/g;" >>$sed_expr_file
+done
+
+if [ -z "$v__vhost__server_alias" ]; then
+  echo "/^[[:space:]]*ServerAlias[[:space:]]\+/d;" >>$sed_expr_file
+fi
+
+if [ "$v__ssl__enabled" == yes ]; then
+  if [ -z "$v__ssl__ca_bundle_file" ]; then
+    echo "/^[[:space:]]*SSLCACertificateFile[[:space:]]\+/d;" \
+      >>$sed_expr_file
+  fi
+fi
+
+linux_user="$v__vhost__linux_user"
+
+virtwww_config_link="$v__vhost__config_link"
+virtwww_file="$v__vhost__file"
+virtwww_file_tmp="$tmp_output_dir/vhost.conf.new"
+virtwww_file_bkp="$tmp_output_dir/vhost.conf.bkp"
+virtwww_file_old="$virtwww_file.previous"
+
+if ! sed -f "$sed_expr_file" "$tmp_output_file" >"$virtwww_file_tmp"; then
+  error "failed to write temp output file '$virtwww_file_tmp'"
+fi
+
+if [ -f "$virtwww_file" ]; then
+  cp -f "$virtwww_file" "$virtwww_file_bkp"
+  if [ $? -ne 0 ]; then
+    error "unable to create a copy of $virtwww_file to $virtwww_file_bkp"
+  fi
+fi
+
+if ! cp -f "$virtwww_file_tmp" "$virtwww_file"; then
+  error "unable to copy '$virtwww_file_tmp' to '$virtwww_file'"
+fi
+
+rm -f "$virtwww_config_link"
+if ! ln -s "$virtwww_file" "$virtwww_config_link"; then
+  error "failed to link '$virtwww_file' to '$virtwww_config_link'"
+fi
+
+if  apache_configtest; then
+  # configuration successfully validated. The new file is in place, just
+  # need to reload Apache. But first copy the previous configuration to a
+  # new file just for later inspection, if needed:
+  #
+  if [ -f "$virtwww_file_bkp" ]; then
+    cp -f "$virtwww_file_bkp" "$virtwww_file_old"
+    if [ $? -eq 0 ]; then
+      echo "Successfully saved previous vhost file on $virtwww_file_old"
+    else
+      echo "Warning: unable to save a copy of the old file (not critical)" 1>&2
+    fi
+  fi
+else
+  echo Syntax validation failed, reverting the changes
+  if [ -f "$virtwww_file_bkp" ]; then
+    if cat "$virtwww_file_bkp" >"$virtwww_file"; then
+      rm -f "$virtwww_config_link"
+      if ! ln -s "$virtwww_file" "$virtwww_config_link"; then
+        error "failed to link '$virtwww_file' to '$virtwww_config_link'"
+      fi
+    else
+      error "unable to copy back the contents from $virtwww_file_bkp"\
+" to '$virtwww_file'"
+    fi
+  else
+    rm -f "$virtwww_file"
+    rm -f "$virtwww_config_link"
+  fi
+
+  echo
+  echo "-- BROKEN TEMPLATE FILE (?) --"
+  cat -n "$virtwww_file_tmp"
+  echo "-- END OF TEMPLATE --"
+  echo
+
+  # files were reverted above. Test Apache configuration again:
+  if ! apache_configtest; then
+    error "Apache config is broken, call a system administrator NOW!"
+  fi
+
+  # all good with Apache, but inform the user that no configuration change
+  # was done
+  error "nothing was updated because of errors on the new apache config"
+fi
+
+# compatibility fix when vhost was created by vhostctl.sh and nginx is
+# listening on port 80 (need to create/update the vhost on nginx)
+if is_nginx_on_port80 && ! should_skip_nginx_vhost "$vhost" ; then
+  write_nginx_local_vhost "$vhost"
+  if [ $? -eq 0 ]; then
+    service nginx reload || service nginx restart
+  fi
+fi
+
+echo "Successfully wrote vhost file $virtwww_file"
+
+if [ -n "$reload_apache" ]; then
+  echo Reloading apache
+
+  reload_or_start_apache || \
+    error "Cannot restart apache, call a system administrator NOW!"
+fi
+
+exit 0

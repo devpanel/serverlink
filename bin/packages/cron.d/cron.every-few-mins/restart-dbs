@@ -28,6 +28,8 @@ if ! source "$lib_f"; then
   exit 1
 fi
 
+load_devpanel_config || exit $?
+
 unset locked
 trap cleanup EXIT
 lock_dir=$(get_system_lock_dir 2>/dev/null) || "$sys_dir/sbin/create-base-dirs"

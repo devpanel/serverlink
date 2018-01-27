@@ -1,5 +1,4 @@
 #!/bin/bash
-WEBENABLED_BASE_DIR=${WEBENABLED_BASE_DIR:-/opt/webenabled}
 
 run()
 {
@@ -82,22 +81,23 @@ if ! source "$lib_file" ; then
   exit 1
 fi
 
-apache_config_dir=$(get_apache_virtwww_config_dir ) || exit $?
-apache_logs_dir=$(get_apache_virtwww_log_dir ) || exit $?
-chcgi=$(get_path_of_chcgi ) || exit 1
+load_devpanel_config || exit $?
 
-apache_group=$(get_apache_group_name ) || exit 1
-home_prefix=$(get_vhosts_homedir ) || exit 1
+apache_config_dir="$lamp__paths__vhosts_config_dir"
+apache_logs_dir="$lamp__apache_paths__vhost_logs_dir"
+chcgi="$sys_dir/compat/suexec/chcgi"
+
+apache_group="$lamp__apache__group"
+home_prefix="$lamp__apache_paths__virtwww_homedir"
 
 if [ $create_vhost -eq 1 ]; then
   if vhost_exists "$vhost"; then
     error "vhost '$vhost' already exists"
   fi
 
-  base_domain=$(get_server_base_domain) || exit $?
+  base_domain="$lamp__apache_vhosts__virtwww_domain"
 
-  echo -e "n\nn\ny"| run $dir/create-virtwww $options "$vhost" \
-    "$vhost.$base_domain"
+  $dir/create-virtwww $options "$vhost"
   if [ $? -ne 0 ]; then
     error "unable to create vhost"
   fi
@@ -111,18 +111,16 @@ elif [ $create_vhost -eq 0 ]; then
   fi
 fi
 
-get_linux_username_from_vhost "$vhost" && \
-user="$_dp_value"
-if [ $? -ne 0 ]; then
-  error "unable to get the linux username from vhost $vhost"
-fi
+# vhost was either created above, or already existed. Load it's config.
+load_vhost_config "$vhost" || exit $?
 
 if [ $create_vhost -eq 0 -a $search_in_users_home -eq 1 \
   -a ! -e "$archive_label" -a "${archive_label:0:1}" != "/" \
   -a "${archive_label:0:2}" != "./" \
   -a "${archive_label:0:3}" != "../" ]; then
 
-  user_home_dir=$(echo "$user_info" | cut -d: -f 6)
+  user="$v__vhost__linux_user"
+  user_home_dir="$v__vhost__linux_user_home"
   test_archive="$user_home_dir/public_html/gen/archive/$archive_label"
   [ -f "$test_archive" ] && archive_label="$test_archive"
 fi
@@ -161,7 +159,6 @@ else
   error "unable to find an archive file to restore"
 fi
 
-conf="$apache_config_dir/$user.conf"
 archive_conf="$archive_dir/apache_$old_vhost.conf"
 logs_dir="$apache_logs_dir/$user"
 archive_logs="$archive_dir/logs_$old_vhost.tgz"
@@ -176,8 +173,6 @@ elif [ -f "$archive_shadow_2" ]; then
   archive_shadow="$archive_shadow_2"
 fi
 
-config_dir="$WEBENABLED_BASE_DIR/config/vhosts/$vhost"
-
 if [ ! -e "$archive_file" ]; then
   error "missing archive file '$archive_file'"
 elif [ ! -f "$archive_file" ]; then
@@ -186,7 +181,8 @@ elif [ $create_vhost -eq 1 -a ! -e "$archive_conf" ]; then
   error "missing apache config file '$archive_conf'"
 fi
 
-home="`eval \"echo ~$user\"`"
+user="$v__vhost__linux_user"
+home="$v__vhost__linux_user_home"
 if [ $create_vhost -eq 1 ]; then
   echo "Restoring $home from $archive_file"
   if [ ! -d "$home" ] && ! run mkdir "$home"; then
@@ -196,9 +192,6 @@ if [ $create_vhost -eq 1 ]; then
   if ! run chown "$user":"$apache_group" "$home"; then
     error "unable to chmod home dir '$home' to '$user:$apache_group'"
   fi
-
-  run "$chcgi" "$user" +2
-  run "$chcgi" "$user" +7
 fi
 
 ini_file="$tarball_root_dir/devpanel.ini"

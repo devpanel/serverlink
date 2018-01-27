@@ -1,0 +1,11 @@
+<VirtualHost @@__VHOST__IP_ADDR__@@:@@__VHOST__HTTP_PORT__@@>
+  ServerName @@__VHOST__NAME__@@-gen.@@__LAMP__APACHE_VHOSTS__VIRTWWW_DOMAIN__@@
+  DocumentRoot @@__VHOST__LINUX_USER_HOME__@@/public_html/gen
+  SuexecUserGroup @@__VHOST__LINUX_USER__@@ @@__LAMP__APACHE__EXEC_GROUP__@@
+  CustomLog webenabled-logs/virtwww/@@__VHOST__LINUX_USER__@@/@@__VHOST__NAME__@@-access_log combined
+  ErrorLog webenabled-logs/virtwww/@@__VHOST__LINUX_USER__@@/@@__VHOST__NAME__@@-error_log
+
+  ScriptAlias /-ctl/archive-send  @@__LAMP__APACHE_PATHS__VIRTWWW_HOMEDIR__@@/w_/public_html/cgi/archive-send.cgi
+  ScriptAlias /-ctl/archive-recv @@__LAMP__APACHE_PATHS__VIRTWWW_HOMEDIR__@@/w_/public_html/cgi/archive-recv.cgi
+  ScriptAlias /-ctl/download-archive @@__LAMP__APACHE_PATHS__VIRTWWW_HOMEDIR__@@/w_/public_html/cgi/download-vhost-archive.cgi
+</VirtualHost>

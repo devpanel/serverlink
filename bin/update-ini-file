@@ -48,7 +48,11 @@ if(!GetOptions(%getopt_flags)) {
   exit(1);
 }
 
+my $cfg_r;
 my $file = $ARGV[0];
+if(!defined($file) || length($file) == 0) {
+  usage();
+}
 
 if(defined($r_opts{create_file}) && ! -e $file) {
   # just creating it, to check if we're really able to do or not, and exit
@@ -58,19 +62,24 @@ if(defined($r_opts{create_file}) && ! -e $file) {
   }
   close(INI_FILE); # the actual write will be done by Config::Tiny
 } else {
-  if(! -f $file) {
+  if($file ne "-" && ! -f $file) {
     die "Error: file '$file' does not exist.\n";
   }
 }
 
-if(! -w $file) {
-  die "Error: no write access to file '$file'.\n";
-}
+if($file eq "-") {
+  $cfg_r = Config::Tiny->new();
+} else {
+  $cfg_r = Config::Tiny->read($file);
+  if(!$cfg_r) {
+    die "Error: unable to open file '$file': " . Config::Tiny::errstr() .
+        "\n";
+  }
 
-my $cfg_r = Config::Tiny->read($file);
-if(!$cfg_r) {
-  die "Error: unable to open file '$file': " . Config::Tiny::errstr() .
-      "\n";
+
+  if(! -w $file) {
+    die "Error: no write access to file '$file'.\n";
+  }
 }
 
 if(!$r_opts{quiet}) {
@@ -84,30 +93,60 @@ while(<STDIN>) {
   chomp();
   next if(length($_) == 0);
 
-  if($_ !~ /^([A-Za-z0-9_.-]+)\s*=\s*(.+)$/) {
+  my($section, $key, $value, $sec_key);
+  if($_ =~ /^([A-Za-z0-9_]+[A-Za-z0-9 _.-]*)\s*=\s*(.+)$/) {
+    # add/set values
+    ($key, $value) = ($1, $2);
+    $key =~ s/\s+/ /; # remove multiple spaces in the key name
+    $key =~ s/\s+$//; # remove trailing spaces
+    if($key !~ /^(.+)\.(.+)$/) {
+      warn "Invalid key value on line $line_n. Skipping...\n";
+      next;
+    }
+
+    $section = $1;
+    $sec_key = $2;
+
+    $cfg_r->{$section}->{$sec_key} = $value;
+
+    $values_set_n++;
+  } elsif($_ =~ /^- ([A-Za-z0-9_]+[A-Za-z0-9 _.-]*)\s*$/) {
+    # remove values
+    my $section_key = $1;
+    ($section, $key)  = split('\.', $section_key, 2);
+    if(defined($key) && length($key) > 0) {
+      if(exists($cfg_r->{$section}->{$key})) {
+        delete($cfg_r->{$section}->{$key});
+        $values_set_n++;
+      } else {
+        print "Warning: ignoring unknown key-section $section_key\n";
+        next;
+      }
+    } else {
+      # remove whole section
+      if(exists($cfg_r->{$section})) {
+        delete($cfg_r->{$section});
+        $values_set_n++;
+      } else {
+        print "Warning: ignoring unknown section $_\n";
+        next;
+      }
+    }
+  } else {
     warn "Invalid line format on line $line_n. Skipping...\n";
     next;
   }
-
-  my($key, $value) = ($1, $2);
-  if($key !~ /^(.+)\.(.+)$/) {
-    warn "Invalid key value on line $line_n. Skipping...\n";
-    next;
-  }
-
-  my $section = $1;
-  my $sec_key = $2;
-
-  $cfg_r->{$section}->{$sec_key} = $value;
-
-  $values_set_n++;
 }
 
 if($values_set_n > 0) {
-  if(!$r_opts{quiet}) {
+  if(!$r_opts{quiet} && $file ne "-") {
     print "Successfully wrote $values_set_n changes to file '$file'.\n";
   }
-  $cfg_r->write($file);
+  if($file eq "-") {
+    print $cfg_r->write_string;
+  } else {
+    $cfg_r->write($file);
+  }
 } else {
   print "Error: no values updated.\n";
   exit(1);

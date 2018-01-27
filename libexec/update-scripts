@@ -31,6 +31,7 @@ if ! source "$lib_file"; then
   echo "Error: unable to source file '$lib_file'" 1>&2
   exit 1
 fi
+load_devpanel_config || exit $?
 
 ref="${1:-master}"
 

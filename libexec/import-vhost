@@ -4,6 +4,11 @@
 #   -p do not reset web application passwords
 #   -i pass mysql passwd via stdin
 
+######
+# NOTE: this script is used only on Webenabled v1. It's not meant to be used
+# by devPanel or newer systems going forward.
+######
+
 error()
 {
   echo "ERROR${1+: }$@" >&2
@@ -31,11 +36,9 @@ dir_bin="$dir/../bin"
 vhost="$1"
 $dir/check-vhost-name restore "$vhost" || error
 
-get_linux_username_from_vhost "$vhost" && \
-user_web="$_dp_value"
-if [ $? -ne 0 ]; then
-  error "unable to get the linux username from vhost $vhost"
-fi
+load_vhost_config "$vhost" || exit $?
+
+user_web="$v__vhost__linux_user"
 
 vhost_config_dir=.webenabled/private
 run()

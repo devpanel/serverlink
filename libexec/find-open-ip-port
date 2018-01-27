@@ -17,6 +17,7 @@ if ! source "$curr_dir/../lib/functions"; then
   echo "Error: unable to load auxiliary functions"
   exit 1
 fi
+load_devpanel_config || exit $?
 
 data_dir="`dirname "$0"`/../config/reserved-ip-ports"
 if [ ! -e "$data_dir" ]; then

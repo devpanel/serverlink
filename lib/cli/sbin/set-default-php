@@ -45,15 +45,14 @@ devpanel_cmd__set_default_php() {
 
   if [ "$version" == default ]; then
     local php_curr_ver ver_on_install
-    php_curr_ver=$(get_default_php_version 2>/dev/null )
-    if [ $? -ne 0 ]; then
+    php_curr_ver="$lamp__php__default_version"
+    if [ -z "$php_curr_ver" ]; then
       error "unable to get current version." -
       return 1
     fi
 
-    ver_on_install=$(deref_os_prop "$sys_dir" \
-                      names/php_default_version_on_install 2>/dev/null )
-    if [ $? -ne 0 ]; then
+    ver_on_install=$lamp__php__default_version_on_install
+    if [ -z "$ver_on_install" ]; then
       error "unable to get default version on install." -
       return 1
     fi
@@ -68,16 +67,18 @@ devpanel_cmd__set_default_php() {
   fi
 
   local php_bin php_cgi_bin php_lnk_dir php_bin_lnk
+  local php_bin_var php_cgi_bin_var
 
-  php_bin=$(deref_os_prop "$sys_dir" pathnames/bin/php-$version 2>/dev/null)
-  if [ $? -ne 0 ]; then
+  php_bin_var="lamp__php_paths__php_${version//./_}"
+  if [ -n "${!php_bin_var}" -a -f "${!php_bin_var}" -a -x "${!php_bin_var}" ]; then
+    php_bin="${!php_bin_var}"
+  else
     error "unable to find PHP binary for version $version" -
     return 1
   fi
 
-  php_lnk_dir=$(deref_os_prop "$sys_dir" pathnames/bin/php_lnk_dir \
-                  2>/dev/null )
-  if [ $? -ne 0 ]; then
+  php_lnk_dir="$lamp__php_paths__php_lnk_dir"
+  if [ -z "$php_lnk_dir" ]; then
     error "missing definition of php_lnk_dir" -
     return 1
   fi
@@ -93,18 +94,21 @@ devpanel_cmd__set_default_php() {
 
     # add other common PHP binaries as slaves of PHP in the
     # update-alternatives dependencies
-    local _binname _binpath _binlink
+    local _binname _binpath _binpath_var _binlink
     for _binname in php-cgi phar pear peardev pecl phpize; do
-      _binpath=$(deref_os_prop "$sys_dir" pathnames/bin/"$_binname-$version" \
-                  2>/dev/null )
-      if [ $? -eq 0 ]; then
+      _binpath_var="lamp__php_paths__${_binname//-/_}_${version//./_}"
+      if [ -n "${!_binpath_var}" ]; then
+        _binpath="${!_binpath_var}"
+      else
+        continue
+      fi
+
+      if [ -f "$_binpath" -a -x "$_binpath" ]; then
         _binlink="$php_lnk_dir/$_binname"
-        if [ -f "$_binpath" -a -x "$_binpath" ]; then
-          if ! update-alternatives --display $_binname &>/dev/null; then
-            # only add if the executable doesn't have a primary entry on
-            # update-alternatives system
-            cmd_args_ar+=( --slave "$_binlink" $_binname "$_binpath" )
-          fi
+        if ! update-alternatives --display $_binname &>/dev/null; then
+          # only add if the executable doesn't have a primary entry on
+          # update-alternatives system
+          cmd_args_ar+=( --slave "$_binlink" $_binname "$_binpath" )
         fi
       fi
     done
@@ -119,8 +123,7 @@ devpanel_cmd__set_default_php() {
 
   update-alternatives --set php "$php_bin"
   if [ $? -eq 0 ]; then
-    echo "set-local php_default_version $version" | \
-      "$sys_dir/libexec/system-metadata-handler" -q
+    save_opts_in_lamp_config "php.default_version = $version"
     if [ $? -ne 0 ]; then
       echo "Warning: failed to set metadata for default PHP version" 1>&2
     fi
@@ -131,13 +134,16 @@ devpanel_cmd__set_default_php() {
     #   a slave or independent to update accordingly
     for _binname in php-cgi phar; do
       if update-alternatives --display $_binname &>/dev/null; then
-        _binpath=$(deref_os_prop "$sys_dir" pathnames/bin/"$_binname-$version" \
-                    2>/dev/null )
-        if [ $? -eq 0 ]; then
+        _binpath_var="lamp__php_paths__${_binname//-/_}_${version//./_}"
+        if [ -n "${!_binpath_var}" ]; then
+          _binpath="${!_binpath_var}"
+        else
+          continue
+        fi
+
+        if [ -f "$_binpath" -a -x "$_binpath" ]; then
           _binlink="$php_lnk_dir/$_binname"
-          if [ -f "$_binpath" -a -x "$_binpath" ]; then
-            update-alternatives --set $_binname "$_binpath"
-          fi
+          update-alternatives --set $_binname "$_binpath"
         fi
       fi
     done

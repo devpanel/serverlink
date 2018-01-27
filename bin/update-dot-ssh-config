@@ -18,6 +18,7 @@ if ! source "$curr_dir/../lib/functions"; then
   echo "Error: unable to load auxiliary functions" 1>&2
   exit 1
 fi
+load_devpanel_config || exit $?
 
 file="$1"
 if [ -z "$file" ]; then

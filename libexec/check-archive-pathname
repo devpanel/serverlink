@@ -17,12 +17,12 @@ error()
   exit 1
 }
 
-opt_u=""
+vhost=""
 
 while getopts "u:" OPTOPT
 do
   case "$OPTOPT" in
-    u) opt_u="$OPTARG";;
+    u) vhost="$OPTARG";;
     *) exit 1;
   esac
 done
@@ -46,19 +46,16 @@ path2="`echo \"$path\"|tr -d '\n'`" || error
 if ! . "$sys_dir/lib/functions"; then
   error "unable to include file lib/functions"
 fi
+load_devpanel_config || exit $?
 
-if [ -z "$opt_u" ]
+if [ -z "$vhost" ]
 then
   prefix=/opt/webenabled/data
 else
-  $mydir/check-vhost-name archive "$opt_u" || error
-	get_linux_username_from_vhost "$opt_u" && \
-	user="$_dp_value"
-	if [ $? -ne 0 ]; then
-		error "unable to get the linux username from vhost $opt_u"
-	fi
-
-  home="`eval \"echo ~$user\"`" || error
+  $mydir/check-vhost-name archive "$vhost" || error
+  load_vhost_config "$vhost" || exit $?
+  user="$v__vhost__linux_user"
+  home="$v__vhost__linux_user_home"
   [ -d "$home" ] || error "Home dir $home does not exist"
   prefix="$home/public_html/gen/archive"
 fi
@@ -71,7 +68,7 @@ echo "$reldir"|grep -q '\.\.' && error ".. found in path"
 is_readable()
 {
   local path="$1"
-  if [ -z "$opt_u" ]
+  if [ -z "$vhost" ]
   then
     [ -r "$path" ]
   else

@@ -138,7 +138,7 @@ devpanel_cmd__install_app(){
 
   echo "$app_password" | devpanel_run create vhost --vhost "$vhost" --from "$app_url" \
     ${php_version:+--php-version $php_version} ${desc:+--desc "$desc"} \
-    --password-stdin
+    --password-stdin --no-summary
   if [ $? -ne 0 ]; then
     error "unable to install app" -
     return $?
@@ -151,6 +151,12 @@ devpanel_cmd__install_app(){
       return $?
     fi
   fi
+
+  if ! load_vhost_config "$vhost"; then
+    echo "Warning: unable to load config for the newly created vhost" 1>&2
+  fi
+
+  print_vhost_summary "$vhost"
 
   local vhost_url
   vhost_url=$(get_main_url_of_vhost "$vhost")

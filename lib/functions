@@ -455,24 +455,6 @@ generate_linux_username_for_vhost() {
   return 0
 }
 
-get_linux_username_from_vhost() {
-  local vhost="$1"
-
-  local user
-
-  get_key_value_from_vhost apache_vhost:_:linux_user "$vhost" && \
-    user="$_dp_value"
-
-  if [ $? -ne 0 ]; then
-    user="w_$vhost"
-    _dp_value="$user"
-	fi
-  
-  [ -n "$_dp_print" ] && printf '%s' "$_dp_value"
-
-  return 0
-}
-
 get_vhost_from_linuxuser() {
   local user="${1:-$USER}"
   local vhost
@@ -482,9 +464,7 @@ get_vhost_from_linuxuser() {
     return 1
   fi
 
-  local map_dir map_link
-  map_dir=$(get_linuxuser_vhost_dir)
-  map_link="$map_dir/$user"
+  local map_link="$lamp__paths__user_vhost_map/$user"
   if [ -L "$map_link" ]; then
     deref_contents "$map_link"
     return $?
@@ -533,7 +513,7 @@ get_docroot_from_user() {
 }
 
 get_linuxuser_vhost_dir() {
-  echo "$DEVPANEL_HOME/config/key_value/linuxuser-vhost"
+  echo "$lamp__paths__user_vhost_map"
 }
 
 get_shell_from_user() {
@@ -1430,18 +1410,14 @@ get_apache_metadata_value() {
 
 is_vhost_enabled() {
   local vhost="$1"
+  local ns="${2:-v}"
+  local var="${ns}__vhost__enabled"
 
-  ! is_vhost_locked "$vhost" >/dev/null 2>&1
-}
-
-is_vhost_locked() {
-  local vhost="$1"
-
-  local key="flag:locked"
-
-  local value
-
-  get_vhost_key_value "$key" "$vhost" >/dev/null
+  if [ -n "${!var}" -a "${!var}" == yes ]; then
+    return 0
+  else
+    return 1
+  fi
 }
 
 is_valid_port_number() {
@@ -1495,7 +1471,7 @@ vhost_exists() {
     return 1
   fi
 
-  local config_dir="$DEVPANEL_HOME/config/vhosts/$test_str"
+  local config_dir="$lamp__paths__vhosts_config_dir/$test_str"
   if [ -d "$config_dir" ]; then
     return 0
   else
@@ -1528,23 +1504,25 @@ linuxuser_exists() {
 }
 
 is_distro_updates_enabled() {
-  deref_os_prop "$DEVPANEL_HOME" automatic_distro_updates &>/dev/null
+  local var="conf__distro__updates_enabled"
+
+  if [ -n "${!var}" -a "${!var}" == yes ]; then
+    return 0
+  else
+    return 1
+  fi
 }
 
 are_snapshots_enabled_for_vhost() {
   local vhost="$1"
   local freq="$2"
-  local _var
+  local var="v__recurring_snapshots_${freq}__enabled"
 
-  for _var in vhost freq; do 
-    if [ -z "${!_var}" ]; then
-      echo "$FUNCNAME(): missing $_var" 1>&2
-      return 1
-    fi
-  done
-
-  local key="config:backup_snapshot:$freq:enabled"
-  get_vhost_key_value "$key" "$vhost" &>/dev/null
+  if [ -n "${!var}" -a "${!var}" == yes ]; then
+    return 0
+  else
+    return 1
+  fi
 }
 
 get_snapshot_defs_for_vhost() {
@@ -1596,107 +1574,376 @@ get_snapshot_defs_for_vhost() {
 }
 
 get_devpanel_datadir() {
-  deref_os_prop "$DEVPANEL_HOME" data_dir
+  local var value
+  var="conf__paths__data_dir"
+  value="${!var}"
+  
+  if [ -n "$value" ]; then
+    echo "$value"
+    return 0
+  else
+    return 1
+  fi
+}
+
+get_vhost_archives_dir() {
+  local vhost="$1"
+
+  local data_dir vhost_archives_dir
+
+  data_dir=$(get_devpanel_datadir ) || return $?
+
+  vhost_archives_dir="$data_dir/vhost_archives/$vhost"
+
+  echo "$vhost_archives_dir"
+
+  return 0
 }
 
 get_apache_service_name() {
-  deref_os_prop "$DEVPANEL_HOME" names/apache_service_name
+  local var value
+  var="lamp__apache__service_name"
+  value="${!var}"
+  
+  if [ -n "$value" ]; then
+    echo "$value"
+    return 0
+  else
+    return 1
+  fi
 }
 
 get_apache_vhost_template() {
-  deref_os_prop "$DEVPANEL_HOME" names/apache_vhost_template
+  local var value
+  var="lamp__apache_templates__default_vhost"
+  value="${!var}"
+  
+  if [ -n "$value" ]; then
+    echo "$value"
+    return 0
+  else
+    return 1
+  fi
 }
 
 get_vhosts_homedir() {
-  deref_os_prop "$DEVPANEL_HOME" apache_virtwww_homedir
+  local var value
+  var="lamp__apache_paths__virtwww_homedir"
+  value="${!var}"
+  
+  if [ -n "$value" ]; then
+    echo "$value"
+    return 0
+  else
+    return 1
+  fi
 }
 
 get_apache_group_name() {
-  deref_os_prop "$DEVPANEL_HOME" names/apache.group
+  local var value
+  var="lamp__apache__group"
+  value="${!var}"
+  
+  if [ -n "$value" ]; then
+    echo "$value"
+    return 0
+  else
+    return 1
+  fi
 }
 
 get_apache_main_config_dir() {
-  deref_os_fs_path_ex "$DEVPANEL_HOME" pathnames/etc/apache_base_dir
+  local var value
+  var="lamp__apache_paths__base_dir"
+  value="${!var}"
+  
+  if [ -n "$value" ]; then
+    echo "$value"
+    return 0
+  else
+    return 1
+  fi
 }
 
 get_apache_virtwww_config_dir() {
-  deref_os_fs_path_ex "$DEVPANEL_HOME" pathnames/etc/apache_vhosts
+  local var value
+  var="lamp__apache_paths__vhosts_include_dir"
+  value="${!var}"
+  
+  if [ -n "$value" ]; then
+    echo "$value"
+    return 0
+  else
+    return 1
+  fi
 }
 
 get_apache_virtwww_log_dir() {
-  deref_os_fs_path_ex "$DEVPANEL_HOME" pathnames/var/log/apache_vhosts
+  local var value
+  var="lamp__apache_paths__vhost_logs_dir"
+  value="${!var}"
+  
+  if [ -n "$value" ]; then
+    echo "$value"
+    return 0
+  else
+    return 1
+  fi
 }
 
 get_apache_global_includes_dir() {
-  deref_os_fs_path_ex "$DEVPANEL_HOME" pathnames/etc/apache_includes_dir
+  local var value
+  var="lamp__apache_paths__includes_dir"
+  value="${!var}"
+  
+  if [ -n "$value" ]; then
+    echo "$value"
+    return 0
+  else
+    return 1
+  fi
 }
 
 get_tools_base_url_template() {
-  deref_os_prop "$DEVPANEL_HOME" tools_base_url_tmpl
+  local var value
+  var="lamp__apache_url_tmpls__tools_base"
+  value="${!var}"
+  
+  if [ -n "$value" ]; then
+    echo "$value"
+    return 0
+  else
+    return 1
+  fi
 }
 
 get_template_url_for_archive_download() {
-  deref_os_prop "$DEVPANEL_HOME" archive_download_url_tmpl
+  local var value
+  var="lamp__apache_url_tmpls__archive_download"
+  value="${!var}"
+  
+  if [ -n "$value" ]; then
+    echo "$value"
+    return 0
+  else
+    return 1
+  fi
 }
 
 get_apache_exec_group_name() {
-  deref_os_prop "$DEVPANEL_HOME" names/apache-exec.group
+  local var value
+  var="lamp__apache__exec_group"
+  value="${!var}"
+  
+  if [ -n "$value" ]; then
+    echo "$value"
+    return 0
+  else
+    return 1
+  fi
 }
 
 get_mysql_instances_homedir() {
-  deref_os_prop "$DEVPANEL_HOME" mysql_instances_homedir
+  local var value
+  var="lamp__mysql_paths__instances_homedir"
+  value="${!var}"
+  
+  if [ -n "$value" ]; then
+    echo "$value"
+    return 0
+  else
+    return 1
+  fi
 }
 
-get_package_metadata_url() {
-  deref_os_prop "$DEVPANEL_HOME" packages_url
+get_packages_url_base() {
+  local var value
+  var="conf__packages__url_base"
+  value="${!var}"
+  
+  if [ -n "$value" ]; then
+    echo "$value"
+    return 0
+  else
+    return 1
+  fi
 }
 
-get_path_of_apachectl() {
-  deref_os_fs_path_ex "$DEVPANEL_HOME" pathnames/sbin/apachectl
+get_packages_metadata_url() {
+  local var value
+  var="conf__packages__metadata_url"
+  value="${!var}"
+  
+  if [ -n "$value" ]; then
+    echo "$value"
+  else
+    return 1
+  fi
 }
 
 get_path_of_chcgi() {
-  deref_os_fs_path_ex "$DEVPANEL_HOME" pathnames/sbin/chcgi
-}
-
-get_path_of_edquota() {
-  deref_os_prop "$DEVPANEL_HOME" pathnames/sbin/edquota
+  local test_bin="$DEVPANEL_HOME/compat/suexec/chcgi"
+  if [ -f "$test_bin" -a -x "$test_bin" ]; then
+    echo "$test_bin"
+    return 0
+  else
+    return 1
+  fi
 }
 
 get_vhost_archive_template_str() {
-  deref_os_prop "$DEVPANEL_HOME" vhost_archive_template_str
+  local var value
+  var="conf__template_strings__vhost_archive"
+  value="${!var}"
+  
+  if [ -n "$value" ]; then
+    echo "$value"
+    return 0
+  else
+    return 1
+  fi
 }
 
 get_admin_apps_base_url() {
-  deref_os_prop "$DEVPANEL_HOME" admin_apps_base_url
+  local var value
+  var="conf__template_urls__admin_apps"
+  value="${!var}"
+  
+  if [ -n "$value" ]; then
+    echo "$value"
+    return 0
+  else
+    return 1
+  fi
 }
 
 get_domain_of_autogenerated_hostnames() {
-  deref_os_prop "$DEVPANEL_HOME" auto_gen_domain
+  local var value
+  var="lamp__apache_vhosts__auto_gen_domain"
+  value="${!var}"
+  
+  if [ -n "$value" ]; then
+    echo "$value"
+    return 0
+  else
+    return 1
+  fi
 }
 
 get_git_vhost_template() {
-  deref_os_prop "$DEVPANEL_HOME" names/git_vhost_template
+  local var value
+  var="lamp__apache_templates__git_vhost"
+  value="${!var}"
+  
+  if [ -n "$value" ]; then
+    echo "$value"
+    return 0
+  else
+    return 1
+  fi
 }
 
 get_htpasswd_vhost_template() {
-  deref_os_prop "$DEVPANEL_HOME" names/apache_htpasswd_template
+  local var value
+  var="lamp__apache_templates__htpasswd"
+  value="${!var}"
+  
+  if [ -n "$value" ]; then
+    echo "$value"
+    return 0
+  else
+    return 1
+  fi
+}
+
+set_s3_options() {
+  save_opts_in_devpanel_config "$@"
+}
+
+write_s3cfg() {
+  local file="$1"
+  shift
+
+  if [ "$file" == @ ]; then
+    file=/etc/devpanel/provisioners/aws/.s3cfg/default
+  fi
+
+  if [ ! -f "$file" ]; then
+    touch "$file"
+    chmod 600 "$file"
+  fi
+
+  write_ini_file "$file" "$@"
+}
+
+set_s3_bucket() {
+  local bucket="$1"
+
+  save_opts_in_devpanel_config "s3.bucket_name = $bucket" \
+    "s3.upload_files = yes"
+}
+
+disable_s3_global_uploads() {
+  save_opts_in_devpanel_config "s3.upload_files = no"
 }
 
 is_global_s3_uploads_enabled() {
-  deref_os_prop "$DEVPANEL_HOME" upload_archives_to_s3
+  if [ -n "$conf__s3__upload_files" -a "$conf__s3__upload_files" == "yes" ]; then
+    return 0
+  else
+    return 1
+  fi
 }
 
 get_global_s3_bucket() {
-  deref_os_prop "$DEVPANEL_HOME" s3_bucket_vhost_archives
+  if [ -n "$conf__s3__bucket_name" ]; then
+    echo "$conf__s3__bucket_name"
+    return 0
+  else
+    return 1
+  fi
 }
 
 get_global_s3_base_addr_template() {
-  deref_os_prop "$DEVPANEL_HOME" s3_baseaddr_vhost_tmpl
+  if [ -n "$conf__s3__baseaddr_vhost_tmpl" ]; then
+    echo "$conf__s3__baseaddr_vhost_tmpl"
+    return 0
+  else
+    return 1
+  fi
 }
 
 get_s3_upload_speed_limit() {
-  deref_os_prop "$DEVPANEL_HOME" s3_upload_speed_limit
+  if [ -n "$conf__s3__upload_speed_limit" ]; then
+    echo "$conf__s3__upload_speed_limit"
+    return 0
+  else
+    return 1
+  fi
+}
+
+get_s3_url_base_for_vhost() {
+  local vhost="$1"
+
+  local bucket_name virtwww_domain tmpl_url
+  local url var
+
+  tmpl_url=$(get_global_s3_base_addr_template ) || return $?
+  virtwww_domain=$(get_server_base_domain )     || return $?
+  bucket_name=$(get_global_s3_bucket )          || return $?
+
+  url="$tmpl_url"
+  for var in bucket_name virtwww_domain vhost ; do
+    url=${url//@$var@/${!var}}
+    url=${url//./-}
+  done
+
+  local -i url_len=${#url}
+  if [ "${url:$(( $url_len - 1 ))}" != / ]; then
+    url+="/"
+  fi
+
+  echo "$url"
 }
 
 get_aws_cluster_region() {
@@ -1717,12 +1964,40 @@ get_template_str_for_recurring_archive_snapshot() {
   deref_os_prop "$DEVPANEL_HOME" vhost_snapshot_${frequency}_template_str
 }
 
+enable_webenabled_backwards_compat() {
+  save_opts_in_lamp_config "apache.webenabled_backwards_compat = yes"
+}
+
+disable_webenabled_backwards_compat() {
+  save_opts_in_lamp_config "apache.webenabled_backwards_compat = no"
+}
+
 is_webenabled_backwards_compat_enabled() {
-  deref_os_prop "$DEVPANEL_HOME" webenabled_backwards &>/dev/null
+  local var
+  var="lamp__apache__webenabled_backwards_compat"
+  if [ -n "${!var}" -a "${!var}" == yes ]; then
+    return 0
+  else
+    return 1
+  fi
+}
+
+disable_package_updates() {
+  save_opts_in_devpanel_config "packages.updates_enabled = no"
+}
+
+enable_package_updates() {
+  save_opts_in_devpanel_config "packages.updates_enabled = yes"
 }
 
 is_package_updates_disabled() {
-  deref_os_prop "$DEVPANEL_HOME" no_package_updates 2>/dev/null
+  local var
+  var=conf__packages__updates_enabled
+  if [ -n "${!var}" -a "${!var}" == no ]; then
+    return 0
+  else
+    return 1
+  fi
 }
 
 date_placeholders() {
@@ -1861,21 +2136,22 @@ escape_quotes() {
   printf '%s' "$new"
 }
 
+set_lamp_virtwww_domain() {
+  local domain="$1"
+
+  save_opts_in_lamp_config "apache vhosts.virtwww_domain = $domain"
+}
+
 get_vhost_base_domain() {
   # returns the real base domain of a vhost
   local vhost="$1"
 
-  local domain_int base_domain key
-
-  key="apache_vhost:0:_:base_domain"
-
-  if ! domain_int=$(get_vhost_key_value "$key" "$vhost" 2>/dev/null); then
-    domain_int="$vhost"
+  if [ -n "$v__vhost__base_domain" ]; then
+    echo "$v__vhost__base_domain"
+    return 0
+  else
+    return 1
   fi
-
-  base_domain=$(get_real_hostname "$domain_int") || return $?
-
-  echo "$base_domain"
 }
 
 get_vhost_default_hostname() {
@@ -1883,26 +2159,20 @@ get_vhost_default_hostname() {
   # (i.e the one used on ServerName and in the app's config
 
   local vhost="$1"
-  
-  local key="apache_vhost:0:_:ServerName"
-  local hostname
 
-  hostname=$(get_vhost_key_value "$key" "$vhost") || return $?
-  if [ $? -eq 0 ]; then
-    echo "$hostname"
+  if [ -n "$v__vhost__server_name" ]; then
+    echo "$v__vhost__server_name"
+    return 0
   else
-    echo "$FUNCNAME(): unable to get default hostname from vhost $vhost" 1>&2
     return 1
   fi
 }
 
 is_ssl_enabled_on_vhost() {
   local vhost="$1"
+  local var=v__ssl__enabled
 
-  local conf_dir="$DEVPANEL_HOME/config/vhosts/$vhost"
-  local ssl_link="$conf_dir/apache_vhost:_:name:default_ssl"
-
-  if [ -L "$ssl_link" ]; then
+  if [ -n "${!var}" -a "${!var}" == yes ]; then
     return 0
   else
     return 1
@@ -1914,8 +2184,10 @@ is_lets_encrypt_enabled_for_vhost() {
 
   local enabled
 
-  enabled=$(get_vhost_key_value apache_vhost:_:config:lets_encrypt "$vhost" 2>/dev/null)
-  if [ -n "$enabled" ]; then
+  if [ -n "$v__ssl__enabled" -a \
+          "$v__ssl__enabled" == yes -a -n "$v__ssl__type" -a \
+          "$v__ssl__type" == lets-encrypt ]; then
+
     return 0
   else
     return 1
@@ -1932,7 +2204,7 @@ get_main_url_of_vhost() {
     url="http://"
   fi
 
-  domain=$(get_vhost_default_hostname "$vhost") || return $?
+  domain=$v__vhost__server_name
 
   url+="$domain"
   url+="/"
@@ -1940,59 +2212,14 @@ get_main_url_of_vhost() {
   echo "$url"
 }
 
-set_vhost_default_hostname() {
-  local vhost="$1"
-  local hostname="$2"
-
-  local metadata_str key
-  key="apache_vhost:0:_:ServerName"
-  metadata_str="set $key $hostname"
-
-  echo "$metadata_str" | "$DEVPANEL_HOME/libexec/apache-metadata-handler" \
-                           -q "$vhost"
-
-  if [ $? -eq 0 ]; then
-    return 0
-  else
-    echo "$FUNCNAME(): unable to set default domain for vhost $vhost" 1>&2
-    return 1
-  fi
-}
-
-set_vhost_base_domain() {
-  local vhost="$1"
-  local domain="$2"
-
-  local int_name metadata_str
-
-  if [ -z "$domain" ]; then
-    int_name=$(format_hostname_internal "$vhost") || return $?
-  else
-    int_name=$(format_hostname_internal "$domain") || return $?
-  fi
-
-  metadata_str="set apache_vhost:0:_:base_domain $int_name"
-
-  echo "$metadata_str" | "$DEVPANEL_HOME/libexec/apache-metadata-handler" \
-                           -q "$vhost"
-
-  if [ $? -eq 0 ]; then
-    return 0
-  else
-    echo "$FUNCNAME(): unable to set base domain for vhost $vhost" 1>&2
-    return 1
-  fi
-}
-
 get_server_base_domain() {
   local system_dir="${1:-$DEVPANEL_HOME}"
   local domain
 
-  domain=$(deref_os_prop "$system_dir" apache_virtwww_domain)
-  if [ $? -eq 0 ]; then
-    echo "$domain"
+  if [ -n "$lamp__apache_vhosts__virtwww_domain" ]; then
+    echo "$lamp__apache_vhosts__virtwww_domain"
+    return 0
   else
-    echo "$FUNCNAME(): unable to get virtwww base domain" 1>&2
     return 1
   fi
 }
@@ -2068,7 +2295,7 @@ get_real_hostname() {
 }
 
 get_list_of_vhosts() {
-  local vhost_config_dir="$DEVPANEL_HOME/config/vhosts"
+  local vhost_config_dir="$lamp__paths__vhosts_config_dir"
   local vhost vhost_dir
   local -a vhosts_ar=()
 
@@ -2096,13 +2323,14 @@ get_list_of_local_vhosts() {
 
 get_list_of_enabled_vhosts() {
   local -a vhosts_ar=() en_vhosts_ar=()
-  local vhost
+  local vhost ini_file
 
   vhosts_ar=( $(get_list_of_vhosts) )
 
   if [ ${#vhosts_ar[*]} -gt 0 ]; then
     for vhost in "${vhosts_ar[@]}"; do
-      if is_vhost_enabled "$vhost"; then
+      load_vhost_config "$vhost" tmp_vhost || continue
+      if [ "$tmp_vhost__vhost__enabled" == yes ]; then
         en_vhosts_ar+=( "$vhost" )
       fi
     done
@@ -2118,37 +2346,18 @@ get_list_of_enabled_vhosts() {
 get_vhost_with_hostname() {
   local hostname="$1"
 
-  local tst_vhost tst_main tst_conf_dir 
-  local tst_alias_link tst_value tst_base_link tst_link
-  local hostname_fmt
-
-  hostname_fmt=$(format_hostname_internal "$hostname")
-
-  local base_addr="apache_vhost:0:_:base_domain"
-  local default_base="apache_vhost:0:_:ServerName"
-  local alias_base="apache_vhost:0:_:ServerAlias"
+  local tst_vhost
 
   for tst_vhost in $(get_list_of_vhosts); do
-    tst_conf_dir="$DEVPANEL_HOME/config/vhosts/$tst_vhost"
+    load_vhost_config "$tst_vhost" tmp_vhost || continue
 
-    tst_link="$tst_conf_dir/$alias_base:$hostname_fmt"
-    if [ -L "$tst_link" ]; then
+    if is_word_in_string "$hostname" "$tmp_vhost__vhost__domains"; then
       echo "$tst_vhost"
       return 0
     fi
-
-    tst_base_link="$tst_conf_dir/$base_addr"
-    tst_main_link="$tst_conf_dir/$default_base"
-
-    for tst_link in "$tst_base_link" "$tst_main_link"; do
-      if tst_value=$(deref_contents "$tst_link" 2>/dev/null); then
-        if [ "$tst_value" == "$hostname" ]; then
-          echo "$tst_vhost"
-          return 0
-        fi
-      fi
-    done
   done
+
+  cleanup_namespace tmp_vhost
 
   return 1 # not found in any vhost
 }
@@ -2276,8 +2485,20 @@ get_vhost_key_value() {
   deref_contents "$key_link"
 }
 
+enable_long_vhost_names() {
+  save_opts_in_lamp_config "apache.enable_long_vhost_names = yes"
+}
+
 is_longer_vhost_names_enabled() {
-  deref_os_prop "$DEVPANEL_HOME" enable_long_vhost_names &>/dev/null
+  local var value
+  var=lamp__apache__enable_long_vhost_names
+  value=${!var}
+
+  if [ -n "$value" -a "$value" == yes ]; then
+    return 0
+  else
+    return 1
+  fi
 }
 
 is_valid_php_version_string() {
@@ -2310,9 +2531,7 @@ set_php_version_metadata_for_vhost() {
     return 1
   fi
 
-  echo "rm app:0:_:php_version
-set app:0:_:php_version $version" | \
-    "$DEVPANEL_HOME/libexec/apache-metadata-handler" -q "$vhost"
+  save_opts_in_vhost_config "$vhost" "php.version = $version"
 }
 
 rm_php_version_metadata_for_vhost() {
@@ -2328,8 +2547,7 @@ rm_php_version_metadata_for_vhost() {
     return 1
   fi
  
-  echo "rm app:0:_:php_version" | \
-    "$DEVPANEL_HOME/libexec/apache-metadata-handler" -q "$vhost"
+  save_opts_in_vhost_config "$vhost" "- php.version"
 }
 
 is_known_seedapp_subsystem() {
@@ -2501,101 +2719,6 @@ translate_daynumber_to_name() {
   echo "$name"
 }
 
-generate_vhost_ini_str() {
-  local vhost="$1"
-
-  local ini_str=""
-  local db_name subsystem daily_snapshots_en weekly_snapshots_en monthly_snapshots_en
-  local daily_hour daily_retention weekly_hour weekly_retention monthly_hour monthly_retention
-  local weekly_day_raw weekly_day monthly_day_raw monthly_day
-  local htpasswd_en php_version table_prefix
-
-  local rec_snap_str="recurring_snapshots"
-
-  db_name=$(get_vhost_key_value app:0:_:db_name "$vhost" 2>/dev/null)
-  table_prefix=$(get_vhost_key_value app:0:_:table_prefix "$vhost" 2>/dev/null)
-  subsystem=$(get_vhost_key_value app:0:_:seed_app "$vhost" 2>/dev/null)
-  htpasswd_en=$(get_vhost_key_value flag:htpasswd_locked "$vhost" 2>/dev/null )
-  php_version=$(get_vhost_key_value app:0:_:php_version "$vhost" 2>/dev/null )
-
-  if [ -n "$db_name" ]; then
-    ini_str+="app.database_name = $db_name"$'\n'
-  fi
-
-  if [ -n "$table_prefix" ]; then
-    ini_str+="app.table_prefix = $table_prefix"$'\n'
-  fi
-
-  if [ -n "$subsystem" ]; then
-    ini_str+="app.subsystem = $subsystem"$'\n'
-  fi
-
-  if [ -n "$htpasswd_en" ]; then
-    ini_str+="vhost.htpasswd = yes"$'\n'
-  fi
-
-  if [ -n "$php_version" ]; then
-    ini_str+="php.version = $php_version"$'\n'
-  fi
-
-  daily_snapshots_en=$(get_vhost_key_value \
-                          config:backup_snapshot:daily:enabled "$vhost" \
-                          2>/dev/null )
-  weekly_snapshots_en=$(get_vhost_key_value \
-                          config:backup_snapshot:weekly:enabled "$vhost" \
-                          2>/dev/null )
-  monthly_snapshots_en=$(get_vhost_key_value \
-                          config:backup_snapshot:monthly:enabled "$vhost" \
-                          2>/dev/null )
-
-  if [ -n "$daily_snapshots_en" ]; then
-    daily_hour=$(get_vhost_key_value config:backup_snapshot:daily:hour \
-                  "$vhost" 2>/dev/null )
-    daily_retention=$(get_vhost_key_value config:backup_snapshot:daily:retention_unit \
-                      "$vhost" 2>/dev/null )
-
-    if [ -n "$daily_hour" -a -n "$daily_retention" ]; then
-      ini_str+="$rec_snap_str.daily_hour = $daily_hour"$'\n'
-      ini_str+="$rec_snap_str.daily_retention = $daily_retention"$'\n'
-    fi
-  fi
-
-  if [ -n "$weekly_snapshots_en" ]; then
-    weekly_hour=$(get_vhost_key_value config:backup_snapshot:weekly:hour \
-                  "$vhost" 2>/dev/null )
-    weekly_day_raw=$(get_vhost_key_value config:backup_snapshot:weekly:day \
-                  "$vhost" 2>/dev/null )
-    weekly_day=$(translate_daynumber_to_name "$weekly_day_raw" 2>/dev/null)
-
-    weekly_retention=$(get_vhost_key_value config:backup_snapshot:weekly:retention_unit \
-                        "$vhost" 2>/dev/null )
-
-    if [ -n "$weekly_day" -a -n "$weekly_hour" -a -n "$weekly_retention" ]; then
-      ini_str+="$rec_snap_str.weekly_day = $weekly_day"$'\n'
-      ini_str+="$rec_snap_str.weekly_hour = $weekly_hour"$'\n'
-      ini_str+="$rec_snap_str.weekly_retention = $weekly_retention"$'\n'
-    fi
-  fi
-
-  if [ -n "$monthly_snapshots_en" ]; then
-    monthly_hour=$(get_vhost_key_value config:backup_snapshot:monthly:hour \
-                    "$vhost" 2>/dev/null )
-    monthly_day_raw=$(get_vhost_key_value config:backup_snapshot:monthly:retention_unit \
-                    "$vhost" 2>/dev/null )
-    monthly_day=$(translate_daynumber_to_name "$monthly_day_raw" 2>/dev/null)
-    monthly_retention=$(get_vhost_key_value config:backup_snapshot:monthly:retention_unit \
-                         "$vhost" 2>/dev/null )
-
-    if [ -n "$monthly_day" -a -n "$monthly_hour" -a -n "$monthly_retention" ]; then
-      ini_str+="$rec_snap_str.monthly_day = $monthly_day"$'\n'
-      ini_str+="$rec_snap_str.monthly_hour = $monthly_hour"$'\n'
-      ini_str+="$rec_snap_str.monthly_retention = $monthly_retention"$'\n'
-    fi
-  fi
-
-  echo -n "$ini_str"
-}
-
 dump_vhost_mysql_db() {
   local vhost="$1"
   local database="$2"
@@ -2760,7 +2883,6 @@ bytes_to_human() {
   echo -n "$n_bytes_human ${unit^^}"
 }
 
-
 get_ssl_cert_path_from_vhost() {
   local vhost="$1"
 
@@ -2907,101 +3029,6 @@ get_issuer_cn_from_ssl_cert() {
   echo "$issuer_cn"
 }
 
-generate_vhost_ini_str() {
-  local vhost="$1"
-
-  local ini_str=""
-  local db_name subsystem daily_snapshots_en weekly_snapshots_en monthly_snapshots_en
-  local daily_hour daily_retention weekly_hour weekly_retention monthly_hour monthly_retention
-  local weekly_day_raw weekly_day monthly_day_raw monthly_day
-  local htpasswd_en php_version table_prefix
-
-  local rec_snap_str="recurring_snapshots"
-
-  db_name=$(get_vhost_key_value app:0:_:db_name "$vhost" 2>/dev/null)
-  table_prefix=$(get_vhost_key_value app:0:_:table_prefix "$vhost" 2>/dev/null)
-  subsystem=$(get_vhost_key_value app:0:_:seed_app "$vhost" 2>/dev/null)
-  htpasswd_en=$(get_vhost_key_value flag:htpasswd_locked "$vhost" 2>/dev/null )
-  php_version=$(get_vhost_key_value app:0:_:php_version "$vhost" 2>/dev/null )
-
-  if [ -n "$db_name" ]; then
-    ini_str+="app.database_name = $db_name"$'\n'
-  fi
-
-  if [ -n "$table_prefix" ]; then
-    ini_str+="app.table_prefix = $table_prefix"$'\n'
-  fi
-
-  if [ -n "$subsystem" ]; then
-    ini_str+="app.subsystem = $subsystem"$'\n'
-  fi
-
-  if [ -n "$htpasswd_en" ]; then
-    ini_str+="vhost.htpasswd = yes"$'\n'
-  fi
-
-  if [ -n "$php_version" ]; then
-    ini_str+="php.version = $php_version"$'\n'
-  fi
-
-  daily_snapshots_en=$(get_vhost_key_value \
-                          config:backup_snapshot:daily:enabled "$vhost" \
-                          2>/dev/null )
-  weekly_snapshots_en=$(get_vhost_key_value \
-                          config:backup_snapshot:weekly:enabled "$vhost" \
-                          2>/dev/null )
-  monthly_snapshots_en=$(get_vhost_key_value \
-                          config:backup_snapshot:monthly:enabled "$vhost" \
-                          2>/dev/null )
-
-  if [ -n "$daily_snapshots_en" ]; then
-    daily_hour=$(get_vhost_key_value config:backup_snapshot:daily:hour \
-                  "$vhost" 2>/dev/null )
-    daily_retention=$(get_vhost_key_value config:backup_snapshot:daily:retention_unit \
-                      "$vhost" 2>/dev/null )
-
-    if [ -n "$daily_hour" -a -n "$daily_retention" ]; then
-      ini_str+="$rec_snap_str.daily_hour = $daily_hour"$'\n'
-      ini_str+="$rec_snap_str.daily_retention = $daily_retention"$'\n'
-    fi
-  fi
-
-  if [ -n "$weekly_snapshots_en" ]; then
-    weekly_hour=$(get_vhost_key_value config:backup_snapshot:weekly:hour \
-                  "$vhost" 2>/dev/null )
-    weekly_day_raw=$(get_vhost_key_value config:backup_snapshot:weekly:day \
-                  "$vhost" 2>/dev/null )
-    weekly_day=$(translate_daynumber_to_name "$weekly_day_raw" 2>/dev/null)
-
-    weekly_retention=$(get_vhost_key_value config:backup_snapshot:weekly:retention_unit \
-                        "$vhost" 2>/dev/null )
-
-    if [ -n "$weekly_day" -a -n "$weekly_hour" -a -n "$weekly_retention" ]; then
-      ini_str+="$rec_snap_str.weekly_day = $weekly_day"$'\n'
-      ini_str+="$rec_snap_str.weekly_hour = $weekly_hour"$'\n'
-      ini_str+="$rec_snap_str.weekly_retention = $weekly_retention"$'\n'
-    fi
-  fi
-
-  if [ -n "$monthly_snapshots_en" ]; then
-    monthly_hour=$(get_vhost_key_value config:backup_snapshot:monthly:hour \
-                    "$vhost" 2>/dev/null )
-    monthly_day_raw=$(get_vhost_key_value config:backup_snapshot:monthly:retention_unit \
-                    "$vhost" 2>/dev/null )
-    monthly_day=$(translate_daynumber_to_name "$monthly_day_raw" 2>/dev/null)
-    monthly_retention=$(get_vhost_key_value config:backup_snapshot:monthly:retention_unit \
-                         "$vhost" 2>/dev/null )
-
-    if [ -n "$monthly_day" -a -n "$monthly_hour" -a -n "$monthly_retention" ]; then
-      ini_str+="$rec_snap_str.monthly_day = $monthly_day"$'\n'
-      ini_str+="$rec_snap_str.monthly_hour = $monthly_hour"$'\n'
-      ini_str+="$rec_snap_str.monthly_retention = $monthly_retention"$'\n'
-    fi
-  fi
-
-  echo -n "$ini_str"
-}
-
 get_key_value_from_vhost() {
   local key="$1"
   local vhost="${2:-$_dp_vhost}"
@@ -3037,15 +3064,20 @@ get_1st_level_field_value_from_app() {
 get_app_type_from_vhost() {
   local vhost="$1"
 
-  get_1st_level_field_value_from_app "$vhost" seed_app
+  if [ -n "$v__app__subsystem" ]; then
+    echo "$v__app__subsystem"
+    return 0
+  else
+    return 1
+  fi
 }
 
 is_htpasswd_enabled_on_vhost() {
   local vhost="$1"
   local en
 
-  en=$(get_vhost_key_value flag:htpasswd_locked "$vhost" 2>/dev/null )
-  if [ $? -eq 0 ]; then
+  if [ -n "$v__vhost__htpasswd" -a \
+          "$v__vhost__htpasswd" == yes ]; then
     return 0
   else
     return 1
@@ -3057,8 +3089,8 @@ is_fastcgi_enabled_on_vhost() {
   local key="apache_vhost:0:include:fastcgi"
   local en
 
-  en=$(get_vhost_key_value "$key" "$vhost" 2>/dev/null )
-  if [ $? -eq 0 ]; then
+  if [ -n "$v__vhost__fastcgi" -a \
+          "$v__vhost__fastcgi" == yes ]; then
     return 0
   else
     return 1
@@ -3147,9 +3179,9 @@ get_list_of_backup_files_from_vhost() {
 
   local data_dir files_dir archive_file
 
-  data_dir=$(deref_os_prop "$DEVPANEL_HOME" data_dir ) || return $?
+  data_dir="$conf__paths__data_dir"
 
-  files_dir="$data_dir/vhost_archives/$vhost"
+  files_dir=$(get_vhost_archives_dir "$vhost" )
 
   if [ ! -d "$files_dir" ]; then
     return 0
@@ -3264,11 +3296,10 @@ Snapshots: @snapshots_txt@
     summ_txt+="Skipping nginx vhost: Yes"$'\n'
   fi
 
-  local -a domains_ar=( $(get_hostnames_from_vhost "$vhost") )
   local domains_txt="" out_txt="" status_str=""
   local main_url ssh_host ssh_user db_name db_host_port db_name app_type
   local fastcgi_status htpasswd_status
-  local snapshots_txt snap_daily_txt snap_weekly_txt snap_monthly_txt
+  local snapshots_txt
   local ssl_txt php_ver
 
   if is_vhost_enabled "$vhost"; then
@@ -3278,9 +3309,9 @@ Snapshots: @snapshots_txt@
   fi
 
   main_url=$(get_main_url_of_vhost "$vhost")
-  app_type=$(get_app_type_from_vhost "$vhost")
-  db_host_port=$(get_mysql_db_host_port_from_vhost "$vhost")
-  db_name=$(get_mysql_db_name_from_vhost "$vhost")
+  app_type=$v__app__subsystem
+  db_host_port="$v__mysql__client__host:$v__mysql__client__port"
+  db_name="$v__app__database_name"
 
   if is_fastcgi_enabled_on_vhost "$vhost"; then
     fastcgi_status=enabled
@@ -3295,40 +3326,37 @@ Snapshots: @snapshots_txt@
   fi
 
   domains_txt+=$'\n'
-  for domain in "${domains_ar[@]}"; do
+  for domain in $v__vhost__domains; do
     domains_txt+="    $domain"$'\n'
   done
 
-  get_linux_username_from_vhost "$vhost" && \
-    ssh_user="$_dp_value"
+  ssh_user="$v__vhost__linux_user"
 
-  snap_daily_txt=$(get_snapshot_defs_for_vhost   "$vhost" daily   2>/dev/null)
-  snap_weekly_txt=$(get_snapshot_defs_for_vhost  "$vhost" weekly  2>/dev/null)
-  snap_monthly_txt=$(get_snapshot_defs_for_vhost "$vhost" monthly 2>/dev/null)
-
-  if [ -n "$snap_daily_txt" -o -n "$snap_weekly_txt" -o \
-       -n "$snap_monthly_txt" ]; then
-
-    snapshots_txt="enabled"
-
-    local _var _tst_freq _freq_txt
-    local s_freq s_day s_hour s_ret_unit
-    for _tst_freq in daily weekly monthly; do
-      _var="snap_${_tst_freq}_txt"
-      if [ -n "${!_var}" ]; then
-        if [ "$_tst_freq" == daily ]; then
-          read s_hour s_ret_unit <<< "${!_var}"
-          freq_txt="  $_tst_freq at hour $s_hour"
-        else
-          read s_day s_hour s_ret_unit <<< "${!_var}"
-          freq_txt="  $_tst_freq on $s_day, at hour $s_hour"
-        fi
-        freq_txt+=", retain $s_ret_unit files"
+  local freq day hour retention day_var hour_var retention_var
+  for freq in daily weekly monthly; do
+    if are_snapshots_enabled_for_vhost "$vhost" $freq; then
+      if [ -n "$snapshots_txt" ]; then
         snapshots_txt+=$'\n'
-        snapshots_txt+="$freq_txt"
+      else
+        snapshots_txt+="enabled"$'\n'
       fi
-    done
-  else
+
+      hour_var="v__recurring_snapshots_${freq}__hour"
+      hour="${!hour_var}"
+      retention_var="v__recurring_snapshots_${freq}__retention_unit"
+      retention="${!retention_var}"
+
+      snapshots_txt+="  $freq"
+      if [ "$freq" != daily ]; then
+        day_var="v__recurring_snapshots_${freq}__day"
+        day="${!day_var}"
+        snapshots_txt+=" on $day,"
+      fi
+      snapshots_txt+=" at hour $hour, retain $retention files"
+    fi
+  done
+  
+  if [ -z "$snapshots_txt" ]; then
     snapshots_txt="disabled"
   fi
 
@@ -3338,54 +3366,48 @@ Snapshots: @snapshots_txt@
     local ssl_cert_file ssl_cert_start_date ssl_cert_exp_date ssl_cert_cn
     local ssl_issuer_cn
     
-    ssl_cert_file=$(get_ssl_cert_path_from_vhost "$vhost" 2>/dev/null)
-    if [ $? -eq 0 ]; then
-      ssl_txt+=$'\n'
-      ssl_issuer_cn=$(get_issuer_cn_from_ssl_cert "$ssl_cert_file" \
-                        2>/dev/null )
-      [ $? -eq 0 ] && ssl_txt+="  Issuer: $ssl_issuer_cn"$'\n'
+    ssl_cert_file="$v__ssl__dir/cert.crt"
+    ssl_txt+=$'\n'
+    ssl_issuer_cn=$(get_issuer_cn_from_ssl_cert "$ssl_cert_file" \
+                      2>/dev/null )
+    [ $? -eq 0 ] && ssl_txt+="  Issuer: $ssl_issuer_cn"$'\n'
 
-      ssl_cert_cn=$(get_cn_from_ssl_cert_file "$ssl_cert_file" 2>/dev/null )
-      [ $? -eq 0 ] && ssl_txt+="  CN: $ssl_cert_cn"$'\n'
+    ssl_cert_cn=$(get_cn_from_ssl_cert_file "$ssl_cert_file" 2>/dev/null )
+    [ $? -eq 0 ] && ssl_txt+="  CN: $ssl_cert_cn"$'\n'
 
-      ssl_cert_start_date=$(get_start_date_from_ssl_cert "$ssl_cert_file" \
-                              2>/dev/null )
-      [ $? -eq 0 ] && ssl_txt+="  Valid after: $ssl_cert_start_date"$'\n'
+    ssl_cert_start_date=$(get_start_date_from_ssl_cert "$ssl_cert_file" \
+                            2>/dev/null )
+    [ $? -eq 0 ] && ssl_txt+="  Valid after: $ssl_cert_start_date"$'\n'
 
-      ssl_cert_exp_date=$(get_exp_date_from_ssl_cert "$ssl_cert_file" \
-                              2>/dev/null )
-      [ $? -eq 0 ] && ssl_txt+="  Expires On:  $ssl_cert_exp_date"$'\n'
+    ssl_cert_exp_date=$(get_exp_date_from_ssl_cert "$ssl_cert_file" \
+                            2>/dev/null )
+    [ $? -eq 0 ] && ssl_txt+="  Expires On:  $ssl_cert_exp_date"$'\n'
 
-      ssl_txt+="  HTTP to HTTPS redirect: "
-      if is_https_redirect_enabled_for_vhost "$vhost"; then
-        local https_redirect_domain
-        ssl_txt+="yes"
-        if https_redirect_domain=$(get_https_redirect_target_domain "$vhost"); then
-          ssl_txt+=", targeted redirect to https://$https_redirect_domain"
-        fi
-        ssl_txt+=$'\n'
-      else
-        ssl_txt+="no"$'\n'
+    ssl_txt+="  HTTP to HTTPS redirect: "
+    if is_https_redirect_enabled_for_vhost "$vhost"; then
+      ssl_txt+="yes"
+      if [ -n "$v__vhost__https_redirect_target_domain" ]; then
+        ssl_txt+=", targeted redirect to https://"
       fi
+      ssl_txt+=$'\n'
+    else
+      ssl_txt+="no"$'\n'
     fi
   else
     ssl_txt="disabled"
   fi
 
-  php_ver=$(get_php_version_from_vhost "$vhost" 2>/dev/null )
-  if [ $? -ne 0 ]; then
-    local sys_php_ver
-    sys_php_ver=$(get_default_php_version 2>/dev/null )
-    if [ $? -eq 0 ]; then
-      php_ver="$sys_php_ver (system default)"
-    fi
+  if [ -n "$v__php__version" ]; then
+    php_ver="$v__php__version"
+  else
+    php_ver="$lamp__php__default_version (system default)"
   fi
 
   if has_user_includes "$vhost"; then
     summ_txt+="Custom Includes: yes"$'\n'
   fi
  
-  ssh_host=$(get_server_base_domain)
+  ssh_host=$lamp__apache_vhosts__virtwww_domain
 
   out_txt="$summ_txt"
   out_txt=${out_txt//@status_str@/$status_str}
@@ -3411,6 +3433,7 @@ print_server_metadata_json() {
   local vhosts_base_domain
   local tmp_vhost tmp_vhost_json
   local tmp_dir_d tmp_vhosts_f tmp_vhosts_json_af
+  local -a jo_args_ar
   local -a vhosts_ar
   local -i n_vhosts
   local -i st
@@ -3428,6 +3451,8 @@ print_server_metadata_json() {
   vhosts_ar=( $(get_list_of_vhosts) )
   n_vhosts=${#vhosts_ar[*]}
 
+  local tmp_dir_1
+
   if ! tmp_dir_1=$(mktemp -d); then
     echo "$FUNCNAME(): unable to create temp dir" 1>&2
     return 1
@@ -3442,6 +3467,7 @@ print_server_metadata_json() {
   else
     for((i=0; i < $n_vhosts; i++)); do
       tmp_vhost="${vhosts_ar[$i]}"
+      load_vhost_config "$tmp_vhost" 2>/dev/null || continue
       print_vhost_metadata_json "$tmp_vhost"  >>$tmp_vhosts_f
     done
 
@@ -3449,14 +3475,45 @@ print_server_metadata_json() {
     jo -a < $tmp_vhosts_f >$tmp_vhosts_json_af
   fi
 
-  vhosts_base_domain=$(get_server_base_domain )
+  vhosts_base_domain=$lamp__apache_vhosts__virtwww_domain
 
-  jo -p -d . devpanel.metadata.version=1 \
-    vhosts:=$tmp_vhosts_json_af \
-    server.distro.id="$distro_id" server.distro.version="$distro_version" \
-    server.distro.title="$distro_name_pretty" \
-    server.distro.updates.enabled@$distro_updates_st \
+  jo_args_ar+=(
+    server.distro.id="$distro_id" server.distro.version="$distro_version"
+    server.distro.title="$distro_name_pretty"
+    server.distro.updates.enabled@$distro_updates_st
     server.vhosts_base_domain=$vhosts_base_domain
+  )
+
+  if [ -n "$conf__s3__bucket_name" ]; then
+    jo_args_ar+=( server.s3.bucket_name=$conf__s3__bucket_name )
+
+    local key var value
+    for key in upload_by_default delete_after_upload; do
+      var="conf__s3__$key"
+      value="${!var}"
+      if [ -n "$value" -a "$value" == yes ]; then
+        jo_args_ar+=( server.s3.$key@1 )
+      else
+        jo_args_ar+=( server.s3.$key@0 )
+      fi
+    done
+
+    local s3_file="$conf__s3__default_config_file"
+    if [ -f "$s3_file" ]; then
+      if read_ini_file_into_namespace "$s3_file" s3 2>/dev/null; then
+        for key in region host_base host_bucket; do
+          var="s3__default__${key}"
+          value="${!var}"
+          if [ -n "$value" ]; then
+            jo_args_ar+=( server.s3.$key=$value )
+          fi
+        done
+      fi
+    fi
+  fi
+      
+  jo -p -d . devpanel.metadata.version=1 \
+    vhosts:=$tmp_vhosts_json_af "${jo_args_ar[@]}"
 
   st=$?
 
@@ -3494,6 +3551,7 @@ print_vhost_metadata_json() {
     return 1
   fi
 
+  local tmp_dir_1
   if ! tmp_dir_1=$(mktemp -d); then
     echo "$FUNCNAME(): unable to create temp dir" 1>&2
     return 1
@@ -3511,12 +3569,12 @@ print_vhost_metadata_json() {
   local ssl_st ssl_type
   local php_version stack
 
-  get_hostnames_from_vhost "$vhost" >$tmp_domains_f
+  echo "${v__vhost__domains// /$'\n'}" >$tmp_domains_f
   jo -a < $tmp_domains_f >$tmp_domains_json_af
 
   get_list_of_backup_files_from_vhost_json "$vhost" >$tmp_bkp_files_json_ar
 
-  doc_root=$(get_docroot_from_vhost "$vhost" )
+  doc_root="$v__vhost__document_root"
 
   if is_vhost_enabled "$vhost"; then
     vhost_st=1
@@ -3524,14 +3582,13 @@ print_vhost_metadata_json() {
     vhost_st=0
   fi
 
-  app_type=$(get_app_type_from_vhost "$vhost")
-  db_name=$(get_mysql_db_name_from_vhost "$vhost")
-  mysql_host=$(get_mysql_db_host_from_vhost "$vhost")
-  mysql_port=$(get_mysql_db_port_from_vhost "$vhost")
-  mysql_user=$(get_mysql_db_user_from_vhost "$vhost")
+  app_type=$v__app__subsystem
+  db_name=$v__app__database_name
+  mysql_host=$v__mysql__client__host
+  mysql_port=$v__mysql__client__port
+  mysql_user=$v__mysql__client__user
 
-  get_linux_username_from_vhost "$vhost" && \
-  linux_user="$_dp_value"
+  linux_user=$v__vhost__linux_user
 
   if is_fastcgi_enabled_on_vhost "$vhost"; then
     fastcgi_st=1
@@ -3565,12 +3622,13 @@ print_vhost_metadata_json() {
   fi
   ssl_opts_ar+=( "ssl.enabled@$ssl_st" )
 
-  if php_version=$(get_php_version_from_vhost "$vhost"); then
+  if [ -n "$v__php__version" ]; then
     # specific PHP version for this vhost
+    php_version="$v__php__version"
     stack="$php_version"
   else
     # use server wide PHP version
-    php_version=$(get_default_php_version)
+    php_version="$lamp__php__default_version"
     stack="$php_version"
   fi
 
@@ -3596,10 +3654,9 @@ print_vhost_metadata_json() {
 }
 
 is_https_redirect_enabled_by_default() {
-  local https_redirect
+  local var="lamp__apache_vhosts__https_redirect_enabled"
 
-  https_redir=$(get_system_key https_redirect_enabled 2>/dev/null)
-  if [ $? -eq 0 -a "$https_redir" == yes ]; then
+  if [ -n "${!var}" -a "${!var}" == yes ]; then
     return 0
   else
     return 1
@@ -3608,12 +3665,9 @@ is_https_redirect_enabled_by_default() {
 
 is_https_redirect_enabled_for_vhost() {
   local vhost="$1"
-  local key value
+  local var="v__vhost__https_redirect_enabled"
 
-  key="apache_vhost:0:_:https_redirect"
-
-  value=$(get_vhost_key_value "$key" "$vhost" 2>/dev/null)
-  if [ $? -eq 0 -a "$value" == yes ]; then
+  if [ -n "${!var}" -a "${!var}" == yes ]; then
     return 0
   else
     return 1
@@ -3683,40 +3737,6 @@ get_https_redirect_target_domain() {
     return 1
   fi
 
-}
-
-set_user_include_metadata() {
-  local vhost="$1"
-  local tmpl_name="$2"
-
-  local metadata_str
-
-  metadata_str="set apache_vhost:0:user_include:$tmpl_name $tmpl_name"$'\n'
-
-  echo "$metadata_str" | "$DEVPANEL_HOME/libexec/apache-metadata-handler" \
-    -q "$vhost"
-
-}
-
-unset_user_include_metadata() {
-  local vhost="$1"
-  local tmpl_name="$2"
-
-  local metadata_str
-
-  metadata_str="rm apache_vhost:0:user_include:$tmpl_name"$'\n'
-
-  echo "$metadata_str" | "$DEVPANEL_HOME/libexec/apache-metadata-handler" \
-    -q "$vhost"
-}
-
-get_user_include_metadata() {
-  local vhost="$1"
-  local tmpl_name="$2"
-
-  local key="apache_vhost:0:user_include:$tmpl_name"
-
-  get_vhost_key_value "$key" "$vhost" 
 }
 
 get_vhost_include_filename() {
@@ -3837,14 +3857,25 @@ ltsv_find_line_with_keys_n_values() {
 }
 
 get_default_app_publisher() {
-  deref_os_prop "$DEVPANEL_HOME" default_app_publisher
+  if [ -n "$conf__publishers__default" ]; then
+    echo "$conf__publishers__default"
+    return 0
+  else
+    return 1
+  fi
 }
 
 get_base_url_for_publisher() {
   local publisher="$1"
-  local key="${publisher}_seedapps_base_url"
 
-  deref_os_prop "$DEVPANEL_HOME" "$key"
+  local var="conf__publisher_${publisher}__base_url"
+
+  if [ -n "${!var}" ]; then
+    echo "${!var}"
+    return 0
+  else
+    return 1
+  fi
 }
 
 get_app_metadata_from_publisher() {
@@ -3875,6 +3906,7 @@ get_app_metadata_from_publisher() {
       rm -f "$tmp_file"
     fi
   else
+    rm -f "$tmp_file"
     echo "$FUNCNAME(): unable to get app metadata from $publisher" 1>&2
   fi
 
@@ -3957,63 +3989,36 @@ get_tarball_url_for_app() {
 set_vhost_description() {
   local desc="$1"
   local vhost="$2"
-  local metadata_str="set apache_vhost:_:opt:description $desc"
 
-  echo "$metadata_str" | "$DEVPANEL_HOME/libexec/apache-metadata-handler" \
-                          -q "$vhost"
-}
-
-get_vhost_description() {
-  local vhost="$1"
-  local key="apache_vhost:_:opt:description"
-
-	get_vhost_key_value "$key" "$vhost" 2>/dev/null
+  save_opts_in_vhost_config "$vhost" "vhost.description = $desc"
 }
 
 remove_vhost_description() {
   local vhost="$1"
 
-  local key="apache_vhost:_:opt:description"
-  local metadata_str="rm $key"
-
-  echo "$metadata_str" | "$DEVPANEL_HOME/libexec/apache-metadata-handler" \
-                          -q "$vhost"
+  save_opts_in_vhost_config "$vhost" "- vhost.description"
 }
 
-apache_ctl(){
-  local action="$1"
-  distro=$(devpanel_auto_detect_distro)
+get_vhost_description() {
+  local vhost="$1"
 
-  case $distro in
-    ubuntu|debian)
-      service_name="apache2"
-    ;;
-    centos|redhat)
-      service_name="httpd"
-    ;;
-  esac
-
-  case $action in
-    start)
-      service ${service_name} start
-    ;;
-    stop)
-      service ${service_name} stop
-    ;;
-    restart)
-      service ${service_name} restart
-    ;;
-    reload)
-      service ${service_name} reload
-    ;;
-    status)
-      service ${service_name} status
-    ;;
-  esac
+  if [ -n "$v__vhost__description" ]; then
+    echo "$v__vhost__description"
+    return 0
+  else
+    return 1
+  fi
 }
 
 get_apache_ports_file() {
-  deref_os_prop "$DEVPANEL_HOME" names/apache_ports_file
+  local var
+  var=lamp__apache_paths__ports_file
+  if [ -n "${!var}" ]; then
+    echo "${!var}"
+    return 0
+  else
+    return 1
+  fi
 }
 
 install_distro_pkgs() {
@@ -4063,47 +4068,84 @@ install_distro_pkgs() {
 get_php_version_from_vhost() {
   local vhost="$1"
 
-  get_1st_level_field_value_from_app "$vhost" php_version
+  if [ -n "$v__php__version" ]; then
+    echo "$v__php__version"
+    return 0
+  else
+    return 1
+  fi
+}
+
+set_system_default_php_version() {
+  local version="$1"
+
+  save_opts_in_lamp_config "php.default_version = $version"
 }
 
 get_default_php_version() {
-  deref_os_prop "$DEVPANEL_HOME" php_default_version
-}
-
-get_platform_version() {
-  deref_os_prop "$DEVPANEL_HOME" platform_version
-}
-
-set_platform_version() {
-  local version="$1"
-
-  if [[ ! "$version" =~ ^[1-9]$ ]]; then
-    echo "$FUNCNAME(): invalid version string specified (must be [1-9])" 1>&2
+  local var="lamp__php__default_version"
+  if [ -n "${!var}" ]; then
+    echo "${!var}"
+    return 0
+  else
     return 1
   fi
-
-  echo "set-local platform_version $version" | \
-    "$DEVPANEL_HOME/libexec/system-metadata-handler" -q
 }
 
-get_vendor_seedapps_base_url() {
-  # the idea of to compose a string with 'base_url' is not a good idea
-  # just creating this function to simplify the previous logic
-  local vendor="$1"
+get_path_of_php_bin_by_version() {
+  local file="$1"
+  local version="$2"
+  local var value
 
-  deref_os_prop "$DEVPANEL_HOME" "${vendor}_seedapps_base_url"
+  local file_mod=${file//-/_}
+  local ver_mod=${version//./_}
+
+  var="lamp__php_paths__${file_mod}_${ver_mod}"
+  if [ -n "${!var}" ]; then
+    value="${!var}"
+  fi
+
+  if [ -n "$value" ]; then
+    echo "$value"
+  else
+    echo "$FUNCNAME(): couldn't find value for '$file' version '$version'" 1>&2
+    return 1
+  fi
+}
+
+get_path_of_php_lnk_dir() {
+  local var value
+
+  var="lamp__php_paths__php_lnk_dir"
+  if [ -n "${!var}" ]; then
+    value="${!var}"
+  fi
+
+  if [ -n "$value" ]; then
+    echo "$value"
+    return 0
+  else
+    echo "$FUNCNAME(): can't find php_lnk_dir" 1>&2
+    return 1
+  fi
 }
 
 get_ssl_cert_dir() {
-  deref_os_prop "$DEVPANEL_HOME" pathnames/etc/ssl/certs
+  if [ -n "$v__ssl__dir" ]; then
+    echo "$v__ssl__dir"
+    return 0
+  else
+    return 1
+  fi
 }
 
 get_ssl_key_dir() {
-  deref_os_prop "$DEVPANEL_HOME" pathnames/etc/ssl/keys
-}
-
-get_ssl_template_basename() {
-  deref_os_prop "$DEVPANEL_HOME" names/apache_vhost_ssl_template
+  if [ -n "$v__ssl__dir" ]; then
+    echo "$v__ssl__dir"
+    return 0
+  else
+    return 1
+  fi
 }
 
 is_nginx_on_port80() {
@@ -4334,6 +4376,12 @@ reload_or_start_apache() {
   fi
 }
 
+rewrite_vhost_apache_config() {
+  local vhost="$1"
+
+  "$DEVPANEL_HOME/libexec/rewrite-vhost-config" "$vhost"
+}
+
 get_system_lock_dir() {
   local lock_dir_1="/run/devpanel/lock"
   local lock_dir_2="/var/run/devpanel/lock"
@@ -4351,6 +4399,10 @@ get_system_lock_dir() {
   echo "$lock_dir"
   return 0
 }
+
+if [ -f "$DEVPANEL_HOME/lib/functions.base.sh" ]; then
+  . "$DEVPANEL_HOME/lib/functions.base.sh"
+fi
 
 if [ -f "$DEVPANEL_HOME/lib/functions.linux-kernel.sh" ]; then
   . "$DEVPANEL_HOME/lib/functions.linux-kernel.sh"

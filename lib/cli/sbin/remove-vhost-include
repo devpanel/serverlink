@@ -17,7 +17,7 @@ devpanel_cmd__remove_vhost_include() {
 
   local name vhost include_file
   local -a cmd_args_ar=()
-  local reload=1
+  local reload=1 reload_opt=--
 
   while [ -n "$1" ]; do
     name="$1"
@@ -30,7 +30,7 @@ devpanel_cmd__remove_vhost_include() {
 
       --no-reload)
         unset reload
-        cmd_args_ar+=( -N )
+        reload_opt=--no-reload
         shift
         ;;
 
@@ -51,31 +51,27 @@ devpanel_cmd__remove_vhost_include() {
 
   [ -z "$vhost" ] && usage
 
-  if ! vhost_exists "$vhost"; then
-    error "vhost '$vhost' doesn't exist." -
-    return $?
-  fi
+  load_vhost_config "$vhost" || return $?
 
-  if ! has_user_includes "$vhost"; then
+  if [ -z "$v__vhost__user_includes" -o \
+          "$v__vhost__user_includes" != yes ]; then
     echo "Warning: vhost doesn't contain custom user includes" 1>&2
     return 0
   fi
 
-  include_file=$(get_vhost_include_filename "$vhost" ) || return $?
-
-  if unset_user_include_metadata "$vhost" user_includes; then
-    rm -f "$include_file"
-    devpanel_run rewrite vhost config --vhost "$vhost" --no-restart
-    if [ -n "$reload" ]; then
-      if ! reload_or_start_apache; then
-        echo "Warnings: removed vhost includes, but Apache reload failed" 1>&2
-        return 0
-      fi
+  if save_opts_in_vhost_config "$vhost" "- vhost.user_includes"; then
+    rm -f "$v__vhost__user_include_file"
+    if devpanel_run rewrite vhost config --vhost "$vhost" $reload_opt; then
+      echo
+      echo "Successfully removed user includes for vhost '$vhost'."
+    else
+      echo
+      echo "Warning: removed include file, but failed to reload Apache" 1>&2
     fi
-
-    echo "Successfully removed custom Apache includes from vhost $vhost."
-    return 0
   else
-    error "unable to disable vhost includes"
+    error "unable to update config file." -
+    return $?
   fi
+
+  return 0
 }

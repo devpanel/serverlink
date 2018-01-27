@@ -216,16 +216,13 @@ if [ $? -ne 0 ]; then
   exit 1
 fi
 
-"$source_dir/install/install.sh" -I "$install_dir" \
+"$source_dir/install/install.sh" -Y -I "$install_dir" \
  ${from_bootstrap:+-b} ${tasks_url:+-A "$tasks_url"} \
  ${server_hostname:+-H "$server_hostname"} \
  ${platform_version:+-$platform_version} \
  ${server_uuid:+-U "$server_uuid"} ${server_key:+-K "$server_key"}
 
 status=$?
-
-devpanel init config ${autogen_hostname:+--gen-hostname-from-ip} \
-  ${server_hostname:+--hostname "$server_hostname"}
 
 if [ $status -eq 0 -a -n "$has_tty" ]; then
   devpanel help --section intro

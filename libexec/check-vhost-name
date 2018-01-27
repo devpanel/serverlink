@@ -12,58 +12,53 @@ exists()
   return $?
 }
 
-home()
-{
-  local user="$1"
-  perl -le '@a=getpwnam $ARGV[0] or die "no such user $ARGV[0]\n"; print $a[7]'  "$user"
+locked() {
+  ! is_vhost_enabled "$vhost"
 }
 
-locked()
-{
-  get_metadata_value "$vhost_meta_dir" "$DEVPANEL_VHOST_LOCK_FLAG" &>/dev/null
+usage() {
+  echo "Usage: ${0##*/} [archive|restore|lock|unlock|config|name-only] basename"
+  exit 1
 }
 
 # main
 
 declare -i max_vhost_length=6
 
+[ $# -eq 0 -o -z "$1" ] && usage
+
 mode="$1"
 [ $# = 2 ] && case "$mode" in archive|restore|lock|unlock|config|name-only) true;; *) false;; esac || 
-  error "Usage: $0 [archive|restore|lock|unlock|config|name-only] basename"
+  usage
 
 self_bin=`readlink -e "$0"`
-dir=`dirname "$self_bin"`
-devpanel_dir=`readlink -e "$dir/.."`
+dir=${self_bin%/*}
+devpanel_dir=${dir%/*}
 
 lib_file="$devpanel_dir/lib/functions"
-vars_file="$devpanel_dir/lib/variables"
-for inc_file in "$lib_file" "$vars_file"; do
+for inc_file in "$lib_file"; do
   if ! source "$inc_file"; then
     error "unable to source file '$inc_file'"
   fi
 done
+load_devpanel_config || exit $?
 
-unset enable_long_vhost_names
-enable_long_vhost_names=$(deref_os_prop "$devpanel_dir" \
-                          enable_long_vhost_names 2>/dev/null)
-if [ $? -eq 0 -a "$enable_long_vhost_names" == yes ]; then
+if is_longer_vhost_names_enabled ; then
   max_vhost_length=30
 fi
 
 vhost="$2"
-get_linux_username_from_vhost "$vhost" && w_user="$_dp_value"
-if [ $? -ne 0 ]; then
-  error "unable to get the linux username from vhost $vhost"
+if vhost_exists "$vhost"; then
+  load_vhost_config "$vhost" || exit $?
+
+  w_user="$v__vhost__linux_user"
+  b_user="b_${w_user#w_}"
+  home="$v__vhost__linux_user_home"
 fi
-b_user="b_$vhost"
 
 (echo "$vhost"|egrep -q "^[-_a-z0-9]{1,$max_vhost_length}\$")||error "invalid vhost name '$vhost'"
 
-apache_config_dir=$(get_apache_virtwww_config_dir ) || exit $?
-
-apache_config="$apache_config_dir/$w_user.conf"
-vhost_meta_dir="$devpanel_dir/config/vhosts/$vhost" # needed by locked() function
-
+apache_config_dir="$lamp__paths__vhosts_config_dir"
 if [ "$mode" == "name-only" ]; then
   exit 0
 elif [ $mode = restore ]; then
@@ -71,13 +66,12 @@ elif [ $mode = restore ]; then
   exists "$b_user" && error "$b_user must not exist"
 else
   exists "$w_user" || error "$w_user must exist"
-  home=`home "$w_user"` || error "cannot get $w_user's home dir"
   [ -d "$home" ] || error "home dir $home must exist"
   owner=`stat --format %U "$home"` || error
   [ o"$owner" = o"$w_user" ] || error "$home must be owned by $w_user"
-  [ $mode != unlock -a $mode != archive -a ! -r "$apache_config" ] && error "$apache_config must exist"
   [ $mode = lock -o $mode = config ] && locked && error "$vhost must not be locked"
   [ $mode = unlock ] && ! locked && error "$home must be locked"
   # it's ok to archive both locked and unlocked vhosts
 fi
+
 exit 0

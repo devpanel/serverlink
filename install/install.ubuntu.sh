@@ -41,8 +41,10 @@ ubuntu_install_distro_packages() {
     return 1
   fi
 
-  add_apt_repositories "$source_dir" "$distro" "$distro_ver" \
-    "$distro_ver_major" "$distro_ver_minor" || return $?
+  if [ -n "$lamp__distro_repos__enabled" ]; then
+    add_apt_repositories "$source_dir" "$distro" "$distro_ver" \
+      "$distro_ver_major" "$distro_ver_minor" || return $?
+  fi
 
   # NOTE: at this point the $install_dir has not been copied in place yet
 
@@ -66,8 +68,7 @@ ubuntu_install_distro_packages() {
   done
   # // workaround for mysql
 
-  local pkg_list_file
-  pkg_list_file="$source_dir/config/os.$distro/$distro_ver_major/distro-packages.txt"
+  local pkg_list_file="$lamp__paths__distro_defaults_dir/distro-packages.txt"
 
   install_distro_pkgs "$distro" "$distro_ver_major" "$pkg_list_file"
 

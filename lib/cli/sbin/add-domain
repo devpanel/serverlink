@@ -23,7 +23,8 @@ devpanel_cmd__add_domain() {
 
   local name vhost
   local server_domain curr_default_domain new_default_domain
-  local -a cmd_args_ar=() vhost_args_ar=() domains_ar=()
+  local reload=yes
+  local -a domains_ar=()
 
   while [ -n "$1" ]; do
     name="$1"
@@ -43,11 +44,12 @@ devpanel_cmd__add_domain() {
       --default)
         [ -z "$2" ] && error_missing_value "$name"
         new_default_domain="$2"
+        domains_ar+=( "$2" )
         shift 2
         ;;
 
       --no-reload)
-        cmd_args_ar+=( -N )
+        unset reload
         shift
         ;;
 
@@ -74,46 +76,88 @@ devpanel_cmd__add_domain() {
     return $?
   fi
 
-  server_domain=$(get_server_base_domain) || return $?
+  load_vhost_config "$vhost" || return $?
 
-  curr_default_domain=$( get_vhost_default_hostname "$vhost" ) || return $?
+  server_domain="$lamp__apache_vhosts__virtwww_domain"
 
-  if [ -z "$new_default_domain" ]; then
-    if [[ "$curr_default_domain" == *."$server_domain" ]] && \
-       [[ "${domains_ar[0]}"     != *."$server_domain" ]]; then
+  curr_default_domain="$v__vhost__server_name"
 
-      new_default_domain="${domains_ar[0]}"
-      unset domains_ar[0]
-    fi
-  fi
+  local -a args_ar=()
 
-  if [ -n "$new_default_domain" ]; then
-    if [[ ! "$new_default_domain" == *.* ]]; then
-      # if the domain string doesn't include a dot, then include a dot in
-      # the end to identify it as a fully qualified name
-      new_default_domain+="."
-    fi
-
-    vhost_args_ar+=( '*' "$new_default_domain" )
-  fi
-
+  local -i n_chg=0
   if [ -n "${domains_ar[*]}" ]; then
-    local _domain
+    local _domain other_vhost
     for _domain in "${domains_ar[@]}"; do
       [ -z "$_domain" ] && continue
-      [ "$_domain" == "$new_default_domain" ] && continue
 
-      if [[ ! "$_domain" == *.* ]]; then
-        # if the domain string doesn't include a dot, then include a dot in
-        # the end to identify it as a fully qualified name
-        _domain+="."
+      if other_vhost=$(get_vhost_with_hostname "$_domain" ); then
+        if [ "$other_vhost" == "$vhost" ]; then
+          echo "Warning: domain '$_domain' is already added. Skipping..." 1>&2
+          continue
+        else
+          error "domain '$_domain' is already on vhost '$other_vhost'" -
+          return $?
+        fi
       fi
-      vhost_args_ar+=( '+' "$_domain" )
+
+      if is_word_in_string "$_domain" "$v__vhost__domains"; then
+        echo "Warning: domain $_domain is already on vhost $vhost..." 1>&2
+        continue
+      else
+        v__vhost__domains+=" $_domain"
+        n_chg+=1
+        echo "Adding domain $_domain..."
+      fi
     done
   fi
 
-  cmd_args_ar+=( -n )
+  if [ -n "$new_default_domain" ]; then
+    if [ "$new_default_domain" != "$curr_default_domain" ]; then
+      args_ar+=( "vhost.server_name = $new_default_domain" )
+    fi
+  fi
 
-  "$sys_dir/libexec/config-vhost-names" "${cmd_args_ar[@]}" "$vhost" \
-    "${vhost_args_ar[@]}"
+  if [ ${#args_ar[@]} -eq 0 -a $n_chg -eq 0 ]; then
+    echo "Ok. No change needed."
+    return 0
+  fi
+
+  if [ $n_chg -gt 0 ]; then
+    args_ar+=( "vhost.domains = $v__vhost__domains" )
+
+    # when the default domain (ServerName) is not specified,
+    # try to guess a good value for it
+    if [ -z "$new_default_domain" -a \
+      "$v__vhost__server_name" == "$v__vhost__base_domain" ]; then
+      for _domain in $v__vhost__domains; do
+        if [[ "$_domain" != *\** ]] && \
+           [ "$_domain" != "$v__vhost__base_domain"   ] && \
+           [[ "$_domain" != *.$v__vhost__base_domain ]]; then
+          args_ar+=( "vhost.server_name = $_domain" )
+          [ -t 0 ] && echo "Setting $_domain as the ServerName..."
+          break
+        fi
+      done
+    fi
+  fi
+
+  if ! save_opts_in_vhost_config "$vhost" "${args_ar[@]}"; then
+    error "unable to update vhost configuration. No domain added." -
+    return $?
+  fi
+
+  if [ -n "$reload" ]; then
+    if ! rewrite_vhost_apache_config "$vhost"; then
+      echo "Warning: domains added to the configuration, but failed" \
+           "to reload Apache" 1>&2
+    fi
+  fi
+
+  echo
+  echo -n "Successfully added"
+  if [ $n_chg -eq 1 ]; then
+    echo " domain."
+  else
+    echo " $n_chg domains."
+  fi
 }

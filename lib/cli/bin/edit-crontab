@@ -58,6 +58,8 @@ devpanel_cmd__edit_crontab() {
     error "either --vhost or --domain needs to be specified"
   elif [ $EUID -eq 0 -a -n "$vhost" -a -n "$domain" ]; then
     error "can't specify both --domain and --vhost. Use only one."
+  elif [ $EUID -ne 0 ]; then
+    vhost=$(get_vhost_from_linuxuser ) || return $?
   fi
 
   if [ -n "$vhost" ]; then
@@ -72,6 +74,8 @@ devpanel_cmd__edit_crontab() {
     fi
   fi
 
+  load_vhost_config "$vhost" || return $?
+
   if [ -z "$file" -a ! -t 0 ]; then
     error "no input file specified and stdin is not a tty" -
     return $?
@@ -82,11 +86,7 @@ devpanel_cmd__edit_crontab() {
     return $?
   fi
 
-  get_linux_username_from_vhost "$vhost" && \
-    vhost_user="$_dp_value"
-  if [ $? -ne 0 ]; then
-    error "unable to get linux user for vhost '$vhost'"
-  fi
+  vhost_user="$v__vhost__linux_user"
 
   if [ -z "$file" ]; then
     if [ $EUID -eq 0 ]; then

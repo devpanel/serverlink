@@ -17,5 +17,6 @@ if ! . "$lib_file"; then
   echo "Error: failed to import '$lib_file'" 1>&2
   exit 1
 fi
+load_devpanel_config || exit $?
 
 extract_vhost_files_from_dir "$@"

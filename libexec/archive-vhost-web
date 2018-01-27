@@ -42,22 +42,21 @@ if ! source "$lib_f"; then
   echo "Error: unable to import $lib_f" 1>&2
   exit 1
 fi
+load_devpanel_config || exit $?
 
-get_linux_username_from_vhost "$vhost" && \
-user="$_dp_value"
-if [ $? -ne 0 ]; then
-  error "unable to get the linux username from vhost $vhost"
-fi
+load_vhost_config "$vhost" || exit $?
+
+user="$v__vhost__linux_user"
 
 archive_dir="$2"
-home="`eval \"echo ~$user\"`"
+home="$v__vhost__linux_user_home"
 date=`date  +'%Y%m%d'`
 archive_file="$archive_dir/$vhost.tgz"
-conf=`readlink -m "$sys_dir/config/os/pathnames/etc/apache_vhosts/$user.conf"` # -m because it might have been removed
+conf="$v__vhost__file"
 conf_removed="$conf.removed"
 archive_shadow="$archive_dir/$vhost.shadow"
 archive_conf="$archive_dir/apache_$vhost.conf"
-logs_dir=`readlink -e "$dir/../config/os/pathnames/var/log/apache_vhosts/$user"`
+logs_dir="$v__vhost__logs_dir"
 archive_logs="$archive_dir/logs_$vhost.tgz"
 archive_id="$archive_dir/id"
 archive_crontab="$archive_dir/crontab"

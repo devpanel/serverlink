@@ -30,6 +30,8 @@ Usage: @self_basename@ <command> [args]
     set platform version            sets the platform version to which this
                                     host will connect to
 
+    set s3 options                  set options for AWS S3 integration
+
     skip nginx vhost                Skips the writing of nginx config for the
                                     specified vhost
 

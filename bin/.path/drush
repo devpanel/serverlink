@@ -19,7 +19,18 @@ self_dir=${self_bin%/*}
 devpanel_dir=${self_dir%/*/*}
 
 lib_file="$devpanel_dir/lib/functions"
-source "$lib_file" 2>/dev/null
+if ! source "$lib_file"; then
+  echo "Error: unable to load file '$lib_file'" 1>&2
+  exit 1
+fi
+load_devpanel_config || exit $?
+
+if vhost=$(get_vhost_from_linuxuser ); then
+  load_vhost_config "$vhost"
+  public_dir="$v__vhost__linux_user_home"
+else
+  error "unable to get vhost from current user"
+fi
 
 # preferred locations for drush:
 #   if any of the paths below is found it's used
@@ -28,8 +39,6 @@ home_2_drush="$HOME/.drush/drush/drush"
 
 # fallback version
 devpanel_drush="$devpanel_dir/bin/packages/drush-7/drush"
-
-public_dir=$(get_docroot_from_user)
 
 # first check for drush on the user directory
 # if not found, and there isn't another drush in PATH, fallback to
@@ -40,8 +49,8 @@ elif [ -f "$home_2_drush" -a -x "$home_2_drush" ]; then
   drush_bin="$home_2_drush"
 else
   # check if there's a specific version of drush defined for this vhost
-  drush_version=$(get_vhost_key_value "app:0:_:drush_version" 2>/dev/null)
-  if [ $? -eq 0 ]; then
+  if [ -n "$v__app__drush_version" ]; then
+    drush_version="$v__app__drush_version"
     tmp_drush_bin="$devpanel_dir/bin/packages/drush-$drush_version/drush"
     if [ -f "$tmp_drush_bin" -a -x "$tmp_drush_bin" ]; then
       drush_bin="$tmp_drush_bin"

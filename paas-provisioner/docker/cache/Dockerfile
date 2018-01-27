@@ -16,7 +16,7 @@ RUN sed -i 's/apt-get install openssh-server/apt-get install -y openssh-server/'
 RUN sed -i 's/apt-get install postfix/apt-get install -y postfix/' /opt/serverlink/install/install.ubuntu.sh
 RUN sed -i 's/-y/--force-yes -y/' /opt/serverlink/install/install.ubuntu.sh
 # install serverlink's environment
-RUN DEBIAN_FRONTEND=noninteractive /opt/serverlink/install/install.sh -L ubuntu
+RUN DEBIAN_FRONTEND=noninteractive /opt/serverlink/install/install.sh -Y -L ubuntu
 
 # get tools for proper devPanel's scripts work
 RUN apt-get install --force-yes -y quota

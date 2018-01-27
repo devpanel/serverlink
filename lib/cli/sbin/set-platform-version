@@ -22,8 +22,13 @@ devpanel_cmd__set_platform_version() {
     case "$name" in
       --version)
         [ -z "$2" ] && error_missing_value "$name"
-        # validation is done on the function
-        version="$2"
+        if [[ "$2" =~ ^[1-9]$ ]]; then
+          version="$2"
+        else
+          echo "$FUNCNAME(): invalid version string specified (must be [1-9])" 1>&2
+          return 1
+        fi
+
         shift 2
         ;;
 
@@ -44,14 +49,11 @@ devpanel_cmd__set_platform_version() {
 
   [ -z "$version" ] && error_missing_param version
 
-  set_platform_version "$version"
-  local st=$?
-
-  if [ $st -eq 0 ]; then
+  if save_opts_in_devpanel_config "platform.version = $version"; then
     echo "Successfully set the platform version to $version."
   else
     echo "Failed to set platform version." 1>&2
-    return $st
+    return 1
   fi
 
 }

@@ -34,6 +34,7 @@ if ! source "$lib_file"; then
   echo "Error: unable to load auxiliary functions from $lib_file" 1>&2
   exit 1
 fi
+load_devpanel_config || exit $?
 
 getopt_flags='u:r:d:m:s:P:' 
 

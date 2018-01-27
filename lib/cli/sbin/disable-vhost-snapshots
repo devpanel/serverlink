@@ -16,9 +16,9 @@ set_usage_msg \
 devpanel_cmd__disable_vhost_snapshots() {
   [ $# -eq 0 -o -z "$1" ] && usage
 
-  local name vhost frequency metadata_str
+  local name vhost frequency
   local -a allowed_freq_ar=( daily weekly monthly )
-  local -a cmd_args=()
+  local -a cmd_args=() opts_ar=()
 
   while [ -n "$1" ]; do
     name="$1"
@@ -50,15 +50,9 @@ devpanel_cmd__disable_vhost_snapshots() {
 
   "$sys_dir/libexec/check-vhost-name" archive "$vhost" || return $?
 
-  metadata_str="
-rm config:backup_snapshot:$frequency:enabled
-rm config:backup_snapshot:$frequency:hour
-rm config:backup_snapshot:$frequency:retention_unit
-rm config:backup_snapshot:$frequency:day
-"
-
-  echo "$metadata_str" | "$sys_dir/libexec/apache-metadata-handler" -q "$vhost"
-  if [ $? -eq 0 ]; then
+  opts_ar=("- recurring_snapshots $frequency")
+  
+  if save_opts_in_vhost_config "$vhost" "${opts_ar[@]}"; then
     echo "Successfully disabled $frequency snapshots for vhost $vhost."
   else
     error "unable to disable $frequency snapshots for vhost $vhost." -

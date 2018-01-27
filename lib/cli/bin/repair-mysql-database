@@ -46,20 +46,19 @@ devpanel_cmd__repair_mysql_database() {
 
   [ -z "$vhost" -a $EUID -eq 0 ] && error_missing_param vhost
 
+  if [ $EUID -ne 0 ]; then
+    vhost=$(get_vhost_from_linuxuser ) || return $?
+  fi
+
+  load_vhost_config "$vhost" || return $?
+  local user="$v__vhost__linux_user"
+
   cmd_args=( "$sys_dir/bin/repair-vhost-db" )
   if [ -n "$db_name" ]; then
     cmd_args+=( "$db_name" )
   fi
 
   if [ $EUID -eq 0 ]; then
-
-    local user
-
-    get_linux_username_from_vhost "$vhost"
-    if ! user="$_dp_value"; then
-      error "unable to get linux username for vhost $vhost"
-    fi
-
     su -l -c "${cmd_args[*]}" "$user"
   else
     # not root, run it directly

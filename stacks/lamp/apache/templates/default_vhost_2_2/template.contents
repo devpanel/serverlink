@@ -1,0 +1,12 @@
+<VirtualHost @@__VHOST__IP_ADDR__@@:@@__VHOST__HTTP_PORT__@@>
+  ServerName @@__VHOST__SERVER_NAME__@@
+  ServerAlias @@__VHOST__SERVER_ALIAS__@@
+  DocumentRoot @@__VHOST__DOCUMENT_ROOT__@@
+  SuexecUserGroup @@__VHOST__LINUX_USER__@@ @@__LAMP__APACHE__EXEC_GROUP__@@
+  CustomLog webenabled-logs/virtwww/@@__VHOST__LINUX_USER__@@/@@__VHOST__NAME__@@-access_log combined
+  ErrorLog webenabled-logs/virtwww/@@__VHOST__LINUX_USER__@@/@@__VHOST__NAME__@@-error_log
+
+  #  @@__SYSTEM_INCLUDES__@@
+  #  @@__USER_INCLUDES__@@
+</VirtualHost>
+#  @@__OUTER_INCLUDES__@@

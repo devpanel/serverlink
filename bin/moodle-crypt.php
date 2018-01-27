@@ -1,4 +1,4 @@
-#!/opt/webenabled/config/os/pathnames/bin/php -q
+#!/usr/bin/env php
 <?php
 $u_hash   = posix_getpwuid(posix_geteuid());
 $v_host   = $u_hash['name'];

@@ -43,5 +43,7 @@ devpanel_cmd__dump_vhost_metadata() {
     return 1
   fi
 
+  load_vhost_config "$vhost" || return $?
+
   print_vhost_metadata_json --pretty "$vhost"
 }

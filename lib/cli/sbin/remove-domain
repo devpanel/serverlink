@@ -19,7 +19,8 @@ devpanel_cmd__remove_domain() {
   [ $# -eq 0 -o -z "$1" ] && usage
 
   local name vhost default_domain base_domain
-  local -a cmd_args_ar=() vhost_args_ar=() domains_ar=()
+  local reload=yes
+  local -a domains_ar=()
 
   while [ -n "$1" ]; do
     name="$1"
@@ -37,7 +38,7 @@ devpanel_cmd__remove_domain() {
         ;;
 
       --no-reload)
-        cmd_args_ar+=( -N )
+        unset reload
         shift
         ;;
 
@@ -58,13 +59,18 @@ devpanel_cmd__remove_domain() {
 
   [ -z "${domains_ar[*]}" -o -z "$vhost" ] && usage
 
+  load_vhost_config "$vhost" || return $?
+
   if ! vhost_exists_and_is_enabled "$vhost"; then
     return 1
   fi
 
-  default_domain=$(get_vhost_default_hostname "$vhost" ) || return $?
-  base_domain=$(get_vhost_base_domain "$vhost" ) || return $?
+  default_domain="$v__vhost__server_name"
+  base_domain="$v__vhost__base_domain"
 
+  local -a opts_ar=()
+
+  local -i n_chg=0
   local _domain
   for _domain in "${domains_ar[@]}"; do
     [ -z "$_domain" ] && continue
@@ -76,23 +82,64 @@ devpanel_cmd__remove_domain() {
       return $?
     fi
 
+    if ! is_word_in_string "$_domain" "$v__vhost__domains"; then
+      echo "Warning: domain '$_domain' is not on vhost '$vhost'" 1>&2
+      continue
+    fi
+
     if [ "$_domain" == "$default_domain" ]; then
       # if the domain is the default domain, then set the base domain as the new
       # default hostname for that domain
-      vhost_args_ar=( '*' "$base_domain" "${vhost_args_ar[@]}" )
+      opts_ar+=( "vhost.server_name = $base_domain" )
     fi
 
-    if [[ ! "$_domain" == *.* ]]; then
-      # if the domain string doesn't include a dot, then include a dot in
-      # the end to identify it as a fully qualified name
-      _domain+="."
+    if [[ "$v__vhost__domains" == $_domain\ * ]]; then
+      v__vhost__domains=${v__vhost__domains#$_domain *}
+      n_chg+=1
+    elif [[ "$v__vhost__domains" == *\ $_domain\ * ]]; then
+      v__vhost__domains=${v__vhost__domains// $_domain /\ }
+      n_chg+=1
+    elif [[ "$v__vhost__domains" == *\ $_domain ]]; then
+      v__vhost__domains=${v__vhost__domains% $_domain}
+      n_chg+=1
+    else
+      echo "Warning: skipping domain '$_domain' not found on vhost $vhost" 1>&2
+      continue
     fi
 
-    vhost_args_ar+=( '-' "$_domain" )
+    echo "Removing domain $_domain..."
   done
 
-  cmd_args_ar+=( -n )
+  if [ -z "$v__vhost__domains" ]; then
+    error "Aborted. List of domains would be empty. A vhost needs at least 1 domain."
+  fi
 
-  "$sys_dir/libexec/config-vhost-names" "${cmd_args_ar[@]}" "$vhost" \
-    "${vhost_args_ar[@]}"
+  if [ ${#opts_ar[@]} -eq 0 -a $n_chg -eq 0 ]; then
+    echo "Ok. No change needed."
+    return 0
+  fi
+
+  if [ $n_chg -gt 0 ]; then
+    opts_ar+=( "vhost.domains = $v__vhost__domains" )
+  fi
+
+  if ! save_opts_in_vhost_config "$vhost" "${opts_ar[@]}"; then
+    error "unable to update vhost configuration. No domain removed." -
+    return $?
+  fi
+
+  if [ -n "$reload" ]; then
+    if ! rewrite_vhost_apache_config "$vhost"; then
+      echo "Warning: successfully removed domains, but failed to" \
+           "reload Apache" 1>&2
+    fi
+  fi
+
+  echo
+  echo -n "Successfully removed"
+  if [ $n_chg -eq 1 ]; then
+    echo " domain."
+  else
+    echo " $n_chg domains."
+  fi
 }

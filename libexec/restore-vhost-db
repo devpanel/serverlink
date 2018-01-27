@@ -42,14 +42,15 @@ if ! source "$dir/../lib/functions"; then
   exit 1
 fi
 
+load_devpanel_config || exit $?
+
 vhost="$1"
 archive_label="$2"
 
-get_linux_username_from_vhost "$vhost" && \
-user_web="$_dp_value"
-if [ $? -ne 0 ]; then
-  error "unable to get the linux username from vhost $vhost"
-fi
+load_vhost_config "$vhost" || exit $?
+
+user_web="$v__vhost__linux_user"
+
 user="b_${user_web#w_}"
 
 if [ $create_db_instance -eq 1 ] && getent passwd "$user" &>/dev/null; then
@@ -60,12 +61,10 @@ fi
 
 if [ $create_db_instance -eq 0 -a $search_in_users_home -eq 1 -a "${archive_label:0:1}" != "/" \
  -a "${archive_label:0:2}" != "./" -a "${archive_label:0:3}" != "../" ]; then
-  user_info=$(getent passwd "$user_web")
-  if [ $? -eq 0 ]; then
-    user_home_dir=$(echo "$user_info" | cut -d: -f 6)
-    test_archive="$user_home_dir/public_html/gen/archive/$archive_label"
-    [ -f "$test_archive" ] && archive_label="$test_archive"
-  fi
+
+  user_home_dir="$v__vhost__linux_user_home"
+  test_archive="$user_home_dir/public_html/gen/archive/$archive_label"
+  [ -f "$test_archive" ] && archive_label="$test_archive"
 fi
 
 if [ ! -e "$archive_label" ]; then

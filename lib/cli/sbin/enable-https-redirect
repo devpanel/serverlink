@@ -26,7 +26,7 @@ devpanel_cmd__enable_https_redirect() {
   [ $# -eq 0 -o -z "$1" ] && usage
 
   local name vhost domain
-  local -a cmd_args_ar=()
+  local -a cmd_args_ar=() opts_ar=()
   local reload=1 write_vhost_config=1
 
   while [ -n "$1" ]; do
@@ -72,13 +72,20 @@ devpanel_cmd__enable_https_redirect() {
     return $?
   fi
 
+  load_vhost_config "$vhost" || return $?
+
   if ! is_ssl_enabled_on_vhost "$vhost"; then
     echo "Warning: SSL is not enabled for this vhost" 1>&2
     return 0
   fi
 
-  if set_https_redirect_metadata "$vhost" ${domain:+$domain}; then
-    "$sys_dir/libexec/config-vhost-apache" "${cmd_args_ar[@]}" "$vhost" || \
+  opts_ar+=( "vhost.https_redirect_enabled = yes" )
+  if [ -n "$domain" ]; then
+    opts_ar+=( "vhost.https_redirect_target_domain = $domain" )
+  fi
+
+  if save_opts_in_vhost_config "$vhost" "${opts_ar[@]}"; then
+    "$sys_dir/libexec/rewrite-vhost-config" "${cmd_args_ar[@]}" "$vhost" || \
       return $?
 
     echo "Successfully enabled HTTPS redirect on vhost $vhost."

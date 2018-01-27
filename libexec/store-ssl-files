@@ -217,9 +217,14 @@ lib_file="$we_base_dir/lib/functions"
 if ! source "$lib_file"; then
   error "unable to source lib file $lib_file"
 fi
+load_devpanel_config || exit $?
 
 if ! "$curr_dir/check-vhost-name" archive "$vhost"; then
   error "Invalid vhost name"
+fi
+
+if ! load_vhost_config "$vhost"; then
+  error "unable to load vhost configuration."
 fi
 
 ssl_cert_dir=$(get_ssl_cert_dir ) || return $?

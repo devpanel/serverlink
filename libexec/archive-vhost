@@ -70,7 +70,7 @@ archive_vhost_web_options=""
 check_archive_pathname_options=""
 debug=""
 in_user_path=""
-no_checksum=""
+calc_checksum=yes
 skip_group_changes=""
 
 umask 027
@@ -85,7 +85,7 @@ do
       archive_vhost_web_options="${archive_vhost_web_options+ }-e $OPTARG"
       ;;
     C)
-      no_checksum=1
+      unset calc_checksum
       ;;
     G)
       skip_group_changes=1
@@ -106,23 +106,23 @@ if ! source "$lib_file"; then
   echo "Error: unable to load lib file '$lib_file'" 1>&2
   exit 1
 fi
+load_devpanel_config || exit $?
 
 vhost="$1"
 archive_to="$2"
 
-get_linux_username_from_vhost "$vhost" && user_web="$_dp_value"
-if [ $? -ne 0 ]; then
-  error "unable to get the linux username from vhost $vhost"
-fi
+load_vhost_config "$vhost" || exit $?
+
+user_web="$v__vhost__linux_user"
 user_db="b_${user_web#w_}"
 
 $dir/check-vhost-name archive "$vhost" || usage
-home="`eval echo -n \~$user_web`"
+home="$v__vhost__linux_user_home"
 [ -d "$home" ] || error "Home dir $home does not exist"
 
 # lock $vhost_archive_dir not to have other concurring backups
 # at the same time
-archive_lock="$sys_dir/config/vhosts/$vhost"
+archive_lock="$v__vhost__config_dir"
 if ! lock_path "$archive_lock" >/dev/null; then
   lock_f=$(get_lock_filename "$archive_lock")
   if [ -L "$lock_f" ]; then
@@ -205,11 +205,7 @@ fi
 #   translate_archive_placeholders()
 archive_dir_in_user="$home/public_html/gen/archive"
 archive_dir_in_sys="$sys_archive_dir/$vhost"
-if [ -n "$in_user_path" ]; then
-  vhost_archive_dir="$archive_dir_in_user"
-else
-  vhost_archive_dir="$archive_dir_in_sys"
-fi
+vhost_archive_dir="$sys_archive_dir/$vhost"
 
 if [ -n "$archive_to" -a "$archive_to" == "-" ]; then
   to_stdout=1  # destination is STDOUT
@@ -416,10 +412,7 @@ if ! ${debug:+run} mv -n "$tmp_target_file" "$target_file"; then
   error "unable to move '$tmp_target_file' to '$target_file'"
 fi
 
-echo
-echo "Successfully saved archive file to '$target_file'"
-
-if [ -n "$webenabled_backwards" -a -z "$no_checksum" ]; then
+if [ -n "$calc_checksum" ]; then
   echo "Calculating md5sum for the file..." 1>&2
   md5_output=$(nice -19 md5sum "$target_file")
   echo "Calculating sha1sum for the file..." 1>&2
@@ -427,43 +420,61 @@ if [ -n "$webenabled_backwards" -a -z "$no_checksum" ]; then
 
   if [ -n "$md5_output" ]; then
     md5_str=${md5_output%% *}
-    md5_file="${target_file%.*}.md5"
+    if [ -n "$webenabled_backwards" ]; then
+      md5_file="${target_file%.*}.md5"
+    else
+      md5_file="$target_file.md5"
+    fi
 
     touch "$md5_file"
     chmod 0640 "$md5_file"
-    chown "$user_web":"$apache_group" "$md5_file"
+    if [ -n "$webenabled_backwards" ]; then
+      chmod 0644 "$md5_file"
+    else
+      chmod 0640 "$md5_file"
+    fi
 
-    su -l -s /bin/bash -c "umask 027; cd "$vhost_archive_dir" && \
-      echo "$md5_str" >"$md5_file"" "$user_web"
+    echo "$md5_str" >"$md5_file"
   fi
 
   if [ -n "$sha1_output" ]; then
     sha1_str=${sha1_output%% *}
-    sha1_file="${target_file%.*}.sha1"
+    if [ -n "$webenabled_backwards" ]; then
+      sha1_file="${target_file%.*}.sha1"
+    else
+      sha1_file="$target_file.sha1"
+    fi
 
     touch "$sha1_file"
-    chmod 0640 "$sha1_file"
-    chown "$user_web":"$apache_group" "$sha1_file"
+    if [ -n "$webenabled_backwards" ]; then
+      chmod 0644 "$sha1_file"
+    else
+      chmod 0640 "$sha1_file"
+    fi
 
-    su -l -s /bin/bash -c "umask 027; cd "$vhost_archive_dir" && \
-      echo "$sha1_str" >"$sha1_file"" "$user_web"
+    echo "$sha1_str" >"$sha1_file"
   fi
 
-  # create a link to $HOME/public_html/gen/archive so that it displays in
-  # Webenabled v1 dashboard
-  su -l -s /bin/bash -c '
-    target_file='"$target_file"'                 ;
-    md5_file="${target_file%.*}.md5"             ;
-    sha1_file="${target_file%.*}.sha1"           ;
-    ard=$HOME/public_html/gen/archive            ;
-    [ ! -d $ard ] && mkdir -m 751 -p $ard        ;
-    cd $ard                                      ;
-    ln -s $target_file .                         ;
-    [ -e "$md5_file"  ]  && ln -s $md5_file .    ;
-    [ -e "$sha1_file" ]  && ln -s $sha1_file .   ;
-  ' "$user_web"
+  if [ -n "$webenabled_backwards" ]; then
+    # create a link to $HOME/public_html/gen/archive so that it displays in
+    # Webenabled v1 dashboard
+    su -l -s /bin/bash -c '
+      target_file='"$target_file"'                 ;
+      md5_file="${target_file%.*}.md5"             ;
+      sha1_file="${target_file%.*}.sha1"           ;
+      ard=$HOME/public_html/gen/archive            ;
+      [ ! -d $ard ] && mkdir -m 751 -p $ard        ;
+      cd $ard                                      ;
+      ln -s $target_file .                         ;
+      [ -e "$md5_file"  ]  && ln -s $md5_file .    ;
+      [ -e "$sha1_file" ]  && ln -s $sha1_file .   ;
+    ' "$user_web"
+  fi
  
 fi
+
+echo
+echo "Successfully saved archive file to '$target_file'"
 
 if [ -n "$webenabled_backwards" ]; then
   # Webenabled v1 servers exit here

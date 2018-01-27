@@ -8,7 +8,7 @@ ARG DOMAIN=$DOMAIN
 
 # setup environment for the app
 COPY ${APP}_export_for_convert_ops.tgz /opt/webenabled-data/vhost_archives/
-RUN /opt/webenabled/libexec/config-vhost-names-default ${DOMAIN}
+RUN /opt/webenabled/bin/devpanel set base hostname --name ${DOMAIN}
 RUN /opt/webenabled/libexec/restore-vhost -p ${USER} /opt/webenabled-data/vhost_archives/${APP}_export_for_convert_ops.tgz
 RUN mv /etc/mysql/my.cnf /etc/mysql/my.cnf.orig
 

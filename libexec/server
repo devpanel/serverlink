@@ -168,7 +168,9 @@ if($basename eq 'client-unpriv') {
 error "Permission denied (2)\n" unless grep { $_ eq $basename } @allowed_basename;
 
 my $command;
-if(-x "$dir/$basename" && !$unprivileged) {
+if(-x "$dir/old-we-v1/$basename" && !$unprivileged) {
+  $command = "$dir/old-we-v1/$basename";
+} elsif(-x "$dir/$basename" && !$unprivileged) {
   $command = "$dir/$basename";
 } elsif(-x "$dir/../bin/$basename" && $unprivileged) {
   $command = "$dir/../bin/$basename";

@@ -7,8 +7,43 @@ set_usage_msg \
 "
 
 devpanel_cmd__update() {
-  # first update the system scripts
-  "$sys_dir/libexec/update-scripts" || return $?
+  local arg update_scripts=yes
+
+  while [ -n "$1" ]; do
+    arg="$1"
+    case "$arg" in
+      --skip-scripts-update)
+        unset update_scripts
+        shift
+        ;;
+
+      *)
+        error "unknown option '$arg'" -
+        shift
+        return 1
+        ;;
+    esac
+  done
+
+  # first load state data, so that we have a minimal information on system
+  # state to update the scripts and also run the migration scripts
+  if ! load_state_data ; then
+    error "missing state data. Unable to do any update." -
+    return 1
+  fi
+        
+  if [ -n "$update_scripts" ]; then
+    # first update the system scripts
+    "$sys_dir/libexec/update-scripts" || return $?
+
+    # after updating the scripts, re-run the command to run with any new
+    # update on the update script itself
+    "$__self_bin" update --skip-scripts-update
+
+    return $?
+  fi
+
+  devpanel_run run migrations --yes || return $?
 
   # then update the system packages
   "$sys_dir/libexec/package-mgr" update-all -y

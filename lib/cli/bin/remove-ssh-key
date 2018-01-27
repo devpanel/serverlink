@@ -15,7 +15,7 @@ set_usage_msg \
 
 devpanel_cmd__remove_ssh_key() {
 
-  local vhost arg file
+  local vhost arg file linux_user
   local -a cmd_args_ar=( "$sys_dir/bin/manage-ssh-keys" )
 
   while [ -n "$1" ]; do
@@ -63,21 +63,21 @@ devpanel_cmd__remove_ssh_key() {
     return 0
   fi
 
-  local linux_user
-  if [ $EUID -eq 0 ]; then
+  if [ $EUID -ne 0 ]; then
+    vhost=$(get_vhost_from_linuxuser ) || return $?
+  else
     [ -z "$vhost" ] && { error_missing_param vhost ; return $?; }
+  fi
 
-    if get_linux_username_from_vhost "$vhost"; then
-      linux_user="$_dp_value"
-    else
-      error "unable to get the linux user from vhost $vhost" -
-      return $?
-    fi
+  load_vhost_config "$vhost" || return $?
 
-    if ! vhost_exists_and_is_enabled "$vhost"; then
-      return 1
-    fi
+  if ! vhost_exists_and_is_enabled "$vhost"; then
+    return 1
+  fi
 
+  key_file="$v__vhost__linux_user_home/.ssh/authorized_keys"
+
+  if [ $EUID -eq 0 ]; then
     if [ "$file" != - ]; then
       # run from stdin to be sure the vhost's user won't have permission
       # denied to read the file
@@ -86,13 +86,11 @@ devpanel_cmd__remove_ssh_key() {
         return $?
       fi
     fi
-
-    key_file=$(eval echo -n ~$linux_user/.ssh/authorized_keys)
     cmd_args_ar+=( --target-file "$key_file" --rm - )
+    linux_user="$v__vhost__linux_user"
 
     run_as_user --login "$linux_user" "${cmd_args_ar[@]}"
   else
-    key_file="$HOME/.ssh/authorized_keys"
     cmd_args_ar+=( --target-file "$key_file" --rm "$file" )
 
     "${cmd_args_ar[@]}"

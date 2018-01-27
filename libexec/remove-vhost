@@ -32,7 +32,7 @@ run()
 revert_disable_vhost() {
   echo "Re-enabling vhost..."
 
-  "$dir/config-vhost-apache" "$vhost"
+  "$dir/rewrite-vhost-config" "$vhost"
   if [ $? -eq 0 ]; then
     echo "Successfully re-enabled vhost $vhost"
   fi
@@ -53,8 +53,12 @@ done
 [ $OPTIND -gt 1 ] && shift `expr $OPTIND - 1`
 
 self_bin=$(readlink -e "$0")
-dir=`dirname "$self_bin"`
-sys_dir=$(readlink -e "$dir/..")
+if [ $? -ne 0 ]; then
+  echo "Error: unable to get self path" 1>&2
+  exit 1
+fi
+dir=${self_bin%/*}
+sys_dir=${dir%/*}
 
 vhost="$1"
 "$dir/check-vhost-name" archive "$vhost" || exit 1
@@ -69,16 +73,13 @@ if ! source "$lib_file"; then
   echo "Error: unable to source lib file $lib_file" 1>&2
   exit 1
 fi
+load_devpanel_config || exit $?
 
-sys_data_dir=$(get_devpanel_datadir ) || exit 1
+load_vhost_config "$vhost" || exit $?
 
-apache_base_log_dir=$(get_apache_virtwww_log_dir ) || exit 1
+apache_base_log_dir="$lamp__apache_paths__vhost_logs_dir"
 
-get_linux_username_from_vhost "$vhost" && \
-user_web="$_dp_value"
-if [ $? -ne 0 ]; then
-  error "unable to get the linux username from vhost $vhost"
-fi
+user_web="$v__vhost__linux_user"
 user_db="b_${user_web#w_}"
 
 date_ts=`date  +'%b-%d-%Y-%Hh%Mmin'`
@@ -86,13 +87,13 @@ if [ $? -ne 0 -o -z "$date_ts" ]; then
   error "unable to get current date"
 fi
 
-vhost_config_dir="$sys_dir/config/vhosts/$vhost"
+vhost_config_dir="$v__vhost__config_dir"
 vhost_cache_dir="$sys_dir/var/cache/vhost/$vhost"
-archived_files_dir="$sys_data_dir/vhost_archives/$vhost"
+archived_files_dir="$v__vhost__archives_dir"
 apache_log_dir="$apache_base_log_dir/$user_web"
-removed_vhosts_dir="$sys_data_dir/removed_vhosts"
+removed_vhosts_dir="$conf__paths__data_dir/removed_vhosts"
 
-"$dir/config-vhost-apache" -D "$vhost" || exit 1
+"$dir/rewrite-vhost-config" -D "$vhost" || exit 1
 trap 'revert_disable_vhost' EXIT
 
 # if $archive_to not equal "-" then archive it before removing
@@ -159,8 +160,8 @@ if [ -d "$archived_files_dir" ]; then
   fi
 fi
 
-linuxuser_vhost_dir=$(get_linuxuser_vhost_dir)
-rm -f "$linuxuser_vhost_dir/$user_web"
+rm -f "$v__vhost__config_link"
+rm -f "$lamp__paths__user_vhost_map/$user_web"
 
 echo "Removing cron for $user_web"
 run crontab -u "$user_web" -r

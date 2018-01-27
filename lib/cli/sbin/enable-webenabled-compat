@@ -60,9 +60,7 @@ r_we:x:\1/}' /etc/shadow
     ln -s . "$sys_dir/current"
   fi
 
-  local metadata_str="set-local webenabled_backwards 1"
-
-  echo "$metadata_str" | "$sys_dir/libexec/system-metadata-handler" -q
+  enable_webenabled_backwards_compat
   if [ $? -eq 0 ]; then
     echo "Successfully enabled Webenabled v1 backwards compatibility."
   else

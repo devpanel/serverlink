@@ -156,14 +156,12 @@ we_base_dir=`readlink -e "$dir/.."`
 dir_bin="$we_base_dir/bin"
 export DEVPANEL_HOME="$we_base_dir"
 
-metadata_bin="$DEVPANEL_HOME/libexec/apache-metadata-handler"
-config_dir="$we_base_dir/config/vhosts/$vhost"
-vhost_config_dir=.webenabled/private
-
 aux_lib_file="$we_base_dir/lib/functions"
 if ! source "$aux_lib_file"; then
   error "unable to load auxiliary functions from $aux_lib_file"
 fi
+
+load_devpanel_config || exit $?
 
 sys_datadir=$(get_devpanel_datadir ) || exit 1
 
@@ -197,7 +195,7 @@ elif [ ${#archive_label}  -gt 10 -a "${archive_label:0:7}" == "http://"    \
      ]; then
 
   if [[ "$archive_label" == we://* ]]; then
-    seedapp_base_url=$(get_vendor_seedapps_base_url webenabled ) || return $?
+    seedapp_base_url=$(get_base_url_for_publisher webenabled ) || return $?
 
     tmp_rel_url=${archive_label#*://}
     archive_url="${seedapp_base_url%/}/$tmp_rel_url"
@@ -205,7 +203,7 @@ elif [ ${#archive_label}  -gt 10 -a "${archive_label:0:7}" == "http://"    \
       archive_url+=".tgz"
     fi
   elif [[ "$archive_label" == devpanel://* ]]; then
-    seedapp_base_url=$(get_vendor_seedapps_base_url devpanel ) || return $?
+    seedapp_base_url=$(get_base_url_for_publisher devpanel ) || return $?
 
     tmp_rel_url=${archive_label#*://}
     archive_url="${seedapp_base_url%/}/$tmp_rel_url"
@@ -228,17 +226,13 @@ elif [ ! -e "$archive_label" -a $create_vhost -eq 0 \
   -a "${archive_label:0:1}" != "/" -a "${archive_label:0:2}" != "./" \
   -a "${archive_label:0:3}" != "../" ]; then
 
-  # need the variable \$home earlier
-  get_linux_username_from_vhost "$vhost" && \
-  user_web="$_dp_value"
-  if [ $? -ne 0 ]; then
-    error "unable to get the linux username from vhost $vhost"
-  fi
-  home=~$user_web
+  load_vhost_config "$vhost" || exit $?
 
-  base_label=$(basename "$archive_label")
+  home="$v__vhost__linux_user_home"
+
+  base_label="${archive_label##*/}"
   path_in_home="$home/public_html/gen/archive/$base_label"
-  path_in_sysdir="$sys_datadir/vhost_archives/$vhost/$base_label"
+  path_in_sysdir="$v__vhost__archives_dir/$base_label"
 
   if [ -f "$path_in_sysdir" ]; then
     archive_file="$path_in_sysdir"
@@ -303,24 +297,12 @@ fi
 [ $create_vhost -eq 0 ] && \
     web_options="$web_options${web_options+ }-N"
 
-if [ -n "$php_version" ]; then
-  # write the php version to devpanel.ini so that restore-vhost-web sets it
-  # just after creating the vhost
-  echo "php.version = $php_version" | \
-    "$we_base_dir/bin/update-ini-file" -c -q "$archive_dir/devpanel.ini"
-fi
-
 echo Processing web...
 run $0-web $web_options "$vhost" "$archive_dir/web" "$@" || exit 1
 
-# when the vhost is created, the username information is only available now
-get_linux_username_from_vhost "$vhost" && \
-user_web="$_dp_value"
-if [ $? -ne 0 ]; then
-  error "unable to get the linux username from vhost $vhost"
+if [ -n "$php_version" ]; then
+  devpanel set php version --version "$php_version" --vhost "$vhost"
 fi
-home=~$user_web
-user_db="b_${user_web#w_}"
 
 if ! [ -d "$archive_dir/db" ]
 then
@@ -347,42 +329,27 @@ fi
 echo "$output"
 [ $status = 0 ] || exit $status
 
-mysql_host_port=$(get_param_from_db_output "$user_web" host "$output")
-mysql_host=${mysql_host_port%:*}
-mysql_port=${mysql_host_port#*:}
-mysql_user=$(get_param_from_db_output "$user_web" user "$output")
-mysql_password=$(get_param_from_db_output "$user_web" password "$output")
+load_vhost_config "$vhost" || exit $?
 
-# write the ~/.my.cnf file
-{ printf 'client.host = %s\nclient.port = %s\nclient.user = %s\n' \
-    "$mysql_host" "$mysql_port" "$mysql_user" ;
-  printf 'client.password = %s\n' "$mysql_password";
-} | run_su "$we_base_dir/bin/update-ini-file" -c "~/.my.cnf"
+# user_web is needed by run_su, and also to generate $user_db
+user_web="$v__vhost__linux_user"
+user_db="b_${user_web#w_}"
 
-echo "Updating .mysql.passwd"
-admin_password=$(get_param_from_db_output admin password "$output")
-{
-  echo "admin:$admin_password";
-  echo "$mysql_user:$mysql_password";
-} | run_su "cat >$vhost_config_dir/.mysql.passwd"
+declare -a vhost_opts_ar=( \
+  "app.subsystem = $subsystem"      \
+  "app.database_name = $subsystem"  \
+  "mysql.instance = $user_db"
+)
 
-run_su "ln -snf $vhost_config_dir/.mysql.passwd .mysql.passwd"
+save_opts_in_vhost_config "$vhost" "${vhost_opts_ar[@]}"
+
+# re-load vhost information to include the latest additions
+load_vhost_config "$vhost" || exit $?
 
 
+run_su "rm -f ~/.my.cnf ; ln -s \"$v__mysql__client_file\" ~/.my.cnf"
 run_su $dir_bin/phpMyAdmin.fix -f
 run_su $dir_bin/vhost-archive.fix -f
-
-metadata_str="
-set app:_:default app:0
-set app:0:_:db_host $mysql_host
-set app:0:_:db_port $mysql_port
-set app:0:_:db_user $mysql_user
-set app:0:_:db_password $mysql_password
-set app:0:_:seed_app $subsystem
-set app:0:_:db_name $subsystem
-"
-
-echo "$metadata_str" | "$metadata_bin" -q "$vhost"
 
 if ! run_su "$dir_bin/restore-vhost-subsystem" \
   $subsystem_options $app_cmd_options -n -s "$subsystem"; then
@@ -395,5 +362,7 @@ run_su 'restore_script="$HOME/etc/rc.webenabled.restore";
 
 run_su 'local_script="$HOME/etc/rc.webenabled.local"
         [ -f "$local_script" -a -x "$local_script" ] && "$local_script"'
+
+devpanel rewrite vhost config --vhost "$vhost"
 
 exit 0

@@ -4,27 +4,11 @@ usage() {
 
   echo "Usage: $self <op>
 
-       $self on                - enable  automatic distro updates for this host
-       $self off               - disable automatic distro updates for this host
        $self run -Y            - run distro updates now
        $self run-from-crontab  - helper to run from crontab (only runs the
                                  actual updates when it's enabled)
        $self help              - shows this help message
 
-"
-  exit 1
-}
-
-usage_on_off(){
-  local self=${0##*/}
-
-echo "
-Enables or disables running regular updates of Linux distribution packages.
-
-Keep in mind that some programs may break due to unexpected updates or changes in the libraries
-Use this at your own risk.
-
-Usage: $self <on|off>
 "
   exit 1
 }
@@ -41,29 +25,6 @@ Use this at your own risk.
 Usage: $self run -Y
 "
   exit 1
-}
-
-# Turn on Updates doing some validations for ubuntu and centos or rhel based distributions
-autoupdatesOn(){
-  echo "set automatic_distro_updates 1" | "$sys_dir/libexec/system-metadata-handler" -q
-  if [ $? -eq 0 ]; then
-    echo "Automatic updates ON"
-    return 0
-  else
-    echo "Error: unable to enabled auto updates" 1>&2
-    return 1
-  fi
-}
-
-autoupdatesOff(){
-  echo "rm automatic_distro_updates" | "$sys_dir/libexec/system-metadata-handler" -q
-  if [ $? -eq 0 ]; then
-    echo "Automatic updates OFF"
-    return 0
-  else
-    echo "Error: failed to disable auto updates" 1>&2
-    return 1
-  fi
 }
 
 # main
@@ -85,16 +46,9 @@ if ! source "$lib_file"; then
   echo "Error: unable to source file $lib_file"
   exit 1
 fi
+load_devpanel_config || exit $?
 
 case  $op  in
-        on)       
-                autoupdatesOn
-                exit $?
-                ;;
-        off)
-                autoupdatesOff
-                exit $?
-                ;;            
         h|help)       
                 usage
                 ;;

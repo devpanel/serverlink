@@ -84,17 +84,15 @@ if ! source "$lib_f"; then
   echo "Error: unable to import $lib_f" 1>&2
   exit 1
 fi
+load_devpanel_config || exit $?
 
-get_linux_username_from_vhost "$vhost" && \
-user_web="$_dp_value"
-if [ $? -ne 0 ]; then
-  error "unable to get the linux username from vhost $vhost"
-fi
+load_vhost_config "$vhost" || exit $?
+user_web="$v__vhost__linux_user"
 
 if [ $opt_u = 1 ]
 then
   $dir/check-vhost-name archive "$vhost" || exit 1
-  home="`eval \"echo ~$user_web\"`" || error
+  home="$v__vhost__linux_user_home"
   [ -d "$home" ] || error "Home dir $home does not exist"
   check_archive_pathname_options="${check_archive_pathname_options+ }-u$vhost"
   [ o"`dirname \"$tar_output_file\"`" = o"." ] || error "basename without path must be specified with the -u option"

@@ -25,6 +25,7 @@ if ! source "$lib_f"; then
   echo "Error: unable to import $lib_f" 1>&2
   exit 1
 fi
+load_devpanel_config || exit $?
 
 command=${SSH_ORIGINAL_COMMAND%% *}
 cmd_args=${SSH_ORIGINAL_COMMANDS#* }

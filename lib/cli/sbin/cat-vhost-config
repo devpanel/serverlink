@@ -38,11 +38,12 @@ devpanel_cmd__cat_vhost_config() {
   
   "$sys_dir/libexec/check-vhost-name" archive "$vhost" || exit $?
 
-  get_linux_username_from_vhost "$vhost" && \
-  linux_user="$_dp_value"
+  load_vhost_config "$vhost" || return $?
 
-  local virtwww_dir="$sys_dir/compat/apache_include/virtwww"
-  local vhost_file="$virtwww_dir/$linux_user.conf"
-
-  cat "$vhost_file"
+  if [ -f "$v__vhost__file" ]; then
+    cat "$v__vhost__file"
+  else
+    error "missing file $v__vhost__file" -
+    return $?
+  fi
 }

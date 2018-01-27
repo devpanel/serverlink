@@ -102,11 +102,7 @@ devpanel_cmd__extract_backup() {
     return $?
   fi
 
-  local sys_bkp_dir bkp_src_dir archive_file
-
-  sys_bkp_dir=$(get_devpanel_datadir ) || return $?
-
-  bkp_src_dir="$sys_bkp_dir/vhost_archives/$vhost"
+  load_vhost_config "$vhost" || return $?
 
   if [ ! -e "$target_dir" ]; then
     if ! mkdir -m 700 "$target_dir"; then
@@ -129,10 +125,11 @@ devpanel_cmd__extract_backup() {
     fi
   fi
 
+  local archive_file
   if [ -f "$filename" ]; then
     archive_file="$filename"
   elif [[ "$filename" != */* ]]; then
-    archive_file="$bkp_src_dir/$filename"
+    archive_file="$v__vhost__archives_dir/$filename"
     if [ ! -f "$archive_file" ]; then
       error "unable to find file $filename" -
       return $?

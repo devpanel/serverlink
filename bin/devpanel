@@ -110,7 +110,7 @@ devpanel_run() {
   local -a cmd_ar=()
   local -a non_opts_ar=()
   local -a extra_args_ar=()
-  local action
+  local action was_in_debug_mode
 
   while [ -n "$1" ] && [ "${1:0:1}" != "-" ] && [[ "$1" =~ ^[A-Za-z0-9_.-]+$ ]]; do
     non_opts_ar+=( "$1" )
@@ -146,8 +146,18 @@ devpanel_run() {
         full_bin_path="$test_bin"
         namespace=${filename//-/_}
 
+        if [[ "$-" == *x* ]]; then
+          # in the set - below it disables the debug mode, so we need to
+          # re-enable it in case it was enabled
+          was_in_debug_mode=1
+        fi
+
         cmd_ar=( "${non_opts_ar[@]:0:$i}" )
         extra_args_ar=( "${non_opts_ar[@]:$i}" )
+        set - "${extra_args_ar[@]}" "$@"
+        if [ -n "$was_in_debug_mode" ]; then
+          set -x
+        fi
 
         run_bin=1
         break 2
@@ -193,7 +203,8 @@ _devpanel_cli_cleanup() {
 }
 
 # main
-__self_bin=`readlink -e "$0"`
+[ -n "${BASH_SOURCE[0]}" ] && \
+  __self_bin=`readlink -e "${BASH_SOURCE[0]}"`
 if [ $? -ne 0 ]; then
   echo "Error: unable to get self path" 1>&2
   exit 1
@@ -290,6 +301,8 @@ lib_file="$sys_dir/lib/functions"
 if ! . "$lib_file"; then
   error "unable to load lib file '$lib_file'"
 fi
+
+load_devpanel_config || exit $?
 
 declare -a temp_files_ar=()
 declare -a temp_dirs_ar=()

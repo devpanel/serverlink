@@ -52,39 +52,19 @@ devpanel_cmd__tail_vhost_logs() {
     esac
   done
 
-  virtwww_log_dir=$(get_apache_virtwww_log_dir ) || return $?
-
   local linux_user
   local access_log_file error_log_file
 
-  if [ $EUID -eq 0 ]; then
-    [ -z "$vhost" ] && { error_missing_param vhost ; return $?; }
+  [ -z "$vhost" -a $EUID -eq 0 ] && error_missing_param vhost
 
-    if ! vhost_exists "$vhost"; then
-      exit 1
-    fi
-
-    if get_linux_username_from_vhost "$vhost"; then
-      linux_user="$_dp_value"
-    else
-      error "unable to get the linux user from vhost $vhost" -
-      return $?
-    fi
-  else
-    vhost=$(get_vhost_from_linuxuser 2>/dev/null)
-    if [ $? -ne 0 ]; then
-      error "unable to determine the vhost of the current user" -
-      return $?
-    fi
-
-    if [ -z "$USER" ]; then
-      error "environment variable \$USER is not set" -
-      return $?
-    fi
-
-    linux_user="$USER"
+  if [ $EUID -ne 0 ]; then
+    vhost=$(get_vhost_from_linuxuser) || return $?
   fi
 
+  load_vhost_config "$vhost" || return $?
+
+  linux_user="$v__vhost__linux_user"
+  virtwww_log_dir="$lamp__apache_paths__vhost_logs_dir"
   access_log_file="$virtwww_log_dir/$linux_user/$vhost-access_log"
   error_log_file="$virtwww_log_dir/$linux_user/$vhost-error_log"
 

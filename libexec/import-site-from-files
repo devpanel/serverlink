@@ -62,6 +62,7 @@ lib_file="$sys_dir/lib/functions"
 if ! source "$lib_file"; then
   error "unable to source file $lib_file"
 fi
+load_devpanel_config || exit $?
 
 getopt_flags='f:d:s:p:T:h'
 unset orig_archive_file orig_db_dump_file subsystem
@@ -120,12 +121,6 @@ fi
 
 if ! "$self_dir/check-vhost-name" $vhost_check "$vhost"; then
   exit 1
-fi
-
-get_linux_username_from_vhost "$vhost" && \
-vhost_user="$_dp_value"
-if [ $? -ne 0 ]; then
-  error "unable to get the linux username from vhost $vhost"
 fi
 
 if [ -z "$orig_archive_file" ]; then
@@ -234,7 +229,7 @@ elif [ "$db_dump_type" == zip ]; then
   fi
 fi
 
-web_archive_file="$pack_dir/web/$vhost_user.tgz"
+web_archive_file="$pack_dir/web/$vhost.tgz"
 tar -zSpcf "$web_archive_file" -C "$app_dir_dist" .
 if [ $? -ne 0 ]; then
   error "unable to pack web dir $app_dir_dist"

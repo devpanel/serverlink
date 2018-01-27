@@ -34,6 +34,8 @@ if ! source "$dir/../lib/functions"; then
   echo "Error: unable to import auxiliary functions." >&2
   exit 1
 fi
+load_devpanel_config || exit $?
+
 token_dir="$dir/../var/tokens"
 if [ ! -e "$token_dir" ]; then
   error "token dir '$token_dir' doesn't exist."
@@ -147,14 +149,12 @@ if [ $status -ne 0 ]; then
   error "unable to create token file. touch returned exit code: $status"
 fi
 
+load_vhost_config "$vhost" || exit $?
+
 if [ -n "$literal_user" ]; then
   token_owner="$vhost"
 else
-	get_linux_username_from_vhost "$vhost" && \
-	token_owner="$_dp_value"
-	if [ $? -ne 0 ]; then
-		error "unable to get the linux username from vhost $vhost"
-	fi
+	token_owner="$v__vhost__linux_user"
 fi
 
 if [ -n "$token_contents" ]; then

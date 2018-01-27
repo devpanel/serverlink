@@ -38,26 +38,24 @@ fi
 self_dir="${self_bin%/*}"
 sys_dir="${self_dir%/*}"
 
+[ -z "$1" -o -z "$2" ] && usage
+
 lib_f="$sys_dir/lib/functions"
 if ! source "$lib_f"; then
   echo "Error: unable to import $lib_f" 1>&2
   exit 1
 fi
 
+load_devpanel_config || exit $?
+
 vhost="$1"
+app="${2##*/}"
+
 # using mode archive: it's OK to operate on a locked vhost
 "$self_dir/check-vhost-name" archive "$vhost" || exit 1
 
-app="${2##*/}"
-
-[ -z "$1" -o -z "$2" ] && usage
-
-get_linux_username_from_vhost "$vhost" && \
-user="$_dp_value"
-if [ $? -ne 0 ]; then
-  error "unable to get the linux username from vhost $vhost"
-fi
-
+load_vhost_config "$vhost" || exit $?
+user="$v__vhost__linux_user"
 
 url_tmpl=$(get_tools_base_url_template ) || exit $?
 

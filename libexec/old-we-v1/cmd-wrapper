@@ -1,0 +1,250 @@
+#!/bin/bash
+
+error() {
+  local msg="$1"
+  local exit_code="${2:-1}"
+
+  [ -n "$msg" ] && echo "Error: $msg" 1>&2
+
+  if [ "$exit_code" == - ]; then
+    return 1
+  else
+    exit $exit_code
+  fi
+}
+
+usage() {
+  if [ -n "$cmd_alias" ]; then
+    usage__${cmd_alias}
+  else
+    echo "This is a wrapper script for backwards compatibility" \
+         "with the commands of Webenabled v1."
+
+  fi
+
+  exit 1
+}
+
+_usage__generic() {
+  echo "Usage: $cmd_basename <vhost>"
+}
+
+usage__htaccess_lock_vhost() {
+  _usage__generic
+}
+
+usage__htaccess_unlock_vhost() {
+  _usage__generic
+}
+
+usage__htaccess_lock_status_vhost() {
+  _usage__generic
+}
+
+usage__lock_vhost() {
+  _usage__generic
+}
+
+usage__unlock_vhost() {
+  _usage__generic
+}
+
+usage__config_vhost_names() {
+  echo "Usage: $cmd_basename {*|+|-} <domain-name> [...]"
+}
+
+usage__config_vhost_names_default() {
+  echo "Usage: $cmd_basename <domain-name>"
+}
+
+cmd__chpass_vhost() {
+  local getopt_flags=iq
+  local OPTN OPTIND
+  local cmd_args_ar=()
+
+  while getopts $getopt_flags OPTN; do
+    case $OPTN in
+      i)
+
+        ;;
+      q)
+        :
+        ;;
+
+      *)
+        exit 1
+        ;;
+    esac
+  done
+
+  [ $OPTIND -gt 1 ] && shift $(( $OPTIND - 1 ))
+
+  vhost="$1"
+
+  devpanel change sftp password --vhost "$vhost"
+}
+
+cmd__chpass_vhost_subsystem() {
+  local getopt_flags=iq
+  local OPTN OPTIND
+  local cmd_args_ar=()
+
+  while getopts $getopt_flags OPTN; do
+    case $OPTN in
+      [spi])
+        :
+        ;;
+      *)
+        exit 1
+        ;;
+    esac
+  done
+
+  [ $OPTIND -gt 1 ] && shift $(( $OPTIND - 1 ))
+
+  vhost="$1"
+
+  devpanel reset app password --vhost "$vhost"
+}
+
+cmd__config_vhost_names() {
+  local -a cmd_args_ar=() domains_to_add_ar=() domains_to_remove_ar=()
+
+  local arg _domain
+  local vhost default_domain
+
+  vhost="$1"
+  shift
+
+  while [ -n "$1" ]; do
+    arg="$1"
+    case "$arg" in
+      '*')
+        default_domain="$2"
+        shift 2
+        ;;
+
+      +)
+        domains_to_add_ar+=( "$2" )
+        shift 2
+        ;;
+
+      -)
+        domains_to_remove_ar+=( "$2" )
+        shift 2
+        ;;
+
+      *)
+        error "unknown option '$arg'"
+        ;;
+    esac
+  done
+
+  if [ -n "$default_domain" ]; then
+    cmd_args_ar+=( --default "$default_domain" )
+  fi
+
+  if [ ${#domains_to_add_ar[@]} -gt 0 ]; then
+    for _domain in "${domains_to_add_ar[@]}"; do
+      cmd_args_ar+=( --domain "$_domain" )
+    done
+
+    devpanel add domain --vhost "$vhost" "${cmd_args_ar[@]}"
+  fi
+
+  if [ ${#domains_to_remove_ar[@]} -gt 0 ]; then
+    cmd_args_ar=()
+    for _domain in "${domains_to_remove_ar[@]}"; do
+      cmd_args_ar+=( --domain "$_domain" )
+    done
+
+    devpanel remove domain --vhost "$vhost" "${cmd_args_ar[@]}"
+  fi
+
+  return 0
+}
+
+cmd__htaccess_lock_vhost() {
+  [ -z "$1" ] && usage
+
+  vhost="$1"
+
+	devpanel enable htpasswd --vhost "$vhost"
+}
+
+cmd__htaccess_unlock_vhost() {
+  [ -z "$1" ] && usage
+
+  vhost="$1"
+
+	devpanel disable htpasswd --vhost "$vhost"
+}
+
+cmd__htaccess_lock_status_vhost() {
+  [ -z "$1" ] && usage
+
+  vhost="$1"
+
+  load_vhost_config "$vhost" || return $?
+
+  if is_vhost_enabled "$vhost"; then
+    echo 0
+  else
+    echo 1
+  fi
+}
+
+cmd__lock_vhost() {
+  [ -z "$1" ] && usage
+
+  vhost="$1"
+
+	devpanel disable vhost --vhost "$vhost"
+}
+
+cmd__unlock_vhost() {
+  [ -z "$1" ] && usage
+
+  vhost="$1"
+
+	devpanel enable vhost --vhost "$vhost"
+}
+
+cmd__webenabled_version() {
+  echo 2011-07-13-or-later
+}
+
+cmd__config_vhost_names_default() {
+  [ -z "$1" ] && usage
+
+  local domain="$1"
+
+	devpanel set base hostname --name "$domain"
+}
+
+cmd_basename="${0##*/}"
+if [[ ! "$cmd_basename" =~ ^[A-Za-z0-9_-]+$ ]]; then
+  error "invalid command name"
+fi
+
+cmd_alias=${cmd_basename//-/_}
+
+cmd_func="cmd__${cmd_alias}"
+if ! type "$cmd_func" &>/dev/null; then
+  error "unknown command '$cmd_basename'"
+fi
+
+self_bin=$(readlink -e "$0")
+if [ $? -ne 0 ]; then
+  error "unable to determine self path"
+fi
+self_dir="${self_bin%/*}"
+sys_dir=${self_dir%/*/*}
+
+if ! . "$sys_dir/lib/functions" ; then
+  error "unable to load '$sys_dir/lib/functions'"
+fi
+
+load_devpanel_config || exit $?
+
+$cmd_func "$@"

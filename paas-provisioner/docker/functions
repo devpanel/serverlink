@@ -347,12 +347,8 @@ docker_build_or_pull_and_tag()
 
 update_apache_config()
 {
-  "$sys_dir/libexec/config-vhost-apache" -n "$target_vhost"
-  if [[ `service apache2 status` == " * apache2 is running" || `service apache2 status|grep 'active (running)'|wc -l` -gt 0 ]]; then
-    ${sudo} service apache2 reload
-  else
-    ${sudo} service apache2 restart
-  fi
+  # updates vhost file and reloads (or starts) Apache
+  "$sys_dir/libexec/rewrite-vhost-config" "$target_vhost"
 }
 
 move_apache_ports() {

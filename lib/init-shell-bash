@@ -12,12 +12,19 @@ fi
 
 . /etc/profile
 
+load_devpanel_config
+
 vhost=$(get_vhost_from_linuxuser)
 if [ $? -eq 0 ]; then
-  public_html_dir=$(get_docroot_from_vhost "$vhost")
-  if [ -d "$public_html_dir" ]; then
-    cd "$public_html_dir"
+  if load_vhost_config "$vhost"; then
+    public_html_dir="$v__vhost__document_root"
+    if [ -d "$public_html_dir" ]; then
+      cd "$public_html_dir"
+    fi
   fi
+else
+  # unable to get public_html dir. Just chdir into the user directory
+  cd
 fi
 
 : just return 0
