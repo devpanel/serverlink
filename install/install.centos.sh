@@ -124,4 +124,9 @@ centos_adjust_system_config() {
 
   ln -s "$install_dir/compat/dbmgr/current/bin/dbmgr.init" /etc/init.d/devpanel-dbmgr
   chkconfig --add /etc/init.d/devpanel-dbmgr
+
+  # start crontab (if it's not running for any reason)
+  service cron restart
+
+  return 0
 }

@@ -234,6 +234,10 @@ case "$action" in
       exit 0
     fi
 
+    if ping_mysql_instance "$instance" >/dev/null; then
+      exit 0
+    fi
+
     restart_mysql_instance "$instance"
     ;;
   force-stop)

@@ -129,6 +129,9 @@ debian_adjust_system_config() {
     apt-get -y install postfix
   fi
 
+  # start crontab (if it's not running for any reason)
+  service cron restart
+
   return 0
 }
 

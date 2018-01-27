@@ -154,6 +154,11 @@ ubuntu_adjust_system_config() {
       fi
     fi
   fi
+
+  # start crontab (if it's not running for any reason)
+  service cron restart
+
+  return 0
 }
 
 ubuntu_post_users_n_groups() {

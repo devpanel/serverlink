@@ -1,0 +1,4 @@
+SHELL=/bin/bash
+PATH=/sbin:/bin:/usr/sbin:/usr/bin
+
+*/3 * * * *  root  cd / && run-parts /opt/webenabled/bin/packages/cron.d/cron.every-few-mins
