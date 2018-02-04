@@ -1,0 +1,84 @@
+#!/bin/bash
+
+set_usage_msg \
+  "Usage: $bin_name ${cmd_ar[*]} [opts] --vhost <vhost> --email <email>
+
+  Options:
+    --vhost <vhost>         the vhost
+    --email <email>         the new e-mail address to use
+
+  Resets the e-mail address of the admin user of the application.
+"
+
+devpanel_cmd__reset_app_admin_email() {
+
+  local name vhost email
+  local st
+  local -a cmd_args=()
+
+  [ $# -eq 0 -o -z "$1" ] && usage
+
+  while [ -n "$1" ]; do
+    name="$1"
+    case "$name" in
+      --vhost)
+        [ -z "$2" ] && error_missing_value "$name"
+        vhost="$2"
+        shift 2
+        ;;
+
+      --email)
+        [ -z "$2" ] && error_missing_value "$name"
+        email="$2"
+        shift 2
+        ;;
+
+      --help)
+        usage
+        ;;
+
+      --)
+        shift
+        break
+        ;;
+
+      --[A-Za-z0-9_-]*)
+        error "unknown option $name"
+        ;;
+      *)
+        usage
+        ;;
+    esac
+  done
+
+  [ -z "$vhost" -a $EUID -eq 0 ] && error_missing_param vhost
+
+  [ -z "$email" ] && usage
+
+  if [ $EUID -eq 0 ]; then
+
+    local user
+
+    get_linux_username_from_vhost "$vhost"
+    if ! user="$_dp_value"; then
+      error "unable to get linux username for vhost $vhost"
+    fi
+
+    su -l \
+      -c "$sys_dir/bin/restore-vhost-subsystem -m $email" "$user"
+    st=$?
+  else
+    # not root, run it directly
+    "$sys_dir/bin/restore-vhost-subsystem" -m "$email"
+    st=$?
+  fi
+
+  echo
+  if [ $st -eq 0 ]; then
+    echo "Successfully set admin e-mail."
+  else
+    echo "Error: failed to set admin e-mail." 1>&2
+  fi
+
+  return $st
+}
