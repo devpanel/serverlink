@@ -610,7 +610,8 @@ download_file() {
   local wait_before_retry=${4:-20}
 
   if hash curl &>/dev/null; then
-    curl -L -f --retry $retries --retry-delay $wait_before_retry -s -o "$temp_file" "$url"
+    curl -s -S -L --retry $retries --retry-delay $wait_before_retry \
+      --cookie /dev/null -o "$temp_file" "$url"
     status=$?
   elif hash wget &>/dev/null; then
     wget -t $retries -w $wait_before_retry -nv -O "$temp_file" "$url"
@@ -719,8 +720,9 @@ download_url_n_cache() {
 
   local code="" error_msg="" resp_raw=""
 
-  resp_raw=$(curl -w "%{http_code}"  -sL --retry $retries --retry-delay $wait_before_retry \
-          -D "$tmp_headers_f" -o "$temp_file" "$url")
+  resp_raw=$(curl -w "%{http_code}" -sSL --retry $retries        \
+             --retry-delay $wait_before_retry --cookie /dev/null \
+             -D "$tmp_headers_f" -o "$temp_file" "$url" )
   local curl_st=$?
 
   code=${resp_raw%%*|}
