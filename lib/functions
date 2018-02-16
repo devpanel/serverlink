@@ -2233,6 +2233,8 @@ translate_archive_placeholders() {
   [ -n "$vhost" ]        && final=${final//@vhost@/$vhost}
   [ -n "$frequency" ]    && final=${final//@frequency@/$frequency}
 
+  final=${final//@random_int@/$RANDOM}
+
   final=$(date_placeholders "$final") || return 1
 
   echo "$final"
