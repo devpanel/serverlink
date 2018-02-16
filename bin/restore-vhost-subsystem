@@ -27,6 +27,7 @@ usage() {
   -M              -- ACTION: send new passwords to admin's address (requires -P)
   -n              -- ACTION: only update settings.php
   -C              -- ACTION: clear the cache of the application
+  -U              -- ACTION: update the app to the latest stable version
   -F              -- initial deployment - indicates the this is the first
                      time the app is being configured
   -O name=value   -- set the name and value of a variable
@@ -213,6 +214,7 @@ cleanup_env_vars() {
   use_my_cnf=""
   initial_deployment="" clear_cache=""
   config_function="" git_db_type="" git_db_source=""
+  update_app=""
 }
 
 generate_password() {
@@ -424,7 +426,7 @@ if ! source "$lib_file"; then
   error "unable to load the external library file '$lib_file'"
 fi
 
-while getopts 'pPMm:s:O:iInFC' OPTOPT; do
+while getopts 'pPMm:s:O:iInFCU' OPTOPT; do
   case $OPTOPT in
     s) subsystem="$OPTARG";;
     m) opt_m="$OPTARG"; email="$OPTARG";;
@@ -435,6 +437,7 @@ while getopts 'pPMm:s:O:iInFC' OPTOPT; do
     p) opt_p=1;;
     n) opt_n=1;;
     F) initial_deployment=1 ;;
+    U) update_app=1 ;;
     C) clear_cache=1 ;;
     O)
       # the logic below reads name=value strings passed to the -O option
@@ -669,6 +672,17 @@ if [ -n "$opt_n" ]; then
     error "unable to edit $home/.php/php.ini"
 fi
 
+# all good so far
+st=0
+if [ -n "$update_app" ]; then
+  if type "${subsystem}_update_from_cli" &>/dev/null; then
+    ${subsystem}_update_from_cli
+    st=$?
+  else
+    echo "Warning: this app of type '$subsystem' doesn't support CLI updates" 1>&2
+  fi
+fi
+
 if [ -n "$clear_cache" ]; then
   if ! type "${subsystem}_clear_cache" &>/dev/null; then
     echo "Warning: don't know how to clear the cache of apps of type: $subsystem" 1>&2
@@ -677,4 +691,4 @@ if [ -n "$clear_cache" ]; then
   fi
 fi
 
-exit 0
+exit $st

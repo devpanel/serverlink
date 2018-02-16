@@ -1,0 +1,75 @@
+#!/bin/bash
+
+set_usage_msg \
+  "Usage: $bin_name ${cmd_ar[*]} [opts] --vhost <vhost>
+
+  Options:
+    --vhost <vhost>             the vhost
+
+  Update the app to the latest stable version.
+"
+
+devpanel_cmd__update_app() {
+  [ $EUID -eq 0 ] && [ $# -eq 0 -o -z "$1" ] && usage
+
+  local name vhost user st
+
+  local -a cmd_args_ar=()
+  local -a opts_ar=( )
+
+  while [ -n "$1" ]; do
+    name="$1"
+    case "$name" in
+      --vhost)
+        [ -z "$2" ] && error_missing_value vhost
+        vhost="$2"
+        shift 2
+        ;;
+      --help)
+        usage
+        ;;
+      --)
+        shift
+        break
+        ;;
+      *)
+        usage
+        ;;
+    esac
+  done
+
+  if [ $EUID -eq 0 ]; then
+    [ -z "$vhost" ] && error_missing_param vhost
+
+    if ! vhost_exists "$vhost"; then
+      error "vhost doesn't exist."
+    fi
+
+    get_linux_username_from_vhost "$vhost" && \
+    user="$_dp_value" || error "unable to get linux user from vhost"
+  else
+    if vhost=$(get_vhost_from_linuxuser); then
+      user="$USER"
+    else
+      error "unable to determine vhost for current user"
+    fi
+  fi
+
+  local exec_bin="$sys_dir/bin/restore-vhost-subsystem"
+
+  cmd_args_ar=( "$exec_bin" -U )
+
+  if [ $EUID -eq 0 ]; then
+    su -l -c "${cmd_args_ar[*]}" "$user"
+    st=$?
+  else
+    "${cmd_args_ar[@]}"
+    st=$?
+  fi
+
+  if [ $st -eq 0 ]; then
+    echo "Successfully update app."
+  fi
+
+  return $st
+}

@@ -419,7 +419,7 @@ drupal_update_php_config_8() {
 
   if [ -n "$initial_deployment" ]; then
     if [ -f "$public_html_dir/composer.json" ]; then
-      ( cd "$public_html_dir" && composer install )
+      ( cd "$public_html_dir" && compose install )
     fi
   fi
 
@@ -606,7 +606,7 @@ drupal_setup_from_git() {
   local install_profile=${install_profile:-standard}
 
   if [ -f "$public_html_dir/composer.json" ]; then
-    composer --working-dir="$public_html_dir" install
+    compose --working-dir="$public_html_dir" install
   fi
 
   drush -r "$public_html_dir" -y si "$install_profile" --db-url="$mysql_url_with_pw"
@@ -626,4 +626,32 @@ drupal_setup_from_git() {
   fi
 
   return $st
+}
+
+drupal_update_from_cli() {
+  local compose_file st
+
+  compose_file="$dir/composer.json"
+  
+  if [ -f "$compose_file" ]; then
+    compose --working-dir="$public_html_dir" update --with-dependencies
+    st=$?
+  else
+    drush -r "$public_html_dir" -y pm-updatecode
+    st=$?
+  fi
+
+  if [ $st -ne 0 ]; then
+    echo "$FUNCNAME(): failed to update drupal core" 1>&2
+    return 1
+  fi
+
+  if ! drush -r "$public_html_dir" -y updatedb; then
+    echo "$FUNCNAME(): failed to do db updates" 1>&2
+    return 1
+  fi
+
+  drupal_clear_cache
+
+  return 0
 }

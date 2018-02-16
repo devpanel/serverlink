@@ -158,3 +158,8 @@ grav_setup_from_git() {
 grav_setup_from_cli() {
   grav_setup_from_git
 }
+
+grav_update_from_cli() {
+  ( cd "$public_html_dir" && ./bin/gpm self-upgrade -y && \
+                             ./bin/gpm update -y )
+}

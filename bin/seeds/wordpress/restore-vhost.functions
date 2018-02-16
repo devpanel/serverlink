@@ -129,7 +129,7 @@ wordpress_custom() {
 }
 
 wordpress_clear_cache() {
-  wp-cli --path="$home/public_html/$vhost" cache flush
+  wp-cli --path="$public_html_dir" cache flush
 }
 
 wordpress_download_from_cli() {
@@ -159,4 +159,25 @@ wordpress_setup_from_git() {
 
 wordpress_setup_from_cli() {
   wordpress_setup_from_git "$@"
+}
+
+wordpress_update_from_cli() {
+  if ! wp-cli --path="$public_html_dir" core update; then
+    echo "$FUNCNAME(): failed wordpress core update" 1>&2
+    return 1
+  fi
+
+  if ! wp-cli --path="$public_html_dir" plugin update --all; then
+    echo "$FUNCNAME(): failed wordpress plugins update" 1>&2
+    return 1
+  fi
+
+  if ! wp-cli --path="$public_html_dir" theme update --all; then
+    echo "$FUNCNAME(): failed wordpress theme update" 1>&2
+    return 1
+  fi
+
+  wordpress_clear_cache
+
+  return 0
 }

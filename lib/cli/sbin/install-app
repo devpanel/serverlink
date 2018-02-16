@@ -13,6 +13,7 @@ set_usage_msg \
     --password-inline <pass>   set the password for app (note: this option
                                is a bit insecure on shared servers as it's
                                possible to see the password with the ps command)
+    --no-update                don't try to update the app after installing
 
   Installs the specified application in a new virtual host.
 "
@@ -22,7 +23,7 @@ devpanel_cmd__install_app(){
 
   local name vhost arg publisher app app_url desc php_version
   local app_password password_origin
-  local read_pw_stdin
+  local read_pw_stdin update_app=yes
   local -a cmd_args=()
 
   while [ -n "$1" ]; do
@@ -79,14 +80,22 @@ devpanel_cmd__install_app(){
         shift 2
         ;;
 
+      --no-update)
+        unset update_app
+        shift
+        ;;
+
       --help)
         usage
         ;;
-      --[A-Za-z0-9_-]*)
-        error "unknown option $name"
+
+      --)
+        shift
+        break
         ;;
+
       *)
-        usage
+        error "unknown option $name"
         ;;
     esac
   done
@@ -130,19 +139,26 @@ devpanel_cmd__install_app(){
   echo "$app_password" | devpanel_run create vhost --vhost "$vhost" --from "$app_url" \
     ${php_version:+--php-version $php_version} ${desc:+--desc "$desc"} \
     --password-stdin
-
-  if [ $? -eq 0 ]; then
-    local vhost_url
-    vhost_url=$(get_main_url_of_vhost "$vhost")
-    echo
-    echo "App credentials:"
-    echo "  URL: $vhost_url"
-    echo "  username: admin"
-    echo "  password: $app_password"
-    echo
-    echo "Successfully installed $app."
-  else
-    echo
-    error "unable to install app '$app' from publisher '$publisher'." -
+  if [ $? -ne 0 ]; then
+    error "unable to install app" -
+    return $?
   fi
+
+  if [ -n "$update_app" ]; then
+    devpanel_run update app --vhost "$vhost"
+    if [ $? -ne 0 ]; then
+      error "unable to update app" -
+      return $?
+    fi
+  fi
+
+  local vhost_url
+  vhost_url=$(get_main_url_of_vhost "$vhost")
+  echo
+  echo "App credentials:"
+  echo "  URL: $vhost_url"
+  echo "  username: admin"
+  echo "  password: $app_password"
+  echo
+  echo "Successfully installed $app."
 }
