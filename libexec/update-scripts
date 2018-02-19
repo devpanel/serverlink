@@ -21,6 +21,12 @@ self_dir=${self_bin%/*}
 sys_dir=${self_dir%/*}
 lib_file="$sys_dir/lib/functions"
 
+#
+# change the default umask so that files don't get too restriced
+# permissions on systems with a more restrictive umask
+#
+umask 022
+
 if ! source "$lib_file"; then
   echo "Error: unable to source file '$lib_file'" 1>&2
   exit 1

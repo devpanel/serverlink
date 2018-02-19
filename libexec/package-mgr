@@ -695,6 +695,12 @@ disable_dont_install() {
 
 [ -z "$1" ] && usage
 
+#
+# change the default umask so that files don't get too restriced
+# permissions on systems with a more restrictive umask
+#
+umask 022
+
 unset verbose
 getopt_flags='vh-'
 while getopts $getopt_flags OPTN; do
