@@ -1718,7 +1718,7 @@ get_template_str_for_recurring_archive_snapshot() {
 }
 
 is_webenabled_backwards_compat_enabled() {
-  deref_os_prop "$DEVPANEL_HOME" webenabled_backwards 2>/dev/null
+  deref_os_prop "$DEVPANEL_HOME" webenabled_backwards &>/dev/null
 }
 
 is_package_updates_disabled() {
