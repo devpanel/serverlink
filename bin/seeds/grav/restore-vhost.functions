@@ -160,6 +160,12 @@ grav_setup_from_cli() {
 }
 
 grav_update_from_cli() {
-  ( cd "$public_html_dir" && ./bin/gpm self-upgrade -y && \
-                             ./bin/gpm update -y )
+  local no_tty
+  if [ ! -t 0 ]; then
+    no_tty=1
+  fi
+
+  ( cd "$public_html_dir" && \
+    ./bin/gpm self-upgrade ${no_tty:+-q} -y && \
+    ./bin/gpm update ${no_tty:+-q} -y )
 }
