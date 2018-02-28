@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # defaults
-email='no-reply@webenabled.com'
+email='no-reply@devpanel.com'
 
 usage() {
   echo "Usage: ${0##*/} [options] <distribution> [install_profile]
@@ -210,7 +210,9 @@ su -l -s /bin/bash -c "
     sql_mail_upd=\"UPDATE users SET mail = '$email' WHERE name = 'admin';\"
     mysql -D drupal -e \"\$sql_mail_upd\"
   else # for Drupal 8
-    drush -y config-set system.site page.front $distro
+    drush -y config-set system.site page.front /node
+    drush -y config-set system.site name 'Drupal 8'
+    drush -y config-set system.site mail $email
     drush -y config-set update.settings notification.emails.0 $email
     sql_mail_upd=\"UPDATE users_field_data SET mail = '$email' WHERE name = 'admin';\"
     mysql -D drupal -e \"\$sql_mail_upd\"
