@@ -1,0 +1,130 @@
+#!/bin/bash
+
+magento2_get_users()
+{
+  mysql -BN -D "$database" -e "SELECT username FROM admin_user;"
+}
+
+magento2_genpass()
+{
+  "$dir/genpass"
+}
+
+magento2_encrypt()
+{
+  local password="$1"
+
+  # will not encrypt, encryption will be done when passing the password to
+  # magento itself
+
+  echo "$password"
+}
+
+magento2_set_password()
+{ 
+  local user="$1" password="$2"
+
+  mysql -BN -D "$database" -e \
+  "SET @salt = MD5(UNIX_TIMESTAMP());
+   UPDATE admin_user
+   SET password = CONCAT(
+        SHA2(CONCAT(@salt, '${password//\'/\\\'}'), 256), ':', @salt, ':1')
+   WHERE username = '${user//\'/\\\'}';"
+}
+
+magento2_set_email()
+{
+  local user="$1" email="$2"
+
+  mysql -BN -D "$database" -e \
+    "UPDATE admin_user SET email    = '${email//\'/\\\'}' WHERE
+                           username = '${user//\'/\\\'}'"
+}
+
+magento2_get_email()
+{
+  local user="$1"
+
+  mysql -BN -D "$database" -e "SELECT email FROM admin_user
+                                            WHERE username = '$user'"
+}
+
+magento2_get_admin_user()
+{
+  echo "admin"
+}
+
+magento2_detect_version() {
+  local output
+
+  if output=$("$public_html_dir/bin/magento" --version); then
+    echo "$output" | egrep -o '[0-9]+\.[0-9]+\.[0-9]+$'
+  else
+    return 1
+  fi
+}
+
+magento2_custom()
+{
+  php "$public_html_dir/bin/magento" -n setup:config:set \
+    --db-host        "$mysql_host:$mysql_port"           \
+    --db-user        "$mysql_user"                       \
+    --db-password    "$mysql_password"
+
+  if [ -n "$initial_deployment" ]; then
+    php "$public_html_dir/bin/magento" setup:store-config:set \
+          --base-url="http://$fqdn/"
+  fi
+}
+
+magento2_clear_cache() {
+  {
+    cd "$public_html_dir"  && \
+    php "$public_html_dir/bin/magento" cache:clean && \
+    php "$public_html_dir/bin/magento" cache:flush
+  }
+}
+
+magento2_setup_from_git() {
+  magento2_setup_from_cli
+}
+
+magento2_setup_from_cli() {
+  local no_tty
+  if [ ! -t 0 ]; then
+    no_tty=1
+  fi
+
+  if [ -z "$admin_email" ]; then
+    admin_email="no-reply@webenabled.com"
+  fi
+
+  app_password=${app_password:-$(magento2_genpass)}
+
+  php "$public_html_dir/bin/magento" setup:install  \
+    --base-url="http://$fqdn"                       \
+    --backend-frontname=admin                       \
+    --db-host="$mysql_host:$mysql_port"             \
+    --db-name="$database"                           \
+    --db-user="$mysql_user"                         \
+    --db-password="$mysql_password"                 \
+    --admin-firstname=Magento                       \
+    --admin-lastname=User                           \
+    --admin-email="$admin_email"                    \
+    --admin-user=admin                              \
+    --admin-password="$app_password"                \
+    --language=en_US                                \
+    --currency=USD                                  \
+    --timezone=America/Chicago                      \
+    --use-rewrites=1                                \
+    ${no_tty:+--quiet}
+}
+
+magento2_update_from_cli() {
+  local no_tty
+  if [ ! -t 0 ]; then
+    no_tty=1
+  fi
+
+  php "$public_html_dir/bin/magento" setup:upgrade ${no_tty:+--quiet}
+}
