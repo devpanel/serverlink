@@ -152,6 +152,11 @@ if ! cp "$virtwww_file" "$archive_conf"; then
   exit 1
 fi
 
+if php_ver=$(get_php_version_from_vhost "$vhost" 2>/dev/null ); then
+  echo "php.version = $php_ver" | \
+    "$sys_dir/bin/update-ini-file" -q -c "$archive_dir/devpanel.ini"
+fi
+
 echo "Archiving $logs_dir to $archive_logs"
 if ! run mkdir -p "$archive_dir"; then
   echo "Error: unable to create dir '$archive_dir'" 1>&2

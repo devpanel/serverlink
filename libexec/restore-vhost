@@ -303,12 +303,15 @@ fi
 [ $create_vhost -eq 0 ] && \
     web_options="$web_options${web_options+ }-N"
 
+if [ -n "$php_version" ]; then
+  # write the php version to devpanel.ini so that restore-vhost-web sets it
+  # just after creating the vhost
+  echo "php.version = $php_version" | \
+    "$we_base_dir/bin/update-ini-file" -c -q "$archive_dir/devpanel.ini"
+fi
+
 echo Processing web...
 run $0-web $web_options "$vhost" "$archive_dir/web" "$@" || exit 1
-
-if [ -n "$php_version" ]; then
-  devpanel set php version --version "$php_version" --vhost "$vhost"
-fi
 
 # when the vhost is created, the username information is only available now
 get_linux_username_from_vhost "$vhost" && \

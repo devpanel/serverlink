@@ -205,7 +205,7 @@ ini_file="$tarball_root_dir/devpanel.ini"
 if [ -f "$ini_file" ]; then
   php_ver=$(ini_section_get_key_value "$ini_file" php version)
   if [ $? -eq 0 ]; then
-    "$dir/set-php-version-for-vhost" set "$vhost" "$php_ver"
+    devpanel set php version --vhost "$vhost" --version "$php_ver"
   fi
 fi
 
