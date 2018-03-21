@@ -115,6 +115,9 @@ if ! devpanel create vhost --vhost "$tmp_vhost" --from we://blank; then
   exit 1
 fi
 vhost_created=1
+
+devpanel set php version --version 7.1 --vhost "$tmp_vhost" || exit $?
+
 trap 'cleanup' EXIT
 
 # app:0:_:db_host $mysql_host
