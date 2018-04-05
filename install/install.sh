@@ -376,15 +376,6 @@ is_this_distro_version_supported() {
     fi
   done
 
-  local distro_ext
-  if [ "$distro" == "ubuntu" ]; then
-    distro_ext=$(lsb_release -sd 2>/dev/null)
-    if ! [[ "$distro_ext" == *[Ll][Tt][Ss]* ]]; then
-      echo "$FUNCNAME(): for Ubuntu only LTS versions are supported" 1>&2
-      return 1
-    fi
-  fi
-
   if [ -n "$found_config_dir" ]; then
     return 0
   else
