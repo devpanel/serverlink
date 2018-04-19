@@ -67,6 +67,13 @@ devpanel_cmd__help() {
     fi
     egrep -hr --include="$includes_str" --exclude='usage*.txt' \
       "$cmds_regex" "$usage_msgs_dir" | fgrep -i "$search_term"
+
+    if [ $? -eq 0 ]; then
+      return 0
+    else
+      echo "Not found. Please see the --help message for more options." 1>&2
+      return 1
+    fi
   elif [ -n "$section" ]; then
     show_help_msg "$section"
   else
