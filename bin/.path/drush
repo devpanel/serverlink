@@ -27,7 +27,7 @@ load_devpanel_config || exit $?
 
 if vhost=$(get_vhost_from_linuxuser ); then
   load_vhost_config "$vhost"
-  public_dir="$v__vhost__linux_user_home"
+  public_dir="$v__vhost__document_root"
 else
   error "unable to get vhost from current user"
 fi
