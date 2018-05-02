@@ -122,7 +122,9 @@ case "$op" in
       error "unable to load vhost configuration."
     fi
 
-    if is_ssl_enabled_on_vhost "$vhost"; then
+    if is_lets_encrypt_enabled_for_vhost "$vhost"; then
+      error "Let's Encrypt is already enabled on vhost $vhost."
+    elif is_ssl_enabled_on_vhost "$vhost"; then
       errmsg="SSL is already enabled on this vhost."
       errmsg+=" Please disable it first."
       error "$errmsg"
@@ -131,7 +133,7 @@ case "$op" in
     linux_user="$v__vhost__linux_user"
     server_base_domain="$lamp__apache_vhosts__virtwww_domain"
 
-    certs_dir="$v__vhost__ssl_dir/lets-encrypt"
+    certs_dir="$v__ssl__dir/lets-encrypt"
     if [ -d "$certs_dir" ]; then
       chmod 700 "$certs_dir"
     else
@@ -222,7 +224,7 @@ case "$op" in
     for vhost in $(get_list_of_vhosts); do
       if is_lets_encrypt_enabled_for_vhost "$vhost"; then
         load_vhost_config "$vhost" || continue
-        le_dir="$v__vhost__ssl_dir/lets-encrypt"
+        le_dir="$v__ssl__dir/lets-encrypt"
         if [ -d "$le_dir" ]; then
           acme.sh --home "$le_dir" --cron
         fi
@@ -267,7 +269,7 @@ case "$op" in
       exit 0
     fi
 
-    le_dir="$v__apache_conf__ssl_dir/lets-encrypt"
+    le_dir="$v__ssl__dir/lets-encrypt"
 
     acme.sh --home "$le_dir" --cron ${force:+--force} \
       ${domain:+ -d "$domain"}
@@ -282,6 +284,10 @@ case "$op" in
     [ $# -lt 1 -o -z "$1" ] && usage "$op"
 
     vhost="$1"
+
+    if ! load_vhost_config "$vhost"; then
+      error "unable to load vhost configuration."
+    fi
 
     if ! "$sys_dir/libexec/check-vhost-name" archive "$vhost"; then
       exit 1
