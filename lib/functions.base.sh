@@ -141,7 +141,7 @@ load_devpanel_config() {
   distro=$(wedp_auto_detect_distro ) || return $?
   distro_version=$(devpanel_get_os_version "$distro") || return $?
 
-  if [ "$distro" == centos ]; then
+  if [ "$distro" == centos -o "$distro" == debian ]; then
     distro_version=${distro_version%%.*}
   fi
 
