@@ -993,6 +993,7 @@ migrate_vhost_configs() {
       ssl_key_file="$orig_ssl_key_dir/$vhost.default_ssl.key"
 
       if old_is_lets_encrypt_enabled_for_vhost "$vhost"; then
+        opts_ar+=( "ssl.type = lets-encrypt" )
         local tmp_le_ca_file tmp_le_crt_file tmp_le_key_file
         local le_ca_file le_crt_file le_key_file
         tmp_le_ca_file=$(readlink -e "$ssl_ca_file")
@@ -1011,6 +1012,8 @@ migrate_vhost_configs() {
         ln -s "lets-encrypt/$le_crt_file" "$vhost_ssl_dir/cert.crt"
         ln -s "lets-encrypt/$le_key_file" "$vhost_ssl_dir/private-key.key"
       else
+        opts_ar+=( "ssl.type = manual" )
+
         if [ -f "$ssl_ca_file" ]; then
           cp -p "$ssl_ca_file" "$vhost_ssl_dir/ca-bundle.crt"
         fi
