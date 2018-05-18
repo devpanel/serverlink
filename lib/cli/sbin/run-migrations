@@ -14,7 +14,7 @@ set_usage_msg \
 devpanel_cmd__run_migrations() {
   [ $# -eq 0 -o -z "$1" ] && usage
 
-  local name confirmed
+  local name confirmed quiet
   local -i start_n
   local scripts_dir="$sys_dir/src/migrations"
 
@@ -36,6 +36,11 @@ devpanel_cmd__run_migrations() {
         fi
 
         shift 2
+        ;;
+
+      --quiet)
+        quiet=yes
+        shift
         ;;
 
       --help)
@@ -72,7 +77,10 @@ devpanel_cmd__run_migrations() {
   fi
 
   if [ $start_n -ge $conf__migrations__latest_step ]; then
-    echo "Ok. This server has already run all the required migrations."
+    if [ -z "$quiet" ]; then
+      echo "Ok. This server has already run all the required migrations."
+    fi
+
     return 0
   fi
 

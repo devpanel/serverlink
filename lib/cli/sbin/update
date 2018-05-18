@@ -43,7 +43,7 @@ devpanel_cmd__update() {
     return $?
   fi
 
-  devpanel_run run migrations --yes || return $?
+  devpanel_run run migrations --yes --quiet || return $?
 
   # then update the system packages
   "$sys_dir/libexec/package-mgr" update-all -y
