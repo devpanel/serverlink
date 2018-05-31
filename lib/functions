@@ -456,7 +456,7 @@ generate_linux_username_for_vhost() {
 }
 
 get_vhost_from_linuxuser() {
-  local user="${1:-$USER}"
+  local user="${1:-${USER:-$LOGNAME}}"
   local vhost
 
   if [ -z "$user" ]; then
@@ -504,7 +504,7 @@ get_docroot_from_vhost() {
 }
 
 get_docroot_from_user() {
-  local user="${1:-$USER}"
+  local user="${1:-${USER:-$LOGNAME}}"
   local vhost
 
   vhost=$(get_vhost_from_linuxuser "$user") || return 1
@@ -517,7 +517,7 @@ get_linuxuser_vhost_dir() {
 }
 
 get_shell_from_user() {
-  local user="${1:-$USER}"
+  local user="${1:-${USER:-$LOGNAME}}"
 
   if [ -z "$user" ]; then
     echo "$FUNCNAME(): missing username" 1>&2
