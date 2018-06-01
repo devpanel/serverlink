@@ -76,7 +76,7 @@ devpanel_cmd__run_migrations() {
     fi
   fi
 
-  if [ $start_n -ge $conf__migrations__latest_step ]; then
+  if [ $start_n -gt $conf__migrations__latest_step ]; then
     if [ -z "$quiet" ]; then
       echo "Ok. This server has already run all the required migrations."
     fi
