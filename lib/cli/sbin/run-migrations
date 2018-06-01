@@ -84,20 +84,22 @@ devpanel_cmd__run_migrations() {
     return 0
   fi
 
-  local file file_n
+  local file file_n file_basename
   local -i curr_n=$start_n prev_n=0
   local -i n_run=0
 
-  for file in $(ls "$scripts_dir"); do
+  for file in "$scripts_dir"/*; do
     if ! [ -f "$file" -a -x "$file" ]; then
       continue
     fi
 
-    if [[ ! "$file" =~ ^[0-9]{5}- ]]; then
+    file_basename="${file##*/}"
+
+    if [[ ! "$file_basename" =~ ^[0-9]{5}- ]]; then
       continue
     fi
 
-    file_n=${file%%-*}
+    file_n=${file_basename%%-*}
     if [ $file_n -gt $conf__migrations__latest_step ]; then
       # run until the latest configured migration step
       break
@@ -110,7 +112,7 @@ devpanel_cmd__run_migrations() {
       curr_n=$file_n
     fi
 
-    echo "Executing migration script $file..."
+    echo "Executing migration script $file_basename..."
 
     # Design note:
     #
@@ -120,7 +122,7 @@ devpanel_cmd__run_migrations() {
     # that it doesn't change variables in the current shell
     #
     n_run+=1
-    if ( . "$scripts_dir/$file" ); then
+    if ( . "$file" ); then
       if [ $prev_n -ne $curr_n ]; then
         save_opts_in_state "migrations.latest_step = $curr_n"
         if [ $? -ne 0 ]; then
