@@ -39,6 +39,8 @@ devpanel_cmd__find_domain() {
 
   vhost=$(get_vhost_with_hostname "$domain")
   if [ $? -eq 0 ]; then
+    load_vhost_config "$vhost" || return $?
+
     local app=$(get_app_type_from_vhost "$vhost")
     [ -z "$app" ] && app=unknown
 
