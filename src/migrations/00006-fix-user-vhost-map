@@ -1,0 +1,15 @@
+#!/bin/bash
+
+# this migration should actually be part of migration
+# 00004-migrate-global-confs-to-ini-files but the operation it executes was
+# forgotten. So it's a separate migration.
+
+user_vhost_dir="$sys_dir/config/key_value/linuxuser-vhost"
+
+st=0
+if ls "$user_vhost_dir/w_"* &>/dev/null; then
+  mv -n "$user_vhost_dir/"w_* "$lamp__paths__user_vhost_map"
+  st=$?
+fi
+
+exit $st
