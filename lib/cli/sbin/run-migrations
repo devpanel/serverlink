@@ -89,7 +89,7 @@ devpanel_cmd__run_migrations() {
   local -i n_run=0
 
   for file in $(ls "$scripts_dir"); do
-    if [ ! -f "$file" -a -x "$file" ]; then
+    if ! [ -f "$file" -a -x "$file" ]; then
       continue
     fi
 
