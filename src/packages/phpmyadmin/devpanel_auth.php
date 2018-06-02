@@ -34,6 +34,18 @@ if(file_exists($mysql_ini)) {
   exit(1);
 }
 
+// fix for PHPMyAdmin versions >= 4.8.0
+if(!isset($cfg['TempDir']) || (!file_exists($cfg['TempDir']) || !is_writable($cfg['TempDir']))) {
+  $tmp_in_home_dir = "{$user_info["dir"]}/tmp/phpmyadmin";
+  if(file_exists($tmp_in_home_dir)) {
+    $cfg['TempDir'] = $tmp_in_home_dir;
+  } else {
+    if(@mkdir($tmp_in_home_dir, 0700, TRUE)) {
+      $cfg['TempDir'] = $tmp_in_home_dir;
+    }
+  }
+}
+
 $local_config = "$curr_path/config.local.inc.php";
 $vhost_config = sprintf("%s/.devpanel/phpmyadmin/config.inc.php", $user_info["dir"]);
 
