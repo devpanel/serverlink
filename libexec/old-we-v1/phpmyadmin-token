@@ -1,0 +1,30 @@
+#!/bin/bash
+usage() {
+  echo "Usage: `basename "$0"` <vhost>"
+  exit 1
+}
+
+# main
+
+[ $# -lt 1 ] && usage
+
+self_bin=`readlink -e "$0"`
+dir=${self_bin%/*}
+sys_dir=${dir%/*/*}
+dir_bin="$sys_dir/bin"
+
+vhost="$1"
+$sys_dir/libexec/check-vhost-name archive "$vhost" || exit 1
+
+lib_f="$sys_dir/lib/functions"
+if ! source "$lib_f"; then
+  echo "Error: unable to import $lib_f" 1>&2
+  exit 1
+fi
+load_devpanel_config || exit $?
+
+load_vhost_config "$vhost" || exit $?
+user="$v__vhost__linux_user"
+token_bin="$sys_dir/libexec/token-mgr"
+
+"$token_bin" -p -t phpmyadmin "$vhost"

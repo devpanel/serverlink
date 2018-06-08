@@ -1,1 +1,0 @@
-/opt/webenabled/compat/skel.sql

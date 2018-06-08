@@ -1,0 +1,34 @@
+#!/bin/bash
+dir=`dirname $0`
+sys_dir=${dir%/*/*}
+dir_bin="$sys_dir/bin"
+vhost="$1"
+label="$2"
+error()
+{
+  echo "ERROR${1+: }$@" >&2
+  exit 1
+}
+case "$0" in
+  *-list) action=list;;
+  *-transfer) action=transfer;;
+  *) error "invalid action";;
+esac
+
+# using mode archive: it's OK to operate on a locked vhost
+$sys_dir/libexec/check-vhost-name archive "$vhost" || exit 1
+
+lib_f="$sys_dir/lib/functions"
+if ! source "$lib_f"; then
+  echo "Error: unable to import $lib_f" 1>&2
+  exit 1
+fi
+load_devpanel_config || exit $?
+
+load_vhost_config "$vhost" || exit $?
+user="$v__vhost__linux_user"
+home="$v__vhost__linux_user_home"
+[ -d "$home" ] || error "Home dir $home does not exist"
+
+if [ -n "$label" ]; then $dir/check-archive-pathname -u"$vhost" restore "$home/public_html/gen/archive/$label" || exit 1; fi
+echo -n "$label"|su -l -c "$dir_bin/archive-vhost-action $action" "$user"
