@@ -62,9 +62,17 @@ apache_config_dir="$lamp__paths__vhosts_config_dir"
 if [ "$mode" == "name-only" ]; then
   exit 0
 elif [ $mode = restore ]; then
+  if vhost_exists "$vhost"; then
+    error "vhost '$vhost' already exists."
+  fi
+
   exists "$w_user" && error "$w_user must not exist"
   exists "$b_user" && error "$b_user must not exist"
 else
+  if ! vhost_exists "$vhost"; then
+    error "vhost '$vhost' doesn't exist."
+  fi
+
   exists "$w_user" || error "$w_user must exist"
   [ -d "$home" ] || error "home dir $home must exist"
   owner=`stat --format %U "$home"` || error
