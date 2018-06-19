@@ -92,17 +92,30 @@ fi
 
 set -o pipefail
 echo "Cloning stage 1 & 2: archive $source | restore $target"
-if ! (if [ $opt_i = 1 ]; then echo "$password";  fi
-         if ! WEBENABLED_SERVER="$source_server" $sys_dir/sbin/archive-vhost $options "$source" -
-         then
-           echo adding garbage to stdout to signal a broken archive
-           false
-         fi
-     ) |
-     WEBENABLED_SERVER="$target_server" $sys_dir/libexec/restore-vhost $options $target_options "$target" - "$@"
-then
-  echo ERROR >&2
-  exit 1
+tmp_dir="/opt/webenabled-data/tmp"
+tmp_archive="$tmp_dir/_${source}-$(date +%b-%d-%Y--%H-%M)-$RANDOM.tgz"
+
+# don't overwrite existing files
+set -o noclobber
+
+WEBENABLED_SERVER="$source_server" $sys_dir/sbin/archive-vhost $options \
+  "$source" - >$tmp_archive
+if [ $? -ne 0 ]; then
+  error "failed to archive vhost '$source' on server '$source_server'"
 fi
-  
+trap 'rm -f $tmp_archive' EXIT
+
+restore_args_ar+=( --vhost "$target" --from "$tmp_archive" )
+
+if [ -n "$password" ]; then
+  restore_args_ar+=( --password-stdin )
+  echo "$password" | devpanel create vhost "${restore_args_ar[@]}"
+else
+  devpanel create vhost "${restore_args_ar[@]}"
+fi
+if [ $? -ne 0 ]; then
+  error "failed to create vhost '$target_vhost'"
+fi
+
+echo
 echo Done

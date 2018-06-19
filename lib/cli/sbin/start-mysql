@@ -5,17 +5,24 @@ set_usage_msg \
 
   Options:
     --vhost  <vhost>         the vhost
+
     --domain <domain>        find the vhost associated with the
                              specified domain
+
     --conditional            only start if the vhost is not disabled and
                              if mysql was not intentionally stopped
+
+    --quick                  just start MySQL but don't verify where it
+                             keeps running (e.g. didn't stop due to an
+                             internal error)
 
   Starts mysqld associated with the specified domain or vhost.
 "
 
 devpanel_cmd__start_mysql() {
-  local param vhost vhost_user db_user domain
-  local conditional
+  local param vhost vhost_user domain instance
+  local conditional quick
+  local st
   
   [ $# -eq 0 -o -z "$1" ] && usage
 
@@ -28,15 +35,23 @@ devpanel_cmd__start_mysql() {
         vhost="$2"
         shift 2
         ;;
+
       --domain)
         [ -z "$2" ] && error_missing_value domain
         domain="$2"
         shift 2
         ;;
+
       --conditional)
         conditional=1
         shift
         ;;
+
+      --quick)
+        quick=yes
+        shift
+        ;;
+
       --help)
         usage
         ;;
@@ -64,27 +79,57 @@ devpanel_cmd__start_mysql() {
   load_vhost_config "$vhost" || return $?
   vhost_user="$v__vhost__linux_user"
 
-  if [ -z "$v__mysql__instance" ]; then
-    if [ -t 0 ]; then
-      echo "Warning: this vhost doesn't have any mysql instance" 1>&2
-    fi
+  if [ -n "$v__mysql__instance" ]; then
+    instance="$v__mysql__instance"
 
-    return 0
+    if [ -n "$v__mysql__external" -a "$v__mysql__external" == yes ]; then
+      if [ -t 0 ]; then
+        echo -n "Warning: the mysql instance of this vhost is external"
+        echo " (will not restart it)"
+      fi
+
+      return 0
+    fi
+  else
+    error "this vhost doesn't have a mysql instance" -
+    return $?
   fi
 
-  db_user="b_${vhost_user#w_}"
-     
-  local action
   if [ -n "$conditional" ]; then
     if ! is_vhost_enabled "$vhost"; then
       # vhost is disabled, don't start it
       return 0
     fi
 
-    action="cond-start"
-  else
-    action=start
+    if mysql_is_instanced_autostart_locked "$instance"; then
+      # don't start if the instance is locked (e.g. manually stopped)
+      return 0
+    fi
+
+    if mysql_instance_is_running "$instance"; then
+      return 0
+    fi
   fi
 
-  "$sys_dir/compat/dbmgr/current/bin/daemon-action" "$action" "$db_user"
+  mysql_instance_is_running "$instance"
+  st=$?
+  if [ $st -eq 0 ]; then
+    error "mysql instance is already running" -
+    return $?
+  elif [ $st -eq 50 ]; then
+    # 50 == internal error, unable to determine mysql state
+    error "unable to determine mysql status" -
+    return $st
+  fi
+
+  mysql_unlock_instance_autostart "$instance"
+
+  if [ -n "$quick" ]; then
+    mysql_start_instance "$instance"
+  else
+    mysql_start_n_check_instance "$instance"
+    if [ $? -eq 0 ]; then
+      echo "Successfully started MySQL instance '$instance'"
+    fi
+  fi
 }

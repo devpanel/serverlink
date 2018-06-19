@@ -377,11 +377,43 @@ wedp_gen_random_str() {
   fi
 }
 
+gen_12char_random_uuid() {
+  local raw hex
+
+  raw=$(head -c 16384 /dev/urandom | md5sum )
+  if [ $? -ne 0 ]; then
+    echo "$FUNCNAME(): failed to generate uuid" 1>&2
+    return 1
+  fi
+
+  hex=${raw%% *}
+  if [ -z "$hex" ]; then
+    echo "$FUNCNAME(): got an empty hex string" 1>&2
+    return 1
+  elif [ ${#hex} -ne 32 ]; then
+    echo "$FUNCNAME(): got a hex string of ${#hex} characters (not 32)" 1>&2
+    return 1
+  elif [ ${#hex} -eq 32 ]; then
+    echo "${hex:0:8}-${hex:8:4}-${hex:12:4}-${hex:16:4}-${hex:20:12}"
+    return 0
+  else
+    echo "$FUNCNAME(): got an invalid hex string" 1>&2
+    return 1
+  fi
+}
+
 gen_random_str_az_lower() {
   local length=${1:-6}
   local str
 
   wedp_gen_random_str $length a-z
+}
+
+gen_random_str_az09_lower() {
+  local length=${1:-6}
+  local str
+
+  wedp_gen_random_str $length a-z0-9
 }
 
 is_valid_domain_string() {
@@ -744,6 +776,28 @@ download_url_n_cache() {
   fi
 
   return 0
+}
+
+translate_url_from_publisher_uri() {
+  local uri="$1"
+  local publisher url base_url tmp_rel_url
+
+  publisher="${uri%%://*}"
+
+  if [[ ! "$publisher" =~ ^[a-z0-9]+$ ]]; then
+    echo "$FUNCNAME(): error, invalid publisher name" 1>&2
+    return 1
+  fi
+
+  base_url=$(get_base_url_for_publisher "$publisher" ) || return $?
+
+  tmp_rel_url=${uri#*://}
+  url="${base_url%/}/$tmp_rel_url"
+  if ! [[ "$url" == *.tgz ]]; then
+    url+=".tgz"
+  fi
+
+  echo "$url"
 }
 
 ini_section_get_key_value() {
@@ -1387,6 +1441,37 @@ get_metadata_value() {
   else
     echo "$FUNCNAME(): found, but couldn't read link value on '$link_path'" 1>&2
     return 1
+  fi
+}
+
+looks_like_an_app_url() {
+  local url="$1"
+
+  if [  ${#url} -gt 10 -a "${url:0:7}"   == "http://"           \
+     -o ${#url} -gt 10 -a "${url:0:8}"   == "https://"          \
+     -o ${#url} -gt 10 -a "${url:0:6}"   == "ftp://"            \
+     -o ${#url} -gt  5 -a "${url:0:5}"   == "we://"             \
+     -o ${#url} -gt 13 -a "${url:0:13}"  == "webenabled://"     \
+     -o ${#url} -gt 11 -a "${url:0:11}"  == "devpanel://"       \
+     ]; then
+
+    return 0
+  else
+    return 1
+  fi
+}
+
+looks_like_a_publisher_url() {
+  local url="$1"
+
+  if ! looks_like_an_app_url "$url"; then
+    return 1
+  fi
+
+  if [[ "$url" =~ ^(https?|ftp):// ]]; then
+    return 1
+  elif [[ "$url" =~ ^[a-z0-9]://.+$ ]]; then
+    return 0
   fi
 }
 
@@ -2047,25 +2132,6 @@ date_placeholders() {
   printf '%s' "$date_str"
 }
 
-get_mysql_version() {
-  if ! hash mysql &>/dev/null; then
-    echo "$FUNCNAME(): missing mysql command" 1>&2
-    return 1
-  fi
-
-  local tmp_str
-  tmp_str=$(mysql -V 2>/dev/null | egrep -o 'Distrib [0-9]\.[0-9]+(\.[0-9]+)?')
-  if [ $? -ne 0 -o -z "$tmp_str" ]; then
-    echo "$FUNCNAME(): unable to get mysql version from mysql command" 1>&2
-    return 1
-  fi
-
-  local junk version_str
-  IFS=" " read junk version_str <<< "$tmp_str"
-
-  echo -n "$version_str"
-}
-
 get_php_version() {
   if hash php-config &>/dev/null; then
     php-config --version
@@ -2622,6 +2688,60 @@ detect_app_type_on_dir() {
 
   if [ -n "$app_type" ]; then
     echo -n "$app_type"
+    return 0
+  else
+    return 1
+  fi
+}
+
+guess_subsystem_from_app_archive() {
+  local archive="$1"
+  local tmp_dir subsystem _sub_dir _tmp_subsystem
+  local db_dir db_dir_tst db_ext db_dir_1 db_dir_2
+
+  if ! tmp_dir=$(mktemp -d); then
+    echo "$FUNCNAME(): unable to create temp dir" 1>&2
+    return 1
+  fi
+
+  db_dir_1="db"
+  db_dir_2="./db"
+  for db_dir_tst in "$db_dir_1" "$db_dir_2"; do
+    if tar -ztf "$archive" --no-recursion "$db_dir_tst" &>/dev/null; then
+      db_dir="$db_dir_tst"
+      db_ext="$db_dir/databases"
+      if tar -zxf "$archive" -C "$tmp_dir" "$db_ext"; then
+        break
+      else
+        echo "$FUNCNAME(): failed to extract '$db_ext' from '$archive'" 1>&2
+        return 1
+      fi
+    fi
+  done
+
+  if [ -z "$db_dir" ]; then
+    echo "$FUNCNAME(): didn't find database dir on archive '$archive'" 1>&2
+    return 1
+  fi
+
+  for _sub_dir in "$DEVPANEL_HOME/bin/seeds/"*; do
+    if [ ! -d "$_sub_dir" ]; then
+      continue
+    fi
+
+    _tmp_subsystem=${_sub_dir##*/}
+    if is_known_seedapp_subsystem "$_tmp_subsystem"; then
+      if fgrep -qx "$_tmp_subsystem" "$tmp_dir/db/databases"; then
+        subsystem="$_tmp_subsystem"
+        break
+      fi
+    fi
+  done
+
+  rm -rf "$tmp_dir"
+
+  if [ -n "$subsystem" ]; then
+    echo "$subsystem"
     return 0
   else
     return 1
@@ -3386,8 +3506,9 @@ Snapshots: @snapshots_txt@
     ssl_txt+="  HTTP to HTTPS redirect: "
     if is_https_redirect_enabled_for_vhost "$vhost"; then
       ssl_txt+="yes"
-      if [ -n "$v__vhost__https_redirect_target_domain" ]; then
+      if [ -n "$v__ssl__https_redirect_target_domain" ]; then
         ssl_txt+=", targeted redirect to https://"
+        ssl_txt+="$v__ssl__https_redirect_target_domain/"
       fi
       ssl_txt+=$'\n'
     else
@@ -3665,7 +3786,7 @@ is_https_redirect_enabled_by_default() {
 
 is_https_redirect_enabled_for_vhost() {
   local vhost="$1"
-  local var="v__vhost__https_redirect_enabled"
+  local var="v__ssl__https_redirect_enabled"
 
   if [ -n "${!var}" -a "${!var}" == yes ]; then
     return 0
@@ -3798,6 +3919,12 @@ get_default_app_publisher() {
   else
     return 1
   fi
+}
+
+is_known_seedapp_publisher() {
+  local pub="$1"
+
+  get_base_url_for_publisher "$pub" >/dev/null
 }
 
 get_base_url_for_publisher() {
@@ -4335,14 +4462,191 @@ get_system_lock_dir() {
   return 0
 }
 
-if [ -f "$DEVPANEL_HOME/lib/functions.base.sh" ]; then
-  . "$DEVPANEL_HOME/lib/functions.base.sh"
-fi
+reserve_port() {
+  local proto="$1"
+  local port="$2"
 
-if [ -f "$DEVPANEL_HOME/lib/functions.linux-kernel.sh" ]; then
-  . "$DEVPANEL_HOME/lib/functions.linux-kernel.sh"
-fi
+  local tmp_clobber rsv_file
+  local -i st
 
-if [ -f "$DEVPANEL_HOME/lib/functions.mysql" ]; then
-  . "$DEVPANEL_HOME/lib/functions.mysql"
-fi
+  if [[ "$-" != *C* ]]; then
+    # file clobber (no overwriting) is disabled, temporary enable it
+    set -C
+    tmp_clobber=yes
+  fi
+
+  rsv_file="$conf__paths__port_reservation_dir/$proto.$port"
+
+  : 2>/dev/null >"$rsv_file"
+  st=$?
+
+  if [ -n "$tmp_clobber" ]; then
+    # disable file clobbering again
+    set +C
+  fi
+
+  return $st
+}
+
+assign_available_port() {
+  local proto="${1,,}"
+  local ref_port_state="state__ports_${proto}__last_assigned"
+  local -i first_port last_port n_ports n_trials
+
+  unset _dp_value
+
+  if [ -n "$conf__ports__last_port" ]; then
+    last_port=$conf__ports__last_port
+  else
+    echo "$FUNCNAME(): error, missing variable conf__ports__last_port" 1>&2
+    return 1
+  fi
+
+  if [ -n "${!ref_port_state}" ]; then
+    # the last port used is in the state cache
+    if [ "${!ref_port_state}" -ge $conf__ports__first_port -a \
+         "${!ref_port_state}" -le $conf__ports__last_port       ]; then
+      # port saved in state cache is in the valid range
+
+      first_port=$(( ${!ref_port_state} + 1 ))
+      if [ $first_port -gt $last_port ]; then
+        first_port=$conf__ports__first_port
+      fi
+    else
+     # port saved in state is outside the conf range. So ignore it
+     first_port=$conf__ports__first_port
+    fi
+  else
+    # last port used is not cached. So use the first one in the range.
+    if [ -n "$conf__ports__first_port" ]; then
+      first_port=$conf__ports__first_port
+    else
+      echo "$FUNCNAME(): error, missing variable conf__ports__first_port" 1>&2
+      return 1
+    fi
+  fi
+
+  n_ports=$(( $conf__ports__last_port - $conf__ports__first_port + 1 ))
+
+  for((i=$first_port; i <= $last_port; i++)); do
+    n_trials+=1
+    if reserve_port "$proto" $i; then
+      _dp_value="$i"
+      save_opts_in_state "ports_${proto}.last_assigned = $i"
+      return 0
+    else
+      if [ $i == $last_port -a $n_trials -le $n_ports ]; then
+        # if it's the last port and it hasn't tried all ports yet, then
+        # reset the trial value to the config's first port
+        i=$(( $conf__ports__first_port - 1 ))
+        continue
+      fi
+
+      if [ $n_trials -ge $n_ports ]; then
+        # tried all the ports, give up the loop
+        break
+      fi
+    fi
+  done
+
+  return 1
+}
+
+release_port() {
+  local proto="${1,,}"
+  local port="$2"
+  local port_file="$conf__paths__port_reservation_dir/$proto.$port"
+
+  if [ ! -e "$port_file" ]; then
+    echo "$FUNCNAME(): warning, port not assigned" 1>&2
+    return 0
+  fi
+
+  rm -f "$port_file"
+}
+
+force_kill_proc_using_file() {
+  local file="$1"
+  local -i i
+
+  if ! fuser -s "$file" 2>/dev/null; then
+    echo "$FUNCNAME(): no process using file $file" 1>&2
+    return 1
+  fi
+
+  if ! fuser -s -k -TERM "$file" 2>/dev/null; then
+    echo "$FUNCNAME(): unable to send TERM signal to process using file $file" 1>&2
+    return 1
+  fi
+
+  for i in {1..20}; do
+    sleep 0.2
+    if ! fuser -s "$file" 2>/dev/null; then
+      # process is not running anymore
+      return 0
+    fi
+  done
+
+  # finally send a KILL signal if the process didn't exit after previous
+  # time
+  fuser -s -k -KILL "$file" 2>/dev/null
+}
+
+dmi_id_matches() {
+  local id="$1"
+  local search_string="$2"
+  local id_file="/sys/devices/virtual/dmi/id/$id"
+  local ver_string
+
+  if [ -f "$id_file" ]; then
+    IFS='' read ver_string < "$id_file"
+    if [ -n "$ver_string" ] && [[ "${ver_string,,}" == *$search_string* ]]; then
+      return 0
+    fi
+  fi
+
+  return 1
+}
+
+bios_version_matches() {
+  local search_string="$1"
+  dmi_id_matches bios_version "$search_string"
+}
+
+bios_vendor_matches() {
+  local search_string="$1"
+  dmi_id_matches bios_vendor "$search_string"
+}
+
+am_i_on_aws() {
+  if bios_version_matches amazon; then
+    return 0
+  fi
+
+  local output
+  local url='http://169.254.169.254/latest/meta-data/public-hostname'
+
+  output=$(curl -sSN --max-time 3 --connect-timeout 2 --retry 1 \
+            --retry-delay 1 "$url" )
+  if [ $? -eq 0 ] && [[ "$output" == *.amazonaws.com ]]; then
+    return 0
+  else
+    return 1
+  fi
+}
+
+am_i_on_virtualbox() {
+  bios_version_matches virtualbox
+}
+
+am_i_on_digital_ocean() {
+  bios_vendor_matches digitalocean
+}
+
+for _name in base lamp_vhost linux-kernel mysql; do
+  if [ -f "$DEVPANEL_HOME/lib/functions.$_name.sh" ]; then
+    . "$DEVPANEL_HOME/lib/functions.$_name.sh"
+  else
+    :
+  fi
+done

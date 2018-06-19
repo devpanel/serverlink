@@ -1,7 +1,13 @@
-#!/bin/sh
+#!/bin/bash
 umask 027
-dir=`dirname "$0"`
-config_dir="$dir/../../config"
+self_bin=$(readlink -e "$0")
+if [ $? -ne 0 ]; then
+  echo "Error: failed to determine self path" 1>&2
+  exit 1
+fi
+
+dir="${self_bin%/*}"
+sys_dir="${dir%/*/*/*/*}"
 
 parse_arguments() {
 
@@ -34,7 +40,14 @@ if test -z "$dbuser"; then
     echo "Cowardly refusing to create a user without name"
 fi
 
-client_conf_dir="$config_dir/mysql/$user"
+if ! . "$sys_dir/lib/functions"; then
+  echo "Error: failed to load '$sys_dir/lib/functions'" 1>&2
+  exit 1
+fi
+
+load_devpanel_config || exit $?
+
+client_conf_dir="$lamp__paths__mysql_instances_config_dir/$user"
 root_client_cnf="$client_conf_dir/root.client.cnf"
 
 if test x"$dbadmin" = x"1"; then

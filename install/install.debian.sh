@@ -121,12 +121,13 @@ debian_adjust_system_config() {
     fi
   fi
 
-  # dbmgr.init is not yet compatible with systemd (mysqld dies even when
-  # service type is oneshot)
-  # so do a sysvinit setup style
-  [ -e /etc/init.d/dbmgr ] && rm -f /etc/init.d/dbmgr
-  ln -s "$install_dir"/compat/dbmgr/current/bin/dbmgr.init /etc/init.d/devpanel-dbmgr
-  update-rc.d devpanel-dbmgr defaults
+  if hash systemctl &>/dev/null; then
+    systemctl enable devpanel-bootstrap
+    systemctl start  devpanel-bootstrap
+  else
+    update-rc.d devpanel-bootstrap defaults
+    service devpanel-bootstrap start
+  fi
 
   if ! fuser -s 25/tcp; then
     apt-get -y install postfix

@@ -27,6 +27,7 @@ usage() {
 
 _usage__generic() {
   echo "Usage: $cmd_basename <vhost>"
+  exit 1
 }
 
 usage__htaccess_lock_vhost() {
@@ -57,6 +58,41 @@ usage__config_vhost_names_default() {
   echo "Usage: $cmd_basename <domain-name>"
 }
 
+usage__remove_vhost() {
+  echo "Usage: $cmd_basename <vhost> <archive_filename>"
+}
+
+usage__restore_vhost() {
+  _usage__generic
+}
+
+cmd__restore_vhost() {
+  local getopt_flags='i-'
+  local OPTN OPTIND
+  local cmd_args_ar=()
+  local vhost source_file
+
+  while getopts $getopt_flags OPTN; do
+    case $OPTN in
+      i)
+        cmd_args_ar+=( --password-stdin )
+        ;;
+      -)
+        :
+        ;;
+    esac
+  done
+
+  [ $# -lt 2 -o -z "$1" -o -z "$2" ] && usage
+
+  vhost="$1"
+  source_file="$2"
+
+  cmd_args_ar+=( --vhost "$vhost" --from "$source_file" )
+
+  devpanel create vhost "${cmd_args_ar[@]}"
+}
+
 cmd__chpass_vhost() {
   local getopt_flags=iq
   local OPTN OPTIND
@@ -65,7 +101,7 @@ cmd__chpass_vhost() {
   while getopts $getopt_flags OPTN; do
     case $OPTN in
       i)
-
+        :
         ;;
       q)
         :
@@ -220,6 +256,15 @@ cmd__config_vhost_names_default() {
   local domain="$1"
 
 	devpanel set base hostname --name "$domain"
+}
+
+cmd__remove_vhost() {
+  [ -z "$1" ] && usage
+
+  local vhost="$1"
+  local file="${2##*/}"
+
+	devpanel remove vhost --vhost "$vhost" ${file:+--file "$file"}
 }
 
 cmd_basename="${0##*/}"

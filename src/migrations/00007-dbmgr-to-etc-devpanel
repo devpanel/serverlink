@@ -1,0 +1,119 @@
+#!/bin/bash
+
+if [ ! -e "$sys_dir/compat/dbmgr/config/db-shadow.conf" ]; then
+  exit 0
+fi
+
+shadow_file="$sys_dir/compat/dbmgr/config/db-shadow.conf"
+daemons_file="$sys_dir/compat/dbmgr/config/db-daemons.conf"
+
+mkdir -m 750 -p "$conf__paths__local_config_dir/ports"
+mkdir -m 751 -p "$lamp__paths__mysql_instances_config_dir"
+
+distro="$conf__distro"
+distro_ver="${conf__distro_version%.*}"
+skel_dir="$sys_dir/install/skel/$distro/$distro_ver"
+apparmor_file="$skel_dir/etc/apparmor.d/local/usr.sbin.mysqld"
+if [ -f "$apparmor_file" ]; then
+  cp -f "$apparmor_file" "${apparmor_file#$skel_dir}"
+  service apparmor reload
+fi
+
+# for each dbmgr
+#   create mysql/instances/<vhost>/
+#     create mysql/instances/<vhost>/config.ini
+#     create mysql/instances/<vhost>/mysqld.cnf
+#     create mysql/instances/<vhost>/mysqld-inc.cnf
+#     create mysql/instances/<vhost>/root.client.cnf
+#     update lamp/vhosts/<vhost>/config.ini mysql.instance = $vhost
+#   create lamp/vhosts/<vhost>/mysql/my.cnf
+#   create ports/tcp.<port> reservation
+
+#  1    2    3     4     5   6     7       8        9
+# user:type:vers:datadir:ip:port:limits:contact:root_passwd
+
+mysql_ver=$(get_mysql_version_two_dots )
+while IFS=: read user w2 w3 data_dir w5 port w7 w8 root_pw  ; do
+  [ -z "$user"           ] && continue
+  [ "${user:0:1}" == "#" ] && continue
+
+  vhost_user="w_${user#b_}"
+  vhost=$(get_vhost_from_linuxuser "$vhost_user")
+  if [ $? -ne 0 ]; then
+    echo "Warning: failed to get vhost from user $vhost_user" 1>&2
+    sleep 2
+    continue
+  fi
+
+  mysql_instance_config_dir="$lamp__paths__mysql_instances_config_dir/$vhost"
+  mysql_instance_run_dir="$lamp__paths__mysql_socket_dir/$vhost"
+  vhost_config_dir="$lamp__paths__vhosts_config_dir/$vhost"
+  vhost_my_cnf="$vhost_config_dir/mysql/my.cnf"
+  previous_socket="$data_dir/mysql.sock"
+  previous_config_dir="$sys_dir/compat/dbmgr/config/mysql/$user"
+  previous_root_cnf="$previous_config_dir/root.client.cnf"
+
+  mkdir -m 751 -p        "$mysql_instance_config_dir"
+  mkdir -m 750 -p        "$vhost_config_dir/mysql"
+  chgrp    "$vhost_user" "$vhost_config_dir/mysql"
+
+  mkdir -m 771 -p        "$mysql_instance_run_dir"
+  chgrp "$user"          "$mysql_instance_run_dir"
+
+  write_ini_file "$mysql_instance_config_dir/config.ini"    \
+    "params.data_dir   = $data_dir"       \
+    "params.linux_user = $user"           \
+    "params.port       = $port"           \
+    "params.type       = local"
+
+  write_ini_file "$mysql_instance_config_dir/mysqld.cnf"    \
+    "mysqld.datadir    = $data_dir" \
+    "mysqld.log-error  = $data_dir/error.log"  \
+    "mysqld.pid-file   = $data_dir/mysqld.pid"  \
+    "mysqld.port       = $port" \
+    "mysqld.socket     = $mysql_instance_run_dir/mysql.sock"  \
+    "mysqld.tmpdir     = ${data_dir%/*}/tmp" \
+    "client.host       = 127.0.0.1"   \
+    "client.port       = $port"
+
+  echo "!include $sys_dir/stacks/lamp/mysql/$mysql_ver/mysqld.cnf
+!include $mysql_instance_config_dir/mysqld.cnf" \
+  >$mysql_instance_config_dir/mysqld-inc.cnf
+
+  touch $mysql_instance_config_dir/root.client.cnf
+  chmod 600 $mysql_instance_config_dir/root.client.cnf
+  write_ini_file $mysql_instance_config_dir/root.client.cnf    \
+    "client.socket      = $mysql_instance_run_dir/mysql.sock"  \
+    "client.user        = root"                                \
+    "client.password    = $root_pw"
+
+  read_ini_file_into_namespace "$previous_config_dir/web.client.cnf" old_mysql
+
+  touch     "$vhost_my_cnf"
+  chmod 640 "$vhost_my_cnf"
+  chgrp "$vhost_user" "$vhost_my_cnf"
+  echo "!include $mysql_instance_config_dir/mysqld.cnf
+[client]
+user = $vhost_user
+password = $old_mysql__client__password" >$vhost_my_cnf
+
+  save_opts_in_vhost_config "$vhost" "mysql.instance = $vhost"
+
+  reserve_port tcp "$port"
+
+  mysqladmin --defaults-file="$previous_root_cnf" shutdown
+  sleep 2
+  devpanel_run start mysql --vhost "$vhost"
+
+done < $shadow_file
+
+mv "$shadow_file" "$lamp__paths__mysql_instances_config_dir/.old-db-shadow.conf"
+mv "$daemons_file" "$lamp__paths__mysql_instances_config_dir/.old-db-daemons.conf"
+
+if hash update-rc.d &>/dev/null; then
+  update-rc.d -f devpanel-dbmgr remove
+elif hash chkconfig &>/dev/null; then
+  chkconfig --del devpanel-dbmgr
+fi
+
+exit 0

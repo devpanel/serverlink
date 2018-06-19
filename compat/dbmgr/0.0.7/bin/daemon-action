@@ -49,7 +49,7 @@ instance_exists() {
     return 1
   fi
 
-  local config_dir="$dbmgr_dir/config/mysql/$instance"
+  local config_dir="$lamp__paths__mysql_instances_config_dir/$instance"
 
   if [ -d "$config_dir" ]; then
     return 0
@@ -142,7 +142,7 @@ has_conditional_lock() {
 
 ping_mysql_instance() {
   local instance="$1"
-  local config_file="$dbmgr_dir/config/mysql/$instance/root.client.cnf"
+  local config_file="$lamp__paths__mysql_instances_config_dir/$instance/root.client.cnf"
 
   mysqladmin --defaults-file="$config_file" ping
 }
@@ -156,7 +156,7 @@ start_mysql_instance() {
 stop_mysql_instance() {
   local instance="$1"
 
-  local config_file="$dbmgr_dir/config/mysql/$instance/root.client.cnf"
+  local config_file="$lamp__paths__mysql_instances_config_dir/$instance/root.client.cnf"
 
   mysqladmin --defaults-file="$config_file" --verbose shutdown
 }
@@ -209,9 +209,16 @@ sys_dir="${dbmgr_dir%/*/*}"
 action="$1"
 instance="$2"
 
+if ! . "$sys_dir/lib/functions"; then
+  error "failed to load '$sys_dir/lib/functions'"
+fi
+
+load_devpanel_config || exit $?
+
 if ! instance_exists "$instance"; then
   error "mysql instance doesn't exist."
 fi
+
 
 case "$action" in
   status)

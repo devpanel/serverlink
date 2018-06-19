@@ -76,7 +76,7 @@ if is_vhost_enabled "$vhost" && [ -z "$disable_vhost" ]; then
   if [ "$v__ssl__enabled" == yes ]; then
     if [ "$v__ssl__https_redirect" == yes ]; then
       # ssl is enabled and automatic redirects also enabled
-      if [ -n "$v__vhost__https_redirect_target_domain" ]; then
+      if [ -n "$v__ssl__https_redirect_target_domain" ]; then
         template_name="$lamp__apache_templates__https_redirect_targeted"
       else
         template_name="$lamp__apache_templates__https_redirect"

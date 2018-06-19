@@ -5,7 +5,23 @@ set_usage_msg \
 
   Options:
     --vhost <vhost>             the vhost
+
     --name-value <name=value>   sets the specified name and value
+
+    --refresh-config-file       update the config file(s) with mysql
+                                credentials, etc
+
+    --config-function name      name of the config function to run to setup
+                                the app
+
+    --install-profile name      name of the install profile for apps that
+                                support different profiles on install
+
+    --site-title title          title of the website created by the app (for
+                                apps that support it)
+
+    --first-setup               update config with settings usually done
+                                on the first setup (setup URL, etc)
 
   Sets specific name and value pairs to the specified application.
 "
@@ -13,7 +29,7 @@ set_usage_msg \
 devpanel_cmd__config_app() {
   [ $EUID -eq 0 ] && [ $# -eq 0 -o -z "$1" ] && usage
 
-  local name vhost admin_pw user
+  local name vhost admin_pw user config_function
 
   local -a cmd_args=()
   local -a opts_ar=( )
@@ -26,11 +42,23 @@ devpanel_cmd__config_app() {
         vhost="$2"
         shift 2
         ;;
+
       --admin-password)
         [ -z "$2" ] && error_missing_value admin-password
         admin_pw="$2"
         shift 2
         ;;
+
+      --refresh-config-file)
+        opts_ar+=( -n )
+        shift
+        ;;
+
+      --first-setup)
+        opts_ar+=( -n -F )
+        shift
+        ;;
+
       --name-value)
         [ -z "$2" ] && error_missing_value name-value
         if [[ "$2" == *=* ]]; then
@@ -41,19 +69,46 @@ devpanel_cmd__config_app() {
 
         shift 2
         ;;
+
+      --site-title)
+        [ -z "$2" ] && error_missing_value "$name"
+        opts_ar+=( -O site_title="$2" )
+        shift 2
+        ;;
+
+      --config-function)
+        [ -z "$2" ] && error_missing_value "$name"
+        if [[ "$2" =~ ^[A-Za-z0-9_-]+$ ]]; then
+          opts_ar+=( -O config_function=$2 )
+        else
+          error "invalid format for parameter $name" -
+          return $?
+        fi
+        shift 2
+        ;;
+
+      --install-profile)
+        [ -z "$2" ] && error_missing_value "$name"
+        if [[ "$2" =~ ^[A-Za-z0-9_-]+$ ]]; then
+          opts_ar+=( -O install_profile=$2 )
+        else
+          error "invalid format for parameter $name" -
+          return $?
+        fi
+        shift 2
+        ;;
+
       --help)
         usage
         ;;
+
       --)
         shift
         break
         ;;
-      --[A-Za-z0-9_-]*)
-        error "unknown option $name"
-        ;;
+
       *)
-        cmd_args+=( "$name" )
-        shift
+        error "unknown option $name"
         ;;
     esac
   done

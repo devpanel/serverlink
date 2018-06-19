@@ -5,16 +5,26 @@ set_usage_msg \
 
   Options:
     --vhost  <vhost>          the vhost
+
     --domain <domain>         find the vhost associated with the
                               specified domain
+
     --conditional             only try to restart if the vhost is enabled
+
+    --quick                  just start MySQL but don't verify where it
+                             keeps running (e.g. didn't stop due to an
+                             internal error)
+
 
   Restarts mysqld associated with the specified domain or vhost.
 "
 
 devpanel_cmd__restart_mysql() {
   local param vhost domain vhost_user db_user  
-  local conditional
+  local instance conditional quick
+  local -a cmd_args_ar=()
+  local -i st
+
   [ $# -eq 0 -o -z "$1" ] && usage
 
   while [ -n "$1" ]; do
@@ -26,22 +36,34 @@ devpanel_cmd__restart_mysql() {
         vhost="$2"
         shift 2
         ;;
+
       --domain)
         [ -z "$2" ] && error_missing_value domain
         domain="$2"
         shift 2
         ;;
+
+      --quick)
+        quick=yes
+        cmd_args_ar+=( $param )
+        shift
+        ;;
+
       --help)
         usage
         ;;
+
       --)
         shift
         break
         ;;
+
       --conditional)
         conditional=1
+        cmd_args_ar+=( $param )
         shift
         ;;
+
       *)
         error "unknown parameter: $param"
         ;;
@@ -66,24 +88,25 @@ devpanel_cmd__restart_mysql() {
   load_vhost_config "$vhost" || return $?
   vhost_user="$v__vhost__linux_user"
 
+  if [ -z "$v__mysql__instance" ]; then
+    error "this vhost is not associated to a MySQL instance" -
+    return $?
+  fi
+
   if [ -n "$conditional" ]; then
     if ! is_vhost_enabled "$vhost"; then
       return 0
     fi
   fi
 
-  db_user="b_${vhost_user#w_}"
-
-  local actions_bin="$sys_dir/compat/dbmgr/current/bin/daemon-action"
-
-  "$actions_bin" stop-politely-or-force "$db_user"
-
-  echo "Starting mysql for vhost $vhost..."
-  echo -n "  "
-  "$actions_bin" start "$db_user"
-  if [ $? -eq 0 ]; then
-    return 0
-  else
-    error "unable to start mysql for vhost $vhost"
+  mysql_instance_is_running "$instance"
+  st=$?
+  if [ $st -eq 0 ]; then
+    devpanel_run stop mysql --vhost "$vhost" --forceful
+  elif [ $st -eq 50 ]; then
+    error "unable to get status of mysql instance" -
+    return $?
   fi
+
+  devpanel_run start mysql --vhost "$vhost" "${cmd_args_ar[@]}"
 }

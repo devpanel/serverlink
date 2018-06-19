@@ -1,0 +1,18 @@
+#!/bin/bash
+#
+
+for vhost in $(get_list_of_vhosts); do
+  load_vhost_config "$vhost" || continue
+
+  if [ -n "$v__vhost__https_redirect" ]; then
+    save_opts_in_vhost_config "$vhost"                 \
+      "ssl.https_redirect = $v__vhost__https_redirect" \
+      "- vhost.https_redirect"
+  fi
+
+  if [ -n "$v__vhost__https_redirect_target_domain" ]; then
+    save_opts_in_vhost_config "$vhost"                 \
+      "ssl.https_redirect_target_domain = $v__vhost__https_redirect_target_domain" \
+      "- vhost.https_redirect_target_domain"
+  fi
+done

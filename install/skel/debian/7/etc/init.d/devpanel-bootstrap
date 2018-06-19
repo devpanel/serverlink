@@ -1,0 +1,40 @@
+#!/bin/bash
+#
+### BEGIN INIT INFO
+# Provides:          devpanel_bootstrap
+# Required-Start:    $network
+# Required-Stop:     $network
+# Should-Start:      $remote_fs
+# Should-Stop:       $remote_fs
+# Default-Start:     2 3 4 5
+# Default-Stop:      0 1 6
+# Short-Description: bootstraps devPanel basic services
+# Description:       bootstraps devPanel basic services
+### END INIT INFO
+
+usage() {
+  echo "Usage: $0 <start|stop|status>"
+  exit 1
+}
+
+[ -z "$1" ] && usage
+
+declare -l action="$1"
+
+case "$action" in
+  start)
+    devpanel bootstrap --yes
+    ;;
+
+  stop)
+    echo "OK (though nothing actually executed)"
+    ;;
+
+  reload|restart)
+    devpanel bootstrap --yes
+    ;;
+
+  status)
+    echo "OK (though nothing actually executed)"
+    ;;
+esac

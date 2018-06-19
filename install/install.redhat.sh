@@ -174,9 +174,6 @@ redhat_adjust_system_config() {
 
   # openssl req -subj "/C=--/ST=SomeState/L=SomeCity/O=SomeOrganization/OU=SomeOrganizationalUnit/CN=*.`hostname`" -new -x509 -days 3650 -nodes -out /opt/webenabled/config/os/pathnames/etc/ssl/certs/wildcard -keyout /opt/webenabled/config/os/pathnames/etc/ssl/keys/wildcard
 
-  ln -s "$install_dir/compat/dbmgr/current/bin/dbmgr.init" /etc/init.d/devpanel-dbmgr
-  chkconfig --add /etc/init.d/devpanel-dbmgr
-
   # start crontab (if it's not running for any reason)
   service cron restart
 

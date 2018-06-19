@@ -1,0 +1,68 @@
+#!/bin/bash
+
+set_usage_msg \
+  "Usage: $bin_name ${cmd_ar[*]} [opts] --yes
+
+  Options:
+    --yes               confirm the intent to run
+
+  Starts all mysql instances.
+"
+
+devpanel_cmd__start_mysql_instances() {
+  local arg locked confirmed vhost
+
+  while [ -n "$1" ]; do
+    arg="$1"
+    case "$arg" in
+      --yes)
+        confirmed=yes
+        shift
+        ;;
+
+      *)
+        error "unknown option '$arg'" -
+        shift
+        return 1
+        ;;
+    esac
+  done
+
+  [ -z "$confirmed" ] && usage
+
+  lock_file="$conf__paths__lock_dir/${BASH_SOURCE##*/}.lock"
+
+  if ln -s $BASHPID "$lock_file" 2>/dev/null; then
+    locked=1
+    devpanel_trap_exit_cmds_ar+=( "rm -f $lock_file" )
+  else
+    if [ -t 0 ]; then
+      echo "Warning: there's another instance running. Exiting." 1>&2
+    fi
+
+    return 1
+  fi
+
+  for vhost in $(get_list_of_enabled_vhosts); do
+    load_vhost_config "$vhost" || continue
+
+    if [ -z "$v__mysql__instance" ]; then
+      continue
+    elif [ -n "$v__mysql__external" -a "$v__mysql__external" == yes ]; then
+      continue
+    fi
+
+    if has_a_safe_level_of_free_ram; then
+      # if the database was not manually stopped by the user, then start it
+      devpanel_run start mysql --vhost "$vhost" --conditional --quick
+    else
+      # not enough free ram, the server might be in a high memory pressure.
+      # Just stop trying to start databases
+      break
+    fi
+  done
+
+  cleanup_namespace v
+
+  return 0
+}

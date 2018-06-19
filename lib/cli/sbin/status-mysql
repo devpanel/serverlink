@@ -12,7 +12,7 @@ set_usage_msg \
 "
 
 devpanel_cmd__status_mysql() {
-  local param vhost vhost_user db_user domain
+  local param vhost vhost_user db_user domain instance
   
   [ $# -eq 0 -o -z "$1" ] && usage
 
@@ -55,8 +55,12 @@ devpanel_cmd__status_mysql() {
   fi
 
   load_vhost_config "$vhost" || return $?
-  vhost_user="$v__vhost__linux_user"
-  db_user="b_${vhost_user#w_}"
-     
-  "$sys_dir/compat/dbmgr/current/bin/daemon-action" status "$db_user"
+  if [ -n "$v__mysql__instance" ]; then
+    instance="$v__mysql__instance"
+  else
+    error "this vhost doesn't have any mysql instance" -
+    return $?
+  fi
+
+  mysql_ping_instance "$instance"
 }

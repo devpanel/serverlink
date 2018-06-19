@@ -106,7 +106,7 @@ install_ce_software() {
   local t_dir
   for t_dir in "$skel_dir_common" "$skel_dir_major" "$skel_dir_major_minor"; do
     if [ -d "$t_dir" ]; then
-      cp -dRn --preserve=mode,timestamps "$t_dir/." /
+      tar -cpf - -C "$t_dir" . | tar -xpf - -C / --no-overwrite-dir
       if [ $? -ne 0 ]; then
         echo -e "\n\nWarning: unable to copy distro skel files from $t_dir to /\n\n" 1>&2
         sleep 3
@@ -315,11 +315,6 @@ post_software_install() {
       sleep 3
     fi
   fi
-
-  local dbmgr_conf_dir="$webenabled_install_dir/compat/dbmgr/config"
-  cp -f "$dbmgr_conf_dir/db-daemons.conf"{.template,}
-  cp -f "$dbmgr_conf_dir/db-shadow.conf"{.template,}
-  chmod 600 "$dbmgr_conf_dir/db-shadow.conf"
 
   chown root:"$_apache_exec_group" "$webenabled_install_dir/var/tokens"
   chmod 711 "$webenabled_install_dir/var/tokens"

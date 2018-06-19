@@ -96,12 +96,7 @@ ubuntu_install_distro_packages() {
 ubuntu_adjust_system_config() {
   local install_dir="$1"
 
-  if [ -r /etc/apparmor.d/usr.sbin.mysqld ]; then
-    # add allow rules on apparmor.d for mysqld to access files on devPanel's
-    # db home directories
-    printf "%s/** rwk,\n" "$databasedir_base" \
-      >>/etc/apparmor.d/local/usr.sbin.mysqld
-
+  if [ -d /etc/apparmor.d/ ]; then
     service apparmor reload
   fi
 
@@ -130,10 +125,6 @@ ubuntu_adjust_system_config() {
     php5enmod mcrypt
   fi
 
-  [ -e /etc/init.d/dbmgr ] && rm -f /etc/init.d/dbmgr
-  ln -s "$install_dir"/compat/dbmgr/current/bin/dbmgr.init /etc/init.d/devpanel-dbmgr
-  update-rc.d devpanel-dbmgr defaults
-
   # stop the standard mysql service of Ubuntu
   # the stop on boot is done by the skel directory
   service mysql stop || true
@@ -154,6 +145,13 @@ ubuntu_adjust_system_config() {
         update-rc.d devpanel-taskd defaults
       fi
     fi
+  fi
+
+  if hash systemctl &>/dev/null; then
+    systemctl enable devpanel-bootstrap
+    systemctl start  devpanel-bootstrap
+  elif hash initctl &>/dev/null; then
+    initctl start devpanel-bootstrap
   fi
 
   # start crontab (if it's not running for any reason)

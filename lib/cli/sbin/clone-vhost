@@ -9,13 +9,18 @@ set_usage_msg \
 
     --target-vhost  <vhost>         the new vhost to be created
 
+    --password-stdin                read the password of the admin user of
+                                    the app from stdin
+
   Clones a vhost to a new virtual host (copies the files and databases to a
   new virtual host).
 "
 
 devpanel_cmd__clone_vhost() {
   local name source_vhost target_vhost
+  local source_vuser tmp_archive tmp_archive_fp
   local st php_ver
+  local -a restore_args_ar=()
   
   [ $# -eq 0 -o -z "$1" ] && usage
 
@@ -28,21 +33,31 @@ devpanel_cmd__clone_vhost() {
         source_vhost="$2"
         shift 2
         ;;
+
       --target-vhost)
         [ -z "$2" ] && error_missing_value "$name"
         target_vhost="$2"
         shift 2
         ;;
+
+      --password-stdin)
+        restore_args_ar+=( --password-stdin )
+        shift
+        ;;
+
       --help)
         usage
         shift
         ;;
+
       --)
         shift
         break
         ;;
+
       *)
-        error "unknown parameter: $name"
+        error "unknown parameter: $name" -
+        return $?
         ;;
     esac
   done
@@ -57,11 +72,25 @@ devpanel_cmd__clone_vhost() {
     error "target vhost already exists. Can't clone to an existing vhost."
   fi
 
-  "$sys_dir/libexec/clone-vhost-local" "$source_vhost" "$target_vhost"
-  st=$?
+  load_vhost_config "$source_vhost" || return $?
+  source_vuser="$v__vhost__linux_user"
 
-  if [ $st -ne 0 ]; then
-    return $st
+  tmp_archive="tmp_archive_$source_vhost-$(date +%b-%d-%Y--%H-%M).tgz"
+  tmp_archive_fp="$v__vhost__archives_dir/$tmp_archive"
+
+  echo "Cloning stage 1: archive $src_vhost to $tmp_archive"
+  if ! devpanel_run backup vhost --vhost "$source_vhost" \
+         --file "$tmp_archive"; then
+    return 1
+  fi
+  devpanel_trap_exit_cmds_ar+=( "rm -f $tmp_archive_fp" )
+
+  echo "Cloning stage 2: restore $target_vhost from $tmp_archive"
+  restore_args_ar+=( --vhost "$target_vhost" --from "$tmp_archive_fp" )
+  restore_args_ar+=( --no-summary )
+  if ! devpanel_run create vhost "${restore_args_ar[@]}"; then
+    error "failed to create vhost '$target_vhost' from '$tmp_archive'" -
+    return $?
   fi
 
   if is_htpasswd_enabled_on_vhost "$source_vhost"; then
@@ -76,5 +105,4 @@ devpanel_cmd__clone_vhost() {
 
   echo "Successfully cloned vhost '$source_vhost' to '$target_vhost'"
   return 0
-
 }

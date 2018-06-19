@@ -74,6 +74,13 @@ if [ x"$USER" == x$(id -nu "$USER" 2>/dev/null) ]; then
 	exit 3
 fi
 
+if ! . "$sys_dir/lib/functions"; then
+  echo "Error: failed to load '$sys_dir/lib/functions'" 1>&2
+  exit 1
+fi
+
+load_devpanel_config || exit $?
+
 DATA_DIR="${DB_HOME_BASE%%/}/$USER/$TYPE"
 
 "$DBMGR_BINDIR"daemon-add -t "$TYPE" -u "$USER" -d "$DATA_DIR" $ADDON #&> /dev/null
@@ -118,7 +125,7 @@ if [ "$?" -ne 0 ]; then
 	exit 5
 fi
 
-client_config_dir="$DBMGR_HOME/config/mysql/$USER"
+client_config_dir="$lamp__paths__mysql_instances_config_dir/$USER"
 # this is a hack
 w_USER=${USER/b_/w_}
 web_password=$($DBMGR_BINDIR/passgen)

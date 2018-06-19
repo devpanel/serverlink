@@ -44,5 +44,12 @@ devpanel_cmd__get_token() {
   [ -z "$vhost" ] && error_missing_param vhost
   [ -z "$tool"  ] && error_missing_param tool
 
+  load_vhost_config "$vhost" || return $?
+
+  if [ "$tool" == phpmyadmin -a -z "$v__mysql__instance" ]; then
+    error "this vhost isn't associated to a mysql instance" -
+    return $?
+  fi
+
   "$sys_dir/libexec/gen-app-tool-token" "$vhost" "$tool"
 }

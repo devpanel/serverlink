@@ -5,14 +5,12 @@ set_usage_msg \
 
   Options:
     --vhost <vhost>           name of the vhost
+
     --from  <source>          source from where to create the app
-                              (can be a filename or a public git url)
+                              (can be a filename or url for the tar ball)
 
     --title <site_title>      sets the website title for the apps that
                               support it
-
-    --branch <branch>         when the source type is git, clone the
-                              specified branch
 
     --desc <description>      a short description of the vhost's purpose
 
@@ -24,6 +22,15 @@ set_usage_msg \
     --no-summary              don't print the summary information after
                               creating the vhost
 
+    --subsystem <name>        name of the app subsystem (e.g. drupal,
+                              wordpress, etc)
+
+    --config-function name    name of the config function to run to setup
+                              the app
+
+    --install-profile name    name of the install profile for apps that
+                              support different profiles on install
+
   Creates a new vhost from the specified source.
 "
 
@@ -32,12 +39,10 @@ devpanel_cmd__create_vhost() {
   [ $# -eq 0 -o -z "$1" ] && usage
 
   local name vhost from source_type title desc
-  local branch app_password read_pw_stdin php_version
+  local branch app_password read_pw_stdin php_version subsystem
+  local source_type publisher uri_part app_url
   local print_summary=yes
-  local -a cmd_args=()
-
-  # by default let's assume the source is a file
-  local def_source_type=file
+  local -a cmd_args=() lamp_cmd_args=() app_cmd_ar=()
 
   while [ -n "$1" ]; do
     name="$1"
@@ -52,33 +57,32 @@ devpanel_cmd__create_vhost() {
         from="$2"
         shift 2
         ;;
-      --branch)
-        [ -z "$2" ] && error_missing_value branch
-        branch="$2"
-        cmd_args+=( -b "$branch" )
-        shift 2
-        ;;
+
       --title)
         [ -z "$2" ] && error_missing_value title
         title="$2"
-        cmd_args+=( -O "site_title=$title" )
+        app_cmd_ar+=( --site-title "$title" )
         shift 2
         ;;
 
       --php-version)
         [ -z "$2" ] && error_missing_value "$name"
         php_version="$2"
+        lamp_cmd_args+=( "$name" "$php_version" )
         shift 2
         ;;
 
       --help)
         usage
         ;;
+
       --desc)
         [ -z "$2" ] && error_missing_value "$name"
         desc="$2"
+        lamp_cmd_args+=( --description "$desc" )
         shift 2
         ;;
+
       --password-stdin)
         read_pw_stdin=1
         shift
@@ -87,6 +91,29 @@ devpanel_cmd__create_vhost() {
       --no-summary)
         unset print_summary
         shift
+        ;;
+
+      --subsystem)
+        [ -z "$2" ] && error_missing_value "$name"
+        if is_known_seedapp_subsystem "$2"; then
+          subsystem="$2"
+        else
+          error "unknown subsystem" -
+          return 1
+        fi
+
+        shift 2
+        ;;
+
+      --config-function|--install-profile)
+        [ -z "$2" ] && error_missing_value "$name"
+        if [[ "$2" =~ ^[A-Za-z0-9_-]+$ ]]; then
+          app_cmd_ar+=( "$name" "$2" )
+        else
+          error "invalid format for parameter $name" -
+          return $?
+        fi
+        shift 2
         ;;
 
       --[A-Za-z0-9_-]*)
@@ -117,12 +144,46 @@ devpanel_cmd__create_vhost() {
   [ -z "$vhost" ]  && error_missing_param vhost
   [ -z "$from" ]   && error_missing_param from
 
+  if ! is_valid_vhost_string "$vhost"; then
+    error "invalid string format for vhost name" -
+    return $?
+  fi
+
+  if vhost_exists "$vhost"; then
+    error "there's already a vhost with this name." -
+    return $?
+  fi
+
   # detect the source type
-  # e.g. github://drupal/serverlink , we://drupal-v7
+  # e.g. devpanel://wordpress-v4, webenabled://drupal-v7
+  #      http://...
   if [[ "$from" =~ ^([a-z0-9]+)://.+$ ]]; then
-    source_type=${BASH_REMATCH[1]}
+    source_type=url
+
+    # check if it's a short hand publisher://name url
+    # and then translate it
+    if [[ "$from" =~ ^([a-z0-9]+)://[A-Za-z0-9-]+$ ]] && \
+       ! in_array "$source_type" file ftp http https; then
+
+      publisher=${from%%://*}
+      uri_part=${from#*://}
+      if is_known_seedapp_publisher "$publisher"; then
+        if ! app_url=$(get_tarball_url_for_app "$uri_part" "$publisher"); then
+          return 1
+        fi
+      else
+        error "unknown publisher '$publisher'" -
+        return 1
+      fi
+    else
+      # otherwise, treat it as a url to be passed directly to curl
+      app_url="$from"
+    fi
+  elif [ "$from" == - ]; then
+    source_type=stdin
   else
-    source_type="$def_source_type"
+    # by default let's assume the source is a file
+    source_type=file
   fi
 
   if [ -n "$read_pw_stdin" ]; then
@@ -139,43 +200,93 @@ devpanel_cmd__create_vhost() {
     cmd_args+=( -T "$php_version" )
   fi
 
-  if [ "$source_type" == "github" -o "$source_type" == "git" ]; then
+  if [ -n "$from" ]; then
+    case $source_type in
+      file)
+        if [ -f "$from" ]; then
+          src_archive="$from"
+        else
+          error "file not found" -
+          return 1
+        fi
+        ;;
 
-    # replace github://name/repo with https://github.com/name/repo.git
-    if [ "$source_type" == "github" ]; then
-      from=${from//$source_type:\/\//https:\/\/github.com\/}
-      if ! [[ "$from" == *.git ]]; then
-        from+=.git
-      fi
-    fi
+      stdin)
+        if src_archive=$(mktemp); then
+          temp_files_ar+=( "$src_archive" )
+        else
+          error "unable to create temp file" -
+          return $?
+        fi
 
-    "$sys_dir/libexec/import-site-from-git" "${cmd_args[@]}" "$vhost" "$from"
-    st=$?
-  else
-    "$sys_dir/libexec/restore-vhost" "${cmd_args[@]}" $vhost "$from"
-    st=$?
+        if [ -t 0 ]; then
+          echo "Reading archive file from STDIN..." 1>&2
+        fi
+
+        if ! cat >$src_archive; then
+          error "failed to save archive file '$src_archive'" -
+          return $?
+        fi
+
+        ;;
+
+      url)
+        if src_archive=$(mktemp); then
+          temp_files_ar+=( "$src_archive" )
+        else
+          error "unable to create temp file" -
+          return $?
+        fi
+
+        download_url_n_cache "$app_url" "$src_archive" || return $?
+        ;;
+
+        *)
+        error "don't know how to handle --from value '$from' (not an existing file nor a url)" -
+        return $?
+        ;;
+      esac
+  fi # // if [ -n $from ]
+
+  if [ -z "$subsystem" ]; then
+    # guess app type from tar ball when --subsystem not specified
+    subsystem=$(guess_subsystem_from_app_archive "$src_archive" ) || \
+      return $?
   fi
 
-  if [ $st -eq 0 ]; then
-    if ! load_vhost_config "$vhost"; then
-      echo "Warning: unable to load config for the newly created vhost" 1>&2
-    fi
+  if ! devpanel_run create lamp vhost "${lamp_cmd_args[@]}" --vhost "$vhost" \
+         --subsystem "$subsystem" --dont-activate-now; then
 
-    if [ -n "$app_password" ]; then
-      echo "$app_password" | devpanel_run reset app password --vhost "$vhost"
-      if [ $? -ne 0 ]; then
-        echo "Warning: failed setting the password for app..." 1>&2
-      fi
-    fi
-
-    if [ -n "$desc" ]; then
-      devpanel_run set vhost description --vhost "$vhost" --quiet --desc "$desc"
-    fi
-
-    [ -n "$print_summary" ] && print_vhost_summary "$vhost"
-
-    echo "Successfully created vhost $vhost"
+    error "failed to create lamp vhost" -
+    return $?
   fi
 
-  return $st
+  if ! devpanel_run restore backup --vhost "$vhost" --dont-remove-files \
+       --filename "$src_archive" --dont-disable-vhost --quiet; then
+    error "failed to extract the contents of tar ball" -
+    return $?
+  fi
+
+  app_cmd_ar+=( --first-setup )
+  devpanel_run config app "${app_cmd_ar[@]}" --vhost "$vhost" || return $?
+
+  if ! load_vhost_config "$vhost"; then
+    echo "Warning: unable to load config for the newly created vhost" 1>&2
+  fi
+
+  if [ -n "$app_password" ]; then
+    echo "$app_password" | devpanel_run reset app password --vhost "$vhost"
+    if [ $? -ne 0 ]; then
+      echo "Warning: failed setting the password for app..." 1>&2
+    fi
+  fi
+
+  if ! devpanel_run rewrite vhost config --vhost "$vhost"; then
+    echo "Warning: vhost created, but failed to write Apache config" 1>&2
+    [ -t 0 ] && sleep 2
+  fi
+
+  [ -n "$print_summary" ] && print_vhost_summary "$vhost"
+
+  echo "Successfully created vhost $vhost"
 }

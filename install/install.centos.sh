@@ -108,12 +108,21 @@ centos_adjust_system_config() {
   if [ -n "$platform_version" -a "$platform_version" == 2 ]; then
     if hash systemctl &>/dev/null; then
       systemctl enable devpanel-taskd
-      # dbmgr can't be a systemd service yet because mysqld dies just after
     fi
   fi
 
-  ln -s "$install_dir/compat/dbmgr/current/bin/dbmgr.init" /etc/init.d/devpanel-dbmgr
-  chkconfig --add /etc/init.d/devpanel-dbmgr
+  if hash systemctl &>/dev/null; then
+    systemctl enable devpanel-bootstrap
+    systemctl start  devpanel-bootstrap
+
+    systemctl stop    mysqld
+    systemctl disable mysqld
+  elif hash initctl &>/dev/null; then
+    initctl start devpanel-bootstrap
+  else
+    chkconfig --add devpanel-bootstrap
+    /etc/init.d/devpanel-bootstrap start
+  fi
 
   # start crontab (if it's not running for any reason)
   service "$conf__distro_services__crontab" restart

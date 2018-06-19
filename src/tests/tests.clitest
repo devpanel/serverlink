@@ -96,7 +96,7 @@ $ devpanel clone vhost --source-vhost d7-test-one --target-vhost d7-test-two   #
 $ : #=> --exit 0
 
 $ : Testing global PHP version
-$ devpanel create vhost --from we://blank --vhost blk1 #=> --exit 0
+$ devpanel create vhost --from webenabled://blank --vhost blk1 #=> --exit 0
 $ devpanel set default php --version 7.1                       #=> --exit 0
 $ devpanel exec --vhost blk1 php -v                            #=> --egrep ^PHP 7.1.[0-9]+
 $ devpanel show vhost info --vhost blk1                        #=> --egrep ^PHP Version: 7.1

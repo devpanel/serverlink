@@ -26,7 +26,7 @@ cleanup() {
     fi
 
     echo "Removing temporary vhost used ($tmp_vhost) ..."
-    "$sys_dir/libexec/remove-vhost" "$tmp_vhost" - &>"$temp_rm_file"
+    devpanel remove vhost --vhost "$tmp_vhost" --file - &>"$temp_rm_file"
     if [ $? -eq 0 ]; then
       rm -f "$temp_rm_file"
       exit 0

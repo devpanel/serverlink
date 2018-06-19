@@ -45,7 +45,7 @@ devpanel_cmd__import_from_git() {
   [ $# -eq 0 -o -z "$1" ] && usage
 
   local name vhost mysql_file mysql_file_type subsystem app_profile
-  local pack_file git_branch
+  local pack_file git_url git_branch
   local password_origin app_password
   local st
   local -a cmd_args_ar=()
@@ -145,9 +145,18 @@ devpanel_cmd__import_from_git() {
   done
 
   local _param
-  for _param in vhost git_url git_branch subsystem mysql_file;  do
+  for _param in vhost git_url git_branch subsystem;  do
     [ -z "${!_param}" ] && error_missing_param $_param
   done
+
+	# replace github:// with https://github.com/ to generate urls
+	# of format https://github.com/name/repo.git
+	if [[ "$git_url" == github://* ]]; then
+		git_url=${git_url//github:\/\//https:\/\/github.com\/}
+		if ! [[ "$git_url" == *.git ]]; then
+			git_url+=.git
+		fi
+	fi
 
   "$sys_dir/libexec/import-site-from-git" "${cmd_args_ar[@]}" \
     "$vhost" "$git_url"

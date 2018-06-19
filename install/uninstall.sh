@@ -170,7 +170,7 @@ while read passwd_line; do
     vhost=$(get_vhost_from_linuxuser)
 
     # first try the usual removal
-    if "$install_dir/libexec/remove-vhost" "$vhost" >/dev/null; then
+    if devpanel remove vhost --vhost "$vhost" >/dev/null; then
       echo "Successfully archived and removed vhost $vhost" 1>&2
       removal_st=$?
       continue # successfully removed, go to the next
@@ -248,8 +248,6 @@ if hash systemctl &>/dev/null; then
 fi
 
 if hash update-rc.d &>/dev/null; then
-  update-rc.d -f devpanel-dbmgr remove
-
   taskd_initd=/etc/init.d/devpanel-taskd
 
   if [ -f "$taskd_initd" ]; then

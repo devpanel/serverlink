@@ -114,7 +114,6 @@ archive_to="$2"
 load_vhost_config "$vhost" || exit $?
 
 user_web="$v__vhost__linux_user"
-user_db="b_${user_web#w_}"
 
 $dir/check-vhost-name archive "$vhost" || usage
 home="$v__vhost__linux_user_home"
@@ -349,10 +348,7 @@ if [ $? -ne 0 ]; then
   error "unable to archive web files (temp dir $tmp_archive_dir/web)"
 fi
 
-if ! `id -u "$user_db" 2>/dev/null >/dev/null`
-then
-  echo "Skipping db (no such user $user_db)"
-else
+if [ -n "$v__mysql__instance" ]; then
   echo "Archiving MySQL databases..." 1>&2
   ${debug:+run} "$0-db" "$vhost" "$tmp_archive_dir/db" 1>&2
   if [ $? -ne 0 ]; then

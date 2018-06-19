@@ -99,19 +99,26 @@ load_devpanel_config || exit $?
 
 load_vhost_config "$vhost" || exit $?
 
+if [ -z "$v__mysql__instance" ]; then
+  echo "Warning: this vhost is not associated to any mysql instance" 1>&2
+  exit 1
+fi
+
+instance_ini="$lamp__paths__mysql_instances_config_dir/$v__mysql__instance/config.ini"
+read_ini_file_into_namespace --no-cleanup "$instance_ini" v__mysql || exit $?
+
 user_web="$v__vhost__linux_user"
-user="b_${user_web#w_}"
+user="$v__mysql__params__linux_user"
 archive_list="$archive_dir/databases"
 archive_my_cnf="$archive_dir/b_.my.cnf"
 home="$v__vhost__linux_user_home"
 date=`date  +'%Y%m%d'`
-vhost_config_dir="$sys_dir/config/vhosts/$vhost"
 
-if ! `id -u "$user" 2>/dev/null >/dev/null`
-then
-  echo "No such user: $user" >&2
-  exit 1
-fi
+#if ! `id -u "$user" 2>/dev/null >/dev/null`
+#then
+#  echo "No such user: $user" >&2
+#  exit 1
+#fi
 
 if ! [ -d "$home" ]
 then
@@ -145,9 +152,12 @@ fi
 chmod +w "$archive_list" || exit 1
 
 echo Listing the databases...
-list=`$dir/dbmgr-show-databases "$user"` || exit 1
-list=`echo "$list" | egrep -v '^(mysql|performance_schema|information_schema|sys)$'`
-echo "$list" >"$archive_list"
+if mysql_list_databases "$v__mysql__instance" >"$archive_list"; then
+  sed -i -e '/^mysql$/d; /^performance_schema$/d; /^information_schema$/d;
+              /^sys$/d;' "$archive_list"
+else
+  error "unable to list mysql databases"
+fi
 
 echo Checking for .my.cnf...
 if run_su "[ -s .my.cnf ]"
@@ -162,18 +172,18 @@ else
   echo Not found
 fi
 
-if [ -z "$lock_cmd_arg" ] && get_metadata_value "$vhost_config_dir" config.mysql.skip_lock_tables &>/dev/null; then
-  dont_lock_tables=1
+if [ -s "$archive_list" ]; then
+  while read database; do
+    archive_file="$archive_dir/$database.sql"
+    echo "Archiving $database to $archive_file"
+    if mysql_dump_database "$v__mysql__instance" "$database" >$archive_file; then
+      if ! gzip "$archive_file"; then
+        error "failed to gzip database file '$archive_file'"
+      fi
+    else
+      error "failed to dump database '$database'"
+    fi
+  done < "$archive_list"
 fi
 
-for database in $list
-do
-  archive_file="$archive_dir/$database.sql"
-  echo "Archiving $database to $archive_file"
-  if ! run2 $dir/dbmgr-mysql-as-root "$user" mysqldump --extended-insert=false ${dont_lock_tables:+--skip-lock-tables} "$database" 2>&1 >"$archive_file" ||
-     ! run gzip "$archive_file"
-  then
-    echo "Aborting" >&2
-    exit 1
-  fi
-done
+exit 0

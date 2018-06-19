@@ -1023,10 +1023,10 @@ migrate_vhost_configs() {
       fi
 
       if old_is_https_redirect_enabled_for_vhost "$vhost"; then
-        opts_ar+=( "vhost.https_redirect = yes" )
+        opts_ar+=( "ssl.https_redirect = yes" )
 
         if https_domain=$(old_get_https_redirect_target_domain "$vhost" ); then
-          opts_ar+=( "vhost.https_redirect_target_domain = $https_domain" )
+          opts_ar+=( "ssl.https_redirect_target_domain = $https_domain" )
         fi
       fi
     fi # // ssl

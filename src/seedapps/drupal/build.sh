@@ -40,7 +40,7 @@ cleanup() {
     fi
 
     echo "Removing temporary vhost used ($tmp_vhost) ..."
-    "$sys_dir/libexec/remove-vhost" "$tmp_vhost" - &>"$temp_rm_file"
+    devpanel remove vhost --vhost "$tmp_vhost" --file - &>"$temp_rm_file"
     if [ $? -eq 0 ]; then
       rm -f "$temp_rm_file"
       exit 0
@@ -53,6 +53,7 @@ cleanup() {
 # main
 [ "$1" == "-h" -o -z "$1" ] && usage
 
+app_subsystem=drupal
 unset drush_ver output_file
 getopt_flags='hD:o:'
 while getopts $getopt_flags OPTN; do
@@ -152,29 +153,30 @@ if [ $? -ne 0 ]; then
   error "unable to create temporary file"
 fi
 
+load_devpanel_config || exit $?
+
 unset vhost_created
-if ! "$sys_dir/libexec/restore-vhost" "$tmp_vhost" we://blank; then
+if ! devpanel create vhost --vhost "$tmp_vhost" \
+       --from webenabled://blank; then
+
   error "unable to create temporary vhost"
 fi
 vhost_created=1
 trap 'cleanup' EXIT
 
-# app:0:_:db_host $mysql_host
-# app:0:_:db_port $mysql_port
-# app:0:_:db_user $mysql_user
-# app:0:_:db_password $mysql_password
-# app:0:_:seed_app $subsystem
-# app:0:_:db_name $subsystem
+if ! save_opts_in_vhost_config "$tmp_vhost"     \
+     "app.subsystem     = $app_subsystem"       \
+     "app.database_name = $app_subsystem"; then
 
-echo "
-set app:0:_:seed_app drupal
-set app:0:_:db_name drupal
-" | "$sys_dir/libexec/apache-metadata-handler" -q "$tmp_vhost"
+  error "failed to update vhost config"
+fi
 
-mysql_host=$(get_vhost_key_value 'app:0:_:db_host'     $tmp_vhost)
-mysql_port=$(get_vhost_key_value 'app:0:_:db_port'     $tmp_vhost)
-mysql_user=$(get_vhost_key_value 'app:0:_:db_user'     $tmp_vhost)
-mysql_pw=$(  get_vhost_key_value 'app:0:_:db_password' $tmp_vhost)
+load_vhost_config "$tmp_vhost" || exit $?
+
+mysql_host=$v__mysql__client__host
+mysql_port=$v__mysql__client__port
+mysql_user=$v__mysql__client__user
+mysql_pw=$v__mysql__client__password
 
 mysql_uri="mysql://$mysql_user:$mysql_pw@$mysql_host:$mysql_port/drupal"
 
@@ -231,7 +233,7 @@ if [ $? -ne 0 ]; then
   error "unable to cleanely install drupal"
 fi
 
-"$sys_dir/libexec/archive-vhost" "$tmp_vhost" - >"$tmp_output_file"
+devpanel backup vhost --vhost "$tmp_vhost" --file - >"$tmp_output_file"
 if [ $? -eq 0 ]; then
   if mv -n "$tmp_output_file" "$output_file"; then
     chmod 644 "$output_file"

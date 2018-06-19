@@ -79,6 +79,6 @@ fi
 trap 'cleanup' EXIT
 
 echo "Cloning stage 2: restore $tgt_vhost from $tmp_archive"
-$dir/restore-vhost $target_options "$tgt_vhost" "$tmp_archive_fp" || error
+devpanel create vhost --vhost "$tgt_vhost" --from "$tmp_archive_fp" || error
 
 echo Done

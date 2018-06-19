@@ -251,15 +251,18 @@ if [ -n "$just_pack" ]; then
   exit 0
 fi
 
-if [ -n "$php_version" ]; then
-  restore_args+=( -T "$php_version" )
-fi
+restore_args=( --vhost "$vhost" --from "$final_archive_file" \
+               --no-summary )
 
-"$self_dir/restore-vhost" "${restore_args[@]}" -p "$vhost" "$final_archive_file"
-if [ $? -eq 0 ]; then
-  echo
-  echo "Successfully imported files and created vhost $vhost"
-else
+devpanel create vhost "${restore_args[@]}"
+st=$?
+if [ $st -ne 0 ]; then
   echo
   error "failed to import vhost $vhost"
 fi
+
+if [ -n "$php_version" ]; then
+  devpanel set php version --vhost "$vhost" --version "$php_version"
+fi
+
+exit $st

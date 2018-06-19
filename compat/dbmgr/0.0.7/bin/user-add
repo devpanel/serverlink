@@ -174,8 +174,8 @@ sub add_user {
 	# prepare
 	# check that all specified arguments are allowed to be specified ;)
 
-	unless ( -x "/bin/sh" ) {
-	    die "no shell available at /bin/sh";
+	unless ( -x "/bin/bash" ) {
+	    die "no shell available at /bin/bash";
 	}
 
 	# user
@@ -215,7 +215,7 @@ sub add_user {
 	open STDIN, '/dev/null' or die "cannot redirect stdin: $!";
 	open STDOUT, '>/dev/null' or die "cannot redirect stdout: $!";
 	setsid or die "cannot start session: $!";
-    	exec { "/bin/sh" } "/bin/sh", @args;
+    	exec { "/bin/bash" } "/bin/bash", @args;
 	die "Cannot exec";
     }
 }

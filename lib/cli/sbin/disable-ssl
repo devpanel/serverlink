@@ -44,6 +44,8 @@ devpanel_cmd__disable_ssl() {
     return 1
   fi
 
+  load_vhost_config "$vhost" || return $?
+
   if ! is_ssl_enabled_on_vhost "$vhost"; then
     echo "Warning: SSL is not enabled for this vhost" 1>&2
     return 0

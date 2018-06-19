@@ -30,7 +30,7 @@ cleanup() {
     fi
 
     echo "Removing temporary vhost used ($tmp_vhost) ..."
-    "$sys_dir/libexec/remove-vhost" "$tmp_vhost" - &>"$temp_rm_file"
+    devpanel remove vhost --vhost "$tmp_vhost" --file - &>"$temp_rm_file"
     if [ $? -eq 0 ]; then
       rm -f "$temp_rm_file"
       exit 0
@@ -110,8 +110,12 @@ if [ $? -ne 0 ]; then
   error "unable to create temporary file"
 fi
 
+load_devpanel_config || exit $?
+
 unset vhost_created
-if ! "$sys_dir/libexec/restore-vhost" "$tmp_vhost" we://blank; then
+if ! devpanel create vhost --vhost "$tmp_vhost" \
+  --from webenabled://blank; then
+
   error "unable to create temporary vhost"
 fi
 vhost_created=1
@@ -124,10 +128,12 @@ trap 'cleanup' EXIT
 # app:0:_:seed_app $subsystem
 # app:0:_:db_name $subsystem
 
-echo "
-set app:0:_:seed_app $app_subsystem
-set app:0:_:db_name  $app_subsystem
-" | "$sys_dir/libexec/apache-metadata-handler" -q "$tmp_vhost"
+if ! save_opts_in_vhost_config "$tmp_vhost"     \
+     "app.subsystem     = $app_subsystem"       \
+     "app.database_name = $app_subsystem"; then
+
+  error "failed to update vhost config"
+fi
 
 su -l -s /bin/bash -c "
   set -ex
@@ -173,7 +179,7 @@ if [ $? -ne 0 ]; then
   error "unable to cleanely setup environment"
 fi
 
-"$sys_dir/libexec/archive-vhost" "$tmp_vhost" - >"$tmp_output_file"
+devpanel backup vhost --vhost "$tmp_vhost" --file - >"$tmp_output_file"
 if [ $? -eq 0 ]; then
   if mv -n "$tmp_output_file" "$output_file"; then
     chmod 644 "$output_file"

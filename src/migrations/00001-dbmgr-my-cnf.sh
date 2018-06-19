@@ -13,6 +13,29 @@ get_mysql_root_password() {
   echo "$output" | cut -d: -f 9
 }
 
+old_get_list_of_vhosts() {
+  local vhost_config_dir="$DEVPANEL_HOME/config/vhosts"
+  local vhost vhost_dir
+  local -a vhosts_ar=()
+
+  if [ ! -d "$vhost_config_dir" ]; then
+    echo "$FUNCNAME(): missing config dir $vhost_config_dir" 1>&2
+    return 1
+  fi
+
+  for vhost_dir in "$vhost_config_dir/"*; do
+    [ ! -d "$vhost_dir" ] && continue
+    vhost=${vhost_dir##*/}
+    vhosts_ar+=( "$vhost" )
+  done
+
+  if [ ${#vhosts_ar[*]} -le 0 ]; then
+    return 0
+  else
+    echo "${vhosts_ar[@]}"
+  fi
+}
+
 update_ini_bin="$sys_dir/bin/update-ini-file"
 if [ -f "$update_ini_bin" -a -x "$update_ini_bin" ]; then
   hash -p "$update_ini_bin" update-ini-file
@@ -25,7 +48,7 @@ dbmgr_dir="$sys_dir/compat/dbmgr"
 dbmgr_bin_dir="$dbmgr_dir/current/bin"
 dbmgr_my_cnf_dir="$dbmgr_dir/config/mysql"
 
-for vhost in $(get_list_of_vhosts); do
+for vhost in $(old_get_list_of_vhosts); do
   get_linux_username_from_vhost "$vhost" && \
   w_user="$_dp_value" || continue
   b_user="b_${w_user#w_}"

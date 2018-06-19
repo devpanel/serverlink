@@ -316,13 +316,20 @@ if [ -n "$just_pack" ]; then
   exit 0
 fi
 
-if [ -z "$db_dump_type" -o -n "$install_profile" ]; then
-  restore_args+=( -O config_function="setup_from_git" )
+if [ -z "$db_dump_type" ]; then
+  restore_args+=( --config-function setup_from_git )
+
+  if [ -n "$install_profile" ]; then
+    restore_args+=( --install-profile "$install_profile" )
+  fi
 fi
 
 if [ -n "$php_version" ]; then
-  restore_args+=( -T "$php_version" )
+  restore_args+=( --php-version "$php_version" )
 fi
+
+devpanel create vhost --vhost "$vhost" --file "$final_archive_file" \
+  --subsystem "$subsystem" "${restore_args[@]}"
 
 "$self_dir/restore-vhost" "${restore_args[@]}" -s "$subsystem" \
   ${install_profile:+-O install_profile="$install_profile"} \

@@ -9,6 +9,7 @@ usage() {
     -f file       file where to create
     -t type       type of ssh key
     -o            overwrite key if already exists
+    -q            quiet, don't show most informative msgs
 "
   exit 1
 }
@@ -22,8 +23,8 @@ error() {
 
 # main
 
-getopt_flags='f:t:b:o'
-unset key_file key_type overwrite
+getopt_flags='f:t:b:oq'
+unset key_file key_type overwrite quiet
 while getopts $getopt_flags OPTN; do
   case $OPTN in
     f)
@@ -37,6 +38,9 @@ while getopts $getopt_flags OPTN; do
       ;;
     b)
       mbytes="$OPTARG"
+      ;;
+    q)
+      quiet=1
       ;;
     *)
       exit 1
@@ -57,4 +61,4 @@ elif [ -n "$overwrite" -a -f "$key_file" ]; then
   fi
 fi
 
-ssh-keygen -b "$mbytes" -t "$key_type" -f "$key_file" -P ''
+ssh-keygen ${quiet:+-q} -b "$mbytes" -t "$key_type" -f "$key_file" -P ''

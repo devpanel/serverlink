@@ -1,6 +1,12 @@
 #!/bin/bash
 
-dir=`dirname $0`
+self_bin=$(readlink -e "$0")
+if [ $? -ne 0 ]; then
+  echo "Error: failed to determine self path" 1>&2
+  exit 1
+fi
+dir="${self_bin%/*}"
+sys_dir="${dir%/*/*/*/*}"
 skel_sql="$dir/../config/skel.sql"
 umask 077
 
@@ -32,9 +38,16 @@ fi
 
 parse_arguments "$@"
 
+if ! . "$sys_dir/lib/functions"; then
+  echo "Error: failed to load '$sys_dir/lib/functions'" 1>&2
+  exit 1
+fi
+
+load_devpanel_config || exit $?
+
 password_str=$(head -1 "$password_file")
 socket_file="$datadir/mysql/mysql.sock"
-client_config_dir="$dir/../../config/mysql/$user"
+client_config_dir="$lamp__paths__mysql_instances_config_dir/$user"
 
 if  ! su -l -s /bin/bash -c \
     'mkdir -m 700 -p '"$datadir"'/{tmp,mysql}' "$user"; then

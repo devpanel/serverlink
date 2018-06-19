@@ -79,9 +79,9 @@ devpanel_cmd__enable_https_redirect() {
     return 0
   fi
 
-  opts_ar+=( "vhost.https_redirect_enabled = yes" )
+  opts_ar+=( "ssl.https_redirect_enabled = yes" )
   if [ -n "$domain" ]; then
-    opts_ar+=( "vhost.https_redirect_target_domain = $domain" )
+    opts_ar+=( "ssl.https_redirect_target_domain = $domain" )
   fi
 
   if save_opts_in_vhost_config "$vhost" "${opts_ar[@]}"; then

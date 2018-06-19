@@ -8,34 +8,27 @@ set_usage_msg \
 
     --filename <filename>       name of the archive file to extract
 
+    --dont-remove-files         don't remove all existing files/dirs before
+                                restoring. By default all files are removed
+                                before restoring the backup file.
+
+    --quiet                     don't show progress/success msgs
+
+    --dont-disable-vhost        don't disable the Apache vhost meanwhile
+                                restoring
+
   Restore the contents of a backup of the vhost.
 
   NOTE: it overwrites the current data.
 "
 
-devpanel_cmd__restore_backup_on_exit() {
-  local vhost="$1"
-
-  # re-enable the vhost in case the user running it is root
-  if [ $EUID -eq 0 ]; then
-    devpanel_run rewrite vhost config --vhost $vhost
-  fi
-
-  if [ $exit_code -eq 0 ]; then
-    echo
-    echo "Successfully restored vhost $vhost."
-  else
-    echo
-    error "failed to restore vhost $vhost." -
-  fi
-}
-
 devpanel_cmd__restore_backup() {
   [ $# -eq 0 -o -z "$1" ] && usage
 
   local name vhost filename skip_files skip_dbs public_files
-  local temp_dir
+  local temp_dir quiet
   local vhost_home_dir web_user doc_root st
+  local disable_vhost=yes remove_files=yes
   local -a extract_args_ar=()
 
   while [ -n "$1" ]; do
@@ -55,6 +48,11 @@ devpanel_cmd__restore_backup() {
         shift 2
         ;;
 
+      --quiet)
+        quiet=1
+        shift
+        ;;
+
       --help)
         usage
         ;;
@@ -63,6 +61,17 @@ devpanel_cmd__restore_backup() {
         shift
         break
         ;;
+
+      --dont-disable-vhost)
+        unset disable_vhost
+        shift
+        ;;
+
+      --dont-remove-files)
+        unset remove_files
+        shift
+        ;;
+
       *)
         error "unknown option $name"
         ;;
@@ -116,12 +125,11 @@ devpanel_cmd__restore_backup() {
 
   extract_args_ar+=( --target-dir "$temp_dir" --extract-raw --quiet )
 
-  if [ $EUID -eq 0 ]; then
+  if [ $EUID -eq 0 -a -n "$disable_vhost" ]; then
     # temporarily disable the vhost on apache for the app not to be modified
     # during the restore
     "$sys_dir/libexec/rewrite-vhost-config" -D $vhost || return $?
   fi
-  devpanel_trap_exit_cmds_ar+=( "devpanel_cmd__restore_backup_on_exit $vhost" )
 
   # TODO(enhance): check if there's enough disk space to extract the files
   #       (it's actually better to do on 'extract backup' command)
@@ -146,7 +154,8 @@ devpanel_cmd__restore_backup() {
   fi
 
   local import_dbs_bin="$sys_dir/bin/import-databases-from-dir"
-  local -a import_dbs_cmd_ar=( "$import_dbs_bin" --safer-overwrite "$temp_dir/db" )
+  local -a import_dbs_cmd_ar=( "$import_dbs_bin" --safer-overwrite \
+                                --my-cnf "$v__mysql__client_file" "$temp_dir/db" )
   if [ $EUID -eq 0 ]; then
     run_as_user --login "$web_user" "${import_dbs_cmd_ar[@]}"
   else
@@ -159,27 +168,30 @@ devpanel_cmd__restore_backup() {
     return $st
   fi
 
-  local -a remove_dirs_cmd_ar=(
-    rm -rf "$vhost_home_dir" \; mkdir -m 751 -p "$doc_root"
-  )
+  if [ -n "$remove_files" ]; then
+    local -a remove_dirs_cmd_ar=(
+      rm -rf "$vhost_home_dir" \; mkdir -m 751 -p "$doc_root"
+    )
 
-  if [ $EUID -eq 0 ]; then
-    run_as_user "$web_user" "${remove_dirs_cmd_ar[@]}" \
-                  >$temp_dir/rm-output.txt 2>&1
-  else
-    # have to duplicate command here instead of using $remove_dirs_cmd_ar
-    # because the ';' is expanded as a quoted string
-    rm -rf "$vhost_home_dir" >$temp_dir/rm-output.txt 2>&1
-    mkdir -m 751 -p "$doc_root"
-  fi
+    if [ $EUID -eq 0 ]; then
+      run_as_user "$web_user" "${remove_dirs_cmd_ar[@]}" \
+                    >$temp_dir/rm-output.txt 2>&1
+    else
+      # have to duplicate command here instead of using $remove_dirs_cmd_ar
+      # because the ';' is expanded as a quoted string
+      rm -rf "$vhost_home_dir" >$temp_dir/rm-output.txt 2>&1
+      mkdir -m 751 -p "$doc_root"
+    fi
 
-  # it'll warn about removing the user dir (the user doesn't have write
-  # permissions to the $vhost_home_dir/../ )
-  # 
-  # if there's only one warning, then it's ok. Otherwise show the warnings.
-  local rm_n_err=`wc -l < $temp_dir/rm-output.txt`
-  if [ $? -eq 0 -a $rm_n_err -gt 1 ]; then
-    cat $temp_dir/rm-output.txt 1>&2
+    # it'll warn about removing the user dir (the user doesn't have write
+    # permissions to the $vhost_home_dir/../ )
+    # 
+    # if there's only one warning, then it's ok. Otherwise show the warnings.
+    local rm_n_err=`wc -l < $temp_dir/rm-output.txt`
+    if [ $? -eq 0 -a $rm_n_err -gt 1 ]; then
+      cat $temp_dir/rm-output.txt 1>&2
+    fi
+
   fi
 
   # TODO(enhance): regenerate prod specific files (e.g. ~/logs ~/.my.cnf )
@@ -200,7 +212,7 @@ devpanel_cmd__restore_backup() {
   extract_cmd_ar=( "$extract_bin" "$temp_dir/web" "$vhost" \
                        "$vhost_home_dir" "$doc_root" )
 
-  echo "Extracting files..."
+  [ -z "$quiet" ] && echo "Extracting files..."
   if [ $EUID -eq 0 ]; then
     run_as_user --login "$web_user" "${extract_cmd_ar[@]}"
   else
@@ -208,10 +220,24 @@ devpanel_cmd__restore_backup() {
   fi
   st=$?
 
-  # NOTE: status msg is sent by the function that traps the exit of the
-  # shell to properly display order of status msgs (because sometimes Apache
-  # needs to be reloaded on exit, and we don't want Apache msgs to be the
-  # last ones).
+  if [ -n "$remove_files" -a -n "$v__php__version" ]; then
+    # when all files are removed it also removes the PHP links that set the
+    # PHP version of the vhost. So we need to reset it.
+    devpanel_run set php version --vhost "$vhost" \
+      --version "$v__php__version"
+  fi
+
+  # re-enable the vhost in case the user running it is root
+  if [ $EUID -eq 0 -a -n "$disable_vhost" ]; then
+    devpanel_run rewrite vhost config --vhost $vhost
+  fi
+
+  if [ $st -eq 0 ]; then
+    [ -z "$quiet" ] && { echo; echo "Successfully restored vhost $vhost."; }
+  else
+    echo
+    error "failed to restore vhost $vhost." -
+  fi
 
   return $st
 }

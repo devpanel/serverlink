@@ -661,7 +661,7 @@ operation_clone()
       sleep 1
     done
     docker exec -t ${CONTAINER_WEB_ID} ${sys_dir}/libexec/clone-vhost-local "${known_args}" "$source_vhost" "$target_vhost"
-    docker exec -t ${CONTAINER_WEB_ID} ${sys_dir}/libexec/remove-vhost "$source_vhost"
+    docker exec -t ${CONTAINER_WEB_ID} /usr/bin/devpanel remove vhost --vhost "$source_vhost"
     while [ `docker exec ${CONTAINER_WEB_ID} pgrep -c mysqld` -eq 0 ]; do
       echo "Target DB is not running. Waiting its start."
       docker exec -d ${CONTAINER_WEB_ID} mysqld --datadir=/home/clients/databases/b_${target_vhost}/mysql --user=b_${target_vhost} --port=4000 --socket=/home/clients/databases/b_${target_vhost}/mysql/mysql.sock
@@ -787,8 +787,7 @@ operation_destroy()
     # update system startup
     perl -ni -e "print unless /${app_name}/" /etc/rc.local
   elif [[ "$app_hosting" == "local" ]]; then
-    # remove_vhost||libexec/remove-vhost|%vhost% %filename%|
-    ${sys_dir}/libexec/remove-vhost ${vhost}
+    /usr/bin/devpanel remove vhost --vhost ${vhost}
   else
     show_help
     exit 1

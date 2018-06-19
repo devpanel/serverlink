@@ -1,0 +1,146 @@
+#!/bin/bash
+
+set_usage_msg \
+  "Usage: $bin_name ${cmd_ar[*]} <--vhost name> [opts]
+
+  Options:
+    --vhost name              name of the new vhost
+    --domain domain.tld       add the specified domain (can be used more than
+                              once to add more than one domain)
+
+    --mysql-instance name     the mysql instance to use
+    --mysql-dbs               name of the mysql databases to create
+    --subsystem name          name of the app subsystem (e.g. drupal,
+                              wordpress, etc)
+
+    --php-version <version>   the PHP version to use on this vhost (e.g.
+                              5.6, 7.1)
+
+    --dont-activate-now       don't activate the vhost now (i.e. don't
+                              reload Apache now). The normal behavior, when
+                              this option is not passed, is to activate the
+                              Apache vhost.
+
+    --description text        optional description text for the vhost
+
+
+  Creates a new LAMP vhost.
+"
+
+devpanel_cmd__create_lamp_vhost() {
+  [ $# -eq 0 -o -z "$1" ] && usage
+
+  local activate_now=yes
+  local name vhost subsystem php_version description
+  local -a domains_ar apache_args_ar opts_ar
+
+  while [ -n "$1" ]; do
+    name="$1"
+    case "$name" in
+      --help)
+        usage
+        ;;
+
+      --)
+        shift
+        break
+        ;;
+
+      --domain)
+        [ -z "$2" ] && { error_missing_value "$name" ; return $?; }
+        domains_ar+=( "$2" )
+        apache_args_ar+=( --domain "$2" )
+        shift 2
+        ;;
+
+      --vhost)
+        [ -z "$2" ] && { error_missing_value "$name" ; return $?; }
+        vhost="$2"
+        shift 2
+        ;;
+
+      --subsystem)
+        [ -z "$2" ] && { error_missing_value "$name" ; return $?; }
+        if is_known_seedapp_subsystem "$2"; then
+          subsystem="$2"
+        else
+          error "unknown subsystem" -
+          return 1
+        fi
+
+        shift 2
+        ;;
+
+      --dont-activate-now)
+        unset activate_now
+        shift
+        ;;
+
+      --php-version)
+        [ -z "$2" ] && { error_missing_value "$name" ; return $?; }
+        php_version="$2"
+        shift 2
+        ;;
+
+      --description)
+        [ -z "$2" ] && { error_missing_value "$name" ; return $?; }
+        description="${2//$'\n'/ \\n }"
+        shift 2
+        ;;
+
+      *)
+        error "unknown option '$name'"
+        ;;
+    esac
+  done
+
+  [ -z "$vhost" ] && usage
+
+  if vhost_exists "$vhost"; then
+    error "vhost already exists." -
+    return $?
+  fi
+
+  if ! apache_vhost_create "${apache_args_ar[@]}" "$vhost"; then
+    error "unable to create apache vhost" -
+    return $?
+  fi
+
+  mysql_instance="$vhost"
+  if mysql_create_instance_for_vhost "$vhost"; then
+    opts_ar+=( "mysql.instance = $mysql_instance" )
+  else
+    error "unable to create mysql instance" -
+    return $?
+  fi
+
+  if [ -n "$subsystem" ]; then
+    opts_ar+=( "app.subsystem = $subsystem" )
+    opts_ar+=( "app.database_name   = $subsystem" )
+  fi
+
+  if [ -n "$description" ]; then
+    opts_ar+=( "vhost.description = $description" )
+  fi
+
+  # save all options on config file
+  if ! save_opts_in_vhost_config "$vhost" "${opts_ar[@]}"; then
+    echo "$FUNCNAME(): failed to save config for '$vhost'"
+    return 1
+  fi
+
+  if [ -n "$php_version" ]; then
+    devpanel_run set php version --vhost "$vhost" --version "$php_version"
+  fi
+ 
+  if [ -n "$activate_now" ]; then 
+    if ! rewrite_vhost_apache_config "$vhost"; then
+      echo 1>&2
+      echo "Warning: vhost created, but failed to activate it" 1>&2
+      [ -t 0 ] && sleep 2
+    fi
+  fi
+
+  echo
+  echo "Successfully created LAMP vhost '$vhost'"
+}

@@ -1,5 +1,11 @@
 #!/bin/bash
-dir=`dirname "$0"`
+self_bin=$(readlink -e "$0")
+if [ $? -ne 0 ]; then
+  echo "Error: failed to determine self path" 1>&2
+  exit 1
+fi
+dir="${self_bin%/*}"
+sys_dir="${dir%/*}"
 user="$1"
 shift
 command="$1"
@@ -10,7 +16,14 @@ then
   exit 1
 fi
 
-dbmgr_config_dir="$dir/../config/os/pathnames/opt/dbmgr/config/mysql/$user"
+if ! . "$sys_dir/lib/functions"; then
+  echo "Error: failed to load '$sys_dir/lib/functions'" 1>&2
+  exit 1
+fi
+
+load_devpanel_config || exit $?
+
+dbmgr_config_dir="$lamp__paths__mysql_instances_config_dir/$user"
 
 root_client_cnf=$(readlink -m "$dbmgr_config_dir/root.client.cnf")
 

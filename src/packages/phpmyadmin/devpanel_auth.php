@@ -6,9 +6,6 @@ require_once($curr_path . "/../../../../../lib/php/webapp_token_access.inc.php")
 $app_name = "phpmyadmin";
 
 session_name("devpanel_$app_name");
-$vhost = dp_derive_gen_vhost();
-
-$user_info = posix_getpwuid(posix_geteuid());
 
 $is_logged_in = dp_is_already_logged_to_app($app_name);
 
@@ -17,24 +14,27 @@ if(!$is_logged_in) {
   exit(1);
 }
 
-// some default settings, that can be overwritten by $local_config and 
-// $vhost_config (see both below)
-$mysql_ini = sprintf("%s/.my.cnf", $user_info["dir"]);
-if(file_exists($mysql_ini)) {
-  global $cfg;
-  $mysql_info = parse_ini_file($mysql_ini);
-  $cfg["ServerDefault"] = 1;
-  $cfg["Servers"][1]["auth_type"] = "config";
-  $cfg["Servers"][1]["host"] = $mysql_info["host"] ;
-  $cfg["Servers"][1]["port"] = $mysql_info["port"];
-  $cfg["Servers"][1]["user"] = $mysql_info["user"];
-  $cfg["Servers"][1]["password"] = $mysql_info["password"];
-} else {
-  echo "Error: missing ~/.my.cnf on the target vhost";
+if(!($mysql_info_ar = devpanel_get_mysql_info_for_vhost())) {
+  error_log("unable to read MySQL credentials");
+  echo "Error: unable to read MySQL credentials\n";
   exit(1);
 }
 
+// some default settings, that can be overwritten by $local_config and 
+// $vhost_config (see both below)
+
+global $cfg;
+$cfg["ServerDefault"] = 1;
+$cfg["Servers"][1]["auth_type"] = "config";
+$cfg["Servers"][1]["host"] = $mysql_info_ar["client"]["host"] ;
+$cfg["Servers"][1]["port"] = $mysql_info_ar["client"]["port"];
+$cfg["Servers"][1]["user"] = $mysql_info_ar["client"]["user"];
+$cfg["Servers"][1]["password"] = $mysql_info_ar["client"]["password"];
+$cfg["Servers"][1]["hide_db"] = '^(mysql|information_schema|performance_schema|sys)$';
+
 // fix for PHPMyAdmin versions >= 4.8.0
+$user_info = posix_getpwuid(posix_geteuid());
+
 if(!isset($cfg['TempDir']) || (!file_exists($cfg['TempDir']) || !is_writable($cfg['TempDir']))) {
   $tmp_in_home_dir = "{$user_info["dir"]}/tmp/phpmyadmin";
   if(file_exists($tmp_in_home_dir)) {

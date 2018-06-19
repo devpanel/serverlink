@@ -1,0 +1,34 @@
+#!/bin/bash
+
+set_usage_msg \
+  "Usage: $bin_name ${cmd_ar[*]} [opts] --yes
+
+  Options:
+    --yes               confirm the intent to run
+
+  Runs initialization commands for devPanel.
+"
+
+devpanel_cmd__bootstrap() {
+  local arg confirmed
+
+  while [ -n "$1" ]; do
+    arg="$1"
+    case "$arg" in
+      --yes)
+        confirmed=yes
+        shift
+        ;;
+
+      *)
+        error "unknown option '$arg'" -
+        shift
+        return 1
+        ;;
+    esac
+  done
+
+  [ -z "$confirmed" ] && usage
+
+  devpanel_run start mysql instances --yes
+}

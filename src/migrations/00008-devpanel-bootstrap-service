@@ -1,0 +1,54 @@
+#!/bin/bash
+#
+# add devpanel-bootstrap service to the existing install
+
+svc_name="devpanel-bootstrap"
+if hash systemctl &>/dev/null; then
+  if systemctl status "$svc_name" &>/dev/null; then
+    exit 0
+  fi
+elif hash initctl &>/dev/null; then
+  if initctl status "$svc_name" &>/dev/null; then
+    exit 0
+  fi
+elif [ -f /etc/init.d/devpanel-bootstrap ]; then
+  exit 0
+fi
+
+distro="$conf__distro"
+distro_ver="${conf__distro_version%.*}"
+skel_dir="$sys_dir/install/skel/$distro/$distro_ver"
+initctl_file="$skel_dir/etc/init/$svc_name.conf"
+
+if hash systemctl &>/dev/null; then
+  svc_file_1="$skel_dir/lib/systemd/system/$svc_name.service"
+  svc_file_2="$skel_dir/usr/lib/systemd/system/$svc_name.service"
+  if [ -f "$svc_file_1" ]; then
+    svc_file="$svc_file_1"
+  elif [ -f "$svc_file_2" ]; then
+    svc_file="$svc_file_2"
+  fi
+
+  target_file="${svc_file#$skel_dir}"
+
+  cp -f "$svc_file" "$target_file"
+
+  systemctl enable "$svc_name"
+  systemctl start  "$svc_name"
+elif hash initctl &>/dev/null && [ -f "$initctl_file" ]; then
+  target_file="${initctl_file#$skel_dir}"
+
+  cp -f "$initctl_file" "$target_file"
+
+  initctl start "$svc_name"
+elif hash chkconfig &>/dev/null; then
+  svc_file="$skel_dir/etc/init.d/$svc_name"
+  cp -f "$svc_file" "${svc_file#$skel_dir}"
+  chkconfig --add "$svc_name"
+  service     "$svc_name" start
+elif hash update-rc.d &>/dev/null; then
+  svc_file="$skel_dir/etc/init.d/$svc_name"
+  cp -f "$svc_file" "${svc_file#$skel_dir}"
+  update-rc.d "$svc_name" defaults
+  service     "$svc_name" start
+fi

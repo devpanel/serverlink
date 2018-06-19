@@ -57,11 +57,18 @@ cleanup_namespace() {
 
 read_ini_file_into_namespace() {
   local cleanup_env=yes
+  local mysql_ext
 
   while [ -n "$1" -a "${1:0:1}" == - ]; do
     case "$1" in
       --no-cleanup)
         unset cleanup_env
+        shift
+        ;;
+
+      --mysql-ext)
+        # mysql extension (read a !include file) into the same namespace
+        mysql_ext=yes
         shift
         ;;
 
@@ -85,7 +92,7 @@ read_ini_file_into_namespace() {
   fi
 
   local prefix section line key key_len value var
-  local section_name
+  local section_name second_file
   local value_esc
   local -i line_n=0 line_len=0
 
@@ -95,6 +102,16 @@ read_ini_file_into_namespace() {
     [ -z "$line" ] && continue
     [ "${line:0:1}" == "#" ] && continue
     [ "${line:0:1}" == ";" ] && continue
+
+    # mysql extension (read a !include file) into the same namespace
+    if [ -n "$mysql_ext" ] && [ "${line:0:1}" == '!' ]; then
+      if [ "${line%% *}" == "!include" ]; then
+        second_file="${line#* }"
+        read_ini_file_into_namespace --no-cleanup "$second_file" "$ns" || \
+          return $?
+        continue
+      fi
+    fi
     line_len=${#line}
 
     if [ "${line:0:1}" == "[" ]; then
@@ -104,9 +121,13 @@ read_ini_file_into_namespace() {
       if [[ "$line" =~ ^\[[A-Za-z0-9_]+\ ?[A-Za-z0-9_]*\]$ ]]; then
         section=${line:1:$(( $line_len - 2 ))}
       fi
-    elif [[ "$line" =~ ^[A-Za-z0-9_]+\ *=\ *[^\ ].*$ ]]; then
+    elif [[ "$line" =~ ^[A-Za-z0-9_-]+\ *=\ *[^\ ].*$ ]]; then
       key=${line%%=*}
       key_len=${#key}
+
+      # replace dashes with underscores (can't have variables with dashes)
+      key=${key//-/_}
+
       # NOTE: can't use ${key: -1:1} because Centos 6 doesn't support the -1
       while [ -n "$key" -a "${key:$(( $key_len - 1 ))}" == " " ]; do
         # remove trailing spaces and tabs
@@ -168,9 +189,27 @@ load_devpanel_config() {
       return $?
   fi
 
+  if [ -z "$conf__paths__run_dir" ]; then
+    if [ -d /run ]; then
+      conf__paths__run_dir=/run/devpanel
+    else
+      conf__paths__run_dir=/var/run/devpanel
+    fi
+  fi
+
+  if [ $EUID -eq 0 -a ! -d "$conf__paths__run_dir" ]; then
+    mkdir -m 0711 "$conf__paths__run_dir"
+  fi
+  conf__paths__lock_dir="$conf__paths__run_dir/lock"
+
+  if [ $EUID -eq 0 -a ! -d "$conf__paths__lock_dir" ]; then
+    mkdir -m 0711 "$conf__paths__lock_dir"
+  fi
+
   conf__distro="$distro"
   conf__distro_version="$distro_version"
   conf__s3__default_config_file="$conf__paths__local_config_dir/provisioners/aws/.s3cfg/default"
+  conf__paths__port_reservation_dir="$conf__paths__local_config_dir/ports"
   
   load_devpanel_lamp_config || return $?
 
@@ -221,7 +260,12 @@ load_devpanel_lamp_config() {
 
   lamp__paths__user_vhost_map="$local_lamp_dir/linuxuser-vhost-map"
 
-  lamp__paths__mysql_instance_config_dir="$DEVPANEL_HOME/compat/dbmgr/config/mysql"
+  lamp__paths__mysql_instances_config_dir="$local_lamp_dir/mysql/instances"
+
+  lamp__paths__mysql_socket_dir="$conf__paths__run_dir/mysql/instances"
+  if [ $EUID -eq 0 -a ! -d "$lamp__paths__mysql_socket_dir" ]; then
+    mkdir -m 711 -p "$lamp__paths__mysql_socket_dir"
+  fi
  
   return 0
 }
@@ -270,7 +314,7 @@ load_vhost_config() {
 
   local config_dir="$lamp__paths__vhosts_config_dir/$vhost"
   local ini_file="$config_dir/config.ini"
-  local mysql_conf_dir="$lamp__paths__mysql_instance_config_dir"
+  local mysql_conf_dir="$lamp__paths__mysql_instances_config_dir"
   local var vhost_var lamp_var value_esc tmp_str
   local alias_domains
 
@@ -367,9 +411,10 @@ load_vhost_config() {
   local mysql_inst_var="${ns}__mysql__instance"
   local mysql_config_file
   if [ -n "${!mysql_inst_var}" ]; then
-    mysql_config_file="$mysql_conf_dir/${!mysql_inst_var}/web.client.cnf"
+    mysql_config_file="$config_dir/mysql/my.cnf"
     if [ -f "$mysql_config_file" ]; then
-      read_ini_file_into_namespace --no-cleanup "$mysql_config_file" ${ns}__mysql
+      read_ini_file_into_namespace --mysql-ext --no-cleanup \
+        "$mysql_config_file" ${ns}__mysql
       set_global_var "${ns}__mysql__client_file" "$mysql_config_file"
     fi
   fi

@@ -211,19 +211,6 @@ detect_external_ipv4() {
   fi
 }
 
-am_i_on_aws() {
-  local output
-  local url='http://169.254.169.254/latest/meta-data/public-hostname'
-
-  output=$(curl -sSN --max-time 3 --connect-timeout 2 --retry 1 \
-            --retry-delay 1 "$url" )
-  if [ $? -eq 0 ] && [[ "$output" == *.amazonaws.com ]]; then
-    return 0
-  else
-    return 1
-  fi
-}
-
 get_ipv4_from_aws() {
   local output
   local url='http://169.254.169.254/latest/meta-data/public-ipv4'
@@ -315,7 +302,11 @@ devpanel_cmd__init_config() {
     fi
 
     if [ -z "$ipv4_detect_type" ]; then
-      if am_i_on_aws ; then
+      if am_i_on_virtualbox; then
+        ipv4_detect_type=local_ifaces_vbox_workaround
+      elif am_i_on_digital_ocean; then
+        ipv4_detect_type=default_route
+      elif am_i_on_aws ; then
         ipv4_detect_type=aws_ipv4
       else
         ipv4_detect_type=default_route

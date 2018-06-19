@@ -47,5 +47,28 @@ devpanel_cmd__remove_vhost() {
 
   [ -z "$vhost" ] && error_missing_param vhost
 
-  "$sys_dir/libexec/remove-vhost" "${cmd_args[@]}" $vhost ${file:+$file}
+  if vhost_exists "$vhost"; then
+    load_vhost_config "$vhost" || return $?
+  else
+    error "vhost doesn't exist" -
+    return $?
+  fi
+
+  if [ -n "$file" -a "$file" == - ]; then
+    : # don't do a backup in this case
+  else
+    devpanel_run backup vhost --vhost "$vhost" \
+      ${file:+--file "$file"} || return $?
+  fi
+
+  apache_vhost_remove "$vhost"
+
+  if [ -n "$v__mysql__instance" ]; then
+    if [ -z "$v__mysql__external" -o "$v__mysql__external" != yes ]; then
+      mysql_delete_instance "$v__mysql__instance"
+    fi
+  fi
+
+  echo
+  echo "Successfully removed vhost $vhost."
 }
