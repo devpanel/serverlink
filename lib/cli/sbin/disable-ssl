@@ -49,8 +49,6 @@ devpanel_cmd__disable_ssl() {
     return 0
   fi
 
-  unset_https_redirect_metadata "$vhost"
-
   if is_lets_encrypt_enabled_for_vhost "$vhost"; then
     devpanel_run disable lets-encrypt --vhost "$vhost"
   else

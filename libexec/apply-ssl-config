@@ -171,10 +171,8 @@ else
   fi
 fi
 
-save_opts_in_vhost_config "$vhost" "ssl.enabled = yes"
-
-if is_https_redirect_enabled_by_default ; then
-  set_https_redirect_metadata "$vhost"
+if ! save_opts_in_vhost_config "$vhost" "ssl.enabled = yes"; then
+  error "failed to write SSL metadata on vost"
 fi
 
 if ! rewrite_vhost_apache_config "$vhost"; then
