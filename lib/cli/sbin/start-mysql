@@ -64,6 +64,14 @@ devpanel_cmd__start_mysql() {
   load_vhost_config "$vhost" || return $?
   vhost_user="$v__vhost__linux_user"
 
+  if [ -z "$v__mysql__instance" ]; then
+    if [ -t 0 ]; then
+      echo "Warning: this vhost doesn't have any mysql instance" 1>&2
+    fi
+
+    return 0
+  fi
+
   db_user="b_${vhost_user#w_}"
      
   local action
