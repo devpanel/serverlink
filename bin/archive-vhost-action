@@ -45,8 +45,8 @@ info()
 {
   local filename="$1"
   check_filename "$filename" || error
-  local size=`stat -c %s "$filename"` || error
-  local mtime=`stat -c %Y "$filename"` || error
+  local size=`stat -L -c %s "$filename"` || error
+  local mtime=`stat -L -c %Y "$filename"` || error
   local md5="?"
   local sha1="?"
   local filename_no_ext=`echo "$filename"|sed 's/\.tgz$//'` || error
