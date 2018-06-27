@@ -27,4 +27,4 @@ load_devpanel_config || exit $?
 load_vhost_config "$vhost" || exit $?
 user="$v__vhost__linux_user"
 
-su -l -c "rm -- $param $rm_src" "$user"
+su -l -c "rm $param -- $rm_src" "$user"
