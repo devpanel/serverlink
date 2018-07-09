@@ -104,6 +104,10 @@ devpanel_cmd__run_migrations() {
       # run until the latest configured migration step
       break
     fi
+    while [ -n "$file_n" -a "${file_n:0:1}" == "0" ]; do
+      file_n=${file_n#0}
+    done
+
 
     if [ $file_n -lt $curr_n ]; then
       continue
