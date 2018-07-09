@@ -88,7 +88,9 @@ debian_adjust_system_config() {
   done
 
   # remove distro default cgi-bin aliases, will not be used
-  a2disconf serve-cgi-bin
+  if hash a2disconf &>/dev/null; then
+    a2disconf serve-cgi-bin
+  fi
 
   # fuser fails on slicehost CentOS  (/proc/net/tcp is empty)
   #if fuser 443/tcp >/dev/null || netstat -ln --tcp|grep -q :443
