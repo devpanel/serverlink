@@ -6,7 +6,7 @@ require_once($curr_path . "/../../../../lib/php/webapp_token_access.inc.php");
 $app_name = "phpmyadmin";
 
 session_name("devpanel_$app_name");
-$vhost = dp_derive_gen_vhost();
+$vhost = dp_get_vhost_from_user();
 
 $is_logged_in = dp_is_already_logged_to_app($app_name);
 

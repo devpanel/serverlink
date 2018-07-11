@@ -80,7 +80,7 @@ function dp_get_vhost_from_user($username = NULL) {
     }
   }
 
-  $link = sprintf("%s/config/key_value/linuxuser-vhost/%s", DEVPANEL_DIR, $username);
+  $link = sprintf("/etc/devpanel/lamp/linuxuser-vhost-map/%s", $username);
   if(is_link($link)) {
     $vhost = readlink($link); 
     return $vhost;
