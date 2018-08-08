@@ -222,8 +222,8 @@ case "$op" in
 
   cron)
     for vhost in $(get_list_of_vhosts); do
+      load_vhost_config "$vhost" || continue
       if is_lets_encrypt_enabled_for_vhost "$vhost"; then
-        load_vhost_config "$vhost" || continue
         le_dir="$v__ssl__dir/lets-encrypt"
         if [ -d "$le_dir" ]; then
           acme.sh --home "$le_dir" --cron
