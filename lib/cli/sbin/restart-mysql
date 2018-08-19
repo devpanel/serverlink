@@ -88,7 +88,9 @@ devpanel_cmd__restart_mysql() {
   load_vhost_config "$vhost" || return $?
   vhost_user="$v__vhost__linux_user"
 
-  if [ -z "$v__mysql__instance" ]; then
+  if [ -n "$v__mysql__instance" ]; then
+    instance="$v__mysql__instance"
+  else
     error "this vhost is not associated to a MySQL instance" -
     return $?
   fi
