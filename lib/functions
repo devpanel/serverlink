@@ -3504,7 +3504,7 @@ Snapshots: @snapshots_txt@
     [ $? -eq 0 ] && ssl_txt+="  Expires On:  $ssl_cert_exp_date"$'\n'
 
     ssl_txt+="  HTTP to HTTPS redirect: "
-    if is_https_redirect_enabled_for_vhost "$vhost"; then
+    if is_https_redirect_enabled_for_current_vhost; then
       ssl_txt+="yes"
       if [ -n "$v__ssl__https_redirect_target_domain" ]; then
         ssl_txt+=", targeted redirect to https://"
@@ -3732,7 +3732,7 @@ print_vhost_metadata_json() {
     fi
     ssl_opts_ar+=( "ssl.type=$ssl_type" )
 
-    if is_https_redirect_enabled_for_vhost "$vhost"; then
+    if is_https_redirect_enabled_for_current_vhost; then
       https_redir_st=1
     else
       https_redir_st=0
@@ -3775,7 +3775,7 @@ print_vhost_metadata_json() {
 }
 
 is_https_redirect_enabled_by_default() {
-  local var="lamp__apache_vhosts__https_redirect_enabled"
+  local var="lamp__apache_ssl__redirect_http_to_https_by_default"
 
   if [ -n "${!var}" -a "${!var}" == yes ]; then
     return 0
@@ -3784,11 +3784,14 @@ is_https_redirect_enabled_by_default() {
   fi
 }
 
-is_https_redirect_enabled_for_vhost() {
-  local vhost="$1"
-  local var="v__ssl__https_redirect_enabled"
+is_https_redirect_enabled_for_current_vhost() {
+  local var="v__ssl__https_redirect"
 
   if [ -n "${!var}" -a "${!var}" == yes ]; then
+    return 0
+  elif [ -n "${!var}" -a "${!var}" != yes ]; then
+    return 1
+  elif is_https_redirect_enabled_by_default ; then
     return 0
   else
     return 1

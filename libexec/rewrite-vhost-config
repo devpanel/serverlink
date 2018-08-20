@@ -74,7 +74,7 @@ templates_root_dir="$sys_dir/stacks/lamp/apache/templates"
 
 if is_vhost_enabled "$vhost" && [ -z "$disable_vhost" ]; then
   if [ "$v__ssl__enabled" == yes ]; then
-    if [ "$v__ssl__https_redirect" == yes ]; then
+    if is_https_redirect_enabled_for_current_vhost ; then
       # ssl is enabled and automatic redirects also enabled
       if [ -n "$v__ssl__https_redirect_target_domain" ]; then
         template_name="$lamp__apache_templates__https_redirect_targeted"

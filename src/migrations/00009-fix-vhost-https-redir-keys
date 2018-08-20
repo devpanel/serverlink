@@ -2,17 +2,24 @@
 #
 
 for vhost in $(get_list_of_vhosts); do
+  unset vhost_changed
   load_vhost_config "$vhost" || continue
 
-  if [ -n "$v__vhost__https_redirect" ]; then
+  if [ -n "$v__vhost__https_redirect_enabled" ]; then
     save_opts_in_vhost_config "$vhost"                 \
-      "ssl.https_redirect = $v__vhost__https_redirect" \
-      "- vhost.https_redirect"
+      "ssl.https_redirect = $v__vhost__https_redirect_enabled" \
+      "- vhost.https_redirect_enabled"
+    vhost_changed=yes
   fi
 
   if [ -n "$v__vhost__https_redirect_target_domain" ]; then
     save_opts_in_vhost_config "$vhost"                 \
       "ssl.https_redirect_target_domain = $v__vhost__https_redirect_target_domain" \
       "- vhost.https_redirect_target_domain"
+    vhost_changed=yes
+  fi
+
+  if [ -n "$vhost_changed" ]; then
+    devpanel rewrite vhost config --vhost "$vhost"
   fi
 done

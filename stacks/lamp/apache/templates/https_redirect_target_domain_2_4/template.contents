@@ -21,7 +21,7 @@
     RewriteEngine On
     RewriteCond %{HTTPS} off
     RewriteCond %{REQUEST_URI} !/\.well-known/acme-challenge/
-    RewriteRule ^(.+)$ https://@@__VHOST__HTTPS_REDIRECT_TARGET_DOMAIN__@@$1 [R=301,L]
+    RewriteRule ^(.+)$ https://@@__SSL__HTTPS_REDIRECT_TARGET_DOMAIN__@@$1 [R=301,L]
     # above not using %{SERVER_NAME}%{REQUEST_URI} because it doesn't
     # include the query string
   </IfModule>
