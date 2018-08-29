@@ -1,0 +1,101 @@
+#!/bin/bash
+
+set_usage_msg \
+  "Usage: $bin_name ${cmd_ar[*]} [opts] --name <name>
+
+  Options:
+    --name <name>         name of the mysql instance to create
+
+    --set-as-default      set this new instance as the default instance for
+                          vhosts to use
+
+    --shared yes|no       whether the mysql instance can be shared by
+                          multiple vhosts (default: no)
+
+  Creates a new MySQL instance.
+"
+
+# main
+devpanel_cmd__create_mysql_instance() {
+  [ $# -eq 0 -o -z "$1" ] && usage
+
+  local opt name lx_user
+  local set_default shared_st
+  local -a create_args_ar
+
+  while [ -n "$1" ]; do
+    opt="$1"
+    case "$opt" in
+      --name)
+        [ -z "$2" ] && error_missing_value $opt
+        name="$2"
+        shift 2
+        ;;
+
+      --help)
+        usage
+        ;;
+
+      --set-as-default)
+        set_default=yes
+        shift
+        ;;
+
+      --shared)
+        [ -z "$2" ] && error_missing_value $opt
+        shared_st="$2"
+        create_args_ar+=( $opt $shared_st )
+        shift 2
+        ;;
+
+      *)
+        error "unknown argument $opt" -
+        return $?
+        ;;
+
+    esac
+  done
+
+  if [ -z "$name" ]; then
+    usage
+  fi
+
+  mysql_is_valid_instance_name "$name" || return $?
+
+  if mysql_instance_exists "$name"; then
+    error "instance '$name' already exists." -
+    return $?
+  fi
+
+  if vhost_exists "$name"; then
+    # NOTE: technically it'd be possible to have an instance and a vhost
+    #       with the same name. But to avoid any confusion we don't allow it.
+    error "there's already a vhost with name '$name'" -
+    return $?
+  fi
+
+  mysql_create_instance "${create_args_ar[@]}" "$name"
+  if [ $? -ne 0 ]; then
+    error "failed to create mysql instance" -
+    return $?
+  fi
+
+  if ! mysql_start_n_check_instance "$name"; then
+    echo
+    echo "Warning: mysql instance created, but failed to start it" 1>&2
+    echo
+    [ -t 0 ] && sleep 1
+  fi
+
+  if is_var_set_to_yes set_default; then
+    save_opts_in_lamp_config "mysql.default_instance = $name"
+    if [ $? -ne 0 ]; then
+      echo
+      echo "Warning: failed to set this instance as the new default one" 1>&2
+      echo
+      [ -t 0 ] && sleep 1
+    fi
+  fi
+
+  echo "Successfully created mysql instance '$name'."
+}

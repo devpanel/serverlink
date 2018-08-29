@@ -1,0 +1,142 @@
+#!/bin/bash
+
+set_usage_msg \
+  "Usage: $bin_name $action <--instance <name> | --vhost <vhost> | --domain <domain>>
+
+  Options:
+    --instance <name>         name of the instance to start
+
+  Alternative Options
+    --vhost <vhost>           name of a vhost associated with the instance
+
+    --domain <domain>         name of a domain associated with the instance
+
+    --conditional             only start if the vhost is not disabled and
+                              if mysql was not intentionally stopped
+
+    --quick                   just start MySQL but don't verify where it
+                              keeps running (e.g. didn't stop due to an
+                              internal error)
+
+  Start the specified mysql instance.
+"
+
+devpanel_cmd__start_mysql_instance() {
+  local instance vhost domain
+  local param conditional quick st
+  
+  [ $# -eq 0 -o -z "$1" ] && usage
+
+  while [ -n "$1" ]; do
+    param="$1"
+
+    case $param in
+      --instance)
+        [ -z "$2" ] && error_missing_value $param
+        instance="$2"
+        shift 2
+        ;;
+
+      --vhost)
+        [ -z "$2" ] && error_missing_value $param
+        vhost="$2"
+        shift 2
+        ;;
+
+      --domain)
+        [ -z "$2" ] && error_missing_value $param
+        domain="$2"
+        shift 2
+        ;;
+
+      --conditional)
+        conditional=1
+        shift
+        ;;
+
+      --quick)
+        quick=yes
+        shift
+        ;;
+
+      --help)
+        usage
+        ;;
+      --)
+        shift
+        break
+        ;;
+      *)
+        error "unknown parameter: $param" -
+        return $?
+        ;;
+    esac
+  done
+
+  local _opt
+  local -i opt_n
+  for _opt in instance vhost domain; do
+    if [ -n "${!_opt}" ]; then
+      opt_n+=1
+      if [ $opt_n -gt 1 ]; then
+        error "options --instance, --vhost and --domain are mutually exclusive." -
+        return $?
+      fi
+    fi
+  done
+
+  if [ -n "$domain" ]; then
+    if ! vhost=$(get_vhost_with_hostname "$domain"); then
+      error "couldn't find a vhost for domain." -
+      return $?
+    fi
+  fi
+
+  if [ -n "$vhost" ]; then
+    load_vhost_config "$vhost" || return $?
+    if [ -n "$v__mysql__instance" ]; then
+      instance="$v__mysql__instance"
+    else
+      error "vhost not associated to any mysql instance" -
+      return $?
+    fi
+  fi
+
+  if [ -n "$instance" ]; then
+    load_mysql_instance_config "$instance" || return $?
+  else
+    error "unable to find mysql instance" -
+    return $?
+  fi
+
+  if [ "$mysql__params__host_type" == external ]; then
+    error "can't start a external mysql instance" -
+    return $?
+  fi
+
+  mysql_instance_is_running "$instance"
+  st=$?
+  if [ $st -eq 0 ]; then
+    if [ -n "$conditional" ]; then
+      return 0
+    else
+      error "mysql instance is already running" -
+      return $?
+    fi
+  elif [ $st -eq 50 ]; then
+    # 50 == internal error, unable to determine mysql state
+    error "unable to determine mysql status" -
+    return $st
+  fi
+
+  mysql_unlock_instance_autostart "$instance"
+
+  if [ -n "$quick" ]; then
+    mysql_start_instance "$instance"
+  else
+    mysql_start_n_check_instance "$instance"
+    if [ $? -eq 0 ]; then
+      echo "Successfully started MySQL instance '$instance'"
+    fi
+  fi
+}

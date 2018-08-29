@@ -54,20 +54,35 @@ devpanel_cmd__remove_vhost() {
     return $?
   fi
 
+  if [ -n "$v__mysql__instance" ]; then
+    load_mysql_instance_config "$v__mysql__instance" || return $?
+  fi
+
   if [ -n "$file" -a "$file" == - ]; then
     : # don't do a backup in this case
   else
     devpanel_run backup vhost --vhost "$vhost" \
       ${file:+--file "$file"} || return $?
   fi
-
-  apache_vhost_remove "$vhost"
-
+  
+  # remove mysql dbs first (because it depends on the linux user that is
+  # removed on the next step)
   if [ -n "$v__mysql__instance" ]; then
-    if [ -z "$v__mysql__external" -o "$v__mysql__external" != yes ]; then
+    if ! is_var_set_to_yes mysql__params__shared && \
+      [ "$mysql__params__vhosts" == "$vhost" ]; then
+
+      # is a dedicated instance for this vhost. Remove it.
       mysql_delete_instance "$v__mysql__instance"
+    else
+      # is a shared mysql instance
+      #
+      # remove only the vhost credentials and databases
+      devpanel_run remove vhost from mysql instance --drop-databases  \
+        --vhost "$vhost" --instance "$v__mysql__instance"
     fi
   fi
+
+  apache_vhost_remove "$vhost"
 
   echo
   echo "Successfully removed vhost $vhost."

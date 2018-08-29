@@ -44,6 +44,8 @@ Usage: @self_basename@ <command> [args]
     stop skipping nginx vhost       Stops skipping writing of nginx config for the
                                     given vhost
 
+    create mysql instance           create a new MySQL instance
+
  For help with a specific command, please run:
  # @self_basename@ <command> --help
 

@@ -21,10 +21,12 @@
     enter                           start a shell for the specified vhost
 
   MySQL commands on vhost:
-    start mysql                     starts mysql for the specified vhost or domain
-    stop mysql                      stops  mysql for the specified vhost or domain
-    restart mysql                   restarts mysql for the specified vhost or domain
+    start   mysql instance          starts mysql for the specified vhost or domain
+    stop    mysql instance          stops  mysql for the specified vhost or domain
+    restart mysql instance          restarts mysql for the specified vhost or domain
     repair  mysql database          run a mysql repair on the vhost database
+    run     mysql client            run the mysql client with the mysql privileges
+                                    of the web app
 
   Domain Operations on vhost:
     add domain                      adds a domain to a vhost

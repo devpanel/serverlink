@@ -13,6 +13,11 @@ set_usage_msg \
     --password-inline <pass>   set the password for app (note: this option
                                is a bit insecure on shared servers as it's
                                possible to see the password with the ps command)
+    --mysql-instance name      use an existing MySQL instance as the MySQL
+                               server
+
+    --dedicated-mysql          create a dedicated MySQL instance for the vhost
+
     --no-update                don't try to update the app after installing
 
   Installs the specified application in a new virtual host.
@@ -22,7 +27,8 @@ devpanel_cmd__install_app(){
   [ -z "$1" ] && usage
 
   local name vhost arg publisher app app_url desc php_version
-  local app_password password_origin
+  local app_password password_origin 
+  local mysql_instance dedicated_mysql
   local read_pw_stdin update_app=yes
   local -a cmd_args=()
 
@@ -30,7 +36,7 @@ devpanel_cmd__install_app(){
     arg="$1"
     case "$arg" in
       --publisher)
-        [ -z "$2" ] && { error_missing_value "$arg"; return $?; }
+        [ -z "$2" ] && error_missing_value "$arg"
         if [[ "$2" =~ ^[A-Za-z0-9_]+$ ]]; then
           publisher="$2"
           shift 2
@@ -40,19 +46,19 @@ devpanel_cmd__install_app(){
         ;;
 
       --app)
-        [ -z "$2" ] && { error_missing_value "$arg"; return $?; }
+        [ -z "$2" ] && error_missing_value "$arg"
         app="$2"
         shift 2
         ;;
 
       --vhost)
-        [ -z "$2" ] && { error_missing_value "$arg"; return $?; }
+        [ -z "$2" ] && error_missing_value "$arg"
         vhost="$2"
         shift 2
         ;;
 
       --desc)
-        [ -z "$2" ] && error_missing_value "$name"
+        [ -z "$2" ] && error_missing_value "$arg"
         desc="$2"
         shift 2
         ;;
@@ -60,22 +66,22 @@ devpanel_cmd__install_app(){
       --password-stdin)
         read_pw_stdin=1
         [ -n "$password_origin" ] && \
-          error "please specify only one password option."
+          { error "please specify only one password option." - ; return $?; }
         password_origin="stdin"
         shift
         ;;
 
       --password-inline)
-        [ -z "$2" ] && error_missing_value "$name"
+        [ -z "$2" ] && error_missing_value "$arg"
         [ -n "$password_origin" ] && \
-          error "please specify only one password option."
+          { error "please specify only one password option." - ; return $?; }
         app_password="$2"
         password_origin="inline"
         shift 2
         ;;
 
       --php-version)
-        [ -z "$2" ] && error_missing_value "$name"
+        [ -z "$2" ] && error_missing_value "$arg"
         php_version="$2"
         shift 2
         ;;
@@ -89,13 +95,25 @@ devpanel_cmd__install_app(){
         usage
         ;;
 
+      --mysql-instance)
+        [ -z "$2" ] && error_missing_value "$arg"
+        mysql_instance="$2"
+        shift 2
+        ;;
+
+      --dedicated-mysql)
+        dedicated_mysql=yes
+        shift
+        ;;
+
       --)
         shift
         break
         ;;
 
       *)
-        error "unknown option $name"
+        error "unknown option $name" -
+        return $?
         ;;
     esac
   done
@@ -136,9 +154,11 @@ devpanel_cmd__install_app(){
     error "unknown password origin."
   fi
 
-  echo "$app_password" | devpanel_run create vhost --vhost "$vhost" --from "$app_url" \
-    ${php_version:+--php-version $php_version} ${desc:+--desc "$desc"} \
-    --password-stdin --no-summary
+  echo "$app_password" | devpanel_run create vhost --vhost "$vhost" \
+    --from "$app_url"  ${php_version:+--php-version $php_version}   \
+    ${mysql_instance:+--mysql-instance $mysql_instance}             \
+    ${dedicated_mysql:+--dedicated-mysql}                           \
+    ${desc:+--desc "$desc"} --password-stdin --no-summary
   if [ $? -ne 0 ]; then
     error "unable to install app" -
     return $?

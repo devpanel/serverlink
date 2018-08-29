@@ -215,7 +215,7 @@ It'll generate the Let's Encrypt certificates and setup the virtual host with it
 ## Restart MySQL
 
 ```
-# devpanel restart mysql --vhost d7new
+# devpanel restart mysql instance --vhost d7new
 ```
 
 ## Repair MySQL database

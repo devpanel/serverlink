@@ -1,4 +1,4 @@
-$ [ -d /opt/webenabled ] || { tar_f=/root/serverlink.tar ; [ ! -f $tar_f ] && exit 0; tar -xf $tar_f && ./serverlink/install/install.sh -Y ;} #=> --exit 0
+$ [ -d /opt/webenabled ] || tar_f=/root/serverlink.tar ; [ -f $tar_f ] && { tar -xf $tar_f && ./serverlink/install/install.sh -Y ; } || : ok_missing_tar_f #=> --exit 0
 $ [ -d /opt/webenabled ] || { i_f=/root/install.sh ; [ ! -f $i_f -a ! -x $i_f ] && exit 0 ; $i_f ;} #=> --exit 0
 $ [ -d /opt/webenabled ] || { curl -sSL https://get.devpanel.com/install.sh | bash -s -- -3 ;} #=> --exit 0
 $ hash devpanel
@@ -16,42 +16,50 @@ $ devpanel get server info                          #=> --egrep ^Apache HTTP  Po
 $ devpanel get server info                          #=> --egrep ^Apache HTTPS Port: [1-9][0-9]*$
 $ devpanel get server info                          #=> --egrep ^HTTP to HTTPS redir: [^ ].+$
 $ devpanel get server info                          #=> --egrep ^Number of vhosts: [0-9]+$
-# broken. FIX ME! $ devpanel get server info                          #=> --egrep ^Distro Updates: (en|dis)?abled$
+$ devpanel get server info                          #=> --egrep ^Distro Updates: (en|dis)?abled$
 $ devpanel get server info                          #=> --egrep ^Long vhost names: (en|dis)?abled$
 $ devpanel get server info                          #=> --egrep ^PHP Version: [5-7].[0-9]$
 $ devpanel get server info                          #=> --egrep ^Platform Version: [1-3]$
 
-$ devpanel dump metadata                            #=> --exit 0
-$ devpanel dump metadata | fgrep null               #=> --exit 1
 $ devpanel list apps                                #=> --exit 0
 
+$ devpanel list mysql instances | egrep '^default-mysql[[:space:]]+'  #=> --exit 0
+$ devpanel ping    mysql instance  --instance default-mysql           #=> --exit 0
+$ devpanel stop    mysql instance  --instance default-mysql           #=> --exit 0
+$ devpanel start   mysql instance  --instance default-mysql           #=> --exit 0
+$ devpanel ping    mysql instance  --instance default-mysql           #=> --exit 0
+$ devpanel restart mysql instance  --instance default-mysql           #=> --exit 0
+$ devpanel ping    mysql instance  --instance default-mysql           #=> --exit 0
+$ devpanel run mysql client as root --instance default-mysql -- -e "SHOW DATABASES" #=> --exit 0
+$ devpanel change mysql root password --instance default-mysql --generate    #=> --exit 0
+$ echo a\'toughly\'\'quoted_string\" | devpanel change mysql root password --instance default-mysql #=> --exit 0
+$ devpanel run mysql client as root --instance default-mysql -- -e "SHOW DATABASES" #=> --exit 0
+$ stat -c %A /etc/devpanel/lamp/mysql/instances/default-mysql/root.client.cnf  #=> -rw-r-----
 
 ##########
 #
 #########
-$ devpanel install app --vhost d7-test-one --app drupal-v7 #=> --exit 0
+$ devpanel install app --vhost d7-test-one --app drupal-v7 --dedicated-mysql #=> --exit 0
 $ devpanel test http --vhost d7-test-one                   #=> --exit 0
-$ devpanel status mysql --vhost d7-test-one                #=> --exit 0
+$ stat -c %A /etc/devpanel/lamp/vhosts/d7-test-one/mysql/my.cnf  #=> -rw-r-----
+$ d=/etc/devpanel/lamp/vhosts/d7-test-one ;  stat -c %G $d/mysql/my.cnf | fgrep -x `egrep '^linux_user=' $d/config.ini | cut -d= -f 2` #=> --exit 0
+$ devpanel ping mysql instance --vhost d7-test-one       #=> --exit 0
 $ devpanel clear app cache --vhost d7-test-one             #=> --exit 0
 $ devpanel config app --admin-password $(head -c 1024 /dev/urandom | tr -dc A-Za-z0-9_ | cut -b 1-10) --vhost d7-test-one #=> --exit 0
 $ devpanel refresh config --vhost d7-test-one              #=> --exit 0
+$ devpanel test http --vhost d7-test-one                   #=> --exit 0
 $ devpanel repair mysql database --vhost d7-test-one       #=> --exit 0
 $ devpanel cat vhost config --vhost d7-test-one            #=> --exit 0
-
+$ devpanel test http --vhost d7-test-one                   #=> --exit 0
 $ devpanel add domain --vhost d7-test-one --domain my-first-domain.com --domain www.my-first-domain.com   #=> --exit 0
 $ fgrep 'my-first-domain.com www.my-first-domain.com' /etc/devpanel/lamp/vhosts/d7-test-one/config.ini    #=> --exit 0
 $ devpanel remove domain --vhost d7-test-one --domain www.my-first-domain.com                             #=> --exit 0
 $ fgrep 'www.my-first-domain.com' /etc/devpanel/lamp/vhosts/d7-test-one/config.ini                        #=> --exit 1
 $ devpanel find domain --domain my-first-domain.com                                                       #=> --exit 0
 $ devpanel remove domain --vhost d7-test-one --domain my-first-domain.com  #=> --exit 0
-
-# Temporarily disabled these tests because the dbmgr start script hangs when
-# running in background
-#
-#$ devpanel stop   mysql --vhost d7-test-one                #=> --exit 0
-#$ devpanel start mysql --vhost d7-test-one < /dev/null     #=> --exit 0
-#$ sleep 2; devpanel status mysql --vhost d7-test-one       #=> --exit 0
-
+$ devpanel stop   mysql instance --vhost d7-test-one                #=> --exit 0
+$ devpanel start mysql instance --vhost d7-test-one < /dev/null     #=> --exit 0
+$ sleep 2; devpanel ping mysql instance --vhost d7-test-one       #=> --exit 0
 $ devpanel enable htpasswd --vhost d7-test-one                          #=> --exit 0
 $ fgrep 'htpasswd=yes' /etc/devpanel/lamp/vhosts/d7-test-one/config.ini #=> --exit 0
 $ devpanel test http --vhost d7-test-one --http-code 401                #=> --exit 0
@@ -84,9 +92,14 @@ $ devpanel test http --vhost d7-test-one                   #=> --exit 0
 
 $ devpanel get token --vhost d7-test-one --tool phpmyadmin  #=> --exit 0
 
-$ devpanel rewrite vhost config --vhost d7-test-one        #=> --exit 0
+$ devpanel change vhost password on mysql --vhost d7-test-one --generate  #=> --exit 0
+$ devpanel run mysql client --vhost d7-test-one -- -e "SHOW DATABASES"    #=> --exit 0
+$ devpanel test http --vhost d7-test-one                   #=> --exit 0
 
-$ : Testing vhost specific PHP version
+$ devpanel rewrite vhost config --vhost d7-test-one        #=> --exit 0
+$ devpanel test http --vhost d7-test-one                   #=> --exit 0
+
+# Testing vhost specific PHP version
 $ devpanel set php version --vhost d7-test-one --version 7.1    #=> --exit 0
 $ devpanel exec --vhost d7-test-one php -v                      #=> --egrep ^PHP 7.1.[0-9]+
 $ devpanel show vhost info  --vhost d7-test-one                 #=> --egrep ^PHP Version: 7.1
@@ -96,17 +109,52 @@ $ devpanel show vhost info  --vhost d7-test-one                 #=> --egrep ^PHP
 $ devpanel set php version --vhost d7-test-one --version 5.6    #=> --exit 0
 $ devpanel exec --vhost d7-test-one php -v                      #=> --egrep ^PHP 5.6.[0-9]+
 $ devpanel show vhost info  --vhost d7-test-one                 #=> --egrep ^PHP Version: 5.6
-$ :  #=> --exit 0
 
 $ devpanel clone vhost --source-vhost d7-test-one --target-vhost d7-test-two   #=> --exit 0
-$ : #=> --exit 0
+$ devpanel test http --vhost d7-test-two   #=> --exit 0
 
-$ : Testing global PHP version
-$ devpanel create vhost --from webenabled://blank --vhost blk1 #=> --exit 0
+# Testing global PHP version
+$ devpanel create vhost --from webenabled://blank --vhost blk1 --skip-mysql #=> --exit 0
 $ devpanel set default php --version 7.1                       #=> --exit 0
 $ devpanel exec --vhost blk1 php -v                            #=> --egrep ^PHP 7.1.[0-9]+
 $ devpanel show vhost info --vhost blk1                        #=> --egrep ^PHP Version: 7.1
-$ : #=> --exit 0
+
+# Test mysql commands on vhost
+$ devpanel setup vhost on mysql instance --instance default-mysql --vhost blk1 #=> --exit 0
+$ devpanel run mysql client --vhost blk1 -- -e "CREATE DATABASE blk1__test_1"     #=> --exit 0
+$ devpanel remove vhost from mysql instance --vhost blk1 --instance default-mysql #=> --exit 0
+$ devpanel show mysql instance info --instance default-mysql | egrep '^Vhosts: .*\bblk1\b'  #=> --exit 1
+$ devpanel remove vhost --vhost blk1 --file - >/dev/null #=> --exit 0
+$ devpanel test http --vhost blk1      #=> --exit 1
+
+# Test migration of a vhost from a public MySQL instance to a private one
+$ devpanel install app --app wordpress-v4 --vhost wp-tstm2 --mysql-instance default-mysql  #=> --exit 0
+$ devpanel test http --vhost wp-tstm2  #=> --exit 0
+$ devpanel create mysql instance --name wp-tstm2-mysql --shared no #=> --exit 0
+$ devpanel run mysql client as root --instance wp-tstm2-mysql -- -e "SHOW DATABASES"  #=> --exit 0
+$ devpanel list mysql instances | egrep '^wp-tstm2-mysql[[:space:]]+'  #=> --exit 0
+$ devpanel move vhost to mysql instance --vhost wp-tstm2 --dest-instance wp-tstm2-mysql   #=> --exit 0
+$ devpanel test http --vhost wp-tstm2  #=> --exit 0
+$ devpanel show mysql instance info --instance default-mysql | fgrep wp-tstm2  #=> --exit 1
+$ devpanel show mysql instance info --instance wp-tstm2-mysql | egrep '^Vhosts: .*\bwp-tstm2\b' #=> --exit 0
+$ devpanel remove mysql instance --instance wp-tstm2  #=> --exit 1
+$ devpanel remove vhost --vhost wp-tstm2 --file - >/dev/null #=> --exit 0
+$ devpanel test http --vhost wp-tstm2      #=> --exit 1
+$ devpanel show mysql instance info --instance wp-tstm2-mysql #=> --exit 1
+
+$ devpanel install app --app wordpress-v4 --vhost wp-prv2pbl --dedicated-mysql  #=> --exit 0
+$ devpanel remove mysql instance --instance wp-prv2pbl   #=> --exit 1
+$ devpanel test http --vhost wp-prv2pbl                  #=> --exit 0
+$ devpanel move vhost to mysql instance --vhost wp-prv2pbl --dest-instance default-mysql         #=> --exit 0
+$ devpanel run mysql client --vhost wp-prv2pbl -- -e "CREATE DATABASE wp_prv2pbl__test_1"        #=> --exit 0
+$ devpanel show mysql instance info --instance wp-prv2pbl | egrep '^Vhosts: .*\bwp-prv2pbl\b'    #=> --exit 1
+$ devpanel show mysql instance info --instance default-mysql | egrep '^Vhosts: .*\bwp-prv2pbl\b' #=> --exit 0
+$ devpanel test http --vhost wp-prv2pbl                     #=> --exit 0
+$ devpanel remove mysql instance --instance wp-prv2pbl      #=> --exit 0
+$ devpanel show mysql instance info --instance wp-prv2pbl   #=> --exit 1
+$ devpanel test http --vhost wp-prv2pbl      #=> --exit 0
+$ devpanel remove vhost --vhost wp-prv2pbl   #=> --exit 0
+$ devpanel test http --vhost wp-prv2pbl      #=> --exit 1
 
 $ : ssh keys
 $ : ssh_add ; kf=$(mktemp) && rm -f $kf && trap 'rm -f $kf' EXIT && ssh-keygen -f $kf -t rsa -b 4096 -P '' && devpanel add ssh key --vhost d7-test-one --file $kf.pub #=> --exit 0
@@ -116,19 +164,23 @@ $ : ssh_rm  ; kf=$(mktemp) && rm -f $kf && trap 'rm -f $kf' EXIT && ssh-keygen -
 $ : #=> --exit 0
 
 $ devpanel install app  --vhost wp-four-test-one --app wordpress-v4 #=> --exit 0
-$ devpanel status mysql --vhost wp-four-test-one                   #=> --exit 0
+$ devpanel ping mysql instance --vhost wp-four-test-one                   #=> --exit 0
 $ devpanel test http --vhost wp-four-test-one                      #=> --exit 0
-#$ devpanel stop   mysql --vhost wp-four-test-one                   #=> --exit 0
-#$ devpanel start  mysql --vhost wp-four-test-one                   #=> --exit 0
-#$ devpanel status mysql --vhost wp-four-test-one                   #=> --exit 0
+$ devpanel stop   mysql instance --vhost wp-four-test-one                   #=> --exit 0
+$ devpanel start  mysql instance --vhost wp-four-test-one                   #=> --exit 0
+$ devpanel ping mysql instance --vhost wp-four-test-one                   #=> --exit 0
+$ devpanel restart mysql instance --vhost wp-four-test-one                   #=> --exit 0
+$ devpanel ping mysql instance --vhost wp-four-test-one                   #=> --exit 0
 
-$ devpanel install app  --vhost grav1 --app grav-v1  #=> --exit 0
-$ devpanel status mysql --vhost grav1                #=> --exit 0
-$ devpanel test http --vhost grav1                   #=> --exit 0
+$ devpanel install app  --vhost grav1 --app grav-v1           #=> --exit 0
+$ devpanel ping mysql instance --vhost grav1                #=> --exit 0
+$ devpanel test http --vhost grav1                            #=> --exit 0
 
-#$ devpanel stop   mysql --vhost grav1               #=> --exit 0
-#$ devpanel start  mysql --vhost grav1               #=> --exit 0
-#$ devpanel status mysql --vhost grav1               #=> --exit 0
+$ devpanel stop   mysql instance --vhost grav1               #=> --exit 0
+$ devpanel start  mysql instance --vhost grav1               #=> --exit 0
+$ devpanel ping mysql instance --vhost grav1               #=> --exit 0
+$ devpanel restart  mysql instance --vhost grav1               #=> --exit 0
+$ devpanel ping mysql instance --vhost grav1               #=> --exit 0
 
 $ devpanel enable long vhost names --yes                                 #=> --exit 0
 $ devpanel get server info | egrep -x 'Long vhost names: enabled'        #=> --exit 0
@@ -143,3 +195,6 @@ $ devpanel get server info | egrep -x 'Webenabled v1 Compatibility: yes' #=> --e
 
 $ devpanel disable webenabled compat --yes                        #=> --exit 0
 $ devpanel get server info | egrep 'Webenabled v1 Compatibility:' #=> --exit 1
+
+$ devpanel dump metadata                            #=> --exit 0
+$ devpanel dump metadata | fgrep null               #=> --exit 1

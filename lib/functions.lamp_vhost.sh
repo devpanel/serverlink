@@ -262,52 +262,30 @@ mysql_create_instance_for_vhost() {
 
   local instance="$vhost"
 
-  local config_dir root_cnf vhost_cnf mysqld_cnf
+  local -a my_cnf_args_ar=()
+
+  local config_dir root_cnf vhost_cnf mysqld_cnf socket_file
   local db_user db_pw cl_txt
-  local mlx_user mlx_home_dir
-  local mysql_ver mysql_ver_no
-  local vh_config_dir="$lamp__paths__vhosts_config_dir/$vhost"
+  local mlx_user
 
   db_user="$v__vhost__linux_user"
   db_pw=$(gen_random_str_az09_lower 16)
   mlx_user="b_${v__vhost__linux_user#w_}"
-  mlx_home_dir="$lamp__mysql_paths__instances_homedir/$mlx_user"
-  config_dir="$lamp__paths__mysql_instances_config_dir/$instance"
-  mysqld_cnf="$config_dir/mysqld.cnf"
-  root_cnf="$config_dir/root.client.cnf"
-  vhost_cnf="$vh_config_dir/mysql/my.cnf"
-  mysql_ver=$(get_mysql_version )
-  mysql_ver_no=${mysql_ver//[^0-9]}
 
-  if mysql_create_instance --user "$mlx_user" --home-dir "$mlx_home_dir" \
-       "$instance"; then
+  if mysql_create_instance --user "$mlx_user" --shared no "$instance"; then
 
-    mysql_start_instance "$instance"
-    sleep 3
+    save_opts_in_mysql_instance "$mysql_instance" \
+              "params.vhosts +=w $vhost"
 
-    mysql_create_user --my-cnf "$root_cnf" --user "$db_user" \
+    mysql_start_n_check_instance "$instance" || return $?
+
+    mysql_create_user --instance "$instance" --user "$db_user" \
                       --password "$db_pw"
 
-    touch "$vhost_cnf"
-    chmod 640 "$vhost_cnf"
-
-    cl_txt+="!include $mysqld_cnf
-[client]
-user = $db_user
-password = $db_pw
-"
-
-    if [ "$mysql_ver_no" -le 51 ]; then
-      # mysql versions < 5.5 don't support !include lines, so we need to set
-      # the socket for the vhost user to be able to access through the mysql
-      # cli. Though we keep the !include line above for PHPMyadmin wrapper
-      # to parse it (the mysql cli ignores it)
-      cl_txt+="socket = $lamp__paths__mysql_socket_dir/$instance/mysql.sock"$'\n'
-    fi
-
-    echo -n "$cl_txt" >$vhost_cnf
-
-    chgrp "$v__vhost__linux_user" "$vhost_cnf"
+    mysql_create_vhost_cnf --vhost "$vhost" --user "$db_user"    \
+                           --password "$db_pw"                   \
+													 --instance "$instance"                \
+                           --group-owner "$v__vhost__linux_user"
 
     mysql_grant_all_privs_to_user "$instance" \
       "$v__vhost__linux_user"
@@ -316,150 +294,314 @@ password = $db_pw
   fi
 }
 
-mysql_ping_instance() {
-  local instance="$1"
-  local config_dir config_file
+mysql_create_vhost_cnf() {
+  local opt vhost user password group_owner socket mysql_version
+  local cnf_file mysqld_cnf config_dir socket vh_config_dir socket_file
+  local cl_txt instance
+  local write_home_my_cnf=yes
+
+  while [ -n "$1" -a "${1:0:1}" == - ]; do
+    opt="$1"
+    case $opt in
+      --vhost)
+        vhost="$2"
+        shift 2
+        ;;
+
+      --instance)
+        instance="$2"
+        shift 2
+        ;;
+
+      --user)
+        user="$2"
+        shift 2
+        ;;
+
+      --password)
+        password="$2"
+        shift 2
+        ;;
+
+      --my-cnf)
+        # specify an alternate path for my.cnf file
+        cnf_file="$2"
+        shift 2
+        ;;
+
+      --mysql-version)
+        mysql_version="$2"
+        shift 2
+        ;;
+
+      --group-owner)
+        group_owner="$2"
+        shift 2
+        ;;
+
+      --skip-home-my-cnf)
+        unset write_home_my_cnf
+        shift
+        ;;
+
+      *)
+        echo "$FUNCNAME(): unknown option '$opt'" 1>&2
+        return 1
+        ;;
+    esac
+  done
 
   config_dir="$lamp__paths__mysql_instances_config_dir/$instance"
-  config_file="$config_dir/root.client.cnf"
+  mysqld_cnf="$config_dir/mysqld.cnf"
 
-  mysqladmin --defaults-file="$config_file" ping
+  vh_config_dir="$lamp__paths__vhosts_config_dir/$vhost"
+  cnf_file="${cnf_file:-$vh_config_dir/mysql/my.cnf}"
+  socket_file="$lamp__paths__mysql_socket_dir/$instance/mysql.sock"
+
+  if [ -z "$mysql_version" ]; then
+    mysql_ver=$(get_mysql_version )
+    mysql_ver=${mysql_ver//[^0-9]}
+  fi
+
+  touch "$cnf_file"
+  chmod 640 "$cnf_file"
+  chgrp "$v__vhost__linux_user" "$cnf_file"
+
+  cl_txt+="!include $mysqld_cnf
+[client]
+user = $user
+password = $password
+"
+
+  if [ "$mysql_ver" -le 51 ]; then
+    # mysql versions < 5.5 don't support !include lines, so we need to set
+    # the socket for the vhost user to be able to access through the mysql
+    # cli. Though we keep the !include line above for PHPMyadmin wrapper
+    # to parse it (the mysql cli ignores it)
+    cl_txt+="socket = $socket"$'\n'
+  fi
+
+  echo -n "$cl_txt" >$cnf_file
+
+  if [ -n "$write_home_my_cnf" ]; then
+    run_as_user "$v__vhost__linux_user" \
+                  rm -f \~/.my.cnf \&\& ln -s $cnf_file \~/.my.cnf
+  fi
+
+  if [ -n "$group_owner" ]; then
+    chgrp "$group_owner" "$cnf_file"
+  fi
+
+  return 0
 }
 
-mysql_start_instance() {
-  local instance="$1"
+mysql_run_query_with_vhost_privs() {
+  local vhost="$1"
+  local query="$2"
 
-  local config_dir config_ini mysqld_bin mysqld_cnf
+  local ns st cnf_key query_double_esc
+  local l_user l_user_key
 
-  mysqld_bin=$(get_mysqld_bin ) || return $?
+  if [ -z "${!v__vhost__*}" -o "$v__vhost__name" != "$vhost" ]; then
+    ns=_tmp_$RANDOM
+    cnf_key="${ns}__mysql__client_file"
+    l_user_key="${ns}__vhost__linux_user"
 
-  config_dir="$lamp__paths__mysql_instances_config_dir/$instance"
-  config_ini="$config_dir/config.ini"
-  mysqld_cnf="$config_dir/mysqld-inc.cnf"
+    load_vhost_config "$vhost" "$ns" || return $?
+  else
+    l_user_key="v__vhost__linux_user"
+    cnf_key="v__mysql__client_file"
+  fi
 
-  read_ini_file_into_namespace "$config_ini" conf__mysql || return $?
- 
-  mkdir -m 771 -p "$lamp__paths__mysql_socket_dir/$instance"
-  chgrp "$conf__mysql__params__linux_user" \
-    "$lamp__paths__mysql_socket_dir/$instance"
+  l_user="${!l_user_key}"
 
-  run_as_user --shell /bin/bash "$conf__mysql__params__linux_user" \
-    "( $mysqld_bin --defaults-extra-file="$mysqld_cnf" & )"
+  run_as_user "$l_user" mysql --defaults-file="${!cnf_key}" -BN -e "$query"
+  st=$?
+
+  [ -n "$ns" ] && cleanup_namespace $ns
+
+  return $st
 }
 
-mysql_start_n_check_instance() {
-  local instance="$1"
+mysqldump_with_vhost_privs() {
+  local vhost="$1"
+  shift
 
-  if ! mysql_start_instance "$instance"; then
-    echo "$FUNCNAME(): failed to start mysql for instance '$instance'" 1>&2
+  local ns st cnf_key
+  local l_user
+  ns=_tmp_$RANDOM
+  cnf_key="${ns}__mysql__client_file"
+
+  load_vhost_config "$vhost" "$ns" || return $?
+
+  l_user="$v__vhost__linux_user"
+
+  run_as_user "$l_user" mysqldump --defaults-file="${!cnf_key}" "$@"
+  st=$?
+
+  cleanup_namespace $ns
+
+  return $st
+}
+
+mysql_list_databases_as_vhost() {
+  local vhost="$1"
+
+  mysql_run_query_with_vhost_privs "$vhost" "SHOW DATABASES;"
+}
+
+mysqldump_vhost_databases() {
+  local opt db_list ns db_prefix db_prefix_key _db file
+  local compress=yes
+
+  while [ -n "$1" -a "${1:0:1}" == - ]; do
+    opt="$1"
+    case $opt in
+      --dont-compress)
+        unset compress
+        shift
+        ;;
+
+      *)
+        echo "$FUNCNAME(): unknown option '$opt'" 1>&2
+        return 1
+        ;;
+    esac
+  done
+
+  local vhost="$1"
+  local dir="$2"
+  
+  if [ -z "$v__vhost__name" -o "$v__vhost__name" != "$vhost" ]; then
+    ns=_tmp_$RANDOM
+    db_prefix_key="${ns}__mysql__database_prefix"
+    load_vhost_config "$vhost" "$ns" || return $?
+  else
+    db_prefix_key=v__mysql__database_prefix
+  fi
+
+  db_list=$(mysql_list_databases_as_vhost "$vhost")
+  if [ $? -ne 0 ]; then
+    echo "$FUNCNAME(): failed to get list of mysql databases" 1>&2
     return 1
   fi
 
-  for i in {1..20}; do
-    sleep 0.5
-    if mysql_instance_is_running "$instance"; then
-      # wait a bit to see if mysql is still running
-      sleep 3
-      if mysql_ping_instance "$instance">/dev/null; then
-        return 0
+  if [ -n "${!db_prefix_key}" ]; then
+    db_prefix="${!db_prefix_key}"
+  fi
+
+  if [ -n "$ns" ]; then
+    cleanup_namespace "$ns"
+  fi
+
+  for _db in $db_list; do
+    if in_array "$_db" mysql information_schema performance_schema sys; then
+      continue
+    fi
+
+    if [ -n "$db_prefix" ]; then
+      file="$dir/${_db#$db_prefix}.sql"
+    else
+      file="$dir/$_db.sql"
+    fi
+
+    mysqldump_with_vhost_privs "$vhost" "$_db" >$file
+    if [ -n "$compress" ]; then
+      if ! gzip "$file"; then
+        echo "$FUNCNAME(): error, failed to compress file '$file'" 1>&2
+        return 1
       fi
     fi
   done
-
-  echo "$FUNCNAME(): failed to verify whether mysql started" 1>&2
-  return 1
 }
 
-mysql_stop_instance() {
-  local instance="$1"
-  local config_dir config_file
+mysql_drop_vhost_dbs_with_prefix() {
+  local vhost="$1"
+  local instance="$2"
+  local prefix="$3"
 
-  config_dir="$lamp__paths__mysql_instances_config_dir/$instance"
-  config_file="$config_dir/root.client.cnf"
+  local _db _sql_query
+  for _db in $(mysql_list_databases_as_vhost "$vhost"); do
+    if in_array "$_db" mysql information_schema performance_schema sys; then
+      continue
+    fi
 
-  mysqladmin --defaults-file="$config_file" --verbose shutdown
+    _sql_query="DROP DATABASE \`$_db\`;"
+    mysql_run_query_with_vhost_privs "$vhost" "$_sql_query"
+  done
 }
 
-mysql_restart_instance() {
-  local instance="$1"
+mysql_create_unpriv_user_for_vhost() {
+  local opt
+  local instance user password db_prefix root_cnf vhost
+  local write_my_cnf
 
-  mysql_ping_instance "$instance" >/dev/null && mysql_stop_instance "$instance"
+  while [ -n "$1" -a "${1:0:1}" == - ]; do
+    opt="$1"
+    case $opt in
+      --instance)
+        instance="$2"
+        shift 2
+        ;;
 
-  mysql_start_instance "$instance"
-}
+      --user)
+        user="$2"
+        shift 2
+        ;;
 
-mysql_lock_instance_autostart() {
-  touch "$conf__paths__lock_dir/mysql.$instance"
-}
+      --password)
+        password="$2"
+        shift 2
+        ;;
 
-mysql_unlock_instance_autostart() {
-  rm -f "$conf__paths__lock_dir/mysql.$instance"
-}
+      --db-prefix)
+        db_prefix="$2"
+        shift 2
+        ;;
 
-mysql_is_instanced_autostart_locked() {
-  test -e "$conf__paths__lock_dir/mysql.$instance"
-}
+      --vhost)
+        vhost="$2"
+        shift 2
+        ;;
 
-mysql_instance_is_running() {
-  local instance="$1"
-  local config_file
-  local ns port_ref socket_ref
-  local -i st
+      --write-my-cnf)
+        write_my_cnf=yes
+        shift
+        ;;
 
-  config_file="$lamp__paths__mysql_instances_config_dir/$instance/mysqld.cnf"
-  ns="tmp_$BASHPID"
+      *)
+        echo "$FUNCNAME(): unknown option '$opt'" 1>&2
+        return 1
+        ;;
+    esac
+  done
 
-  # st=50 -> internal error (unable to determine port)
-  read_ini_file_into_namespace "$config_file" $ns || return 50
+  instance=${instance:-$vhost}
+  root_cnf="$lamp__paths__mysql_instances_config_dir/$instance/root.client.cnf"
+  db_prefix="${db_prefix:-${vhost}__}"
 
-  port_ref="${ns}__mysqld__port"
-  socket_ref="${ns}__mysqld__socket"
+  mysql_create_user --my-cnf "$root_cnf" --user "$user" \
+    --password "$password" || return $?
 
-  if [ -n "${!port_ref}"     ] && fuser -s "${!port_ref}/tcp" 2>/dev/null; then
-    st=0
-  elif [ -n "${!socket_ref}" ] && fuser -s "${!socket_ref}" 2>/dev/null; then
-    st=0
-  elif [ -z "${!port_ref}" -a -z "${!socket_ref}" ]; then
-    echo "$FUNCNAME(): didn't find port nor socket defined" 1>&2
-    st=50
-  else
-    st=1
+  if [ "$write_my_cnf" == yes ]; then
+    mysql_create_vhost_cnf --vhost "$vhost" --user "$user"        \
+                           --password "$password"                 \
+													 --instance "$instance"                 \
+                           --group-owner "$v__vhost__linux_user"
+
   fi
 
-  cleanup_namespace $ns
-
-  return $st
+  mysql_grant_privs_to_user --my-cnf "$root_cnf" --user "$user" \
+    --db-prefix "$db_prefix"
 }
 
-mysql_force_instance_stop() {
-  local instance="$1"
-  local config_file
-  local ns port_ref socket_ref
-  local -i st
+mysql_unpriv_import_vhost_dbs_from_dir() {
+  local lnx_user="$v__vhost__linux_user"
 
-  config_file="$lamp__paths__mysql_instances_config_dir/$instance/mysqld.cnf"
-  ns="tmp_$BASHPID"
-
-  # st=50 -> internal error (unable to determine port)
-  read_ini_file_into_namespace "$config_file" $ns || return 50
-
-  port_ref="${ns}__mysqld__port"
-  socket_ref="${ns}__mysqld__socket"
-
-  if [ -n "${!socket_ref}" ] && fuser -s "${!socket_ref}" 2>/dev/null; then
-    force_kill_proc_using_file "${!socket_ref}"
-    st=$?
-  elif [ -n "${!port_ref}" ] && fuser -s "${!port_ref}/tcp" 2>/dev/null; then
-    force_kill_proc_using_file "${!port_ref}/tcp"
-    st=$?
-  elif [ -z "${!port_ref}" -a -z "${!socket_ref}" ]; then
-    echo "$FUNCNAME(): didn't find port nor socket defined" 1>&2
-    st=50
-  else
-    st=1
+  if [ -z "$lnx_user" ]; then
+    echo "$FUNCNAME(): undefined variable \$v__vhost__linux_user" 1>&2
+    return 1
   fi
 
-  cleanup_namespace $ns
-
-  return $st
+  run_as_user "$lnx_user" "$sys_dir/bin/import-databases-from-dir" "$@"
 }

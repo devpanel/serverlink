@@ -11,7 +11,11 @@ set_usage_msg \
     --subsystem name          name of the app subsystem (e.g. drupal,
                               wordpress, etc)
 
-    --mysql-instance name     the mysql instance to use
+    --dedicated-mysql         create a new dedicated MySQL instance
+
+    --skip-mysql              don't do any MySQL configuration for this vhost
+
+    --mysql-instance name     the name of the mysql instance to use
     --mysql-dbs               name of the mysql databases to create
     --db-name name            the name of the main database of the app
 
@@ -33,7 +37,10 @@ devpanel_cmd__create_lamp_vhost() {
   [ $# -eq 0 -o -z "$1" ] && usage
 
   local activate_now=yes
-  local name vhost subsystem php_version description db_name
+  local name vhost subsystem php_version description
+  local dedicated_mysql with_mysql=yes
+  local mysql_instance mysql_pw mysql_db_name create_mysql_instance
+  local db_name db_prefix db_suffix
   local -a domains_ar apache_args_ar opts_ar
 
   while [ -n "$1" ]; do
@@ -59,6 +66,29 @@ devpanel_cmd__create_lamp_vhost() {
         [ -z "$2" ] && { error_missing_value "$name" ; return $?; }
         vhost="$2"
         shift 2
+        ;;
+
+      --dedicated-mysql)
+        dedicated_mysql=yes
+        if ! is_var_set_to_yes with_mysql; then
+          error "conflicting mysql options on command line" -
+          return $?
+        fi
+
+        shift
+        ;;
+
+      --skip-mysql)
+        if [ -n "$dedicated_mysql" ]; then
+          error "can't use $name with --dedicated-mysql at the same time" -
+          return $?
+        elif [ -n "$mysql_instance" ]; then
+          error "can't use $name with --mysql-instance at the same time" -
+          return $?
+        fi
+
+        unset with_mysql
+        shift
         ;;
 
       --subsystem)
@@ -96,6 +126,17 @@ devpanel_cmd__create_lamp_vhost() {
         shift 2
         ;;
 
+      --mysql-instance)
+        [ -z "$2" ] && { error_missing_value "$name" ; return $?; }
+        if ! is_var_set_to_yes with_mysql; then
+          error "conflicting mysql options on command line" -
+          return $?
+        fi
+
+        mysql_instance="$2"
+        shift 2
+        ;;
+
       *)
         error "unknown option '$name'"
         ;;
@@ -109,26 +150,137 @@ devpanel_cmd__create_lamp_vhost() {
     return $?
   fi
 
+  if mysql_instance_exists "$vhost"; then
+    # NOTE: technically it'd be possible to have an instance and a vhost
+    #       with the same name. But to avoid any confusion we don't
+    #       allow it.
+    error "there's already a mysql instance with name '$vhost'" -
+    return $?
+  fi
+
+  if [ -n "$mysql_instance" ]; then
+    mysql_is_valid_instance_name "$mysql_instance" || return $?
+  fi
+
+  if is_var_set_to_yes with_mysql; then
+    if [ -n "$mysql_instance" -a -z "$dedicated_mysql" ]; then
+      if ! mysql_instance_exists "$mysql_instance"; then
+        error "there's no MySQL instance named '$mysql_instance'" -
+        return $?
+      fi
+
+      load_mysql_instance_config "$mysql_instance" || return $?
+
+      if ! is_var_set_to_yes mysql__params__shared; then
+        error "the specified mysql instance is not set as shared. So can't use it." -
+        return $?
+      fi
+    elif [ -n "$mysql_instance" -a -n "$dedicated_mysql" ]; then
+      if mysql_instance_exists "$mysql_instance"; then
+        load_mysql_instance_config "$mysql_instance" || return $?
+
+        if is_var_set_to_yes mysql__params__shared; then
+          # mysql instance is shared
+          error "can't use this mysql instance because it's shared" -
+          return $?
+        else
+          if [ -n "$mysql__params__vhosts" ]; then
+            # mysql instance is not shared, but there's already a vhost
+            error "this mysql instance is already being used by another vhost." -
+            return $?
+          fi
+        fi
+      else
+        # mysql instance doesn't exist, and a name was specified for it
+        create_mysql_instance=yes
+      fi
+    elif [ -z "$mysql_instance" -a -n "$dedicated_mysql" ]; then
+      create_mysql_instance=yes
+      mysql_instance="$vhost"
+    elif [ -z "$mysql_instance" -a -z "$dedicated_mysql" ]; then
+      if [ -n "$lamp__mysql__default_instance" ]; then
+        # no mysql was specified, but there's a system default:
+        #   use the default mysql instance
+        mysql_instance="$lamp__mysql__default_instance"
+      else
+        # backwards compatible behavior: create a new mysql instance when
+        # there isn't a default mysql instance in the configuration
+        #
+        # Each mysql instance generally requires hundreds of MB of memory
+        # allocation, what significantly limits the number of vhosts on a
+        # server. This is why we reverted this default.
+        create_mysql_instance=yes
+        mysql_instance="$vhost"
+      fi
+    else
+      error "unknown condition for determining mysql instance." -
+      return $?
+    fi
+  fi # // with_mysql sanity checks
+
+  # NOTE: the apache vhost needs to be created before the dedicated mysql
+  #       instance because it needs to check/create the vhost user and the
+  #       linux user of the mysql database is based on username of the
+  #       apache vhost
+  #
   if ! apache_vhost_create "${apache_args_ar[@]}" "$vhost"; then
     error "unable to create apache vhost" -
     return $?
   fi
 
-  mysql_instance="$vhost"
-  if mysql_create_instance_for_vhost "$vhost"; then
-    opts_ar+=( "mysql.instance = $mysql_instance" )
-  else
-    error "unable to create mysql instance" -
-    return $?
-  fi
+  if is_var_set_to_yes with_mysql; then
+    if is_var_set_to_yes create_mysql_instance; then
+      # create a new dedicated mysql instance
+      if ! mysql_create_instance_for_vhost "$vhost"; then
+        error "unable to create mysql instance" -
+        return $?
+      fi
+    else
+      # use an existing mysql instance, just setup the credentials
+      mysql_pw=$(gen_random_str_az09_lower 12)
+      db_prefix="${vhost//-/_}__"
+      if [ -n "$db_name" ]; then
+        mysql_db_name="${db_prefix}${db_name}"
+      elif [ -n "$subsystem" ]; then
+        mysql_db_name="${db_prefix}${subsystem}"
+      fi
+      
+      mysql_create_unpriv_user_for_vhost --user "$v__vhost__linux_user" \
+        --instance "$mysql_instance" --password "$mysql_pw"             \
+        --vhost "$vhost" --write-my-cnf --db-prefix "$db_prefix"
 
-  if [ -n "$subsystem" ]; then
-    if [ -z "$db_name" ]; then
-      db_name="$subsystem"
+      opts_ar+=( "mysql.external = yes" )
+      opts_ar+=( "mysql.database_prefix = $db_prefix" )
+
+      save_opts_in_mysql_instance "$mysql_instance" \
+        "params.vhosts +=w $vhost"
     fi
 
-    opts_ar+=( "app.subsystem       = $subsystem"  )
-    opts_ar+=( "app.database_name   = $db_name"    )
+    opts_ar+=( "mysql.instance      = $mysql_instance" )
+
+    if [ -n "$db_name" ]; then
+      if [ -n "$db_prefix" ]; then
+        mysql_db_name="${db_prefix}${db_name}"
+      else
+        mysql_db_name="$db_name"
+      fi
+    else
+      if [ -n "$subsystem" ]; then
+        if [ -n "$db_prefix" ]; then
+          mysql_db_name="${db_prefix}${subsystem}"
+        else
+          mysql_db_name="${subsystem}"
+        fi
+      fi
+    fi
+
+    if [ -n "$mysql_db_name" ]; then
+      opts_ar+=( "app.database_name   = $mysql_db_name"  )
+    fi
+  fi # // with_mysql
+
+  if [ -n "$subsystem" ]; then
+    opts_ar+=( "app.subsystem       = $subsystem"     )
   fi
 
   if [ -n "$description" ]; then

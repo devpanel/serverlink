@@ -59,7 +59,7 @@ create_file()
 # main
 [ $# -lt 2 ] && usage
 
-unset dont_lock_tables use_existing_dir lock_cmd_arg
+unset dont_lock_tables use_existing_dir lock_cmd_arg db_prefix
 getopt_flags='ne'
 while getopts $getopt_flags OPTN; do
   case $OPTN in
@@ -104,11 +104,16 @@ if [ -z "$v__mysql__instance" ]; then
   exit 1
 fi
 
+if [ -n "$v__mysql__database_prefix" ]; then
+  db_prefix="$v__mysql__database_prefix"
+fi
+
 instance_ini="$lamp__paths__mysql_instances_config_dir/$v__mysql__instance/config.ini"
 read_ini_file_into_namespace --no-cleanup "$instance_ini" v__mysql || exit $?
 
 user_web="$v__vhost__linux_user"
 user="$v__mysql__params__linux_user"
+tmp_db_list="$archive_dir/tmp_databases"
 archive_list="$archive_dir/databases"
 archive_my_cnf="$archive_dir/b_.my.cnf"
 home="$v__vhost__linux_user_home"
@@ -149,12 +154,18 @@ then
   echo "$archive_list must not exist" >&2
   exit 1
 fi
-chmod +w "$archive_list" || exit 1
 
 echo Listing the databases...
-if mysql_list_databases "$v__mysql__instance" >"$archive_list"; then
+if is_var_set_to_yes v__mysql__external; then
+  mysql_list_databases_as_vhost "$vhost" >$tmp_db_list
+  st=$?
+else
+  mysql_list_databases "$v__mysql__instance" >$tmp_db_list
+  st=$?
+fi
+if [ $st -eq 0 ]; then
   sed -i -e '/^mysql$/d; /^performance_schema$/d; /^information_schema$/d;
-              /^sys$/d;' "$archive_list"
+              /^sys$/d;' "$tmp_db_list"
 else
   error "unable to list mysql databases"
 fi
@@ -172,18 +183,27 @@ else
   echo Not found
 fi
 
-if [ -s "$archive_list" ]; then
+if [ -s "$tmp_db_list" ]; then
   while read database; do
-    archive_file="$archive_dir/$database.sql"
+    if [ -n "$db_prefix" ]; then
+      final_db_name="${database#$db_prefix}"
+    else
+      final_db_name="$database"
+    fi
+    archive_file="$archive_dir/$final_db_name.sql"
+
     echo "Archiving $database to $archive_file"
     if mysql_dump_database "$v__mysql__instance" "$database" >$archive_file; then
       if ! gzip "$archive_file"; then
         error "failed to gzip database file '$archive_file'"
       fi
+      echo "$final_db_name" >>$archive_list
     else
       error "failed to dump database '$database'"
     fi
-  done < "$archive_list"
+  done < "$tmp_db_list"
+
+  rm -f "$tmp_db_list"
 fi
 
 exit 0

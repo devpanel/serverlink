@@ -118,7 +118,7 @@ load_devpanel_config || exit $?
 
 unset vhost_created
 if ! devpanel create vhost --vhost "$tmp_vhost" \
-       --from webenabled://blank; then
+       --from webenabled://blank --skip-mysql ; then
   error "unable to create temporary vhost"
 fi
 vhost_created=1
@@ -139,8 +139,7 @@ chmod 600 "$doc_root/conf/"*auth*.php
 chown -R "$web_user":"$web_group" "$doc_root"
 
 if ! save_opts_in_vhost_config "$tmp_vhost"     \
-      "app.subsystem     = $app_subsystem"      \
-      "app.database_name = $app_subsystem"; then
+      "app.subsystem     = $app_subsystem" ; then
 
   error "failed to update vhost config"
 fi
@@ -151,10 +150,6 @@ su -l -s /bin/bash -c "
   find $doc_root -type f -iname \*.php -exec chmod 644 {} \;
 
   find $doc_root -type d -exec chmod 711 {} \;
-
-  mysql -e 'DROP DATABASE scratch;'
-  mysql -e 'DROP DATABASE test;' || true
-  mysql -e 'CREATE DATABASE $app_subsystem;'
 
   rm -rf ~/public_html/$tmp_vhost.[0-9]*
   rm -f ~/.*.passwd ~/*.passwd ~/.bash_* ~/.viminfo ~/.mysql_history ~/.ssh/* \

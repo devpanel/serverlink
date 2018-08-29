@@ -235,7 +235,7 @@ drupal_update_php_config()
     fi
 
     # removing the file_temporary_path before exporting the site
-    sql_query "DELETE FROM variable WHERE name = 'file_temporary_path';"
+    run_mysql -B -D "$database" -e "DELETE FROM variable WHERE name = 'file_temporary_path';"
 
   else
     # if the site is not to be exported, then add a custom temp dir
@@ -243,7 +243,8 @@ drupal_update_php_config()
     # users share /tmp)
 
     local is_tmp_set
-    is_tmp_set=$(sql_query_result "SELECT * FROM variable WHERE name = 'file_temporary_path'")
+    is_tmp_set=$(mysql -B -D "$database" -N \
+                  -e "SELECT * FROM variable WHERE name = 'file_temporary_path'")
     local tmp_dir="/tmp/.private/$user_web"
     local tmp_sql_str
     if [ -n "$is_tmp_set" ]; then
@@ -252,7 +253,7 @@ drupal_update_php_config()
       tmp_sql_str="INSERT INTO variable VALUES ( 'file_temporary_path', 's:${#tmp_dir}:\"$tmp_dir\";');"
     fi
 
-    sql_query "$tmp_sql_str" 
+    run_mysql -B -D "$database" -e "$tmp_sql_str" 
   fi
 }
 
@@ -262,7 +263,7 @@ drupal_update_php_config_6()
 
   local driver='\2'
 
-  /bin/echo "s|^\\(\\\$db_url = '\\)\\(mysqli*\\):.*|\\1$driver://$mysql_user:$urlencoded_mysql_password@$mysql_host:$mysql_port/$hosting_database';|" | \
+  /bin/echo "s|^\\(\\\$db_url = '\\)\\(mysqli*\\):.*|\\1$driver://$mysql_user:$urlencoded_mysql_password@$mysql_host:$mysql_port/$database';|" | \
     run_ised "$home/public_html/$vhost/sites/default/settings.php"
 
 }
@@ -296,7 +297,7 @@ drupal_update_php_config_7() {
          s/^[[:space:]]*'password'[[:space:]]*=>[[:space:]]*.*/    'password' => '$sedphpencoded_mysql_password',/
          s/^[[:space:]]*'host'[[:space:]]*=>[[:space:]]*.*/    'host' => '$mysql_host',/
          s/^[[:space:]]*'port'[[:space:]]*=>[[:space:]]*.*/    'port' => '$mysql_port',/
-         s/^[[:space:]]*'database'[[:space:]]*=>[[:space:]]*.*/    'database' => '$hosting_database',/
+         s/^[[:space:]]*'database'[[:space:]]*=>[[:space:]]*.*/    'database' => '$database',/
       " | run_ised "$file"
     fi
   done
@@ -316,7 +317,7 @@ drupal_update_php_config_7() {
     db_creds_str_new=${db_creds_str_new//@db_password@/$sedphpencoded_mysql_password}
     db_creds_str_new=${db_creds_str_new//@db_host@/$mysql_host}
     db_creds_str_new=${db_creds_str_new//@db_port@/$mysql_port}
-    db_creds_str_new=${db_creds_str_new//@database_name@/$hosting_database}
+    db_creds_str_new=${db_creds_str_new//@database_name@/$database}
 
     echo "$db_creds_str_new" >> "$def_settings"
   fi
@@ -362,7 +363,7 @@ drupal_update_php_config_8() {
    s/^[[:space:]]*'password'[[:space:]]*=>[[:space:]]*.*/  'password' => '$sedphpencoded_mysql_password',/;
    s/^[[:space:]]*'host'[[:space:]]*=>[[:space:]]*.*/  'host' => '$mysql_host',/;
    s/^[[:space:]]*'port'[[:space:]]*=>[[:space:]]*.*/  'port' => '$mysql_port',/;
-   s/^[[:space:]]*'database'[[:space:]]*=>[[:space:]]*.*/  'database' => '$hosting_database',/;
+   s/^[[:space:]]*'database'[[:space:]]*=>[[:space:]]*.*/  'database' => '$database',/;
   }
   "
 
@@ -409,7 +410,7 @@ drupal_update_php_config_8() {
     db_creds_str=${db_creds_str//@db_password@/$sedphpencoded_mysql_password}
     db_creds_str=${db_creds_str//@db_host@/$mysql_host}
     db_creds_str=${db_creds_str//@db_port@/$mysql_port}
-    db_creds_str=${db_creds_str//@database_name@/$hosting_database}
+    db_creds_str=${db_creds_str//@database_name@/$database}
     db_creds_str=${db_creds_str//@sync_dir_name@/$sync_dir_name}
     db_creds_str=${db_creds_str//@hash_salt@/$hash_salt}
     db_creds_str=${db_creds_str//@install_profile@/$install_profile}
@@ -429,7 +430,8 @@ drupal_update_php_config_8() {
 drupal_set_tmp_6_or_7() {
   local is_tmp_set=""
 
-  is_tmp_set=$(sql_query_result "SELECT * FROM variable WHERE name = 'file_temporary_path'")
+  is_tmp_set=$(mysql -B -D "$database" -N \
+                 -e "SELECT * FROM variable WHERE name = 'file_temporary_path'")
 
   local tmp_dir="$HOME/.tmp"
 
@@ -446,7 +448,7 @@ drupal_set_tmp_6_or_7() {
     tmp_sql_str="INSERT INTO variable VALUES ( 'file_temporary_path', 's:${#tmp_dir}:\"$tmp_dir\";');"
   fi
 
-  sql_query "$tmp_sql_str"
+  run_mysql -B -D "$database" -e "$tmp_sql_str"
 }
 
 drupal_set_tmp_8() {
@@ -461,7 +463,7 @@ drupal_set_cron_key_8() {
    local new_key=`wedp_gen_random_str 43`
   local sql_cron_key="UPDATE key_value SET value = 's:${#new_key}:\"$new_key\";' WHERE collection = 'state' AND name = 'system.cron_key';"
 
-  sql_query "$sql_cron_key"
+  run_mysql -B -D "$database" -e "$sql_cron_key"
 }
 
 

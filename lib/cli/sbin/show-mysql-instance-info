@@ -1,0 +1,68 @@
+#!/bin/bash
+
+set_usage_msg \
+  "Usage: $bin_name $action <--instance name>
+
+  Options:
+    --instance <name>         name of the instance
+
+  Show information about a mysql instance.
+"
+
+devpanel_cmd__show_mysql_instance_info() {
+  local opt instance old_ifs
+  local -a info_ar=()
+  
+  [ $# -eq 0 -o -z "$1" ] && usage
+
+  while [ -n "$1" ]; do
+    opt="$1"
+
+    case $opt in
+      --instance)
+        [ -z "$2" ] && error_missing_value $opt
+        instance="$2"
+        shift 2
+        ;;
+
+      --help)
+        usage
+        ;;
+
+      --)
+        shift
+        break
+        ;;
+
+      *)
+        error "unknown option: $opt" -
+        return $?
+        ;;
+    esac
+  done
+
+  [ -z "$instance" ] && usage
+
+  if ! mysql_instance_exists "$instance"; then
+    error "there's no instance with this name" -
+    return $?
+  fi
+
+  load_mysql_instance_config "$instance" || return $?
+
+  info_ar+=( "Name: $mysql__instance" "Host Type: $mysql__params__host_type" )
+
+  if [ "$mysql__params__host_type" == local ]; then
+    info_ar+=( "Linux User: $mysql__params__linux_user" )
+    info_ar+=( "Data dir: $mysql__params__data_dir"     )
+  fi
+
+  info_ar+=(  "Port: $mysql__params__port"            \
+              "Shared: $mysql__params__shared"        \
+              "Vhosts: ${mysql__params__vhosts:--}"   )
+
+  old_ifs="$IFS"
+  IFS=$'\n'
+  echo "${info_ar[*]}"
+  IFS="$old_ifs"
+}

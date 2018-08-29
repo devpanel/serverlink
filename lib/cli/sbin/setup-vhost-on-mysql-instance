@@ -1,0 +1,111 @@
+#!/bin/bash
+
+set_usage_msg \
+  "Usage: $bin_name $action <--instance name> <--vhost vname>
+
+  Options:
+    --instance <name>             name of the instance
+    --vhost    <vname>            name of the vhost
+    --my-cnf   <path>             specify an alternate path for my.cnf
+    --dont-update-vhost-config    don't update vhost config
+
+Sets up user credentials and grant permissions for a vhost on the specified
+mysql instance.
+"
+
+devpanel_cmd__setup_vhost_on_mysql_instance() {
+  local opt instance vhost db_prefix my_cnf_file
+  local db_password update_vhost_config=yes
+  
+  [ $# -eq 0 -o -z "$1" ] && usage
+
+  while [ -n "$1" ]; do
+    opt="$1"
+
+    case $opt in
+      --instance)
+        [ -z "$2" ] && error_missing_value $opt
+        instance="$2"
+        shift 2
+        ;;
+
+      --vhost)
+        [ -z "$2" ] && error_missing_value $opt
+        vhost="$2"
+        shift 2
+        ;;
+
+      --my-cnf)
+        [ -z "$2" ] && error_missing_value $opt
+        my_cnf_file="$2"
+        shift 2
+        ;;
+
+      --dont-update-vhost-config)
+        unset update_vhost_config
+        shift
+        ;;
+
+      --help)
+        usage
+        ;;
+
+      --)
+        shift
+        break
+        ;;
+
+      *)
+        error "unknown option: $opt" -
+        return $?
+        ;;
+    esac
+  done
+
+  [ -z "$instance" -o -z "$vhost" ] && usage
+
+  if ! mysql_instance_exists "$instance"; then
+    error "there's no instance with this name" -
+    return $?
+  fi
+
+  if ! vhost_exists --verbose "$vhost"; then
+    return 1
+  fi
+
+  load_mysql_instance_config "$instance" || return $?
+
+  load_vhost_config "$vhost" || return $?
+
+  if [ -n "$mysql__params__vhosts" ] && \
+      is_word_in_string "$vhost" "$mysql__params__vhosts"; then
+    echo "Ok. Nothing done. This vhost is already on this instance."
+    return 0
+  fi
+
+  db_prefix="${vhost//-/_}__"
+  db_password=$(gen_random_str_az09_lower 12)
+
+  mysql_create_unpriv_user_for_vhost --user "$v__vhost__linux_user"   \
+    --instance "$instance" --vhost "$vhost" --password "$db_password" \
+    --db-prefix "$db_prefix"
+
+  if [ $? -eq 0 ]; then
+    if [ -z "$v__vhost__mysql__instance" ]; then
+      save_opts_in_vhost_config "$vhost" "mysql.instance = $instance"
+
+      mysql_create_vhost_cnf --vhost "$vhost" --instance "$instance" \
+        --user "$v__vhost__linux_user" --password "$db_password"     \
+        ${my_cnf_file:+--my-cnf "$my_cnf_file"}
+    fi
+
+    if is_var_set_to_yes update_vhost_config; then
+      save_opts_in_mysql_instance "$instance" "params.vhosts +=w $vhost"
+    fi
+
+    echo "Successfully setup vhost credentials on instance $instance"
+  else
+    error "unable to setup credentials." -
+    return $?
+  fi
+}

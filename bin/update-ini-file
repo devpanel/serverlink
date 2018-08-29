@@ -86,6 +86,12 @@ if(!$r_opts{quiet}) {
   print "Reading stdin...\n";
 }
 
+my $std_key_regex = '([A-Za-z0-9_]+[A-Za-z0-9 _.-]*[A-Za-z0-9])';
+my $regex_add_key       = qr/^$std_key_regex\s*=\s*(.+)$/;
+my $regex_remove_key    = qr/^-\s*$std_key_regex\s*$/;
+my $regex_add_word      = qr/^$std_key_regex\s*\+=w \s*(.+)$/;
+my $regex_remove_word   = qr/^$std_key_regex\s*-=w\s*(.+)$/;
+
 my $line_n = 0;
 my $values_set_n = 0;
 while(<STDIN>) {
@@ -94,7 +100,7 @@ while(<STDIN>) {
   next if(length($_) == 0);
 
   my($section, $key, $value, $sec_key);
-  if($_ =~ /^([A-Za-z0-9_]+[A-Za-z0-9 _.-]*)\s*=\s*(.+)$/) {
+  if($_ =~ $regex_add_key) {
     # add/set values
     ($key, $value) = ($1, $2);
     $key =~ s/\s+/ /; # remove multiple spaces in the key name
@@ -110,7 +116,7 @@ while(<STDIN>) {
     $cfg_r->{$section}->{$sec_key} = $value;
 
     $values_set_n++;
-  } elsif($_ =~ /^- ([A-Za-z0-9_]+[A-Za-z0-9 _.-]*)\s*$/) {
+  } elsif($_ =~ $regex_remove_key) {
     # remove values
     my $section_key = $1;
     ($section, $key)  = split('\.', $section_key, 2);
@@ -122,6 +128,12 @@ while(<STDIN>) {
         print "Warning: ignoring unknown key-section $section_key\n";
         next;
       }
+
+      if(!defined($cfg_r->{$section}) || ! scalar(keys(%{ $cfg_r->{$section} }))) {
+        # if the section became empty, then delete it, to avoid writing empty
+        # sections
+        delete($cfg_r->{$section});
+      }
     } else {
       # remove whole section
       if(exists($cfg_r->{$section})) {
@@ -130,6 +142,40 @@ while(<STDIN>) {
       } else {
         print "Warning: ignoring unknown section $_\n";
         next;
+      }
+    }
+  } elsif($_ =~ $regex_add_word) {
+    my $section_key = $1;
+    my $new_value = $2;
+    ($section, $key)  = split('\.', $section_key, 2);
+    if(defined($key) && length($key) > 0) {
+      if(exists($cfg_r->{$section}->{$key})) {
+        my $curr_value = $cfg_r->{$section}->{$key};
+        if($curr_value !~ /\b\Q$new_value\E\b/) {
+          $cfg_r->{$section}->{$key} .= " " . $new_value;
+          $values_set_n++;
+        }
+      } else {
+        $cfg_r->{$section}->{$key} = $new_value;
+        $values_set_n++;
+      }
+    }
+  } elsif($_ =~ $regex_remove_word) {
+    my $section_key  = $1;
+    my $search_value = $2;
+    ($section, $key)  = split('\.', $section_key, 2);
+    if(defined($key) && length($key) > 0) {
+      if(exists($cfg_r->{$section}->{$key})) {
+        my $curr_value = $cfg_r->{$section}->{$key};
+        if($curr_value =~ /\b\Q$search_value\E\b/) {
+          $cfg_r->{$section}->{$key} =~ s/\b\Q$search_value\E\b//g;
+          $cfg_r->{$section}->{$key} =~ s/^\s+//g;
+          $cfg_r->{$section}->{$key} =~ s/\s+$//g;
+          if(length($cfg_r->{$section}->{$key}) == 0) {
+            delete($cfg_r->{$section}->{$key});
+          }
+          $values_set_n++;
+        }
       }
     }
   } else {

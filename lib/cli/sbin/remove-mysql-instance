@@ -1,0 +1,66 @@
+#!/bin/bash
+
+set_usage_msg \
+  "Usage: $bin_name $action <--instance name>
+
+  Options:
+    --instance <name>         name of the instance
+    --force                   force removal even if there are vhosts on the
+                              mysql instance
+
+  Remove the specified mysql instance (destroying all it's databases and
+  tables).
+"
+
+devpanel_cmd__remove_mysql_instance() {
+  local opt instance force
+  
+  [ $# -eq 0 -o -z "$1" ] && usage
+
+  while [ -n "$1" ]; do
+    opt="$1"
+
+    case $opt in
+      --instance)
+        [ -z "$2" ] && error_missing_value $opt
+        instance="$2"
+        shift 2
+        ;;
+
+      --force)
+        force=1
+        shift
+        ;;
+
+      --help)
+        usage
+        ;;
+
+      --)
+        shift
+        break
+        ;;
+
+      *)
+        error "unknown option: $opt" -
+        return $?
+        ;;
+    esac
+  done
+
+  [ -z "$instance" ] && usage
+
+  if ! mysql_instance_exists "$instance"; then
+    error "there's no instance with this name" -
+    return $?
+  fi
+
+  load_mysql_instance_config "$instance" || return $?
+
+  if [ -n "$mysql__params__vhosts" -a -z "$force" ]; then
+    error "there are vhosts using this instance. Please use --force to remove." -
+    return $?
+  fi
+
+  mysql_delete_instance "$instance"
+}

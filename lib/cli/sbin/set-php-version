@@ -102,11 +102,11 @@ devpanel_cmd__set_php_version() {
     fi
   fi
 
-  run_as_user "$vhost_user" "
-               ln -sf $php_cgi_bin ~/bin/php-cgi; ex=\$? ;          \
-               ln -sf $php_bin ~/bin/php ;                          \
-              [ -n \"$phar_bin\" ] && ln -sf $phar_bin ~/bin/phar ; \
-              exit \$ex"
+  run_as_user "$vhost_user" \
+                ln -sf $php_cgi_bin \~/bin/php-cgi \; ex=\$? \;             \
+                ln -sf $php_bin \~/bin/php \;                               \
+                \[ -n \"$phar_bin\" \] \&\& ln -sf $phar_bin \~/bin/phar \; \
+                exit \$ex
   if [ $? -eq 0 ]; then
     # set metadata for vhost
     if save_opts_in_vhost_config "$vhost" "php.version = $version"; then

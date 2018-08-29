@@ -27,6 +27,7 @@ devpanel_cmd__get_server_info() {
   local apache_http_port apache_https_port
   local long_vhost_names_st https_redir_st
   local s3_bucket s3_upload_by_default s3_delete_on_upload
+  local mysql_instance_txt
   local -a vhosts_ar
   local -i n_vhosts=0
 
@@ -67,6 +68,7 @@ devpanel_cmd__get_server_info() {
     le_on_base_domain_st=no
   fi
 
+
   info_txt="Linux Distribution: $linux_distro
 Vhosts base domain: $vhosts_domain
 Apache HTTP  Port: $apache_http_port
@@ -77,6 +79,10 @@ Distro Updates: $distro_updates_st
 Long vhost names: $long_vhost_names_st
 Let's Encrypt On Base Domain: $le_on_base_domain_st
 "
+
+  if [ -n "$lamp__mysql__default_instance" ]; then
+    info_txt+="Default MySQL Instance: $lamp__mysql__default_instance"$'\n'
+  fi
 
   if is_webenabled_backwards_compat_enabled; then
     info_txt+="Webenabled v1 Compatibility: yes"$'\n'

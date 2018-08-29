@@ -615,5 +615,8 @@ if [ -n "$conf__migrations__latest_step" -a -f "$state_file" ]; then
     "migrations.latest_step = $conf__migrations__latest_step"
 fi
 
+devpanel create mysql instance --name default-mysql --shared yes \
+  --set-as-default
+
 echo
 echo "Installation completed successfully"

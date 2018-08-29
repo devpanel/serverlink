@@ -9,6 +9,13 @@ set_usage_msg \
     --from  <source>          source from where to create the app
                               (can be a filename or url for the tar ball)
 
+    --dedicated-mysql         create a new dedicated MySQL instance
+
+    --skip-mysql              don't do any MySQL configuration for this vhost
+
+    --mysql-instance name     use an existing MySQL instance as the MySQL
+                              server
+
     --title <site_title>      sets the website title for the apps that
                               support it
 
@@ -44,8 +51,9 @@ devpanel_cmd__create_vhost() {
   [ $# -eq 0 -o -z "$1" ] && usage
 
   local name vhost from source_type title desc
-  local branch app_password read_pw_stdin php_version subsystem db_name
-  local source_type publisher uri_part app_url
+  local branch app_password read_pw_stdin php_version subsystem
+  local source_type publisher uri_part app_url mysql_instance db_name
+  local dedicated_mysql with_mysql=yes
   local print_summary=yes do_config_app=yes
   local -a cmd_args=() lamp_cmd_args=() app_cmd_ar=()
 
@@ -74,6 +82,43 @@ devpanel_cmd__create_vhost() {
         [ -z "$2" ] && error_missing_value "$name"
         php_version="$2"
         shift 2
+        ;;
+
+      --dedicated-mysql)
+        dedicated_mysql=yes
+        if ! is_var_set_to_yes with_mysql; then
+          error "conflicting mysql options on command line" -
+          return $?
+        fi
+
+        lamp_cmd_args+=( $name )
+        shift
+        ;;
+
+      --mysql-instance)
+        [ -z "$2" ] && error_missing_value "$name"
+
+        if ! is_var_set_to_yes with_mysql; then
+          error "conflicting mysql options on command line" -
+          return $?
+        fi
+
+        mysql_instance="$2"
+        lamp_cmd_args+=( "$name" "$mysql_instance" )
+        shift 2
+        ;;
+
+      --skip-mysql)
+        if [ -n "$dedicated_mysql" ]; then
+          error "can't use $name with --dedicated-mysql at the same time" -
+          return $?
+        elif [ -n "$mysql_instance" ]; then
+          error "can't use $name with --mysql-instance at the same time" -
+          return $?
+        fi
+
+        unset with_mysql
+        shift
         ;;
 
       --help)
@@ -287,6 +332,10 @@ devpanel_cmd__create_vhost() {
     return $?
   fi
 
+  if is_var_set_to_yes src__mysql__skip; then
+    unset with_mysql
+  fi
+
   if [ -n "$php_version" ]; then
     src__php__version="$php_version"
     lamp_cmd_args+=( --php-version "$php_version" )
@@ -295,12 +344,16 @@ devpanel_cmd__create_vhost() {
     lamp_cmd_args+=( --php-version "$php_version" )
   fi
 
-  if [ -n "$db_name" ]; then
-    lamp_cmd_args+=( --db-name "$db_name" )
-    src__app__database_name="$db_name"
-  elif [ -n "$src__app__database_name" ]; then
-    db_name="$src__app__database_name"
-    lamp_cmd_args+=( --db-name "$db_name" )
+  if is_var_set_to_yes with_mysql; then
+    if [ -n "$db_name" ]; then
+      lamp_cmd_args+=( --db-name "$db_name" )
+      src__app__database_name="$db_name"
+    elif [ -n "$src__app__database_name" ]; then
+      db_name="$src__app__database_name"
+      lamp_cmd_args+=( --db-name "$db_name" )
+    fi
+  else
+    lamp_cmd_args+=( --skip-mysql )
   fi
 
   if ! devpanel_run create lamp vhost "${lamp_cmd_args[@]}" --vhost "$vhost" \

@@ -5,11 +5,13 @@ mysql_create_instance() {
   local mysqld_cnf mysqld_cnf_inc mysqld_bin password_str
   local user group home_dir data_dir tcp_port server_uuid
   local mysql_version mysql_version_no
+  local shared_st
   local -a adduser_args_ar=() init_cmd_ar=()
-  local st
+  local opt st tmp_output
 
   while [ -n "$1" -a "${1:0:1}" == - ]; do
-    case "$1" in
+    opt="$1"
+    case "$opt" in
       --user)
         user="$2"
         shift 2
@@ -17,6 +19,16 @@ mysql_create_instance() {
 
       --home-dir)
         home_dir="$2"
+        shift 2
+        ;;
+
+      --shared)
+        if [[ "$2" != [Yy][Ee][Ss] && "$2" != [Nn][Oo] ]]; then
+          echo "$FUNCNAME(): invalid value for $opt (expected: yes or no)" 1>&2
+          return 1
+        fi
+
+        shared_st="${2,,}"
         shift 2
         ;;
 
@@ -31,6 +43,17 @@ mysql_create_instance() {
 
   mysqld_bin=$(get_mysqld_bin ) || return $?
 
+  mysql_is_valid_instance_name "$name" || return $?
+
+  if ! tmp_output=$(mktemp ); then
+    echo "$FUNCNAME(): failed to create temp file" 1>&2
+    return 1
+  fi
+
+  if [ -z "$user" ]; then
+    user=b_$(gen_random_str_az09_lower 6)
+  fi
+
   if assign_available_port tcp; then
     tcp_port="$_dp_value"
   else
@@ -38,6 +61,8 @@ mysql_create_instance() {
     return 1
   fi
 
+  shared_st=${shared_st:-no}
+  home_dir=${home_dir:-$lamp__mysql_paths__instances_homedir/$user}
   data_dir="$home_dir/mysql"
   socket_file="$lamp__paths__mysql_socket_dir/$name/mysql.sock"
   config_dir="$lamp__paths__mysql_instances_config_dir/$name"
@@ -47,22 +72,22 @@ mysql_create_instance() {
   mysql_version=$(get_mysql_version_two_dots )
   mysql_version_no=${mysql_version//[^0-9]/}
 
-  if ! mkdir -m 751 "$config_dir"; then
-    echo "$FUNCNAME(): unable to create dir '$config_dir'" 1>&2
-    return 1
-  fi
-
   adduser_args_ar=( --home "$home_dir" --shell /sbin/nologin )
 
   if [ "$conf__distro" == centos ]; then
     adduser_args_ar+=( -c "mysql $name,,," )
   else
-    adduser_args_ar+=( --disabled-password --gecos "mysql $name,,," )
+    adduser_args_ar+=( --quiet --disabled-password --gecos "mysql $name,,," )
   fi
   adduser_args_ar+=( "$user" )
 
   if ! adduser "${adduser_args_ar[@]}" ; then
     echo "$FUNCNAME(): unable to create user '$user'" 1>&2
+    return 1
+  fi
+
+  if ! mkdir -m 751 "$config_dir"; then
+    echo "$FUNCNAME(): unable to create dir '$config_dir'" 1>&2
     return 1
   fi
 
@@ -76,7 +101,9 @@ mysql_create_instance() {
   write_ini_file "$config_ini"        \
     "params.port       = $tcp_port"   \
     "params.data_dir   = $data_dir"   \
-    "params.type       = local"       \
+    "params.host_type  = local"       \
+    "params.enabled    = yes"         \
+    "params.shared     = $shared_st"  \
     "params.linux_user = $user"
 
   root_client_cnf="$config_dir/root.client.cnf"
@@ -133,7 +160,7 @@ mysql_create_instance() {
 
     # initialize and set root password in one step, mysqld automatically
     # exits after initialization
-    run_as_user --shell /bin/bash "$user" "${init_cmd_ar[*]}"
+    run_as_user --shell /bin/bash "$user" "${init_cmd_ar[@]}" &>$tmp_output
     st=$?
   else
     # initialize with mysql_install_db (before mysql 5.7)
@@ -150,7 +177,7 @@ mysql_create_instance() {
     init_cmd_ar=( mysql_install_db --no-defaults --log-warnings=0 \
                     --datadir="$data_dir" )
 
-    run_as_user --shell /bin/bash "$user" "${init_cmd_ar[*]} >/dev/null"
+    run_as_user --shell /bin/bash "$user" "${init_cmd_ar[@]}" &>$tmp_output
 
     run_as_user --shell /bin/bash "$user" \
       \( "$mysqld_bin" --no-defaults --datadir="$data_dir" --skip-networking \
@@ -167,8 +194,15 @@ mysql_create_instance() {
   fi
 
   if [ $st -ne 0 ]; then
+    # show the error msgs
+    #
+    # NOTE: by default it's not displaying the output of the mysql
+    # initialization because it shows several msgs with defaults that don't
+    # apply to the mysql instances setup by this collection of scripts
+    cat $tmp_output
     error "unable to initialize mysql instance" -
   fi
+  rm -f $tmp_output
 
   return $st
 }
@@ -177,6 +211,8 @@ mysql_delete_instance() {
   local instance="$1"
   local config_dir config_ini
   local inst_dir inst_port inst_user
+
+  mysql_is_valid_instance_name "$instance" || return $?
 
   config_dir="$lamp__paths__mysql_instances_config_dir/$instance"
   config_ini="$config_dir/config.ini"
@@ -206,15 +242,66 @@ mysql_grant_all_privs_to_user() {
   mysql --defaults-file="$config_file" -B -N -e "$line"
 }
 
+mysql_grant_privs_to_user() {
+  local opt user
+  local cnf_file sql_line
+  local db_prefix db_prefix_esc
+
+  while [ -n "$1" -a "${1:0:1}" == - ]; do
+    opt="$1"
+
+    case $opt in
+      --my-cnf)
+        cnf_file="$2"
+        shift 2
+        ;;
+
+      --db-prefix)
+        db_prefix="$2"
+        shift 2
+        ;;
+
+      --user)
+        user="$2"
+        shift 2
+        ;;
+
+      *)
+        error "unknown option '$opt'" -
+        return $?
+        ;;
+    esac
+  done
+
+  # NOTE: mysql treats underscore(_) as a wildcard, so it's needed to escape
+  #       it with a backslash for it to handle the underscore literally
+  #       (otherwise it'll apply the privileges to all databases that have a
+  #        similar prefix before the underscores)
+  db_prefix_esc=${db_prefix//_/\\_}
+  
+  line="GRANT ALL PRIVILEGES ON \`$db_prefix_esc%\`.* TO '$user';"
+
+  # NOTE: mysql cli needs to parse two dashed options first
+  mysql --defaults-file="$cnf_file" -B -N -e "$line"
+}
+
 mysql_create_user() {
   local db
   local opt db_user db_password _host
+  local instance config_dir my_cnf_file
   local -a args_ar=()
   while [ -n "$1" -a "${1:0:1}" == - ]; do
     opt="$1"
     case "$opt" in
       --my-cnf)
-        args_ar+=( --defaults-file="$2" )
+        my_cnf_file="$2"
+        shift 2
+        ;;
+
+      --instance)
+        instance="$2"
+        config_dir="$lamp__paths__mysql_instances_config_dir/$instance"
+        my_cnf_file="$config_dir/root.client.cnf"
         shift 2
         ;;
 
@@ -235,6 +322,22 @@ mysql_create_user() {
     esac
   done
 
+  if [ -n "$instance" ]; then
+    mysql_is_valid_instance_name "$instance" || return $?
+  fi
+
+  if [ -n "$my_cnf_file" ]; then
+    if [ -f "$my_cnf_file" ]; then
+      args_ar+=( --defaults-file="$my_cnf_file" )
+    else
+      echo "$FUNCNAME(): error, missing my_cnf file '$my_cnf_file'" 1>&2
+      return 1
+    fi
+  else
+    echo "$FUNCNAME(): either --instance of --my-cnf needs to be specified" 1>&2
+    return 1
+  fi
+
   {
     for _host in '%' 'localhost'; do
       printf "CREATE USER '%s'@'%s' IDENTIFIED BY '%s';\n" \
@@ -243,15 +346,23 @@ mysql_create_user() {
   } | mysql "${args_ar[@]}" -BN
 }
 
+mysql_is_valid_instance_name() {
+  local name="$1"
+
+  if [[ "$name" =~ ^[A-Za-z0-9_-]+$ ]] ; then
+    return 0
+  else
+    echo "$FUNCNAME(): invalid name format for mysql instance" 1>&2
+    return 1
+  fi
+}
+
 mysql_instance_exists() {
   local name="$1"
 
-  if ! [[ "$name" =~ ^[A-Za-z0-9_-]+$ ]] ; then
-    echo "$FUNCNAME(): invalid mysql name" 1>&2
-    return 1
-  fi
+  mysql_is_valid_instance_name "$name" || return $?
 
-  if [ -d "$DEVPANEL_HOME/compat/dbmgr/config/mysql/$name" ]; then
+  if [ -d "$lamp__paths__mysql_instances_config_dir/$name" ]; then
     return 0
   else
     return 1
@@ -480,19 +591,41 @@ mysql_import_databases_from_dir() {
   return 0
 }
 
-mysql_list_databases() {
+mysql_run_privileged_query() {
   local instance="$1"
-  local my_cnf
+  local sql_query="$2"
+
+  mysql_is_valid_instance_name "$instance" || return $?
+
+  local my_cnf sql_query
 
   my_cnf="$lamp__paths__mysql_instances_config_dir/$instance/root.client.cnf"
 
-  mysql --defaults-file="$my_cnf" -BN -e "SHOW DATABASES"
+  # NOTE: run query on stdin to avoid leaking the query to 'ps'
+  mysql --defaults-file="$my_cnf" -BN <<< "$sql_query"
+}
+
+mysql_list_databases() {
+  local instance="$1"
+  local prefix=${2:-}
+
+  local sql_query prefix_esc
+
+  sql_query="SHOW DATABASES"
+  if [ -n "$prefix" ]; then
+    prefix_esc=${prefix//_/\\_}
+    sql_query+=" LIKE '$prefix_esc%';"
+  fi
+
+  mysql_run_privileged_query "$instance" "$sql_query"
 }
 
 mysql_dump_database() {
   local instance="$1"
   local database="$2"
   local my_cnf
+
+  mysql_is_valid_instance_name "$instance" || return $?
 
   my_cnf="$lamp__paths__mysql_instances_config_dir/$instance/root.client.cnf"
 
@@ -546,4 +679,263 @@ get_mysqld_bin() {
     echo "$FUNCNAME(): couldn't find mysqld in \$PATH" 1>&2
     return 1
   fi
+}
+
+mysql_ping_instance() {
+  local instance="$1"
+  local config_dir config_file
+
+  mysql_is_valid_instance_name "$instance" || return $?
+
+  config_dir="$lamp__paths__mysql_instances_config_dir/$instance"
+  config_file="$config_dir/root.client.cnf"
+
+  mysqladmin --defaults-file="$config_file" ping
+}
+
+mysql_start_instance() {
+  local instance="$1"
+
+  mysql_is_valid_instance_name "$instance" || return $?
+
+  local config_dir config_ini mysqld_bin mysqld_cnf
+
+  mysqld_bin=$(get_mysqld_bin ) || return $?
+
+  config_dir="$lamp__paths__mysql_instances_config_dir/$instance"
+  config_ini="$config_dir/config.ini"
+  mysqld_cnf="$config_dir/mysqld-inc.cnf"
+
+  read_ini_file_into_namespace "$config_ini" conf__mysql || return $?
+
+  mkdir -m 771 -p "$lamp__paths__mysql_socket_dir/$instance"
+  chgrp "$conf__mysql__params__linux_user" \
+    "$lamp__paths__mysql_socket_dir/$instance"
+
+  run_as_user --shell /bin/bash "$conf__mysql__params__linux_user" \
+    \( $mysqld_bin --defaults-extra-file="$mysqld_cnf" \& \)
+}
+
+mysql_start_n_check_instance() {
+  local instance="$1"
+
+  mysql_is_valid_instance_name "$instance" || return $?
+
+  if ! mysql_start_instance "$instance"; then
+    echo "$FUNCNAME(): failed to start mysql for instance '$instance'" 1>&2
+    return 1
+  fi
+
+  for i in {1..20}; do
+    sleep 0.5
+    if mysql_instance_is_running "$instance"; then
+      # wait a bit to see if mysql is still running
+      sleep 3
+      if mysql_ping_instance "$instance">/dev/null; then
+        return 0
+      fi
+    fi
+  done
+
+  echo "$FUNCNAME(): failed to verify whether mysql started" 1>&2
+  return 1
+}
+
+mysql_stop_instance() {
+  local instance="$1"
+  local config_dir config_file
+
+  mysql_is_valid_instance_name "$instance" || return $?
+
+  config_dir="$lamp__paths__mysql_instances_config_dir/$instance"
+  config_file="$config_dir/root.client.cnf"
+
+  mysqladmin --defaults-file="$config_file" --verbose shutdown
+}
+
+mysql_restart_instance() {
+  local instance="$1"
+
+  mysql_ping_instance "$instance" >/dev/null && mysql_stop_instance "$instance"
+
+  mysql_start_instance "$instance"
+}
+
+mysql_lock_instance_autostart() {
+  touch "$conf__paths__lock_dir/mysql.$instance"
+}
+
+mysql_unlock_instance_autostart() {
+  rm -f "$conf__paths__lock_dir/mysql.$instance"
+}
+
+mysql_is_instanced_autostart_locked() {
+  test -e "$conf__paths__lock_dir/mysql.$instance"
+}
+
+mysql_instance_is_running() {
+  local instance="$1"
+  local config_file
+  local ns port_ref socket_ref
+  local -i st
+
+  mysql_is_valid_instance_name "$instance" || return $?
+
+  config_file="$lamp__paths__mysql_instances_config_dir/$instance/mysqld.cnf"
+  ns="tmp_$BASHPID"
+
+  # st=50 -> internal error (unable to determine port)
+  read_ini_file_into_namespace "$config_file" $ns || return 50
+
+  port_ref="${ns}__mysqld__port"
+  socket_ref="${ns}__mysqld__socket"
+
+  if [ -n "${!port_ref}"     ] && fuser -s "${!port_ref}/tcp" 2>/dev/null; then
+    st=0
+  elif [ -n "${!socket_ref}" ] && fuser -s "${!socket_ref}" 2>/dev/null; then
+    st=0
+  elif [ -z "${!port_ref}" -a -z "${!socket_ref}" ]; then
+    echo "$FUNCNAME(): didn't find port nor socket defined" 1>&2
+    st=50
+  else
+    st=1
+  fi
+
+  cleanup_namespace $ns
+
+  return $st
+}
+
+mysql_force_instance_stop() {
+  local instance="$1"
+  local config_file
+  local ns port_ref socket_ref
+  local -i st
+
+  mysql_is_valid_instance_name "$instance" || return $?
+
+  config_file="$lamp__paths__mysql_instances_config_dir/$instance/mysqld.cnf"
+  ns="tmp_$BASHPID"
+
+  # st=50 -> internal error (unable to determine port)
+  read_ini_file_into_namespace "$config_file" $ns || return 50
+
+  port_ref="${ns}__mysqld__port"
+  socket_ref="${ns}__mysqld__socket"
+
+  if [ -n "${!socket_ref}" ] && fuser -s "${!socket_ref}" 2>/dev/null; then
+    force_kill_proc_using_file "${!socket_ref}"
+    st=$?
+  elif [ -n "${!port_ref}" ] && fuser -s "${!port_ref}/tcp" 2>/dev/null; then
+    force_kill_proc_using_file "${!port_ref}/tcp"
+    st=$?
+  elif [ -z "${!port_ref}" -a -z "${!socket_ref}" ]; then
+    echo "$FUNCNAME(): didn't find port nor socket defined" 1>&2
+    st=50
+  else
+    st=1
+  fi
+
+  cleanup_namespace $ns
+
+  return $st
+}
+
+mysql_drop_user() {
+  local instance="$1"
+  local username="$2"
+
+  local sql_query="DROP USER '$username';
+                   DROP USER IF EXISTS '$username'@'localhost';"
+
+  mysql_run_privileged_query "$instance" "$sql_query"
+}
+
+mysql_drop_database() {
+  local instance="$1"
+  local database="$2"
+
+  local sql_query="DROP DATABASE '$database';"
+
+  mysql_run_privileged_query "$instance" "$sql_query"
+}
+
+mysql_change_user_password() {
+  local opt
+  local instance user host password password_esc
+  local mysql_ver_two_dots mysql_ver_three_dots
+  local sql_query_older sql_query_newer sql_query
+
+  while [ -n "$1" -a "${1:0:1}" == - ]; do
+    opt="$1"
+
+    case "$opt" in
+      --instance)
+        if mysql_is_valid_instance_name "$2"; then
+          instance="$2"
+          shift 2
+        else
+          echo "$FUNCNAME(): invalid instance name" 1>&2
+          return 1
+        fi
+        ;;
+
+      --user)
+        user="$2"
+        shift 2
+        ;;
+
+      --password)
+        password="$2"
+        shift 2
+        ;;
+
+      --host)
+        host="$2"
+        shift 2
+        ;;
+
+      *)
+        echo "$FUNCNAME(): unknown option '$opt'" 1>&2
+        return 1
+        ;;
+    esac
+  done
+
+  host=${host:-%}
+
+  password_esc=$(escape_quotes "$password" )
+
+  # mysql version 5.7.5 or older
+  sql_query_older="SET PASSWORD FOR '$user'@'$host' = PASSWORD('$password_esc');"
+
+  # mysql 5.7.6 or newer
+  sql_query_newer="ALTER USER '$user'@'$host' IDENTIFIED BY '$password_esc';"
+
+  mysql_ver_two_dots=$(get_mysql_version_two_dots )
+  if [ $? -ne 0 ]; then
+    echo "$FUNCNAME(): failed to get mysql version" 1>&2
+    return 1
+  fi
+
+  if [ "${mysql_ver_two_dots%%.*}" -eq 5 -a "${mysql_ver_two_dots#*.}" -lt 7 ]; then
+    sql_query="$sql_query_older"
+  elif [ "${mysql_ver_two_dots%%.*}" -eq 5 -a "${mysql_ver_two_dots#*.}" -ge 7 ]; then
+    mysql_ver_three_dots=$(get_mysql_version )
+    if [ $? -ne 0 ]; then
+      echo "$FUNCNAME(): failed to get mysql version" 1>&2
+      return 1
+    fi
+
+    if [ "${mysql_ver_three_dots##*.}" -ge 6 ]; then
+      sql_query="$sql_query_newer"
+    else
+      sql_query="$sql_query_older"
+    fi
+  else
+    echo "$FUNCNAME(): don't know how to change password on this mysql version" 1>&2
+    return 1
+  fi
+ 
+  mysql_run_privileged_query "$instance" "$sql_query"
 }

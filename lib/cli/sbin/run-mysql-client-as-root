@@ -1,0 +1,77 @@
+#!/bin/bash
+
+set_usage_msg \
+  "Usage: $bin_name ${cmd_ar[*]} <--instance|--vhost> <name> [--] [mysql_client_args]
+
+  Options:
+    --instance <name>           name of the mysql instance
+    --vhost <vhost>             use the mysql instance of this vhost
+  
+  Run the mysql client as the root user on the specified mysql instance.
+
+  NOTE: either --instance or --vhost need to be passed.
+
+  Other options can be passed directly to the mysql client executable by
+  adding the option terminator -- followed by the options to pass to mysql.
+"
+
+devpanel_cmd__run_mysql_client_as_root() {
+  [ $EUID -eq 0 ] && [ $# -eq 0 -o -z "$1" ] && usage
+
+  local opt vhost instance user st defs_file
+
+  local -a cmd_args_ar=()
+  local -a opts_ar=( )
+
+  while [ -n "$1" ]; do
+    opt="$1"
+    case "$opt" in
+      --vhost)
+        [ -z "$2" ] && error_missing_value $opt
+        vhost="$2"
+        shift 2
+        ;;
+
+      --instance)
+        [ -z "$2" ] && error_missing_value $opt
+        instance="$2"
+        shift 2
+        ;;
+
+      --help)
+        usage
+        ;;
+
+      --)
+        shift
+        break
+        ;;
+
+      *)
+        usage
+        ;;
+    esac
+  done
+
+  if [ -n "$vhost" ]; then
+    load_vhost_config "$vhost" || return $?
+    if [ -n "$v__mysql__instance" ]; then
+      instance="$v__mysql__instance"
+    else
+      error "this vhost is not linked to any mysql instance" -
+      return $?
+    fi
+  fi
+
+  [ -z "$instance" ] && usage
+
+  load_mysql_instance_config "$instance" || return $?
+
+  cmd_args_ar=( mysql --defaults-file="$mysql__root_client_cnf" )
+  if [ -n "$*" ]; then
+    cmd_args_ar+=( "$@" )
+  fi
+
+  # run mysql client as the linux user of the instance
+  run_as_user --shell /bin/bash "$mysql__params__linux_user" "${cmd_args_ar[@]}"
+}

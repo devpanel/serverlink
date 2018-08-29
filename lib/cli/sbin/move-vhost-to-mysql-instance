@@ -1,0 +1,136 @@
+#!/bin/bash
+
+set_usage_msg \
+  "Usage: $bin_name $action <opts>
+
+  Options:
+    --vhost <vhost>                   name of the vhost
+    --dest-instance <dname>           name of the destination MySQL instance
+
+Move the vhost to the specified MySQL instance.
+"
+
+devpanel_cmd__move_vhost_to_mysql_instance() {
+  local opt instance vhost db_prefix write_my_cnf
+  local origin_instance dest_instance
+  local db_password tmp_dump_dir tmp_my_cnf
+  
+  [ $# -eq 0 -o -z "$1" ] && usage
+
+  while [ -n "$1" ]; do
+    opt="$1"
+
+    case $opt in
+      --dest-instance)
+        [ -z "$2" ] && error_missing_value $opt
+        dest_instance="$2"
+        shift 2
+        ;;
+
+
+      --vhost)
+        [ -z "$2" ] && error_missing_value $opt
+        vhost="$2"
+        shift 2
+        ;;
+
+      --help)
+        usage
+        ;;
+
+      --)
+        shift
+        break
+        ;;
+
+      *)
+        error "unknown option: $opt" -
+        return $?
+        ;;
+    esac
+  done
+
+  [ -z "$vhost" -o -z "$dest_instance" ] && usage
+
+  load_vhost_config "$vhost" || return $?
+
+  if [ -n "$v__mysql__instance" ]; then
+    origin_instance="$v__mysql__instance"
+  else
+    error "this vhost is not associated to any MySQL instance" -
+    return $?
+  fi
+
+  if ! mysql_instance_exists "$origin_instance"; then
+    error "origin mysql instance doesn't exist." -
+    return $?
+  fi
+
+  if ! mysql_instance_exists "$dest_instance"; then
+    error "destination mysql instance doesn't exist." -
+    return $?
+  fi
+
+  if [ "$origin_instance" == "$dest_instance" ]; then
+    error "vhost is already setup on this instance" -
+    return $?
+  fi
+
+  load_mysql_instance_config "$origin_instance" o_mysql || return $?
+
+  load_mysql_instance_config "$dest_instance" d_mysql || return $?
+
+  if [ -n "$o_mysql__params__vhost" ] &&
+     ! is_word_in_string "$vhost" "$o_mysql__params__vhost"; then
+    error "vhost is not in the origin mysql instance." -
+    return $?
+  fi
+
+  if is_word_in_string "$vhost" "$d_mysql__params__vhost"; then
+    error "vhost is already in destination mysql instance" -
+    return $?
+  fi
+
+  # dump databases on original instance
+  if tmp_dump_dir=$(mktemp -d ); then
+    temp_dirs_ar+=( "$tmp_dump_dir" )
+    chmod 770 "$tmp_dump_dir"
+    chgrp "$v__vhost__linux_user" "$tmp_dump_dir"
+  else
+    error "failed to create temporary directory." -
+    return $?
+  fi
+
+  if ! mysqldump_vhost_databases "$vhost" "$tmp_dump_dir"; then
+    error "failed to dump vhost databases" -
+    return $?
+  fi
+
+  # setup creds on new instance
+  tmp_my_cnf="$tmp_dump_dir/my.cnf"
+  devpanel_run setup vhost on mysql instance --vhost "$vhost" \
+    --instance "$dest_instance" --my-cnf "$tmp_my_cnf"        \
+    --dont-update-vhost-config
+
+  # import databases into destination instance
+  if ! mysql_unpriv_import_vhost_dbs_from_dir --my-cnf "$tmp_my_cnf" \
+    ${v__mysql__database_prefix:+--db-name-prefix $v__mysql__database_prefix} \
+    "$tmp_dump_dir"; then
+
+    error "failed to import databases. Vhost not migrated." -
+    return $?
+  fi
+
+  # drop databases on original instance
+  devpanel_run remove vhost from mysql instance --vhost "$vhost" \
+    --instance "$origin_instance" --drop-databases
+
+  if mv "$tmp_my_cnf" "$v__mysql__client_file"; then
+    chgrp "$v__vhost__linux_user" "$v__mysql__client_file"
+  fi
+
+  save_opts_in_mysql_instance "$dest_instance" "params.vhosts +=w $vhost"
+
+  echo
+  echo "Successfully migrated vhost to MySQL instance '$dest_instance'."
+}

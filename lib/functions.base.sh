@@ -414,6 +414,26 @@ load_vhost_config() {
   return 0
 }
 
+load_mysql_instance_config() {
+  local instance="$1"
+  local namespace="${2:-mysql}"
+
+  mysql_is_valid_instance_name "$instance" || return $?
+
+  local config_file config_dir
+  config_dir="$lamp__paths__mysql_instances_config_dir/$instance"
+  config_file="$config_dir/config.ini"
+
+  read_ini_file_into_namespace "$config_file" "$namespace" || return $?
+
+  set_global_var "${namespace}__instance" "$instance"
+
+  set_global_var "${namespace}__instance_config_dir" "$config_dir"
+
+  set_global_var "${namespace}__root_client_cnf" \
+    "$config_dir/root.client.cnf"
+}
+
 save_opts_in_devpanel_config() {
   if [ $# -eq 0 ]; then
     echo "$FUNCNAME(): missing arguments" 1>&2
@@ -445,6 +465,22 @@ save_opts_in_vhost_config() {
   shift
 
   local file="$lamp__paths__local_config_dir/vhosts/$vhost/config.ini"
+
+  write_ini_file "$file" "$@"
+}
+
+save_opts_in_mysql_instance() {
+  if [ $# -eq 0 ]; then
+    echo "$FUNCNAME(): missing arguments" 1>&2
+    return 1
+  fi
+
+  local instance file
+
+  instance="$1"
+  shift
+
+  file="$lamp__paths__local_config_dir/mysql/instances/$instance/config.ini"
 
   write_ini_file "$file" "$@"
 }

@@ -1,0 +1,60 @@
+#!/bin/bash
+
+set_usage_msg \
+  "Usage: $bin_name $action
+
+List all mysql instances in the system.
+"
+
+devpanel_cmd__list_mysql_instances() {
+  local opt instance _dir
+  local status_txt
+  
+  while [ -n "$1" ]; do
+    opt="$1"
+
+    case $opt in
+      --help)
+        usage
+        ;;
+
+      --)
+        shift
+        break
+        ;;
+
+      *)
+        error "unknown option: $opt" -
+        return $?
+        ;;
+    esac
+  done
+
+  printf "%-18s\t%-5s\t%-5s\n" Name Status Port
+  for _dir in $lamp__paths__mysql_instances_config_dir/*; do
+    [ ! -d "$_dir" ] && continue
+
+    instance=${_dir##*/}
+
+    mysql_instance_exists "$instance" || continue
+
+    load_mysql_instance_config "$instance" || return $?
+
+    if [ "$mysql__params__host_type" == local ]; then
+      if mysql_instance_is_running "$instance" &>/dev/null; then
+        status_txt=up
+      else
+        status_txt=down
+      fi
+    elif [ "$mysql__params__host_type" == external ]; then
+      if mysql_ping_instance "$instance" &>/dev/null; then
+        status_txt=up
+      else
+        status_txt=down
+      fi
+    fi
+
+    printf "%-18s\t%-5s\t%-5s\n" \
+      "$mysql__instance" "$status_txt" "$mysql__params__port"
+  done
+}

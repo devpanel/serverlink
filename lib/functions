@@ -569,8 +569,8 @@ get_shell_from_user() {
 }
 
 run_as_user() {
-  local -a exec_args_ar=()
-  local opt_name
+  local -a exec_args_ar=() cmd_ar=()
+  local opt_name arg
   local shell_bin
   while [ -n "$1" -a "${1:0:1}" == - ]; do
     opt_name="$1"
@@ -606,7 +606,14 @@ run_as_user() {
   local user="$1"
   shift
 
-  local -a cmd_ar=( "$@" )
+  for arg in "$@"; do
+    if [[ "$arg" == *\ * ]]; then
+      # escape the arg if it contains a space
+      cmd_ar+=( $(printf '%q' "$arg") )
+    else
+      cmd_ar+=( "$arg" )
+    fi
+  done
 
   if hash runuser &>/dev/null; then
     runuser "${exec_args_ar[@]}" -c "${cmd_ar[*]}" "$user"
@@ -2200,7 +2207,7 @@ is_valid_mysql_db_or_table_name() {
 
   [ -z "$str" ] && return 1
 
-  if [[ "$str" =~ ^[A-Za-z0-9_]+$ ]]; then
+  if [[ "$str" =~ ^[A-Za-z0-9_-]+$ ]]; then
     return 0
   else
     return 1
@@ -2444,6 +2451,30 @@ get_list_of_enabled_vhosts() {
   fi
 
   return 0
+}
+
+get_list_of_mysql_instances() {
+  local config_dir="$lamp__paths__mysql_instances_config_dir"
+  local instance instance_dir
+  local -a instances_ar=()
+
+  if [ ! -d "$config_dir" ]; then
+    echo "$FUNCNAME(): missing config dir $config_dir" 1>&2
+    return 1
+  fi
+
+  for instance_dir in "$config_dir/"*; do
+    [ ! -d "$instance_dir" ] && continue
+    [ ! -f "$instance_dir/config.ini" ] && continue
+    instance=${instance_dir##*/}
+    instances_ar+=( "$instance" )
+  done
+
+  if [ ${#instances_ar[*]} -le 0 ]; then
+    return 0
+  else
+    echo "${instances_ar[@]}"
+  fi
 }
 
 get_vhost_with_hostname() {
@@ -3513,22 +3544,31 @@ App: @app_type@
 PHP Version: @php_version@
 SFTP User: @ssh_user@
 SFTP Host: @ssh_host@
-MySQL Host/Port: @db_host_port@
-MySQL Database:  @db_name@
 FastCGI: @fastcgi_status@
 Htpasswd: @htpasswd_status@
 Snapshots: @snapshots_txt@
 "
-
-  if should_skip_nginx_vhost "$vhost"; then
-    summ_txt+="Skipping nginx vhost: Yes"$'\n'
-  fi
 
   local domains_txt="" out_txt="" status_str=""
   local main_url ssh_host ssh_user db_name db_host_port db_name app_type
   local fastcgi_status htpasswd_status
   local snapshots_txt
   local ssl_txt php_ver
+
+  if [ -n "$v__mysql__instance" ]; then
+    summ_txt+="\
+MySQL Instance: @mysql_instance@
+MySQL Host/Port: @db_host_port@
+MySQL Database:  @db_name@
+"
+
+    db_host_port="$v__mysql__client__host:$v__mysql__client__port"
+    db_name="$v__app__database_name"
+  fi
+
+  if should_skip_nginx_vhost "$vhost"; then
+    summ_txt+="Skipping nginx vhost: Yes"$'\n'
+  fi
 
   if is_vhost_enabled "$vhost"; then
     status_str=enabled
@@ -3538,8 +3578,6 @@ Snapshots: @snapshots_txt@
 
   main_url=$(get_main_url_of_vhost "$vhost")
   app_type=$v__app__subsystem
-  db_host_port="$v__mysql__client__host:$v__mysql__client__port"
-  db_name="$v__app__database_name"
 
   if is_fastcgi_enabled_on_vhost "$vhost"; then
     fastcgi_status=enabled
@@ -3646,13 +3684,17 @@ Snapshots: @snapshots_txt@
   out_txt=${out_txt//@ssl_txt@/$ssl_txt}
   out_txt=${out_txt//@app_type@/$app_type}
   out_txt=${out_txt//@php_version@/$php_ver}
-  out_txt=${out_txt//@db_host_port@/$db_host_port}
-  out_txt=${out_txt//@db_name@/$db_name}
   out_txt=${out_txt//@ssh_user@/$ssh_user}
   out_txt=${out_txt//@ssh_host@/$ssh_host}
   out_txt=${out_txt//@fastcgi_status@/$fastcgi_status}
   out_txt=${out_txt//@htpasswd_status@/$htpasswd_status}
   out_txt=${out_txt//@snapshots_txt@/$snapshots_txt}
+
+  if [ -n "$v__mysql__instance" ]; then
+    out_txt=${out_txt//@mysql_instance@/$v__mysql__instance}
+    out_txt=${out_txt//@db_host_port@/$db_host_port}
+    out_txt=${out_txt//@db_name@/$db_name}
+  fi
 
   echo "$out_txt"
 }
@@ -3791,7 +3833,7 @@ print_vhost_metadata_json() {
   local tmp_bkp_files_json_ar="$tmp_dir_1/bkp_files_ar.json"
 
   local vhost_st fastcgi_st htpasswd_st st
-  local -a ssl_opts_ar
+  local -a ssl_opts_ar mysql_opts_ar app_opts_ar
   local app_type db_name doc_root user_inc_st https_redir_st
   local mysql_host mysql_user mysql_port mysql_password
   local linux_user
@@ -3812,10 +3854,12 @@ print_vhost_metadata_json() {
   fi
 
   app_type=$v__app__subsystem
-  db_name=$v__app__database_name
-  mysql_host=$v__mysql__client__host
-  mysql_port=$v__mysql__client__port
-  mysql_user=$v__mysql__client__user
+  if [ -n "$v__mysql__instance" ]; then
+    db_name=$v__app__database_name
+    mysql_host=$v__mysql__client__host
+    mysql_port=$v__mysql__client__port
+    mysql_user=$v__mysql__client__user
+  fi
 
   linux_user=$v__vhost__linux_user
 
@@ -3867,14 +3911,24 @@ print_vhost_metadata_json() {
     user_inc_st=0
   fi
 
+  if [ -n "$v__mysql__instance" ]; then
+    mysql_opts_ar+=( lamp.mysql.instance=$v__mysql__instance \
+                     lamp.mysql.host=$mysql_host             \
+                     lamp.mysql.port=$mysql_port             \
+                     lamp.mysql.user=$mysql_user
+    )
+  fi
+
+  if [ -n "$db_name" ]; then
+    app_opts_ar+=( app.database_name=$db_name )
+  fi
+
   jo ${pretty:+-p} -d . name=$vhost enabled@$vhost_st stack=$stack \
     domains:=$tmp_domains_json_af document_root="$doc_root" \
     backup_files:=$tmp_bkp_files_json_ar user_includes@$user_inc_st \
     fastcgi.enabled@$fastcgi_st htpasswd.enabled@$htpasswd_st \
-    app.linux_user="$linux_user" app.type=$app_type app.database_name=$db_name \
-    app.mysql_host=$mysql_host app.mysql_port=$mysql_port \
-    app.mysql_user=$mysql_user \
-    "${ssl_opts_ar[@]}"
+    app.linux_user="$linux_user" app.type=$app_type \
+    "${ssl_opts_ar[@]}" "${mysql_opts_ar[@]}" "${app_opts_ar[@]}"
   st=$?
 
   rm -rf "$tmp_dir_1"

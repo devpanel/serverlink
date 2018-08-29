@@ -1,0 +1,91 @@
+#!/bin/bash
+
+set_usage_msg \
+  "Usage: $bin_name $action <--instance name> <--vhost vname>
+
+  Options:
+    --instance <name>         name of the instance
+    --vhost    <vname>        name of the vhost
+    --drop-databases          drop the databases owned by the vhost
+
+  Remove the vhost from the specified MySQL instance.
+"
+
+devpanel_cmd__remove_vhost_from_mysql_instance() {
+  local opt instance vhost db_prefix
+  local drop_databases
+  
+  [ $# -eq 0 -o -z "$1" ] && usage
+
+  while [ -n "$1" ]; do
+    opt="$1"
+
+    case $opt in
+      --instance)
+        [ -z "$2" ] && error_missing_value $opt
+        instance="$2"
+        shift 2
+        ;;
+
+      --vhost)
+        [ -z "$2" ] && error_missing_value $opt
+        vhost="$2"
+        shift 2
+        ;;
+
+      --drop-databases)
+        drop_databases=yes
+        shift
+        ;;
+
+      --help)
+        usage
+        ;;
+
+      --)
+        shift
+        break
+        ;;
+
+      *)
+        error "unknown option: $opt" -
+        return $?
+        ;;
+    esac
+  done
+
+  [ -z "$instance" -o -z "$vhost" ] && usage
+
+  if ! mysql_instance_exists "$instance"; then
+    error "there's no instance with this name" -
+    return $?
+  fi
+
+  if ! vhost_exists --verbose "$vhost"; then
+    return 1
+  fi
+
+  load_mysql_instance_config "$instance" || return $?
+
+  load_vhost_config "$vhost" || return $?
+
+  if ! is_word_in_string "$vhost" "$mysql__params__vhosts"; then
+    error "this vhost is not on this instance." -
+    return $?
+  fi
+
+  if is_var_set_to_yes drop_databases; then
+    mysql_drop_vhost_dbs_with_prefix "$vhost" "$instance" \
+                "$v__mysql__database_prefix"
+  fi
+
+  mysql_drop_user "$instance" "$v__vhost__linux_user"
+
+  save_opts_in_mysql_instance "$instance" "params.vhosts -=w $vhost"
+
+  if [ -n "$v__mysql__instance" -a "$v__mysql__instance" == "$instance" ]; then
+    save_opts_in_vhost_config "$vhost" "- mysql"
+  fi
+
+  echo "Successfully removed vhost '$vhost' from MySQL instance '$instance'."
+}

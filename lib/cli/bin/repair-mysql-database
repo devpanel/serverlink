@@ -51,6 +51,11 @@ devpanel_cmd__repair_mysql_database() {
   fi
 
   load_vhost_config "$vhost" || return $?
+  if [ -z "$v__mysql__instance" ]; then
+    error "this vhost is not associated to a mysql instance" -
+    return $?
+  fi
+
   local user="$v__vhost__linux_user"
 
   cmd_args=( "$sys_dir/bin/repair-vhost-db" )

@@ -1,0 +1,137 @@
+#!/bin/bash
+
+set_usage_msg \
+  "Usage: $bin_name $action [opts] [--instance <name> | --vhost <vhost_name>]
+
+  Options:
+    --instance <name>         name of the mysql instance
+
+  Alternative Options
+    --vhost  <vhost>          restart mysql instance associated with vhost
+    --domain <domain>         find the vhost associated with the
+                              specified domain
+    --forceful                do a forceful stop (kill -9)
+
+  
+  NOTE: options --instance, --vhost and --domain are mutually exclusive.
+        Only one of it can be specified.
+
+
+  Stops the specified mysql instance.
+"
+
+devpanel_cmd__stop_mysql_instance() {
+  local param vhost vhost_user db_user domain instance forceful
+  local st
+  
+  [ $# -eq 0 -o -z "$1" ] && usage
+
+  while [ -n "$1" ]; do
+    param="$1"
+
+    case $param in
+      --vhost)
+        [ -z "$2" ] && error_missing_value vhost
+        vhost="$2"
+        shift 2
+        ;;
+      --domain)
+        [ -z "$2" ] && error_missing_value domain
+        domain="$2"
+        shift 2
+        ;;
+      --instance)
+        [ -z "$2" ] && error_missing_value $param
+        instance="$2"
+        shift 2
+        ;;
+      --forceful)
+        forceful=yes
+        shift
+        ;;
+      --help)
+        usage
+        ;;
+      --)
+        shift
+        break
+        ;;
+      *)
+        error "unknown parameter: $param" -
+        return $?
+        ;;
+    esac
+  done
+
+  local _opt
+  local -i opt_n
+  for _opt in instance vhost domain; do
+    if [ -n "${!_opt}" ]; then
+      opt_n+=1
+      if [ $opt_n -gt 1 ]; then
+        error "options --instance, --vhost and --domain are mutually exclusive." -
+        return $?
+      fi
+    fi
+  done
+
+  if [ -n "$domain" ]; then
+    if ! vhost=$(get_vhost_with_hostname "$domain"); then
+      error "couldn't find a vhost for domain." -
+      return $?
+    fi
+  fi
+
+  if [ -n "$vhost" ]; then
+    load_vhost_config "$vhost" || return $?
+    if [ -n "$v__mysql__instance" ]; then
+      instance="$v__mysql__instance"
+    else
+      error "vhost not associated to any mysql instance" -
+      return $?
+    fi
+  fi
+
+  if [ -n "$instance" ]; then
+    load_mysql_instance_config "$instance" || return $?
+  else
+    error "unable to find mysql instance" -
+    return $?
+  fi
+
+  if [ "$mysql__params__host_type" == external ]; then
+    error "can't stop a external mysql instance" -
+    return $?
+  fi
+
+  mysql_instance_is_running "$instance"
+  st=$?
+  if [ $st -ne 0 ]; then
+    if [ $st -eq 50 ]; then
+      # 50 == internal error
+      error "can't get status of mysql instance" -
+      return $?
+    else
+      error "mysql instance is not running" -
+      return $?
+    fi
+  fi
+
+  mysql_lock_instance_autostart "$instance"
+
+  if mysql_stop_instance "$instance"; then
+    echo "Succesfully stopped mysql instance '$instance'"
+    return 0
+  else
+    if [ -z "$forceful" ]; then
+      echo "Failed to stop mysql instance '$instance'" 1>&2
+      return 1
+    fi
+  fi
+
+  if [ -n "$forceful" ]; then
+    mysql_force_instance_stop "$instance"
+  else
+    return 0
+  fi
+}

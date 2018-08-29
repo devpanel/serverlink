@@ -1,0 +1,166 @@
+#!/bin/bash
+
+set_usage_msg \
+  "Usage: $bin_name ${cmd_ar[*]} <opts>
+
+  Required Options:
+    --name <name>                       name of the new mysql instance
+    --host <host>                       address of the mysql host
+    --mysql-root-password <password>    password of the mysql root user
+
+  Optional Arguments:
+    --port <port>                       TCP port of mysql (default: 3306)
+
+    --mysql-root-user <user>            username of the mysql root account
+                                        (default: root)
+
+    --set-as-default                    set this new instance as the
+                                        default instance for vhosts to use
+
+    --shared <yes|no>                   share with other vhosts (yes/no).
+                                        Default: yes
+
+  Add configuration information of an externally managed MySQL instance.
+"
+
+devpanel_cmd__add_external_mysql_instance() {
+  [ $# -eq 0 -o -z "$1" ] && usage
+
+  local opt set_default
+  local name mysql_conf_dir ini_file
+  local host port mysql_root_user mysql_root_password
+  local mysqld_cnf root_cnf dp_mysql_conf
+  local shared_st
+  local -a root_opts_ar=() mysqld_opts_ar=() dp_mysql_opts_ar=()
+
+  while [ -n "$1" ]; do
+    opt="$1"
+    case "$opt" in
+      --name)
+        [ -z "$2" ] && error_missing_value "$opt"
+        if [[ "$2" =~ ^[A-Za-z0-9_-]+$ ]]; then
+          name="$2"
+        else
+          error "invalid name received" -
+          return 1
+        fi
+
+        shift 2
+        ;;
+
+      --host)
+        [ -z "$2" ] && error_missing_value "$opt"
+        host="$2"
+        shift 2
+        ;;
+
+      --port)
+        [ -z "$2" ] && error_missing_value "$opt"
+        port="$2"
+        shift 2
+        ;;
+
+      --mysql-root-user)
+        [ -z "$2" ] && error_missing_value "$opt"
+        mysql_root_user="$2"
+        shift 2
+        ;;
+
+      --mysql-root-password)
+        [ -z "$2" ] && error_missing_value "$opt"
+        mysql_root_password="$2"
+        shift 2
+        ;;
+
+      --set-as-default)
+        set_default=yes
+        shift
+        ;;
+
+      --shared)
+        [ -z "$2" ] && error_missing_value "$opt"
+        if [[ "$2" != [Yy][Ee][Ss] && "$2" != [Nn][Oo] ]]; then
+          shared_st="${2,,}"
+        else
+          error "invalid value for option '$opt'" -
+          return $?
+        fi
+        shift 2
+        ;;
+
+      --help)
+        usage
+        ;;
+
+      --)
+        shift
+        break
+        ;;
+
+      *)
+        error "unknown option '$opt'" -
+        return $?
+        ;;
+    esac
+  done
+
+  local _param
+  for _param in name host mysql_root_password; do
+    [ -z "${!_param}" ] && error_missing_param $_param
+  done
+
+  port=${port:-3306}
+  shared_st=${shared_st:-yes}
+  mysql_root_user=${mysql_root_user:-root}
+
+  dp_mysql_opts_ar+=( "params.enabled = yes" "params.host_type = external" \
+                      "params.port = $port"  "params.shared = $shared_st" )
+
+  mysqld_opts_ar+=( "client.host      = $host"          )
+  mysqld_opts_ar+=( "client.port      = $port"          )
+  root_opts_ar+=( "client.user      = $mysql_root_user"     )
+  root_opts_ar+=( "client.password  = $mysql_root_password" )
+
+  if mysql_instance_exists "$name"; then
+    error "there's already a MySQL instance with this name." -
+    return $?
+  fi
+
+  if vhost_exists "$name"; then
+    # NOTE: technically it'd be possible to have an instance and a vhost
+    #       with the same name. But to avoid any confusion we don't allow it.
+    error "there's already a vhost with name '$name'" -
+    return $?
+  fi
+
+  mysql_conf_dir="$lamp__paths__mysql_instances_config_dir/$name"
+  dp_mysql_conf="$mysql_conf_dir/config.ini"
+  mkdir -m 711 -p "$mysql_conf_dir"
+  mysqld_cnf="$mysql_conf_dir/mysqld.cnf"
+
+  root_cnf="$mysql_conf_dir/root.client.cnf"
+  touch "$root_cnf"
+  chmod 600 "$root_cnf"
+
+  write_ini_file "$dp_mysql_conf" "${dp_mysql_opts_ar[@]}"
+
+  if write_ini_file "$root_cnf" "${root_opts_ar[@]}"; then
+    sed -i -e "1 i \
+!include $mysqld_cnf
+" "$root_cnf"
+    write_ini_file "$mysqld_cnf" "${mysqld_opts_ar[@]}"
+    echo "Successfully added mysql instance '$name'"
+  else
+    error "failed to create config file for instance '$name'" -
+    return $?
+  fi
+
+  if [ -n "$set_default" -a "$set_default" == yes ]; then
+    save_opts_in_lamp_config "mysql.default_instance = $name"
+    if [ $? -ne 0 ]; then
+      echo "Warning: failed to set this instance as the new default one" 1>&2
+    fi
+  fi
+
+  return 0
+}

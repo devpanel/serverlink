@@ -10,7 +10,7 @@ set_usage_msg \
 "
 
 devpanel_cmd__start_mysql_instances() {
-  local arg locked confirmed vhost
+  local arg locked confirmed instance
 
   while [ -n "$1" ]; do
     arg="$1"
@@ -43,18 +43,17 @@ devpanel_cmd__start_mysql_instances() {
     return 1
   fi
 
-  for vhost in $(get_list_of_enabled_vhosts); do
-    load_vhost_config "$vhost" || continue
+  for instance in $(get_list_of_mysql_instances); do
+    load_mysql_instance_config "$instance" || continue
 
-    if [ -z "$v__mysql__instance" ]; then
-      continue
-    elif [ -n "$v__mysql__external" -a "$v__mysql__external" == yes ]; then
+    if ! is_var_set_to_yes mysql__params__enabled; then
       continue
     fi
 
     if has_a_safe_level_of_free_ram; then
       # if the database was not manually stopped by the user, then start it
-      devpanel_run start mysql --vhost "$vhost" --conditional --quick
+      devpanel_run start mysql instance --instance "$instance" \
+                      --conditional --quick
     else
       # not enough free ram, the server might be in a high memory pressure.
       # Just stop trying to start databases
@@ -62,7 +61,7 @@ devpanel_cmd__start_mysql_instances() {
     fi
   done
 
-  cleanup_namespace v
+  cleanup_namespace mysql
 
   return 0
 }

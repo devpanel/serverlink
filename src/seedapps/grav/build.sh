@@ -114,31 +114,21 @@ load_devpanel_config || exit $?
 
 unset vhost_created
 if ! devpanel create vhost --vhost "$tmp_vhost" \
-  --from webenabled://blank; then
+  --from webenabled://blank --skip-mysql; then
 
   error "unable to create temporary vhost"
 fi
 vhost_created=1
 trap 'cleanup' EXIT
 
-# app:0:_:db_host $mysql_host
-# app:0:_:db_port $mysql_port
-# app:0:_:db_user $mysql_user
-# app:0:_:db_password $mysql_password
-# app:0:_:seed_app $subsystem
-# app:0:_:db_name $subsystem
-
 if ! save_opts_in_vhost_config "$tmp_vhost"     \
-     "app.subsystem     = $app_subsystem"       \
-     "app.database_name = $app_subsystem"; then
+     "app.subsystem     = $app_subsystem" ; then
 
   error "failed to update vhost config"
 fi
 
 su -l -s /bin/bash -c "
   set -ex
-
-  # . $lib_f
 
   cd ~/public_html
 
@@ -161,10 +151,6 @@ su -l -s /bin/bash -c "
   find $tmp_vhost -type f -iname \*.php -exec chmod 644 {} \;
 
   find $tmp_vhost -type d -exec chmod 711 {} \;
-
-  mysql -e 'DROP DATABASE scratch;'
-  mysql -e 'DROP DATABASE test;' || true
-  mysql -e 'CREATE DATABASE $app_subsystem;'
 
   $sys_dir/bin/restore-vhost-subsystem -s $app_subsystem -n \
     -O config_function=setup_from_cli

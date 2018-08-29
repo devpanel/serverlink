@@ -63,8 +63,7 @@ devpanel_cmd__run_mysql_client() {
   fi
 
   if [ $EUID -eq 0 ]; then
-    run_as_user "$user" "${cmd_args_ar[*]}"
-    # su -l -c "${cmd_args_ar[*]}" "$user"
+    run_as_user "$user" "${cmd_args_ar[@]}"
     st=$?
   else
     "${cmd_args_ar[@]}"

@@ -115,6 +115,10 @@ is_valid_subsystem_name_format() {
 }
 
 set_database_variables() {
+  if [ -z "$v__mysql__instance" ]; then
+    return 0
+  fi
+
   if [ -n "$v__app__database_name" ]; then
     database="$v__app__database_name"
   else
@@ -376,17 +380,7 @@ test_flags_logic() {
 }
 
 test_target_account() {
-  if ! check_user "$user_db" || ! check_user "$user_web"; then
-    return 1
-  fi
-
   if ! check_user "$user_web"; then
-    return 1
-  fi
-
-  if ! [ -d "$home" ]; then
-    printf "%s(): home dir '%s' doesn't exist\n" \
-      test_target_account "$home" 1>&2
     return 1
   fi
 

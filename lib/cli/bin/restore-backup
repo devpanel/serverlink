@@ -153,19 +153,26 @@ devpanel_cmd__restore_backup() {
     find "$vhost_home_dir" -type d -perm -0500 -exec chmod u+wx {} \;
   fi
 
-  local import_dbs_bin="$sys_dir/bin/import-databases-from-dir"
-  local -a import_dbs_cmd_ar=( "$import_dbs_bin" --safer-overwrite \
-                                --my-cnf "$v__mysql__client_file" "$temp_dir/db" )
-  if [ $EUID -eq 0 ]; then
-    run_as_user --login "$web_user" "${import_dbs_cmd_ar[@]}"
-  else
-    "${import_dbs_cmd_ar[@]}"
-  fi
-  st=$?
+  if [ -d "$temp_dir/db" -a -n "$v__mysql__instance" ]; then
+    local import_dbs_bin="$sys_dir/bin/import-databases-from-dir"
+    local -a import_dbs_cmd_ar=( "$import_dbs_bin" --safer-overwrite \
+                                  --my-cnf "$v__mysql__client_file" )
+    if [ -n "$v__mysql__database_prefix" ]; then
+      import_dbs_cmd_ar+=( --db-name-prefix "$v__mysql__database_prefix" )
+    fi
+    import_dbs_cmd_ar+=( "$temp_dir/db" )
 
-  if [ $st -ne 0 ]; then
-    error "failed to import databases" -
-    return $st
+    if [ $EUID -eq 0 ]; then
+      run_as_user --login "$web_user" "${import_dbs_cmd_ar[@]}"
+    else
+      "${import_dbs_cmd_ar[@]}"
+    fi
+    st=$?
+
+    if [ $st -ne 0 ]; then
+      error "failed to import databases" -
+      return $st
+    fi
   fi
 
   if [ -n "$remove_files" ]; then
@@ -196,14 +203,17 @@ devpanel_cmd__restore_backup() {
 
   # TODO(enhance): regenerate prod specific files (e.g. ~/logs ~/.my.cnf )
   if [ $EUID -eq 0 ]; then
-    run_as_user "$web_user" \
-      "rm -f $vhost_home_dir/{.my.cnf,logs} ; \
-       ln -s $v__vhost__logs_dir $vhost_home_dir/logs ; \
-       ln -s $v__mysql__client_file $vhost_home_dir/.my.cnf"
+    run_as_user "$web_user"               \
+      rm -f \~/{.my.cnf,logs}        \;   \
+      ln -s $v__vhost__logs_dir \~/logs \;
+
+    if [ -n "$v__mysql__instance" ]; then
+      run_as_user "$web_user" ln -s $v__mysql__client_file \~/.my.cnf
+    fi
   else
     rm -f $vhost_home_dir/{.my.cnf,logs}
     ln -s $v__vhost__logs_dir $vhost_home_dir/logs
-    ln -s $v__mysql__client_file $vhost_home_dir/.my.cnf
+    [ -n "$v__mysql__instance" ] && ln -s $v__mysql__client_file $vhost_home_dir/.my.cnf
   fi
 
   local extract_bin="$sys_dir/bin/extract-vhost-files-from-dir"
