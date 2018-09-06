@@ -36,8 +36,6 @@ devpanel_cmd__cat_vhost_config() {
 
   [ -z "$vhost" ] && error_missing_param vhost
   
-  "$sys_dir/libexec/check-vhost-name" archive "$vhost" || exit $?
-
   load_vhost_config "$vhost" || return $?
 
   if [ -f "$v__vhost__file" ]; then

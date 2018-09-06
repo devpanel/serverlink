@@ -24,12 +24,8 @@ devpanel_cmd__tail_vhost_logs() {
     case "$arg" in
       --vhost)
         [ -z "$2" ] && error_missing_value "$arg" && return 1
-        if vhost_exists "$2"; then
-          vhost="$2"
-          shift 2
-        else
-          exit 1
-        fi
+        vhost_exists "$2" || return $?
+        vhost="$2"
         ;;
       --access-log)
         include_access_log=1

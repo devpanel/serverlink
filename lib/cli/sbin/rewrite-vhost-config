@@ -47,9 +47,7 @@ devpanel_cmd__rewrite_vhost_config() {
 
   [ -z "$vhost" ] && { error_missing_param vhost; return $?; }
 
-  if ! vhost_exists "$vhost"; then
-    exit 1
-  fi
+  vhost_exists "$vhost" || return $?
 
   "$sys_dir/libexec/rewrite-vhost-config" "${cmd_args[@]}" "$vhost"
 }
