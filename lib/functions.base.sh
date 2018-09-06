@@ -302,15 +302,7 @@ load_vhost_config() {
   local vhost="$1"
   local ns="${2:-v}"
 
-  if [ -z "$vhost" ]; then
-    echo "$FUNCNAME(): missing vhost name" 1>&2
-    return 1
-  fi
-
-  if ! is_valid_vhost_string "$vhost"; then
-    echo "$FUNCNAME(): got an invalid string as vhost name" 1>&2
-    return 1
-  fi
+  vhost_exists -v "$vhost" || return $?
 
   local config_dir="$lamp__paths__vhosts_config_dir/$vhost"
   local ini_file="$config_dir/config.ini"

@@ -1544,22 +1544,59 @@ is_valid_vhost_string() {
 }
 
 vhost_exists() {
+  local opt verbose func_name
+  while [ -n "$1" -a "${1:0:1}" == - ]; do
+    opt="$1"
+    case $opt in
+      --verbose|-v)
+        # display optional verbose error msgs
+        verbose=yes
+        shift
+        ;;
+
+      --errmsg-as-self|-s)
+        # display the function name on error msgs as my own name, instead of
+        # displaying the name of the function that called me
+        func_name="${FUNCNAME[0]}"
+        shift
+        ;;
+
+      *)
+        echo "$FUNCNAME(): unknown option '$opt'" 1>&2
+        return 1
+        ;;
+    esac
+  done
+
+  # determine the function name to use on error msgs
+  if [ -z "$func_name" ]; then
+    if [ -n "${FUNCNAME[1]}" -a "${FUNCNAME[1]}" != main ]; then
+      func_name="${FUNCNAME[1]}"
+    else
+      func_name="${FUNCNAME[0]}"
+    fi
+  fi
+
   local test_str="$1"
 
   if [ -z "$test_str" ]; then
-    echo "$FUNCNAME(): received an empty vhost string" 1>&2
+    echo "$func_name(): received an empty vhost string" 1>&2
     return 1
   fi
 
   if ! is_valid_vhost_string "$test_str"; then
-    echo "$FUNCNAME(): invalid format of vhost name" 1>&2
+    echo "$func_name(): invalid format of vhost name" 1>&2
     return 1
   fi
 
   local config_dir="$lamp__paths__vhosts_config_dir/$test_str"
-  if [ -d "$config_dir" ]; then
+  if [ -d "$config_dir" -a -f "$config_dir/config.ini" ]; then
     return 0
   else
+    if [ -n "$verbose" -a "$verbose" == yes ]; then
+      echo "$func_name(): vhost doesn't exist" 1>&2
+    fi
+
     return 1
   fi
 }
