@@ -1,0 +1,75 @@
+#!/bin/bash
+
+set_usage_msg \
+  "Usage: $bin_name ${cmd_ar[*]} [opts] --vhost <vhost> [--] [mysql_client_args]
+
+  Options:
+    --vhost <vhost>             the vhost
+
+  
+  Run the mysql client for the specified vhost.
+
+  Other options can be passed directly to the mysql client executable by
+  adding the option terminator -- followed by the options to pass to mysql.
+"
+
+devpanel_cmd__run_mysql_client() {
+  [ $EUID -eq 0 ] && [ $# -eq 0 -o -z "$1" ] && usage
+
+  local name vhost user st
+
+  local -a cmd_args_ar=()
+  local -a opts_ar=( )
+
+  while [ -n "$1" ]; do
+    name="$1"
+    case "$name" in
+      --vhost)
+        [ -z "$2" ] && error_missing_value vhost
+        vhost="$2"
+        shift 2
+        ;;
+
+      --help)
+        usage
+        ;;
+
+      --)
+        shift
+        break
+        ;;
+
+      *)
+        usage
+        ;;
+    esac
+  done
+
+  if [ $EUID -eq 0 ]; then
+    [ -z "$vhost" ] && error_missing_param vhost
+  else
+    if ! vhost=$(get_vhost_from_linuxuser); then
+      error "unable to determine vhost for current user" -
+      return $?
+    fi
+  fi
+
+  load_vhost_config "$vhost" || return $?
+  user="$v__vhost__linux_user"
+
+  cmd_args_ar=( mysql --defaults-file="$v__mysql__client_file" )
+  if [ -n "$*" ]; then
+    cmd_args_ar+=( "$@" )
+  fi
+
+  if [ $EUID -eq 0 ]; then
+    run_as_user "$user" "${cmd_args_ar[*]}"
+    # su -l -c "${cmd_args_ar[*]}" "$user"
+    st=$?
+  else
+    "${cmd_args_ar[@]}"
+    st=$?
+  fi
+
+  return $st
+}
