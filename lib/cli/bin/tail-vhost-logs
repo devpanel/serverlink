@@ -42,8 +42,13 @@ devpanel_cmd__tail_vhost_logs() {
       --help)
         usage
         ;;
+      --)
+        shift
+        break
+        ;;
       *)
-        error "unknown option $name"
+        error "unknown option $arg" -
+        return $?
         ;;
     esac
   done

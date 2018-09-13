@@ -27,14 +27,19 @@ devpanel_cmd__list_apps() {
           error "invalid format for publisher name"
         fi
         ;;
+
       --help)
         usage
         ;;
-      --[A-Za-z0-9_-]*)
-        error "unknown option $name"
+
+      --)
+        shift
+        break
         ;;
+
       *)
-        usage
+        error "unknown option $arg" -
+        return $?
         ;;
     esac
   done
