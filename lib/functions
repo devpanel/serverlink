@@ -4428,7 +4428,7 @@ is_apache_running() {
 
   port=$(get_apache_http_port ) || return $?
 
-  fuser -s $port/tcp
+  fuser -s $port/tcp 2>/dev/null
 }
 
 start_apache() {
