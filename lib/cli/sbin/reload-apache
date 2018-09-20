@@ -1,0 +1,54 @@
+#!/bin/bash
+
+set_usage_msg \
+  "Usage: $bin_name $action [opts] --yes
+
+  Options:
+    --or-start            start Apache if it's not running
+
+  Reloads Apache httpd.
+"
+
+devpanel_cmd__reload_apache() {
+  local param start confirmed
+
+  [ $# -eq 0 -o -z "$1" ] && usage
+
+  while [ -n "$1" ]; do
+    param="$1"
+
+    case $param in
+      --yes)
+        confirmed=yes
+        shift
+        ;;
+
+      --or-start)
+        start=yes
+        shift
+        ;;
+
+      --help)
+        usage
+        ;;
+
+      --)
+        shift
+        break
+        ;;
+
+      *)
+        error "unknown parameter: $param" -
+        return $?
+        ;;
+    esac
+  done
+
+  [ -z "$confirmed" ] && usage
+
+  if [ -n "$start" -a "$start" == yes ]; then
+    reload_or_start_apache
+  else
+    reload_apache
+  fi
+}

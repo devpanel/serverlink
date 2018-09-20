@@ -1,0 +1,57 @@
+#!/bin/bash
+
+set_usage_msg \
+  "Usage: $bin_name $action [opts] --yes
+
+  Options:
+    --yes                 confirms the intent to start
+    --conditional         don't try to start it's already running
+
+  Starts Apache httpd.
+"
+
+devpanel_cmd__start_apache() {
+  local param conditional confirmed
+
+  [ $# -eq 0 -o -z "$1" ] && usage
+
+  while [ -n "$1" ]; do
+    param="$1"
+
+    case $param in
+      --yes)
+        confirmed=yes
+        shift
+        ;;
+
+      --conditional)
+        conditional=yes
+        shift
+        ;;
+
+      --help)
+        usage
+        ;;
+
+      --)
+        shift
+        break
+        ;;
+
+      *)
+        error "unknown parameter: $param" -
+        return $?
+        ;;
+    esac
+  done
+
+  [ -z "$confirmed" ] && usage
+
+  if [ -n "$conditional" -a "$conditional" == yes ]; then
+    if is_apache_running; then
+      return 0
+    fi
+  fi
+
+  start_apache
+}

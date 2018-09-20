@@ -4447,6 +4447,14 @@ stop_apache() {
   service $svc_name stop
 }
 
+restart_apache() {
+  if is_apache_running; then
+    stop_apache
+  fi
+
+  start_apache
+}
+
 reload_apache() {
   local svc_name
 
