@@ -328,12 +328,9 @@ if [ -n "$php_version" ]; then
   restore_args+=( --php-version "$php_version" )
 fi
 
-devpanel create vhost --vhost "$vhost" --file "$final_archive_file" \
+devpanel create vhost --vhost "$vhost" --from "$final_archive_file" \
   --subsystem "$subsystem" "${restore_args[@]}"
 
-"$self_dir/restore-vhost" "${restore_args[@]}" -s "$subsystem" \
-  ${install_profile:+-O install_profile="$install_profile"} \
-  "$vhost" "$final_archive_file"
 if [ $? -eq 0 ]; then
   echo
   echo "Successfully imported files and created vhost $vhost"
