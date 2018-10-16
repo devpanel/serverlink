@@ -3,7 +3,7 @@
 
 # To install devpanel on your server, start with a fresh server install of Ubuntu, Debian, CentOS or RedHat
 # login and use the following commands:
-# $ wget https://www.devpanel.com/install.sh
+# $ wget https://get.devpanel.com/install.sh
 # $ chmod 755 install
 # $ sudo ./install
 

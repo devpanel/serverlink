@@ -6,7 +6,7 @@ cleanup() {
 trap cleanup EXIT
 
 # install devPanel software
-curl -sS -L -O https://www.devpanel.com/install.sh || exit $?
+curl -sS -L -O https://get.devpanel.com/install.sh || exit $?
 chmod 755 install.sh
 ./install.sh || exit $?
 

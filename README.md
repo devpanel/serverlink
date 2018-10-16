@@ -24,7 +24,7 @@ At the moment it only works with `Virtualbox` as the provider.
 
 Run the installation script on the server you want to manage:
 ```
-# curl -s -LO https://www.devpanel.com/install.sh
+# curl -O https://get.devpanel.com/install.sh
 # chmod 755 install.sh
 # ./install.sh
 ```
