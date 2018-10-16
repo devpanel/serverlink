@@ -23,7 +23,8 @@ usage() {
 
 bootstrap_ubuntu() {
   export DEBIAN_FRONTEND='noninteractive'
-  apt-get -y install git libcrypt-ssleay-perl libjson-xs-perl liburi-perl
+  apt-get -y install git libcrypt-ssleay-perl libjson-xs-perl liburi-perl \
+                     gnupg
 }
 
 bootstrap_debian() {
@@ -156,7 +157,7 @@ if [ -n "$server_hostname" ]; then
   unset autogen_hostname
 fi
 
-if tty -s &>/dev/null; then
+if [ -t 0 ]; then
   has_tty=1
 fi
 
