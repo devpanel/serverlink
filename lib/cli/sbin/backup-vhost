@@ -6,7 +6,10 @@ set_usage_msg \
   Options:
     --vhost <vhost>         the vhost to backup
     --file  <filename>      the file where to save the files and database
-    --exclude <file>        a file with a list of paths (relative to vhost
+    --exclude <filename>    a file name not to include on the archive
+                            (relative to the vhost user's \$HOME dir,
+                             e.g. ./drush-backups )
+    --exclude-from <file>   a file with a list of paths (relative to vhost
                             home) to exclude from the archive
 
   Creates a backup file with the files and database of a vhost.
@@ -32,6 +35,11 @@ devpanel_cmd__backup_vhost() {
         shift 2
         ;;
       --exclude)
+        [ -z "$2" ] && error_missing_value "$name"
+        cmd_args+=( -x "$2" )
+        shift 2
+        ;;
+      --exclude-from)
         [ -z "$2" ] && error_missing_value "$name"
         cmd_args+=( -e "$2" )
         shift 2

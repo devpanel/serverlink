@@ -23,6 +23,9 @@ usage() {
     -e file   file containing paths to be excluded from backup (with ./ as
               the root of the \$HOME directory. This file is passed to tar
               --exclude-from option)
+    -x fname  file not to include on the backup file (passed to the
+              --exclude option of tar). This option can be used multiple
+              times to specify multiple files.
     -C        don't do checksum calculations
     -G        skip vhost group ownership changes on directories (used when
               removing a vhost)
@@ -66,7 +69,7 @@ process_still_exists() {
 
 [ $# -eq 0 -o -z "$1" ] && usage
 
-archive_vhost_web_options=""
+declare -a archive_web_args_ar=()
 check_archive_pathname_options=""
 debug=""
 in_user_path=""
@@ -75,20 +78,23 @@ skip_group_changes=""
 
 umask 027
 
-while getopts "PudGCe:" OPTOPT
+while getopts "PudGCe:x:" OPTOPT
 do
   case "$OPTOPT" in
-    P) archive_vhost_web_options="${archive_vhost_web_options+ }-P";;
+    P) archive_web_args_ar+=( -$OPTOPT ) ;;
     u) in_user_path=1 ;;
     d) debug=1 ;;
     e)
-      archive_vhost_web_options="${archive_vhost_web_options+ }-e $OPTARG"
+      archive_web_args_ar+=( -$OPTOPT "$OPTARG" )
       ;;
     C)
       unset calc_checksum
       ;;
     G)
       skip_group_changes=1
+      ;;
+    x)
+      archive_web_args_ar+=( -$OPTOPT "$OPTARG" )
       ;;
     *) exit 1;
   esac
@@ -343,7 +349,7 @@ else
 fi
 
 echo "Archiving web files..." 1>&2
-${debug:+run} "$0-web" $archive_vhost_web_options "$vhost" "$tmp_archive_dir/web" 1>&2
+${debug:+run} "$0-web" "${archive_web_args_ar[@]}" "$vhost" "$tmp_archive_dir/web" 1>&2
 if [ $? -ne 0 ]; then
   error "unable to archive web files (temp dir $tmp_archive_dir/web)"
 fi
