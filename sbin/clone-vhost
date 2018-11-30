@@ -86,8 +86,9 @@ remove_auth_tmp_authorized_keys()
 }
 
 
-if target_webenabled_version=`WEBENABLED_SERVER="$target_server" $dir/old-we-v1/webenabled-version` &&
-   [ -n "$target_webenabled_version" ] &&
+if target_webenabled_version=`WEBENABLED_SERVER="$target_server" \
+  $dir/../libexec/old-we-v1/webenabled-version`               && \
+  [ -n "$target_webenabled_version" ]                         && \
    expr "$target_webenabled_version" '>=' 2010-12-31-grg >/dev/null
 then
   echo target_supports_clone_vhost_proxy=1
