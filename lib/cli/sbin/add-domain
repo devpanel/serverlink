@@ -38,6 +38,12 @@ devpanel_cmd__add_domain() {
       --domain)
         [ -z "$2" ] && error_missing_value "$name"
         domains_ar+=( "$2" )
+
+        # NOTE: on Webenabled-v1 for each domain added it's also added the
+        # corresponding domain prefixed with "www.".
+        if is_webenabled_backwards_compat_enabled && [[ ! "$2" == www.* ]]; then
+          domains_ar+=( "www.$2" )
+        fi
         shift 2
         ;;
 
@@ -45,6 +51,12 @@ devpanel_cmd__add_domain() {
         [ -z "$2" ] && error_missing_value "$name"
         new_default_domain="$2"
         domains_ar+=( "$2" )
+
+        # NOTE: on Webenabled-v1 for each domain added it's also added the
+        # corresponding domain prefixed with "www.".
+        if is_webenabled_backwards_compat_enabled && [[ ! "$2" == www.* ]]; then
+          domains_ar+=( "www.$2" )
+        fi
         shift 2
         ;;
 
