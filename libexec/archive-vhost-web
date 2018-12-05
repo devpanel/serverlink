@@ -153,10 +153,12 @@ else
   virtwww_file="$conf"
 fi
 
-echo "Copying apache config to $archive_conf"
-if ! cp "$virtwww_file" "$archive_conf"; then
-  echo "Error: unable to copy apache file '$virtwww_file' to '$archive_conf'" 1>&2
-  exit 1
+if [ -f "$virtwww_file" ]; then
+  echo "Copying apache config to $archive_conf"
+  if ! cp "$virtwww_file" "$archive_conf"; then
+    echo "Error: unable to copy apache file '$virtwww_file' to '$archive_conf'" 1>&2
+    exit 1
+  fi
 fi
 
 if php_ver=$(get_php_version_from_vhost "$vhost" 2>/dev/null ); then
