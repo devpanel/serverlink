@@ -172,8 +172,9 @@ devpanel_cmd__extract_backup() {
   fi
 
   if [ -z "$skip_files" ]; then
-    local tmp_vhost tmp_vhost_file web_archive files_dir crontab_file
+    local tmp_vhost tmp_vhost_file files_dir crontab_file
     local logs_archive vhost_conf_file
+    local web_archive web_archive_1 web_archive_2
 
     tmp_vhost_file="$temp_dir/web/id"
     read tmp_vhost < "$tmp_vhost_file"
@@ -190,7 +191,17 @@ devpanel_cmd__extract_backup() {
       tar_web_opts_ar+=( --files-from="$include_file" --strip-components 3 )
     fi
 
-    web_archive="$temp_dir/web/w_$tmp_vhost.tgz"
+    web_archive_1="$temp_dir/web/$tmp_vhost.tgz"
+    web_archive_2="$temp_dir/web/w_$tmp_vhost.tgz"
+    if [ -f "$web_archive_1" ]; then
+      web_archive="$web_archive_1"
+    elif [ -f "$web_archive_2" ]; then
+      web_archive="$web_archive_2"
+    else
+      error "couldn't find web files ('$web_archive_1' nor '$web_archive_2')" -
+      return $?
+    fi
+
     files_dir="$target_dir/files"
     mkdir "$files_dir"
     [ -z "$quiet" ] && \
