@@ -25,6 +25,11 @@ set_usage_msg \
     --subsystem <name>        name of the app subsystem (e.g. drupal,
                               wordpress, etc)
 
+    --db-name name            name of the main database of the app
+
+    --dont-config-app         only extract the files, don't try to configure
+                              the app internals
+
     --config-function name    name of the config function to run to setup
                               the app
 
@@ -39,9 +44,9 @@ devpanel_cmd__create_vhost() {
   [ $# -eq 0 -o -z "$1" ] && usage
 
   local name vhost from source_type title desc
-  local branch app_password read_pw_stdin php_version subsystem
+  local branch app_password read_pw_stdin php_version subsystem db_name
   local source_type publisher uri_part app_url
-  local print_summary=yes
+  local print_summary=yes do_config_app=yes
   local -a cmd_args=() lamp_cmd_args=() app_cmd_ar=()
 
   while [ -n "$1" ]; do
@@ -68,7 +73,6 @@ devpanel_cmd__create_vhost() {
       --php-version)
         [ -z "$2" ] && error_missing_value "$name"
         php_version="$2"
-        lamp_cmd_args+=( "$name" "$php_version" )
         shift 2
         ;;
 
@@ -105,6 +109,12 @@ devpanel_cmd__create_vhost() {
         shift 2
         ;;
 
+      --db-name)
+        [ -z "$2" ] && error_missing_value "$name"
+        db_name="$2"
+        shift 2
+        ;;
+
       --config-function|--install-profile)
         [ -z "$2" ] && error_missing_value "$name"
         if [[ "$2" =~ ^[A-Za-z0-9_-]+$ ]]; then
@@ -114,6 +124,11 @@ devpanel_cmd__create_vhost() {
           return $?
         fi
         shift 2
+        ;;
+
+      --dont-config-app)
+        unset do_config_app
+        shift
         ;;
 
       --[A-Za-z0-9_-]*)
@@ -248,10 +263,44 @@ devpanel_cmd__create_vhost() {
       esac
   fi # // if [ -n $from ]
 
-  if [ -z "$subsystem" ]; then
-    # guess app type from tar ball when --subsystem not specified
-    subsystem=$(guess_subsystem_from_app_archive "$src_archive" ) || \
-      return $?
+  read_devpanel_ini_from_app_archive --missing-ok "$src_archive" || \
+    return $?
+
+  if [ -n "$subsystem" ]; then
+    src__app__subsystem="$subsystem"
+  else
+    if [ -n "$src__app__subsystem" ]; then
+      subsystem="$src__app__subsystem"
+    else
+      # guess app type from tar ball when --subsystem not specified
+      if ! subsystem=$(guess_subsystem_from_app_archive "$src_archive" ); then
+        error "couldn't detect the subsystem of the app. Please specify it on command line." -
+        return $?
+      fi
+    fi
+  fi
+
+  if is_known_seedapp_subsystem "$subsystem"; then
+    lamp_cmd_args+=( --subsystem "$subsystem" )
+  else
+    error "got an unknown app subsystem: $subsystem" -
+    return $?
+  fi
+
+  if [ -n "$php_version" ]; then
+    src__php__version="$php_version"
+    lamp_cmd_args+=( --php-version "$php_version" )
+  elif [ -n "$src__php__version" ]; then
+    php_version="$src__php__version"
+    lamp_cmd_args+=( --php-version "$php_version" )
+  fi
+
+  if [ -n "$db_name" ]; then
+    lamp_cmd_args+=( --db-name "$db_name" )
+    src__app__database_name="$db_name"
+  elif [ -n "$src__app__database_name" ]; then
+    db_name="$src__app__database_name"
+    lamp_cmd_args+=( --db-name "$db_name" )
   fi
 
   if ! devpanel_run create lamp vhost "${lamp_cmd_args[@]}" --vhost "$vhost" \
@@ -267,18 +316,20 @@ devpanel_cmd__create_vhost() {
     return $?
   fi
 
-  app_cmd_ar+=( --first-setup )
-  devpanel_run config app "${app_cmd_ar[@]}" --vhost "$vhost" || return $?
+  if [ -n "$do_config_app" ]; then
+    app_cmd_ar+=( --first-setup )
+    devpanel_run config app "${app_cmd_ar[@]}" --vhost "$vhost" || return $?
+
+    if [ -n "$app_password" ]; then
+      echo "$app_password" | devpanel_run reset app password --vhost "$vhost"
+      if [ $? -ne 0 ]; then
+        echo "Warning: failed setting the password for app..." 1>&2
+      fi
+    fi
+  fi
 
   if ! load_vhost_config "$vhost"; then
     echo "Warning: unable to load config for the newly created vhost" 1>&2
-  fi
-
-  if [ -n "$app_password" ]; then
-    echo "$app_password" | devpanel_run reset app password --vhost "$vhost"
-    if [ $? -ne 0 ]; then
-      echo "Warning: failed setting the password for app..." 1>&2
-    fi
   fi
 
   if ! devpanel_run rewrite vhost config --vhost "$vhost"; then
@@ -287,6 +338,11 @@ devpanel_cmd__create_vhost() {
   fi
 
   [ -n "$print_summary" ] && print_vhost_summary "$vhost"
+
+  if [ -z "$do_config_app" ]; then
+    echo "NOTE: as requested, the app internal config was not initialized."
+    echo
+  fi
 
   echo "Successfully created vhost $vhost"
 }

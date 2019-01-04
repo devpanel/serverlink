@@ -362,6 +362,21 @@ if [ -n "$v__mysql__instance" ]; then
   fi
 fi
 
+# write devpanel.ini with the app metadata
+for var in app__database_name app__subsystem php__version; do
+  _real_var="v__$var"
+  if [ -n "${!_real_var}" ]; then
+    opts_ar+=( "${var//__/.} = ${!_real_var}" )
+  fi
+done
+unset var _real_var
+
+if [ -n "${opts_ar[*]}" ]; then
+  tmp_app_ini_file="$tmp_archive_dir/.devpanel/app.ini"
+  mkdir -p "${tmp_app_ini_file%/*}"
+  write_ini_file "$tmp_app_ini_file" "${opts_ar[@]}"
+fi
+
 echo "Starting final tar ball archiving..." 1>&2
 base_tmp_target_file=$(basename "$tmp_target_file")
 tar -C "$tmp_archive_dir" --exclude="$base_tmp_target_file" \

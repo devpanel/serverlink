@@ -2785,6 +2785,77 @@ guess_subsystem_from_app_archive() {
   fi
 }
 
+read_devpanel_ini_from_app_archive() {
+  local opt_name
+  local missing_ok
+  while [ -n "$1" -a "${1:0:1}" == - ]; do
+    opt_name="$1"
+    case $opt_name in
+      --missing-ok)
+        missing_ok=1
+        shift
+        ;;
+
+      *)
+        echo "$FUNCNAME(): unknown option '$opt_name'" 1>&2
+        return 1
+        ;;
+    esac
+  done
+
+
+  local archive="$1"
+  local tmp_dir subsystem _sub_dir _tmp_subsystem
+  local ini_file tst_file_1 tst_file_2 _tst_file
+  local has_ini_file
+
+  if [ ! -e "$archive" ]; then
+    echo "$FUNCNAME(): path '$archive' doesn't exist" 1>&2
+    return 1
+  elif [ ! -f "$archive" ]; then
+    echo "$FUNCNAME(): path '$archive' is not a regular file" 1>&2
+    return 1
+  fi
+
+  tst_file_1="./.devpanel/app.ini"
+  tst_file_2=".devpanel/app.ini"
+  for _tst_file in "$tst_file_1" "$tst_file_2"; do
+    if tar -ztf "$archive" --no-recursion "$_tst_file" &>/dev/null; then
+      has_ini_file=yes
+
+      if ! tmp_dir=$(mktemp -d); then
+        echo "$FUNCNAME(): unable to create temp dir" 1>&2
+        return 1
+      fi
+
+      if tar -zxf "$archive" -C "$tmp_dir" "$_tst_file"; then
+        ini_file="$tmp_dir/${_tst_file#./}"
+        break
+      else
+        rm -rf "$tmp_dir"
+        echo "$FUNCNAME(): failed to extract '$_tst_file' from '$archive'" 1>&2
+        return 1
+      fi
+    fi
+  done
+
+  if [ -z "$has_ini_file" ]; then
+    # archive doesn't have an ini file
+    if [ -n "$missing_ok" ]; then
+      return 0
+    else
+      return 1
+    fi
+  fi
+
+  if ! read_ini_file_into_namespace "$ini_file" src; then
+    echo "$FUNCNAME(): failed to read from '$ini_file'" 1>&2
+    return 1
+  fi
+
+  return 0
+}
+
 translate_dayname_to_number() {
   local name="${1,,}"
   local n
