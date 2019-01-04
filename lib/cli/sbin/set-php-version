@@ -82,7 +82,7 @@ devpanel_cmd__set_php_version() {
 
   if [ "$version" == default ]; then
     if [ -n "$v__php__version" -a \
-            "$v__php_version" == "$lamp__php__default_version" ]; then
+            "$v__php__version" == "$lamp__php__default_version" ]; then
       echo "Ok, no action. This vhost is already using the default."
       return 0
     fi
