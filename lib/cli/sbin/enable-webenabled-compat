@@ -49,6 +49,11 @@ r_we:\1/;
 r_we:x:\1/}' /etc/shadow
   fi
 
+  sed -i -e '/^[[:space:]]*Host[[:space:]]\+\*[[:space:]]*$/ a \
+    Ciphers +aes128-ctr,aes192-ctr,aes256-ctr,aes128-cbc,3des-cbc\
+    KexAlgorithms +diffie-hellman-group1-sha1
+' /etc/ssh/ssh_config
+
   local user_dir="/home/r_we"
   if [ ! -d "$user_dir" ]; then
     cp -a "$sys_dir/install/skel/home/r_we/" "$user_dir"
