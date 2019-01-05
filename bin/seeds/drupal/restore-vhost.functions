@@ -235,7 +235,7 @@ drupal_update_php_config()
     fi
 
     # removing the file_temporary_path before exporting the site
-    run_mysql -B -D drupal -e "DELETE FROM variable WHERE name = 'file_temporary_path';"
+    sql_query "DELETE FROM variable WHERE name = 'file_temporary_path';"
 
   else
     # if the site is not to be exported, then add a custom temp dir
@@ -243,7 +243,7 @@ drupal_update_php_config()
     # users share /tmp)
 
     local is_tmp_set
-    is_tmp_set=$(mysql -B -D drupal -N -e "SELECT * FROM variable WHERE name = 'file_temporary_path'")
+    is_tmp_set=$(sql_query_result "SELECT * FROM variable WHERE name = 'file_temporary_path'")
     local tmp_dir="/tmp/.private/$user_web"
     local tmp_sql_str
     if [ -n "$is_tmp_set" ]; then
@@ -252,7 +252,7 @@ drupal_update_php_config()
       tmp_sql_str="INSERT INTO variable VALUES ( 'file_temporary_path', 's:${#tmp_dir}:\"$tmp_dir\";');"
     fi
 
-    run_mysql -B -D drupal -e "$tmp_sql_str" 
+    sql_query "$tmp_sql_str" 
   fi
 }
 
@@ -429,7 +429,7 @@ drupal_update_php_config_8() {
 drupal_set_tmp_6_or_7() {
   local is_tmp_set=""
 
-  is_tmp_set=$(mysql -B -D drupal -N -e "SELECT * FROM variable WHERE name = 'file_temporary_path'")
+  is_tmp_set=$(sql_query_result "SELECT * FROM variable WHERE name = 'file_temporary_path'")
 
   local tmp_dir="$HOME/.tmp"
 
@@ -446,7 +446,7 @@ drupal_set_tmp_6_or_7() {
     tmp_sql_str="INSERT INTO variable VALUES ( 'file_temporary_path', 's:${#tmp_dir}:\"$tmp_dir\";');"
   fi
 
-  run_mysql -B -D drupal -e "$tmp_sql_str"
+  sql_query "$tmp_sql_str"
 }
 
 drupal_set_tmp_8() {
@@ -461,7 +461,7 @@ drupal_set_cron_key_8() {
    local new_key=`wedp_gen_random_str 43`
   local sql_cron_key="UPDATE key_value SET value = 's:${#new_key}:\"$new_key\";' WHERE collection = 'state' AND name = 'system.cron_key';"
 
-  run_mysql -B -D drupal -e "$sql_cron_key"
+  sql_query "$sql_cron_key"
 }
 
 
