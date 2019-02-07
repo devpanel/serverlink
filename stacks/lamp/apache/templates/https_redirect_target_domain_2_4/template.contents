@@ -1,4 +1,3 @@
-# Template: @@__TEMPLATE_FILE__@@
 <VirtualHost @@__VHOST__IP_ADDR__@@:@@__VHOST__HTTP_PORT__@@>
   ServerName @@__VHOST__SERVER_NAME__@@
   ServerAlias @@__VHOST__SERVER_ALIAS__@@
