@@ -1,6 +1,14 @@
 #!/bin/bash
-dir=`dirname $0`
-dir_bin="$dir/../bin"
+self_bin=$(readlink -e "$0")
+if [ $? -ne 0 ]; then
+  echo "Error: unable to get self path" 1>&2
+  exit 1
+fi
+
+self_dir=${self_bin%/*}
+we_base_dir=${self_dir%/*/*}
+
+dir_bin="$we_base_dir/bin"
 vhost="$1"
 label="$2"
 error()
@@ -14,18 +22,24 @@ case "$0" in
   *) error "invalid action";;
 esac
 # using mode archive: it's OK to operate on a locked vhost
-$dir/check-vhost-name archive "$vhost" || exit 1
+$we_base_dir/libexec/check-vhost-name archive "$vhost" || exit 1
 
-lib_f="$dir/../lib/functions"
+lib_f="$we_base_dir/lib/functions"
 if ! source "$lib_f"; then
   echo "Error: unable to import $lib_f" 1>&2
   exit 1
 fi
+
 load_devpanel_config || exit $?
 
 load_vhost_config "$vhost" || exit $?
 user="$v__vhost__linux_user"
 home="$v__vhost__linux_user_home"
 [ -d "$home" ] || error "Home dir $home does not exist"
-if [ -n "$label" ]; then $dir/check-archive-pathname -u"$vhost" restore "$home/public_html/gen/archive/$label" || exit 1; fi
+
+if [ -n "$label" ]; then
+  $self_dir/check-archive-pathname -u"$vhost" restore \
+    "$home/public_html/gen/archive/$label" || exit 1
+fi
+
 echo -n "$label"|su -l -c "$dir_bin/archive-vhost-action $action" "$user"
