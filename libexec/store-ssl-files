@@ -372,9 +372,10 @@ fi
 
 # get domain from certificate (just for file naming purposes)
 domain_str=`openssl x509 -noout -subject -in "$orig_cert_file" | \
-              egrep -o '[Cc][Nn]=[^/]+'`
+              egrep -o '[Cc][Nn][[:space:]]?=[[:space:]]?[^/]+'`
 if [ $? -eq 0 -a -n "$domain_str" ]; then
-  domain_str=${domain_str#[Cc][Nn]=} # remove leading CN=
+  domain_str=${domain_str#*=} # remove anything=
+  domain_str=${domain_str# }  # remove leading space (if any)
   domain_str=${domain_str//\*./wildcard.} # replace *. with 'wildcard.'
 else
   error "unable to get domain from certificate"
