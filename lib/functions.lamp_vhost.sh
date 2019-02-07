@@ -184,7 +184,7 @@ apache_vhost_remove() {
   local vhost="$1"
 
   local apache_log_dir vhost_config_dir vhost_cache_dir
-  local removed_vhosts_dir archived_files_dir
+  local removed_vhosts_dir removed_dir archived_files_dir
   local user_web
   local date_ts
 
@@ -212,9 +212,6 @@ apache_vhost_remove() {
     rm_rf_safer "$apache_log_dir"
   fi
 
-  echo "Removing webenabled config dir"
-  rm_rf_safer "$vhost_config_dir"
-
   if [ -d "$vhost_cache_dir" ]; then
     echo "Removing cache dir $vhost_cache_dir"
     rm_rf_safer "$vhost_cache_dir"
@@ -225,13 +222,25 @@ apache_vhost_remove() {
       mkdir -p -m 700 "$removed_vhosts_dir"
     fi
 
-    removed_archives_dir="$removed_vhosts_dir/$vhost--$date_ts.$RANDOM"
-    if mv -v "$archived_files_dir" "$removed_archives_dir"; then
-      chmod 700 "$removed_archives_dir"
-      chown 0:0 "$removed_archives_dir"  # chown directory to root:root
-      find "$removed_archives_dir" -type f -exec chmod 0600 "{}" \; \
+    removed_dir="$removed_vhosts_dir/$vhost--$date_ts.$RANDOM"
+    echo "Removing vhost config dir"
+    if mv "$vhost_config_dir" "$removed_dir"; then
+      chmod 700 "$removed_dir"
+      chown 0:0 "$removed_dir"  # chown directory to root:root
+      find "$removed_dir" -type f -exec chmod 0600 "{}" \; \
                                            -exec chown 0:0 "{}" \;
+
+      mv "$archived_files_dir" "$removed_dir/archives"
+
+      crontab -l -u "$user_web" >$removed_dir/crontab
+
+      chown -R 0:0 "$removed_dir"  # chown directory recursively to root:root
+    else
+      echo "Warning: failed to remove config dir '$removed_dir'" 1>&2
+      [ -t 0 ] && sleep 2
     fi
+  else
+    rm -rf "$vhost_config_dir"
   fi
 
   rm -f "$v__vhost__config_link"
