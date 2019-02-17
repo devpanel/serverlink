@@ -105,9 +105,16 @@ centos_adjust_system_config() {
 
   # openssl req -subj "/C=--/ST=SomeState/L=SomeCity/O=SomeOrganization/OU=SomeOrganizationalUnit/CN=*.`hostname`" -new -x509 -days 3650 -nodes -out /opt/webenabled/config/os/pathnames/etc/ssl/certs/wildcard -keyout /opt/webenabled/config/os/pathnames/etc/ssl/keys/wildcard
 
-  if [ -n "$platform_version" -a "$platform_version" == 2 ]; then
-    if hash systemctl &>/dev/null; then
-      systemctl enable devpanel-taskd
+  if [ -n "$platform_version" ]; then
+    if [ "$platform_version" == 2 ]; then
+      if hash systemctl &>/dev/null; then
+        systemctl enable devpanel-taskd
+      fi
+    else
+      if [ -f /etc/init/devpanel-taskd.conf ]; then
+        # remove taskd service for versions != 2
+        rm -f /etc/init/devpanel-taskd.conf
+      fi
     fi
   fi
 
