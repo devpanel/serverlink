@@ -1,0 +1,11 @@
+[Unit]
+Description=bootstrap devPanel services
+After=network.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/devpanel bootstrap --yes
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
