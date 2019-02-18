@@ -469,7 +469,7 @@ case $op in
           echo "Removed $cache_link"
         fi
 
-        if rm -f "$file_path" && [ -n "$verbose" ]; then
+        if rm -f "$file_path"{,.md5,.sha1} && [ -n "$verbose" ]; then
           echo "Removed $file_path"
         fi
 
