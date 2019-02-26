@@ -28,6 +28,11 @@ old_get_key_value_from_vhost() {
     "$DEVPANEL_HOME/config/vhosts/$vhost/$key" 2>/dev/null
 }
 
+old_get_linuxuser_vhost_dir() {
+  echo "$DEVPANEL_HOME/config/key_value/linuxuser-vhost"
+}
+
+
 old_get_linux_username_from_vhost() {
   local vhost="$1"
 
@@ -41,6 +46,117 @@ old_get_linux_username_from_vhost() {
   fi
 
   echo "$user"
+}
+
+old_is_valid_vhost_string() {
+  local string="$1"
+
+  if [ -z "$string" ]; then
+    echo "$FUNCNAME(): received an empty vhost string" 1>&2
+    return 1
+  fi
+
+  local vhost_regex='^[a-z0-9]+[a-z0-9-]+$'
+
+  if [[ "$string" =~ $vhost_regex ]]; then
+    return 0
+  else
+    return 1
+  fi
+}
+
+old_vhost_exists() {
+  local test_str="$1"
+
+  if [ -z "$test_str" ]; then
+    echo "$FUNCNAME(): received an empty vhost string" 1>&2
+    return 1
+  fi
+
+  if ! old_is_valid_vhost_string "$test_str"; then
+    echo "$FUNCNAME(): invalid format of vhost name" 1>&2
+    return 1
+  fi
+
+  local config_dir="$DEVPANEL_HOME/config/vhosts/$test_str"
+  if [ -d "$config_dir" ]; then
+    return 0
+  else
+    return 1
+  fi
+}
+
+old_get_vhost_from_linuxuser() {
+  local user="${1:-$USER}"
+  local vhost
+
+  if [ -z "$user" ]; then
+    echo "$FUNCNAME(): unable to get username information" 1>&2
+    return 1
+  fi
+
+  local map_dir map_link
+  map_dir=$(old_get_linuxuser_vhost_dir)
+  map_link="$map_dir/$user"
+  if [ -L "$map_link" ]; then
+    old_deref_contents "$map_link"
+    return $?
+  else
+    # for servers installed before the $map_link was created
+    if [ ${#user} -gt 2 -a "${user:0:2}" == w_ ]; then
+      vhost=${user#w_}
+      if old_vhost_exists "$vhost"; then
+        echo "$vhost"
+        return 0
+      fi
+    fi
+  fi
+
+  return 1
+}
+
+old_get_vhost_key_value() {
+  local key="$1"
+  local vhost="$2"
+  local value=""
+
+  if [ -z "$vhost" ]; then
+    if ! vhost=$(old_get_vhost_from_linuxuser); then
+      echo "$FUNCNAME(): missing vhost, please specify it" 1>&2
+      return 1
+    fi
+  fi
+
+  local key_link="$DEVPANEL_HOME/config/vhosts/$vhost/$key"
+
+  old_deref_contents "$key_link"
+}
+
+old_get_1st_level_field_value_from_app() {
+  local vhost="$1"
+  local field="$2"
+  local prefix="app:0:_"
+  local value
+
+  value=$(old_get_vhost_key_value "$prefix:$field" "$vhost" 2>/dev/null)
+  if [ $? -eq 0 ]; then
+    echo -n "$value"
+    return 0
+  else
+    return 1
+  fi
+}
+
+old_get_mysql_db_port_from_vhost() {
+  local vhost="$1"
+
+  old_get_1st_level_field_value_from_app "$vhost" db_port
+}
+
+old_get_mysql_db_password_from_vhost() {
+  local vhost="$1"
+
+  old_get_1st_level_field_value_from_app "$vhost" db_password
 }
 
 get_mysql_root_password() {
@@ -106,7 +222,7 @@ for vhost in $(old_get_list_of_vhosts); do
   usermod -a -G "$w_user" "$b_user"
 
   host="127.0.0.1"
-  port=$(get_mysql_db_port_from_vhost "$vhost" )
+  port=$(old_get_mysql_db_port_from_vhost "$vhost" )
   root_password=$(get_mysql_root_password "$b_user" )
   socket="/home/clients/databases/$b_user/mysql/mysql.sock"
 
@@ -124,7 +240,7 @@ for vhost in $(old_get_list_of_vhosts); do
     echo "$root_cnf_str" | update-ini-file "$root_my_cnf"
   fi
 
-  w_pass=$(get_mysql_db_password_from_vhost "$vhost" )
+  w_pass=$(old_get_mysql_db_password_from_vhost "$vhost" )
   web_my_cnf="$my_cnf_dir/web.client.cnf"
   web_cnf_str=""
   if [ ! -f "$web_my_cnf" ]; then
