@@ -1,5 +1,48 @@
 #!/bin/bash
 
+old_deref_contents() {
+  local path="$1"
+
+  local value=""
+
+  if [ -L "$path" ]; then
+    value=`readlink "$path"`
+  elif [ -f "$path" ]; then
+    value=`cat "$path"`
+  elif [ ! -e "$path" ]; then
+    echo "$FUNCNAME(): path doesn't exist $path" 1>&2
+    return 1
+  else
+    echo "$FUNCNAME(): don't know how to de-reference path $path" 1>&2
+    return 1
+  fi
+
+  echo -n "$value"
+}
+
+old_get_key_value_from_vhost() {
+  local key="$1"
+  local vhost="${2:-$_dp_vhost}"
+
+  old_deref_contents \
+    "$DEVPANEL_HOME/config/vhosts/$vhost/$key" 2>/dev/null
+}
+
+old_get_linux_username_from_vhost() {
+  local vhost="$1"
+
+  local user
+
+  if user=$(old_get_key_value_from_vhost \
+              apache_vhost:_:linux_user "$vhost"); then
+    :
+  else
+    user="w_$vhost"
+  fi
+
+  echo "$user"
+}
+
 get_mysql_root_password() {
   local instance="$1"
   local output
@@ -49,9 +92,11 @@ dbmgr_bin_dir="$dbmgr_dir/current/bin"
 dbmgr_my_cnf_dir="$dbmgr_dir/config/mysql"
 
 for vhost in $(old_get_list_of_vhosts); do
-  get_linux_username_from_vhost "$vhost" && \
-  w_user="$_dp_value" || continue
-  b_user="b_${w_user#w_}"
+  if w_user=$(old_get_linux_username_from_vhost "$vhost"); then
+    b_user="b_${w_user#w_}"
+  else
+    continue
+  fi
 
   my_cnf_dir="$dbmgr_my_cnf_dir/$b_user"
   if [ ! -d "$my_cnf_dir" ]; then
