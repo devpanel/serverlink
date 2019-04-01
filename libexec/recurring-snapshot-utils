@@ -322,11 +322,11 @@ case $op in
             error "unable to link '$epoch_status_real_path' to '$archive_file'"
           fi
         fi
-      else # broken $epoch_link_status
-        echo "Warning: broken time link $epoch_link_status, removing..." 1>&2
+      else # broken $epoch_status_link
+        echo "Warning: broken time link $epoch_status_link, removing..." 1>&2
         sleep 1
-        if ! rm -f "$epoch_link_status"; then
-          error "unable to remove link $epoch_link_status"
+        if ! rm -f "$epoch_status_link"; then
+          error "unable to remove link $epoch_status_link"
         fi
       fi
     fi
@@ -368,6 +368,7 @@ case $op in
 
     if [ $snap_st -eq 0 ]; then
       if ln -s "$backup_basename" "$frequency_status_link"; then
+        rm -f "$epoch_status_link"
         if ! ln -s "$backup_basename" "$epoch_status_link"; then
           error "unable to create epoch status link $epoch_status_link"
         fi
