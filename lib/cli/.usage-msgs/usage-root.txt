@@ -13,7 +13,7 @@ Usage: @self_basename@ <command> [args]
     disable vhost        disables the specified vhost
 
  Other common commands
-    manage htpasswd      manage htpasswd users (add and delete users, change passwords)
+    add htpasswd user    adds a new user on htpasswd authentication
     configure ssl        configures SSL for the specified site
     enable lets-encrypt  enable Let's Encrypt certificates on the specified vhost
     refresh config       updates config files of the app with DB credentials

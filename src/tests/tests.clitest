@@ -55,10 +55,16 @@ $ devpanel remove domain --vhost d7-test-one --domain my-first-domain.com  #=> -
 $ devpanel enable htpasswd --vhost d7-test-one                          #=> --exit 0
 $ fgrep 'htpasswd=yes' /etc/devpanel/lamp/vhosts/d7-test-one/config.ini #=> --exit 0
 $ devpanel test http --vhost d7-test-one --http-code 401                #=> --exit 0
-$ echo test_pw | devpanel manage htpasswd --add-user test --vhost d7-test-one #=> --exit 0
+$ echo test_pw | devpanel add htpasswd user --username test --vhost d7-test-one #=> --exit 0
 $ devpanel test http --vhost d7-test-one --http-user-pass test:test_pw   #=> --exit 0
+$ echo new_pw | devpanel change htpasswd password --username test --vhost d7-test-one      #=> --exit 0
+$ devpanel test http --vhost d7-test-one --http-user-pass test:test_pw --http-code 401  #=> --exit 0
+$ devpanel test http --vhost d7-test-one --http-user-pass test:new_pw    #=> --exit 0
+$ devpanel remove htpasswd user --username test --vhost d7-test-one      #=> --exit 0
+$ devpanel test http --vhost d7-test-one --http-user-pass test:new_pw --http-code 401 #=> --exit 0
 $ devpanel disable htpasswd --vhost d7-test-one            #=> --exit 0
 $ fgrep 'htpasswd=yes' /etc/devpanel/lamp/vhosts/d7-test-one/config.ini #=> --exit 1
+$ devpanel test http --vhost d7-test-one  #=> --exit 0
 
 $ devpanel enable fastcgi --vhost d7-test-one              #=> --exit 0
 $ fgrep 'fastcgi=yes' /etc/devpanel/lamp/vhosts/d7-test-one/config.ini #=> --exit 0

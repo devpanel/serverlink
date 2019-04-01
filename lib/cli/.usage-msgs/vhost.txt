@@ -36,8 +36,9 @@
                                     specified site
     disable htpasswd                disables htpasswd password protection for the
                                     specified site
-    manage htpasswd                 manage htpasswd users (add and delete users, change
-                                    passwords)
+    add    htpasswd user            adds a new user on htpasswd authentication
+    remove htpasswd user            removes a user from htpasswd authentication
+    change htpasswd password        changes the htpasswd password for a user
 
   Apache SSL operations:
     configure ssl                   configures SSL for the specified site
