@@ -364,18 +364,43 @@ case $op in
     nice -n $niceness "$self_dir/archive-vhost" \
       ${exclude_file:+-e $exclude_file} "$vhost" "$backup_str"
 
-    if [ $? -eq 0 ]; then
+    snap_st=$?
+
+    if [ $snap_st -eq 0 ]; then
       if ln -s "$backup_basename" "$frequency_status_link"; then
         if ! ln -s "$backup_basename" "$epoch_status_link"; then
           error "unable to create epoch status link $epoch_status_link"
         fi
       fi
-    else
-      # archive failed
-      exit 1
     fi
 
-    exit 0
+    # Run the post_cmd hook command.
+    #
+    # It runs regardless if the snapshot succeeded or not.
+    # So it's up to the script to check for the exit code variable, if
+    # needed.
+    unset post_run_cmd
+    if [ -n "$v__recurring_snapshots__post_run_cmd" ]; then
+      # check first for a vhost specific command
+      post_run_cmd="$v__recurring_snapshots__post_run_cmd"
+    elif [ -n "$lamp__recurring_snapshots__post_run_cmd" ]; then
+      # fallback to a global system command, if any
+      post_run_cmd="$lamp__recurring_snapshots__post_run_cmd"
+    fi
+
+    if [ -n "$post_run_cmd" ]; then
+      {
+        DEVPANEL_VHOST=$vhost                             \
+        DEVPANEL_SNAPSHOT_EXIT_CODE=$snap_st              \
+        DEVPANEL_SNAPSHOT_FREQUENCY=$frequency            \
+        DEVPANEL_SNAPSHOT_DAY=$day                        \
+        DEVPANEL_SNAPSHOT_HOUR=$hour                      \
+        DEVPANEL_SNAPSHOT_FILE=$archive_file            ; \
+        eval "$post_run_cmd"
+      }
+    fi
+
+    exit $snap_st
     ;;
   remove-old-snapshot-files)
     [ $# -lt 1 -o -z "$1" ] && usage_remove_old_snapshot_files
