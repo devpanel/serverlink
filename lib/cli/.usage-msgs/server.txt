@@ -18,8 +18,14 @@ Usage: @self_basename@ <command> [args]
     run distro update               run now the update of the Linux distro
                                     packages
 
-    run scheduled snapshots         run now the scheduled backup snapshots for
-                                    the virtual hosts
+    run scheduled snapshots         run now the scheduled backup snapshots
+                                    for the virtual hosts
+
+    add base domain on lets-encrypt       add the base domain to Let's Encrypt
+                                          certificates
+
+    disable base domain on lets-encrypt   stop adding base domain to
+                                          Let's Encrypt certificates
 
     set default php                 sets the default PHP version for virtual hosts
     restart taskd                   restart devPanel taskd

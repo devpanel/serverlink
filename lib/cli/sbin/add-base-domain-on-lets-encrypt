@@ -1,0 +1,60 @@
+#!/bin/bash
+
+set_usage_msg \
+  "Usage: $bin_name ${cmd_ar[*]} --yes
+
+  Options:
+    --yes           confirm the intent to execute
+
+  Add the base domain to Let's Encrypt certificates when setting up on
+  new vhosts (existing vhosts are unaffected by changes on this option).
+"
+
+devpanel_cmd__add_base_domain_on_lets_encrypt() {
+  [ $# -eq 0 -o -z "$1" ] && usage
+
+  local opt confirmed
+  local -a cmd_args=()
+
+  while [ -n "$1" ]; do
+    opt="$1"
+    case "$opt" in
+      --yes)
+        confirmed=yes
+        shift
+        ;;
+
+      --help)
+        usage
+        ;;
+
+      --)
+        shift
+        break
+        ;;
+
+      *)
+        error "unknown option $opt" -
+        return $?
+        ;;
+    esac
+  done
+  
+  if ! is_var_set_to_yes confirmed ; then
+    error "missing confirmation. Specify option --yes" -
+    return $?
+  fi
+
+  if is_var_set_to_yes lamp__apache_ssl__lets_encrypt_on_base_domain ; then
+    echo "Ok. Option is already set to yes. Nothing done." 1>&2
+    return 0
+  fi
+
+  save_opts_in_lamp_config "apache ssl.lets_encrypt_on_base_domain = yes"
+  if [ $? -eq 0 ]; then
+    echo "Successfully enabled option."
+  else
+    error "failed to enable option." -
+    return $?
+  fi
+}

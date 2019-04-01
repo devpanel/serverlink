@@ -69,8 +69,8 @@ set_lets_encrypt_metadata_for_vhost() {
 }
 
 cleanup() {
-	if [ -n "$moved_htaccess" ]; then
-		su -l -s /bin/bash -c "mv -n $htaccess_file_moved $htaccess_file"
+  if [ -n "$moved_htaccess" ]; then
+    su -l -s /bin/bash -c "mv -n $htaccess_file_moved $htaccess_file"
   fi
 }
 
@@ -111,6 +111,20 @@ case "$op" in
   enable)
     [ $# -lt 1 -o -z "$1" ] && usage "$op"
 
+    while [ -n "$1" -a "${1:0:1}" == - ]; do
+      opt="$1"
+      case "$opt" in
+        --include-base-domain)
+          include_base_domain=yes
+          shift
+          ;;
+
+        *)
+          error "unknown option '$opt'"
+          ;;
+      esac
+    done
+
     vhost="$1"
     shift
 
@@ -149,10 +163,23 @@ case "$op" in
       error "public directory not found: $public_dir"
     fi
 
+    if [ -z "$include_base_domain" ] && \
+      is_to_setup_lets_encrypt_on_base_domain ; then
+
+      include_base_domain=yes
+    fi
+
     declare -a domain_args=()
     unset first_domain
     for tmp_domain in $v__vhost__domains; do
-      if [[ "$tmp_domain" == *.$server_base_domain ]]; then
+      if [[ "$tmp_domain" != *.* ]]; then
+        # domain doesn't include a dot, so consider it a local domain, as
+        # it'll not be possible to validate it on Let's Encrypt
+        continue
+      elif [[ "$tmp_domain" == *.$server_base_domain ]] && \
+           ! is_var_set_to_yes include_base_domain     ; then
+        # domain is the base domain, but adding the base domain to LE is not
+        # enabled
         continue
       else
         if [ ${#domain_args[@]} -eq 0 ] ; then
@@ -166,12 +193,12 @@ case "$op" in
       error "vhost '$vhost' doesn't have any custom domain. Need to add one first before using Let's Encrypt"
     fi
 
-		trap cleanup EXIT
+    trap cleanup EXIT
 
     htaccess_file="$public_dir/.htaccess"
     htaccess_file_moved="$htaccess_file.${RANDOM}_${RANDOM}"
 
-		# if the .htaccess file exists, then move it out temporarily because
+    # if the .htaccess file exists, then move it out temporarily because
     # many apps have .htaccess rules that block the web validation of Let's
     # Encrypt. Will be brought back after the certificate generation
     unset moved_htaccess
@@ -303,11 +330,11 @@ case "$op" in
       error "unable to disable SSL config for vhost $vhost"
     fi
 
-		if ! disable_lets_encrypt_for_vhost "$vhost"; then
-			error "unable to remove Let's Encrypt metadata for vhost $vhost"
-		fi
+    if ! disable_lets_encrypt_for_vhost "$vhost"; then
+      error "unable to remove Let's Encrypt metadata for vhost $vhost"
+    fi
 
-		exit 0
+    exit 0
     ;;
   *)
     usage

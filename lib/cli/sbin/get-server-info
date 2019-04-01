@@ -61,6 +61,12 @@ devpanel_cmd__get_server_info() {
     s3_delete_on_upload=${conf__s3__delete_after_upload:-no}
   fi
 
+  if is_var_set_to_yes lamp__apache_ssl__lets_encrypt_on_base_domain; then
+    le_on_base_domain_st=yes
+  else
+    le_on_base_domain_st=no
+  fi
+
   info_txt="Linux Distribution: $linux_distro
 Vhosts base domain: $vhosts_domain
 Apache HTTP  Port: $apache_http_port
@@ -69,6 +75,7 @@ HTTP to HTTPS redir: $https_redir_st by default
 Number of vhosts: $n_vhosts
 Distro Updates: $distro_updates_st
 Long vhost names: $long_vhost_names_st
+Let's Encrypt On Base Domain: $le_on_base_domain_st
 "
 
   if is_webenabled_backwards_compat_enabled; then

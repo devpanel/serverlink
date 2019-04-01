@@ -5,6 +5,7 @@ set_usage_msg \
 
   Options:
     --vhost <vhost>         the vhost to protect
+    --include-base-domain   include the base domain on the SSL cert
 
   Enables Let's Encrypt certificates on the specified vhost.
 "
@@ -12,7 +13,7 @@ set_usage_msg \
 devpanel_cmd__enable_lets_encrypt() {
   [ $# -eq 0 -o -z "$1" ] && usage
 
-  local name vhost file
+  local name vhost file on_base_domain
   local -a cmd_args=()
 
   while [ -n "$1" ]; do
@@ -23,17 +24,28 @@ devpanel_cmd__enable_lets_encrypt() {
         vhost="$2"
         shift 2
         ;;
+
+      --include-base-domain)
+        on_base_domain=yes
+        shift
+        ;;
+
       --help)
         usage
         ;;
+
       *)
-        cmd_args+=( "$name" )
-        shift
+        error "unknown option '$name'" -
+        return 1
         ;;
     esac
   done
 
   [ -z "$vhost" ] && error_missing_param vhost
 
-  "$sys_dir/libexec/lets-encrypt-wrapper" enable $vhost
+  if is_var_set_to_yes on_base_domain || is_to_setup_lets_encrypt_on_base_domain; then
+    cmd_args+=( --include-base-domain )
+  fi
+
+  "$sys_dir/libexec/lets-encrypt-wrapper" enable "${cmd_args[@]}" $vhost
 }

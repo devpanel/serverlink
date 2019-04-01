@@ -4762,6 +4762,33 @@ am_i_on_digital_ocean() {
   bios_vendor_matches digitalocean
 }
 
+is_var_set_to_yes() {
+  local var="$1"
+
+  if [ -n "${!var}" ] && [[ "${!var}" == [Yy][Ee][Ss] ]]; then
+    return 0
+  else
+    return 1
+  fi
+}
+
+is_to_setup_lets_encrypt_on_base_domain() {
+  local base="lets_encrypt_on_base_domain"
+  local vhost_var="v__ssl__$base"
+
+  # check local vhost config
+  if [ -n "${!vhost_var}" ]; then
+    if is_var_set_to_yes $vhost_var; then
+      return 0
+    else
+      return 1
+    fi
+  fi
+
+  # fallback to global system config
+  is_var_set_to_yes lamp__apache_ssl__$base
+}
+
 for _name in base lamp_vhost linux-kernel mysql; do
   if [ -f "$DEVPANEL_HOME/lib/functions.$_name.sh" ]; then
     . "$DEVPANEL_HOME/lib/functions.$_name.sh"
