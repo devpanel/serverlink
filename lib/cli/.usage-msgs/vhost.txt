@@ -1,67 +1,81 @@
-Usage: @self_basename@ <command> [args]
-
   Vhost Oriented Commands:
 
-    show vhost info                 displays information about a given vhost
-    list vhosts                     lists all vhosts on this server
-    list backups                    list the backup files available for the specified
-                                    vhost
+  Create, List, Display Info, Enable/Disable Remove vhosts:
     create vhost                    creates a new site with the specified application
-    backup vhost                    creates a backup of the app files and database
+    remove vhost                    removes an existing application
+    list vhosts                     lists all vhosts on this server
+    show vhost info                 displays information about a given vhost
+    disable vhost                   disables the specified vhost
+    enable  vhost                   enables the specified vhost (case it's disabled)
     clone vhost                     creates a new vhost based on an existing one
+    set vhost description           sets a a short description of the vhost's purpose
+
+  Backup vhosts:
+    list backups                    list the backup files available for the specified
+    backup vhost                    creates a backup of the app files and database
+    enable vhost snapshots          enables backup snashots for the specified vhost
+    disable vhost snapshots         disables backup snashots for the specified vhost
     extract backup                  extracts the contents of a backup file
     get link to backup              get a temporary link to download a backup file
-    remove vhost                    removes an existing application
+
     enter                           start a shell for the specified vhost
+
+  MySQL commands on vhost:
     start mysql                     starts mysql for the specified vhost or domain
     stop mysql                      stops  mysql for the specified vhost or domain
     restart mysql                   restarts mysql for the specified vhost or domain
+    repair  mysql database          run a mysql repair on the vhost database
+
+  Domain Operations on vhost:
     add domain                      adds a domain to a vhost
     remove domain                   adds a domain from a vhost
     find domain                     finds the vhost with a specific domain name
-    enable  fastcgi                 enables FastCGI for the specified vhost
-    disable fastcgi                 disables FastCGI for the specified vhost
+
+  Apache htpasswd password protection operations:
     enable htpasswd                 enables htpasswd password protection for the
                                     specified site
     disable htpasswd                disables htpasswd password protection for the
                                     specified site
     manage htpasswd                 manage htpasswd users (add and delete users, change
                                     passwords)
-    import from git                 import a new virtual host from git
-    import from files               import a new virtual host from files
-    import app from url             import a new virtual host from a URL
-    add ssh key                     adds ssh keys to the specified vhost
-    remove ssh key                  remove ssh keys from the specified vhost
+
+  Apache SSL operations:
     configure ssl                   configures SSL for the specified site
     disable   ssl                   disable SSL for the specified site
-    enable https redirect           enables HTTP to HTTPS redirect for the vhost
-    disable https redirect          disables HTTP to HTTPS redirect for the vhost
     enable  lets-encrypt            enable Let's Encrypt SSL certificates on the vhost
     disable lets-encrypt            disable Let's Encrypt SSL certificates on the vhost
     renew   lets-encrypt            renew Let's Encrypt SSL certificates on the vhost
-    get token                       get a token for one of the admin tools (e.g. phpmyadmin)
-    set vhost description           sets a a short description of the vhost's purpose
+    enable https redirect           enables HTTP to HTTPS redirect for the vhost
+    disable https redirect          disables HTTP to HTTPS redirect for the vhost
 
-    enable vhost snapshots          enables backup snashots for the specified vhost
-    disable vhost snapshots         disables backup snashots for the specified vhost
-
-    set php version                 use a specific PHP version for the vhost
-    disable vhost                   disables the specified vhost
-    enable  vhost                   enables the specified vhost (case it's disabled)
+  Apache httpd commands on vhost:
+    enable  fastcgi                 enables FastCGI for the specified vhost
+    disable fastcgi                 disables FastCGI for the specified vhost
     rewrite vhost config            updates the vhost configuration on the web server
-    repair  mysql database          run a mysql repair on the vhost database
-    tail vhost logs                 shows the last lines of the vhost log files
-    tail mysql log                  shows the last lines of the MySQL log files
-    change sftp password            changes SFTP/SSH password of the vhost
-
     add vhost include               include custom Apache config lines into vhost
     remove vhost include            remove Apache custom config lines from vhost
-    exec                            execute commands with the vhost user
+
+  Operations on vhost logs:
+    tail vhost logs                 shows the last lines of the vhost log files
+    tail mysql log                  shows the last lines of the MySQL log files
+
+  Importing apps on a new vhost:
+    import from git                 import a new virtual host from git
+    import from files               import a new virtual host from files
+    import app from url             import a new virtual host from a URL
+
+  Basic access and command execution on vhosts:
+    change sftp password            changes SFTP/SSH password of the vhost
     edit vhost crontab              edits/updates the crontab of the specified vhost
+    exec                            execute commands with the vhost user
+    add ssh key                     adds ssh keys to the specified vhost
+    remove ssh key                  remove ssh keys from the specified vhost
+    get token                       get a token for one of the admin tools (e.g. phpmyadmin)
+
+
+  PHP options on vhosts:
+    set php version                 use a specific PHP version for the vhost
 
   For help with a specific command, please run:
   @sb@ @self_basename@ <command> --help
-
-  Example:
-  # @self_basename@ configure ssl --help
 
