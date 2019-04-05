@@ -391,6 +391,7 @@ case $op in
 
     if [ -n "$post_run_cmd" ]; then
       {
+        export \
         DEVPANEL_VHOST=$vhost                             \
         DEVPANEL_SNAPSHOT_EXIT_CODE=$snap_st              \
         DEVPANEL_SNAPSHOT_FREQUENCY=$frequency            \
