@@ -202,22 +202,6 @@ _devpanel_cli_cleanup() {
   fi
 }
 
-# main
-[ -n "${BASH_SOURCE[0]}" ] && \
-  __self_bin=`readlink -e "${BASH_SOURCE[0]}"`
-if [ $? -ne 0 ]; then
-  echo "Error: unable to get self path" 1>&2
-  exit 1
-fi
-
-declare -r self_bin="$__self_bin"
-declare -r self_basename="${0##*/}"
-declare -r bin_name=${self_bin##*/}
-declare -r self_bin_dir="${self_bin%/*}"
-declare -r sys_dir="${self_bin_dir%/*}"
-
-declare -r lib_dir="$sys_dir/lib/cli"
-
 show_help_msg() {
   local section="$1"
   shift
@@ -266,9 +250,31 @@ show_help_msg() {
   sed -r -f "$tmp_file" "$msg_file"
 }
 
-[ $# -eq 0 -o -z "$1" ] && usage
+# main
+[ -n "${BASH_SOURCE[0]}" ] && \
+  __self_bin=`readlink -e "${BASH_SOURCE[0]}"`
+if [ $? -ne 0 ]; then
+  echo "Error: unable to get self path" 1>&2
+  exit 1
+fi
+
+declare -r self_bin="$__self_bin"
+declare -r self_basename="${0##*/}"
+declare -r bin_name=${self_bin##*/}
+declare -r self_bin_dir="${self_bin%/*}"
+declare -r sys_dir="${self_bin_dir%/*}"
+
+declare -r lib_dir="$sys_dir/lib/cli"
 
 declare -A devpanel_usage_r=()
+declare -a temp_files_ar=()
+declare -a temp_dirs_ar=()
+
+# Note: adding the exit trap here because the usage msg creates temporary
+#       files, and to cleanup those files it needs to be setup early.
+trap _devpanel_cli_cleanup EXIT
+
+[ $# -eq 0 -o -z "$1" ] && usage
 
 unset verbose
 getopt_flags='vh-'
@@ -303,9 +309,5 @@ if ! . "$lib_file"; then
 fi
 
 load_devpanel_config || exit $?
-
-declare -a temp_files_ar=()
-declare -a temp_dirs_ar=()
-trap _devpanel_cli_cleanup EXIT
 
 devpanel_run "$@"
