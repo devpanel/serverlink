@@ -220,14 +220,20 @@ case $op in
     case $frequency in
       daily)
         hour="$v__recurring_snapshots_daily__hour"
+        retention_n=${v__recurring_snapshots_daily__retention_unit:-0}
+        n_rm_add_time=$(( 86400 * $retention_n ))
         ;;
       weekly)
         hour="$v__recurring_snapshots_weekly__hour"
         day="$v__recurring_snapshots_weekly__day"
+        retention_n=${v__recurring_snapshots_weekly__retention_unit:-0}
+        n_rm_add_time=$(( 86400 * 7 * $retention_n ))
         ;;
       monthly)
         hour="$v__recurring_snapshots_monthly__hour"
         day="$v__recurring_snapshots_monthly__day"
+        retention_n=${v__recurring_snapshots_monthly__retention_unit:-0}
+        n_rm_add_time=$(( 86400 * 31 * $retention_n ))
         ;;
       *)
         error "invalid frequency specified. Valid ones are: daily, weekly or monthly"
@@ -360,11 +366,19 @@ case $op in
       fi
     fi
 
+    start_time_epoch=$(date +%s)
     # no archive for the same frequency exists, go and archive it
     nice -n $niceness "$self_dir/archive-vhost" \
       ${exclude_file:+-e $exclude_file} "$vhost" "$backup_str"
-
     snap_st=$?
+
+    end_time_epoch=$(date +%s)
+
+    if [ $n_rm_add_time -gt 0 ]; then
+      rm_after_time_epoch=$(( $end_time_epoch + $n_rm_add_time ))
+    else
+      rm_after_time_epoch=0
+    fi
 
     if [ $snap_st -eq 0 ]; then
       if ln -s "$backup_basename" "$frequency_status_link"; then
@@ -392,12 +406,20 @@ case $op in
     if [ -n "$post_run_cmd" ]; then
       {
         export \
-        DEVPANEL_VHOST=$vhost                             \
-        DEVPANEL_SNAPSHOT_EXIT_CODE=$snap_st              \
-        DEVPANEL_SNAPSHOT_FREQUENCY=$frequency            \
-        DEVPANEL_SNAPSHOT_DAY=$day                        \
-        DEVPANEL_SNAPSHOT_HOUR=$hour                      \
-        DEVPANEL_SNAPSHOT_FILE=$archive_file            ; \
+        DEVPANEL_VHOST=$vhost                                              \
+        DEVPANEL_VHOST_DOMAIN=$v__vhost__server_name                       \
+        DEVPANEL_VHOST_BASE_DOMAIN=$v__vhost__base_domain                  \
+        DEVPANEL_HOST_BASE_DOMAIN=$lamp__apache_vhosts__virtwww_domain     \
+        DEVPANEL_SNAPSHOT_EXIT_CODE=$snap_st                               \
+        DEVPANEL_SNAPSHOT_FREQUENCY=$frequency                             \
+        DEVPANEL_SNAPSHOT_RETENTION_UNIT=$retention_n                      \
+        DEVPANEL_SNAPSHOT_SCHEDULED_TIME_EPOCH=$epoch_str                  \
+        DEVPANEL_SNAPSHOT_START_TIME_EPOCH=$start_time_epoch               \
+        DEVPANEL_SNAPSHOT_END_TIME_EPOCH=$end_time_epoch                   \
+        DEVPANEL_SNAPSHOT_REMOVE_AFTER_TIME_EPOCH=$rm_after_time_epoch     \
+        DEVPANEL_SNAPSHOT_DAY=$day                                         \
+        DEVPANEL_SNAPSHOT_HOUR=$hour                                       \
+        DEVPANEL_SNAPSHOT_FILE=$archive_file            ;                  \
         eval "$post_run_cmd"
       }
     fi
