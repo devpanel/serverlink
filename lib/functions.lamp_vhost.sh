@@ -183,7 +183,7 @@ apache_vhost_create() {
 apache_vhost_remove() {
   local vhost="$1"
 
-  local apache_log_dir vhost_config_dir vhost_cache_dir
+  local apache_log_dir vhost_config_dir vhost_cache_dir tokens_dir
   local removed_vhosts_dir removed_dir archived_files_dir
   local user_web
   local date_ts
@@ -200,6 +200,7 @@ apache_vhost_remove() {
 
   vhost_config_dir="$v__vhost__config_dir"
   vhost_cache_dir="$sys_dir/var/cache/vhost/$vhost"
+  tokens_dir="$sys_dir/var/tokens"
   archived_files_dir="$v__vhost__archives_dir"
   apache_log_dir="$apache_base_log_dir/$user_web"
   removed_vhosts_dir="$conf__paths__data_dir/removed_vhosts"
@@ -243,6 +244,7 @@ apache_vhost_remove() {
     rm -rf "$vhost_config_dir"
   fi
 
+  rm -f "$tokens_dir/$vhost".*
   rm -f "$v__vhost__config_link"
   rm -f "$lamp__paths__user_vhost_map/$user_web"
 
