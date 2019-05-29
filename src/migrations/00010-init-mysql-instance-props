@@ -14,12 +14,15 @@ for instance in $(get_list_of_mysql_instances); do
     w_user="w_${instance#b_}"
 
     if vhost=$(get_vhost_from_linuxuser "$w_user" ); then
-      if load_vhost_config "$vhost"; then
-        if is_vhost_enabled "$vhost"; then
-          args_ar+=( "params.enabled = yes" )
-        fi
-      fi
+      :
+    fi
+  elif vhost_exists "$instance" ; then
+    vhost="$instance"
+  fi
 
+  if [ -n "$vhost" ] && load_vhost_config "$vhost"; then
+    if is_vhost_enabled "$vhost"; then
+      args_ar+=( "params.enabled = yes" )
       args_ar+=( "params.vhosts +=w $vhost" )
     fi
   else
