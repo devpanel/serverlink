@@ -219,11 +219,18 @@ mysql_delete_instance() {
 
   read_ini_file_into_namespace "$config_ini" conf__mysql || return $?
 
-  mysql_stop_instance "$instance"
+  mysql_lock_instance_autostart "$instance"
+
+  if ! mysql_stop_instance "$instance"; then
+    echo "$FUNCNAME(): failed to stop mysql instance" 1>&2
+    return 1
+  fi
 
   release_port tcp $conf__mysql__params__port
 
   userdel -r "$conf__mysql__params__linux_user"
+
+  mysql_lock_instance_autostart "$instance"
 
   rm -rf "$config_dir"
   rm -rf "$lamp__paths__mysql_socket_dir/$instance"
