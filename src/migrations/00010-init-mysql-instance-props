@@ -2,12 +2,14 @@
 #
 
 for instance in $(get_list_of_mysql_instances); do
-  unset vhost
+  unset vhost inst_type
 
   load_mysql_instance_config "$instance" || continue
 
+  inst_type=${mysql__params__type:-${mysql__params__host_type:-local}}
+
   args_ar=(  "params.shared = no" )
-  args_ar+=( "params.host_type = $mysql__params__type" )
+  args_ar+=( "params.host_type = $inst_type" )
   args_ar+=( "- params.type" )
 
   if [[ "$instance" == b_* ]]; then
