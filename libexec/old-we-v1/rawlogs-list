@@ -1,15 +1,16 @@
 #!/bin/bash
 dir=`dirname $0`
-dir_bin="$dir/../bin"
+sys_dir=${dir%/*/*}
+dir_bin="$sys_dir/bin"
 vhost="$1"
 lines="$2"
 
 # using mode archive: it's OK to operate on a locked vhost
-$dir/check-vhost-name archive "$vhost" || exit 1
+$sys_dir/libexec/check-vhost-name archive "$vhost" || exit 1
 
 [ -z "$lines" ] && lines=10
 
-lib_f="$dir/../lib/functions"
+lib_f="$sys_dir/lib/functions"
 if ! source "$lib_f"; then
   echo "Error: unable to import $lib_f" 1>&2
   exit 1
