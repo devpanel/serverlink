@@ -124,7 +124,7 @@ $ devpanel show vhost info --vhost blk1                        #=> --egrep ^PHP 
 # Test mysql commands on vhost
 $ devpanel setup vhost on mysql instance --instance default-mysql --vhost blk1 #=> --exit 0
 $ devpanel run mysql client --vhost blk1 -- -e "CREATE DATABASE blk1__test_1"     #=> --exit 0
-$ devpanel remove vhost from mysql instance --vhost blk1 --instance default-mysql #=> --exit 0
+$ devpanel remove vhost from mysql instance --drop-databases --vhost blk1 --instance default-mysql #=> --exit 0
 $ devpanel show mysql instance info --instance default-mysql | egrep '^Vhosts: .*\bblk1\b'  #=> --exit 1
 $ devpanel remove vhost --vhost blk1 --file - >/dev/null #=> --exit 0
 $ devpanel test http --vhost blk1      #=> --exit 1
