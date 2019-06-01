@@ -417,7 +417,7 @@ mysql_run_query_with_vhost_privs() {
 
   l_user="${!l_user_key}"
 
-  run_as_user "$l_user" mysql --defaults-file="${!cnf_key}" -BN -e "$query"
+  run_as_user "$l_user" mysql --defaults-file="${!cnf_key}" -BN <<< "$query"
   st=$?
 
   [ -n "$ns" ] && cleanup_namespace $ns
@@ -429,19 +429,26 @@ mysqldump_with_vhost_privs() {
   local vhost="$1"
   shift
 
-  local ns st cnf_key
+  local ns st cnf_key cleanup_ns
   local l_user
-  ns=_tmp_$RANDOM
-  cnf_key="${ns}__mysql__client_file"
 
-  load_vhost_config "$vhost" "$ns" || return $?
+  
+  if [ -n "${!v__vhost__*}" -a "$v__vhost__name" == "$vhost" ]; then
+    cnf_key="v__mysql__client_file"
+  else
+    ns=_tmp_$RANDOM
+    cnf_key="${ns}__mysql__client_file"
+
+    load_vhost_config "$vhost" "$ns" || return $?
+    cleanup_ns=1
+  fi
 
   l_user="$v__vhost__linux_user"
 
   run_as_user "$l_user" mysqldump --defaults-file="${!cnf_key}" "$@"
   st=$?
 
-  cleanup_namespace $ns
+  [ -n "$cleanup_ns" ] && cleanup_namespace $ns
 
   return $st
 }
