@@ -2643,7 +2643,7 @@ is_valid_php_version_string() {
     return 1
   fi
 
-  if [[ "$str" == [1-9].[0-9] ]]; then
+  if [[ "$str" == [1-9] || "$str" == [1-9].[0-9] ]]; then
     return 0
   else
     echo "$FUNCNAME(): invalid format specified for PHP version" 1>&2

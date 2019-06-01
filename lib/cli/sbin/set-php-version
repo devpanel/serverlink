@@ -16,7 +16,11 @@ set_usage_msg \
 devpanel_cmd__set_php_version() {
   [ $# -eq 0 -o -z "$1" ] && usage
 
-  local name vhost version
+  local name vhost version transl_version search_key
+  local vhost_user vhost_home
+  local php_bin php_cgi_bin phar_bin
+  local php_bin_var phpi_cgi_bin_var phar_bin_var
+
   local -a cmd_args=()
 
   while [ -n "$1" ]; do
@@ -56,28 +60,36 @@ devpanel_cmd__set_php_version() {
 
   load_vhost_config "$vhost" || return $?
 
-  local vhost_user vhost_home
-  local php_bin php_cgi_bin phar_bin
-  local php_bin_var php_cgi_bin_var phar_bin_var
+  if [[ "$version" == [5-9] ]]; then
+    search_key="lamp__php__default_${version}"
+    if [ -n "${!search_key}" ]; then
+      transl_version="${!search_key//./_}"
+    else
+      error "couldn't find version '$version'" -
+      return $?
+    fi
+  else
+    transl_version=${version//./_}
+  fi
 
   vhost_user="$v__vhost__linux_user"
-  vhost_home="$v__vhost__linux_user_home"
+  vhost_home="$v__vhost_n_linux_user_home"
 
-  php_bin_var="lamp__php_paths__php_${version//./_}"
+  php_bin_var="lamp__php_paths__php_${transl_version}"
   php_bin="${!php_bin_var}"
   if [ -z "$php_bin" -o ! -f "$php_bin" -o ! -x "$php_bin" ]; then
     error "unable to find PHP binary for version $version" -
     return 1
   fi
 
-  php_cgi_bin_var="lamp__php_paths__php_cgi_${version//./_}"
+  php_cgi_bin_var="lamp__php_paths__php_cgi_${transl_version}"
   php_cgi_bin="${!php_cgi_bin_var}"
   if [ -z "$php_cgi_bin" -o ! -f "$php_cgi_bin" -o ! -x "$php_cgi_bin" ]; then
     error "unable to find PHP-CGI binary for version $version" -
     return 1
   fi
 
-  phar_bin_var="lamp__php_paths__phar_${version//./_}"
+  phar_bin_var="lamp__php_paths__phar_${transl_version}"
   phar_bin="${!phar_bin_var}"
 
   if [ "$version" == default ]; then

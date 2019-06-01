@@ -16,7 +16,7 @@ set_usage_msg \
 devpanel_cmd__set_default_php() {
   [ $# -eq 0 -o -z "$1" ] && usage
 
-  local name version
+  local name version transl_version search_key
   local -a cmd_args_ar=()
 
   while [ -n "$1" ]; do
@@ -69,7 +69,19 @@ devpanel_cmd__set_default_php() {
   local php_bin php_cgi_bin php_lnk_dir php_bin_lnk
   local php_bin_var php_cgi_bin_var
 
-  php_bin_var="lamp__php_paths__php_${version//./_}"
+  if [[ "$version" == [5-9] ]]; then
+    search_key="lamp__php__default_${version}"
+    if [ -n "${!search_key}" ]; then
+      transl_version=${!search_key//./_}
+    else
+      error "couldn't find specific version for PHP $version" -
+      return $?
+    fi
+  else
+    transl_version=${version//./_}
+  fi
+
+  php_bin_var="lamp__php_paths__php_${transl_version}"
   if [ -n "${!php_bin_var}" -a -f "${!php_bin_var}" -a -x "${!php_bin_var}" ]; then
     php_bin="${!php_bin_var}"
   else
@@ -96,7 +108,7 @@ devpanel_cmd__set_default_php() {
     # update-alternatives dependencies
     local _binname _binpath _binpath_var _binlink
     for _binname in php-cgi phar pear peardev pecl phpize; do
-      _binpath_var="lamp__php_paths__${_binname//-/_}_${version//./_}"
+      _binpath_var="lamp__php_paths__${_binname//-/_}_${transl_version}"
       if [ -n "${!_binpath_var}" ]; then
         _binpath="${!_binpath_var}"
       else
@@ -134,7 +146,7 @@ devpanel_cmd__set_default_php() {
     #   a slave or independent to update accordingly
     for _binname in php-cgi phar; do
       if update-alternatives --display $_binname &>/dev/null; then
-        _binpath_var="lamp__php_paths__${_binname//-/_}_${version//./_}"
+        _binpath_var="lamp__php_paths__${_binname//-/_}_${transl_version}"
         if [ -n "${!_binpath_var}" ]; then
           _binpath="${!_binpath_var}"
         else
