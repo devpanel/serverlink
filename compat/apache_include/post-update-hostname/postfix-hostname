@@ -14,12 +14,15 @@ if ! hash postfix &>/dev/null; then
   exit 0
 fi
 
-postconf -e "myhostname = $new_hostname" || exit $?
+my_destination_txt="\$myhostname, localhost"
+postconf -e "myhostname = $new_hostname" \
+            "mydestination = $my_destination_txt"
 
 if hash debconf-communicate &>/dev/null && \
   echo "get postfix/mailname" | debconf-communicate >/dev/null; then
 
-  echo "set postfix/mailname $new_hostname" | debconf-communicate
+  echo "set postfix/mailname $new_hostname
+set postfix/destinations $my_destination_txt" | debconf-communicate
 fi
 
 postfix reload
