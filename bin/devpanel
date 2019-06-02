@@ -310,4 +310,6 @@ fi
 
 load_devpanel_config || exit $?
 
+load_state_data || exit $?
+
 devpanel_run "$@"

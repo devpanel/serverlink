@@ -362,6 +362,8 @@ devpanel_cmd__init_config() {
     return $st
   fi
 
+  save_opts_in_state "host.initialized = yes"
+
   if [ -n "$show_intro" ]; then
     devpanel_run help --section intro
   fi

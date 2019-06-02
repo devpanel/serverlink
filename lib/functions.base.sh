@@ -197,6 +197,9 @@ load_devpanel_config() {
     fi
   fi
 
+  conf__paths__state_dir="/var/spool/devpanel"
+  conf__paths__main_state_file="$conf__paths__state_dir/state.ini"
+
   if [ $EUID -eq 0 -a ! -d "$conf__paths__run_dir" ]; then
     mkdir -m 0711 "$conf__paths__run_dir"
   fi
@@ -271,7 +274,7 @@ load_devpanel_lamp_config() {
 }
 
 load_state_data() {
-  local state_file="/var/spool/devpanel/state.ini"
+  local state_file="$conf__paths__main_state_file"
   if [ -f "$state_file" ]; then
     read_ini_file_into_namespace "$state_file" state || return $?
   else
@@ -491,8 +494,8 @@ save_opts_in_state() {
     return 1
   fi
 
-  local state_dir="/var/spool/devpanel"
-  local file="$state_dir/state.ini"
+  local file="$conf__paths__main_state_file"
+  local state_dir="${file%/*}"
 
   if [ ! -d "$state_dir" ]; then
     mkdir -m 751 "$state_dir" || return $?

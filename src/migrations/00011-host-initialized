@@ -1,0 +1,7 @@
+#!/bin/bash
+
+if [ -n "$lamp__apache_vhosts__virtwww_domain" ]; then
+  save_opts_in_state "host.initialized = yes"
+fi
+
+exit 0

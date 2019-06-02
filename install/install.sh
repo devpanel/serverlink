@@ -234,7 +234,13 @@ post_software_install() {
   local source_dir="$2"
   local target_dir="$3"
 
-  local status
+  local status state_file
+  
+  state_file="$conf__paths__main_state_file"
+  if [ -n "$conf__migrations__latest_step" -a -f "$state_file" ]; then
+    write_ini_file "$state_file" \
+      "migrations.latest_step = $conf__migrations__latest_step"
+  fi
 
   if [ -n "$dp_server_hostname" ]; then
     devpanel init config --hostname "$dp_server_hostname"
@@ -607,12 +613,6 @@ if [ -n "$platform_version" ]; then
   if [ "$platform_version" == 3 ]; then
     devpanel enable long vhost names --yes
   fi
-fi
-
-state_file=/var/spool/devpanel/state.ini
-if [ -n "$conf__migrations__latest_step" -a -f "$state_file" ]; then
-  write_ini_file "$state_file" \
-    "migrations.latest_step = $conf__migrations__latest_step"
 fi
 
 devpanel create mysql instance --name default-mysql --shared yes \
