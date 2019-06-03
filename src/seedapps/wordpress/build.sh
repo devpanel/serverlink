@@ -107,7 +107,7 @@ load_devpanel_config || exit $?
 
 unset vhost_created
 if ! devpanel create vhost --vhost "$tmp_vhost" \
-       --from webenabled://blank; then
+       --from webenabled://blank --dedicated-mysql; then
 
   error "unable to create temporary vhost"
 fi
@@ -121,29 +121,40 @@ if ! save_opts_in_vhost_config "$tmp_vhost"     \
   error "failed to update vhost config"
 fi
 
-su -l -s /bin/bash -c "
-  set -ex
+if ! load_vhost_config "$tmp_vhost"; then
+  error "failed to load configuration of new vhost"
+fi
 
-  # . $lib_f
+su -l -s /bin/bash -c "
+  umask 022
+  set -e
+
+  . $sys_dir/lib/functions
+
+  load_devpanel_config 
+
+  load_vhost_config $tmp_vhost
+
+  doc_root=\"\$v__vhost__document_root\"
+
+  rm -rf \$doc_root
 
   mysql -e 'DROP DATABASE scratch;'
   mysql -e 'DROP DATABASE test;'
   mysql -e 'CREATE DATABASE wordpress;'
 
-  cd ~/public_html
-
-  rm -r $tmp_vhost/  # remove public_html/vhost
+  mkdir -m 751 \$doc_root
 
   $sys_dir/bin/restore-vhost-subsystem -n -F -O config_function=download_from_cli
 
   $sys_dir/bin/restore-vhost-subsystem -n -F -O config_function=setup_from_cli
 
-  rm -rf ~/public_html/$tmp_vhost.[0-9]*
+  rm -rf \$doc_root.[0-9]*
   rm -f ~/.*.passwd ~/*.passwd ~/.bash_* ~/.viminfo ~/.mysql_history ~/.ssh/* \
     ~/.emacs ~/.my.cnf ~/.profile
   unset HISTFILE
 
-" "w_$tmp_vhost"
+" "$v__vhost__linux_user"
 
 if [ $? -ne 0 ]; then
   error "unable to cleanely setup environment"

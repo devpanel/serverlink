@@ -34,7 +34,7 @@ omb_updated_config() {
      s/^[[:space:]]*define[[:space:]]*([[:space:]]*[\"']DB_PASSWORD[\"'].*/define('DB_PASSWORD', '$sedphpencoded_mysql_password');/
      s/^[[:space:]]*define[[:space:]]*([[:space:]]*[\"']DB_HOST[\"'].*/define('DB_HOST', '$mysql_host:$mysql_port');/
      s/^[[:space:]]*define[[:space:]]*([[:space:]]*[\"']DB_NAME[\"'].*/define('DB_NAME', '$hosting_database');/
-  " | run_ised "$home/public_html/$vhost/config.php"
+  " | run_ised "$public_html_dir/config.php"
 }
 
 omb_custom() {

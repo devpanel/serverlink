@@ -3,14 +3,21 @@
 $u_hash   = posix_getpwuid(posix_geteuid());
 $user     = $u_hash['name'];
 
-$vhost_link = realpath(dirname(__FILE__) . "/../../..") . "/config/key_value/linuxuser-vhost/{$user}";
+$vhost_link = realpath("/etc/devpanel/lamp/linuxuser-vhost-map/{$user}");
 if(!($vhost = readlink($vhost_link))) {
   error_log("Error: unable to find vhost for current user");
   exit(1);
 }
 
-$random_int_inc = $u_hash["dir"] . "/public_html/{$vhost}/vendor/paragonie/random_compat/lib/random.php";
-$pass_hash_inc  = $u_hash["dir"] . "/public_html/{$vhost}/inc/PassHash.class.php";
+$vhost_config_file = "/etc/devpanel/lamp/vhosts/{$vhost}/config.ini";
+if(!($vhost_config_r = parse_ini_file($vhost_config_file, TRUE))) {
+  error_log("Error: unable to open vhost config file '$vhost_config_file'");
+  exit(1);
+}
+
+$src_dir = $vhost_config_r["vhost"]["document_root"];
+$random_int_inc = "{$src_dir}/vendor/paragonie/random_compat/lib/random.php";
+$pass_hash_inc  = "{$src_dir}/inc/PassHash.class.php";
 
 if(!file_exists($random_int_inc)) {
   error_log("Error: missing file $random_int_inc");

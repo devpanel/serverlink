@@ -13,7 +13,7 @@ gallery_genpass()
 gallery_encrypt()
 {
   local password="$1"
-  echo "$password" | "$home/public_html/$vhost/modules/user/lib/gallery-crypt.php"
+  echo "$password" | "$public_html_dir/modules/user/lib/gallery-crypt.php"
 }
 
 gallery_set_password()
@@ -40,7 +40,7 @@ gallery_get_email()
 gallery_get_admin_user()
 {
   sql_query_result "select name from users where name = 'admin'"
-  cp -f $dir/mantis-crypt.php $home/public_html/$vhost/modules/user/lib/gallery-crypt.php
+  cp -f $dir/mantis-crypt.php $public_html_dir/modules/user/lib/gallery-crypt.php
 }
 
 gallery_update_php_config()
@@ -52,7 +52,7 @@ gallery_update_php_config()
     s/^[[:space:]]*[\"']port[\"'][[:space:]]*=>[[:space:]]*[\"']\\([^'\"]*\\)[\"'][[:space:]]*,/    'port'     => '$mysql_port',/
     s/^[[:space:]]*[\"']database[\"'][[:space:]]*=>[[:space:]]*[\"']\\([^'\"]*\\)[\"'][[:space:]]*,/    'database'     => '$hosting_database',/
 
-" | run_ised "$home/public_html/$vhost/var/database.php"
+" | run_ised "$public_html_dir/var/database.php"
   status=$?
   return $status
 }

@@ -39,6 +39,7 @@ joomla_get_email() {
 
 joomla_update_php_config()
 {
+  local public_html_esc=${public_html_dir//\//\\\/\\\/}
 
   echo "
    s/^\([[:space:]]*\)\(var\|public\)[[:space:]]\{1,\}\\\$sitename[[:space:]]\{1,\}=.*/\1\2\\\$sitename = '$fqdn';/
@@ -48,14 +49,14 @@ joomla_update_php_config()
    s/^\([[:space:]]*\)\(var\|public\)[[:space:]]\{1,\}\\\$password[[:space:]]\{1,\}=.*/\1\2 \\\$password = '$sedphpencoded_mysql_password';/
    s/^\([[:space:]]*\)\(var\|public\)[[:space:]]\{1,\}\\\$db[[:space:]]\{1,\}=.*/\1\2 \\\$db = '$hosting_database';/
    s/^\([[:space:]]*\)\(var\|public\)[[:space:]]\{1,\}\\\$dbprefix[[:space:]]\{1,\}=.*/\1\2 \\\$dbprefix = '$table_prefix';/
-   s/^\([[:space:]]*\)\(var\|public\)[[:space:]]\{1,\}\\\$log_path[[:space:]]\{1,\}=.*/\1\2 \\\$log_path = '\/home\/clients\/websites\/w_$vhost\/public_html\/$vhost\/logs';/
-   s/^\([[:space:]]*\)\(var\|public\)[[:space:]]\{1,\}\\\$tmp_path[[:space:]]\{1,\}=.*/\1\2 \\\$tmp_path = '\/home\/clients\/websites\/w_$vhost\/public_html\/$vhost\/tmp';/" \
-   | run_ised "$home/public_html/$vhost/configuration.php"
+   s/^\([[:space:]]*\)\(var\|public\)[[:space:]]\{1,\}\\\$log_path[[:space:]]\{1,\}=.*/\1\2 \\\$log_path = '$public_html_esc\/logs';/
+   s/^\([[:space:]]*\)\(var\|public\)[[:space:]]\{1,\}\\\$tmp_path[[:space:]]\{1,\}=.*/\1\2 \\\$tmp_path = '$public_html_esc\/tmp';/" \
+   | run_ised "$public_html_dir/configuration.php"
 
   if [ -n "$WEBENABLED_HOSTING_LINK_BASE_URL" ]; then
   echo "
    s|^\([[:space:]]*\)\(var\|public\)[[:space:]]\{1,\}\\\$live_site[[:space:]]\{1,\}=.*|\1\2 \\\$live_site = '$WEBENABLED_HOSTING_LINK_BASE_URL';|" | \
-   run_ised "public_html/$vhost/configuration.php"
+   run_ised "$public_html_dir/configuration.php"
   fi
 }
 

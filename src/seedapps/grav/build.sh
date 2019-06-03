@@ -127,12 +127,22 @@ if ! save_opts_in_vhost_config "$tmp_vhost"     \
   error "failed to update vhost config"
 fi
 
+if ! load_vhost_config "$tmp_vhost"; then
+  error "failed to load configuration of new vhost"
+fi
+
 su -l -s /bin/bash -c "
-  set -ex
+  set -e
 
-  cd ~/public_html
+  . $sys_dir/lib/functions
 
-  rm -r $tmp_vhost/  # remove public_html/vhost
+  load_devpanel_config 
+
+  load_vhost_config $tmp_vhost
+
+  doc_root=\"\$v__vhost__document_root\"
+
+  rm -rf \$doc_root
 
   temp_grav_dir=\$(mktemp -d)
 
@@ -140,26 +150,23 @@ su -l -s /bin/bash -c "
 
   temp_grav_file=\"\$temp_grav_dir/grav.zip\"
 
-  # download_file $grav_url \$temp_grav_file
-
   curl -L -o \$temp_grav_file $grav_url
 
   unzip -q \$temp_grav_file
 
-  mv grav-admin $tmp_vhost
+  mv grav-admin \$doc_root
 
-  find $tmp_vhost -type f -iname \*.php -exec chmod 644 {} \;
-
-  find $tmp_vhost -type d -exec chmod 711 {} \;
+  find \$doc_root  -type f -iname \*.php -exec chmod 644 {} \;
+  find \$doc_root -type d -exec chmod 711 {} \;
 
   $sys_dir/bin/restore-vhost-subsystem -s $app_subsystem -n \
     -O config_function=setup_from_cli
 
-  rm -rf ~/public_html/$tmp_vhost.[0-9]*
+  rm -rf \$doc_root.[0-9]*
   rm -f ~/.*.passwd ~/*.passwd ~/.bash_* ~/.viminfo ~/.mysql_history ~/.ssh/* \
     ~/.emacs ~/.my.cnf ~/.profile
   unset HISTFILE
-" "w_$tmp_vhost"
+" "$v__vhost__linux_user"
 
 if [ $? -ne 0 ]; then
   error "unable to cleanely setup environment"

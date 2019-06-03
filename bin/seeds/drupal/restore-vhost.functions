@@ -100,7 +100,7 @@ drupal_set_password()
     # enough. It required one more login with the old password before the
     # new password worked. But running cache-rebuild made it apply 
     # immediately (tested, May 2015)
-    ( cd "$home/public_html/$vhost" && drush-8 cache-rebuild )
+    ( cd "$public_html_dir" && drush-8 cache-rebuild )
 
     return $status
   fi
@@ -213,7 +213,7 @@ drupal_update_php_config()
            s/^[[:space:]]*'host'[[:space:]]*=>[[:space:]]*.*/    'host' => '$mysql_host',/
            s/^[[:space:]]*'port'[[:space:]]*=>[[:space:]]*.*/    'port' => '$mysql_port',/
            s/^[[:space:]]*'database'[[:space:]]*=>[[:space:]]*.*/    'database' => '$hosting_database',/
-    " | run_ised "$home/public_html/$vhost/sites/default/settings.php"
+    " | run_ised "$public_html_dir/sites/default/settings.php"
   else
     driver='\2'
     if [ -n "$WEBENABLED_HOSTING_LINK_PHP_FORCE_DB_DRIVER" ]
@@ -221,17 +221,17 @@ drupal_update_php_config()
       driver="$WEBENABLED_HOSTING_LINK_PHP_FORCE_DB_DRIVER"
     fi
     /bin/echo "s|^\\(\\\$db_url = '\\)\\(mysqli*\\):.*|\\1$driver://$mysql_user:$urlencoded_mysql_password@$mysql_host:$mysql_port/$hosting_database';|" |
-    run_ised "$home/public_html/$vhost/sites/default/settings.php" || exit 1
+    run_ised "$public_html_dir/sites/default/settings.php" || exit 1
   fi
   if [ -n "$WEBENABLED_HOSTING_LINK_BASE_URL" ]
   then
     if [ o"$WEBENABLED_HOSTING_LINK_BASE_URL" = o"none" ]
     then
       echo "$drupal_base_url_none_sed_script" |
-      run_ised "$home/public_html/$vhost/sites/default/settings.php" || exit 1
+      run_ised "$public_html_dir/sites/default/settings.php" || exit 1
     else
       echo "$drupal_base_url_sed_script" |
-      run_ised "$home/public_html/$vhost/sites/default/settings.php" || exit 1
+      run_ised "$public_html_dir/sites/default/settings.php" || exit 1
     fi
 
     # removing the file_temporary_path before exporting the site
@@ -264,14 +264,14 @@ drupal_update_php_config_6()
   local driver='\2'
 
   /bin/echo "s|^\\(\\\$db_url = '\\)\\(mysqli*\\):.*|\\1$driver://$mysql_user:$urlencoded_mysql_password@$mysql_host:$mysql_port/$database';|" | \
-    run_ised "$home/public_html/$vhost/sites/default/settings.php"
+    run_ised "$public_html_dir/sites/default/settings.php"
 
 }
 
 drupal_update_php_config_7() {
   local drupal_base_url_none_sed_script="s|^[[:space:]]*\\\$base_url[[:space:]]*=[[:space:]]*'[^']*';||"
   local file
-  local config_dir="$home/public_html/$vhost/sites"
+  local config_dir="$public_html_dir/sites"
 
   local driver='\1'
   local tmp_same_dir db_creds_str db_creds_str_new orig_settings
@@ -325,7 +325,7 @@ drupal_update_php_config_7() {
 
 drupal_update_php_config_8() {
   local random_str=""
-  local public_dir="$home/public_html/$vhost"
+  local public_dir="$public_html_dir"
   local main_config="$public_dir/sites/default/settings.php"
   local sync_dir_name
   local sed_str='' hash_salt=''
@@ -471,16 +471,16 @@ drupal_update_civicrm_config() {
   /bin/echo "
      s/^[[:space:]]*define([[:space:]]*'CIVICRM_UF_DSN'[[:space:]]*,[[:space:]]*'mysql:\/\/.*/define('CIVICRM_UF_DSN', 'mysql:\/\/$mysql_user:$urlencoded_mysql_password@$mysql_host:$mysql_port\/civicrm\?new_link=true');/
      s/^[[:space:]]*define([[:space:]]*'CIVICRM_DSN'[[:space:]]*,[[:space:]]*'mysql:\/\/.*/define('CIVICRM_DSN', 'mysql:\/\/$mysql_user:$urlencoded_mysql_password@$mysql_host:$mysql_port\/civicrm\?new_link=true');/
-     s/^[[:space:]]*\$civicrm_root[[:space:]]*=[[:space:]]*.*/\$civicrm_root = '\/home\/clients\/websites\/$mysql_user\/public_html\/$vhost\/sites\/all\/modules\/civicrm';/
-     s/^[[:space:]]*define([[:space:]]*'CIVICRM_TEMPLATE_COMPILEDIR'[[:space:]]*,[[:space:]]*'.*/define('CIVICRM_TEMPLATE_COMPILEDIR', '\/home\/clients\/websites\/$mysql_user\/public_html\/$vhost\/sites\/default\/files\/civicrm\/templates_c\/');/
-     s/^[[:space:]]*define([[:space:]]*'CIVICRM_TEMPLATE_COMPILEDIR'[[:space:]]*,[[:space:]]*'.*/define('CIVICRM_TEMPLATE_COMPILEDIR', '\/home\/clients\/websites\/$mysql_user\/public_html\/$vhost\/sites\/default\/files\/civicrm\/templates_c\/');/
+     s/^[[:space:]]*\$civicrm_root[[:space:]]*=[[:space:]]*.*/\$civicrm_root = '${public_html_dir//\//\/\/}\/sites\/all\/modules\/civicrm';/
+     s/^[[:space:]]*define([[:space:]]*'CIVICRM_TEMPLATE_COMPILEDIR'[[:space:]]*,[[:space:]]*'.*/define('CIVICRM_TEMPLATE_COMPILEDIR', '${public_html_dir//\//\/\/}\/sites\/default\/files\/civicrm\/templates_c\/');/
+     s/^[[:space:]]*define([[:space:]]*'CIVICRM_TEMPLATE_COMPILEDIR'[[:space:]]*,[[:space:]]*'.*/define('CIVICRM_TEMPLATE_COMPILEDIR', '${public_html_dir//\//\/\/}\/sites\/default\/files\/civicrm\/templates_c\/');/
      s/^[[:space:]]*define([[:space:]]*'CIVICRM_UF_BASEURL'[[:space:]]*,[[:space:]]*'.*/define('CIVICRM_UF_BASEURL', 'htpp:\/\/$fqdn\/');/
-    " | run_ised "$home/public_html/$vhost/sites/default/civicrm.settings.php"
+    " | run_ised "$public_html_dir/sites/default/civicrm.settings.php"
 
   echo "
          s/w_[[:alnum:]]\{2,6\}/$mysql_user/g
          s/\/public_html\/[[:alnum:]]\{2,6\}\/sites/\/public_html\/$vhost\/sites/g
-  " | run_ised "$home/public_html/$vhost/sites/default/files/civicrm/templates_c/en_US/ConfigAndLog/Config.IDS.ini"
+  " | run_ised "$public_html_dir/sites/default/files/civicrm/templates_c/en_US/ConfigAndLog/Config.IDS.ini"
 
   local db_orig="$database" # save the default $database value to restore later
   database="civicrm"      # work on the civic_crm db, not drupal
@@ -532,11 +532,11 @@ drupal_detect_version() {
 drupal_custom()
 {
   local version=""
-  local civic_crm_conf="$home/public_html/$vhost/sites/default/civicrm.settings.php"
+  local civic_crm_conf="$public_html_dir/sites/default/civicrm.settings.php"
 
   local settings_dir settings_file
-  settings_dir="$home/public_html/$vhost/sites/default"
-  settings_file="$home/public_html/$vhost/sites/default/settings.php"
+  settings_dir="$public_html_dir/sites/default"
+  settings_file="$public_html_dir/sites/default/settings.php"
 
   [ -e "$settings_dir"  ] && run chmod 751 "$settings_dir"
   [ -e "$settings_file" ] && run chmod 640 "$settings_file"
@@ -571,11 +571,11 @@ drupal_custom()
     if [ "$version" == 6 -o "$version" == 7 ]; then
       drupal_set_tmp_6_or_7
       drupal_set_cron_key_6_or_7
-      ( cd "$home/public_html/$vhost" && drush cc all )
+      ( cd "$public_html_dir" && drush cc all )
     else
       "drupal_set_tmp_$version"
       "drupal_set_cron_key_$version"
-      ( cd "$home/public_html/$vhost" && drush-8 cache-rebuild )
+      ( cd "$public_html_dir" && drush-8 cache-rebuild )
     fi
 
     aws_cdn_endpoint=`get_aws_cdn_endpoint 2>/dev/null`
@@ -596,7 +596,7 @@ drupal_clear_cache() {
   if [ "$version" == 8 ]; then
     drush -r "$public_html_dir" cache-rebuild
   else
-    drush -r "$home/public_html/$vhost" cache-clear all
+    drush -r "$public_html_dir" cache-clear all
   fi
 }
 

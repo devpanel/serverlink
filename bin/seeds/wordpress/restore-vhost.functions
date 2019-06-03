@@ -100,12 +100,12 @@ wordpress_update_php_config()
     sed_str+=$(wordpress_update_define_line "$key" "$value")
   done
 
-  echo "$sed_str" | run_ised "$home/public_html/$vhost/wp-config.php"
+  echo "$sed_str" | run_ised "$public_html_dir/wp-config.php"
 }
 
 wordpress_set_upload_path()
 {
-  sql_query "update wp_options set option_value = '$home/public_html/$vhost/wp-content/uploads' where option_name = 'upload_path'" || return 1
+  sql_query "update wp_options set option_value = '$public_html_dir/wp-content/uploads' where option_name = 'upload_path'" || return 1
 }
 
 wordpress_custom() {

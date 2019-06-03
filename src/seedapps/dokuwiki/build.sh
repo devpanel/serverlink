@@ -126,18 +126,6 @@ trap 'cleanup' EXIT
 
 load_vhost_config "$tmp_vhost" || exit $?
 
-doc_root=$(get_docroot_from_vhost "$tmp_vhost")
-get_linux_username_from_vhost "$tmp_vhost" && \
-web_user="$_dp_value"
-web_group="virtwww"
-rm -rf "$doc_root"
-mkdir -m 751 "$doc_root"
-tar -zxf "$source_file" --no-same-owner --strip-components 1 -C "$doc_root"
-cp -r -v "$self_dir/conf/." "$doc_root/conf/"
-chmod 600 "$doc_root/conf/"*auth*.php
-
-chown -R "$web_user":"$web_group" "$doc_root"
-
 if ! save_opts_in_vhost_config "$tmp_vhost"     \
       "app.subsystem     = $app_subsystem" ; then
 
@@ -145,17 +133,35 @@ if ! save_opts_in_vhost_config "$tmp_vhost"     \
 fi
 
 su -l -s /bin/bash -c "
-  set -ex
+  umask 022
+  set -e
 
-  find $doc_root -type f -iname \*.php -exec chmod 644 {} \;
+  . $sys_dir/lib/functions
 
-  find $doc_root -type d -exec chmod 711 {} \;
+  load_devpanel_config 
 
-  rm -rf ~/public_html/$tmp_vhost.[0-9]*
+  load_vhost_config $tmp_vhost
+
+  doc_root=\"\$v__vhost__document_root\"
+
+	rm -rf \$doc_root
+	mkdir -m 751 \$doc_root
+
+	tar -zxf $source_file --no-same-owner --strip-components 1 -C \$doc_root
+	cp -r -v $self_dir/conf/. \$doc_root/conf/
+	chmod 600 \$doc_root/conf/*auth*.php
+
+	chown -R \$v__vhost__linux_user:\$lamp__apache__exec_group \$doc_root
+
+  find \$doc_root -type f -iname \*.php -exec chmod 644 {} \;
+
+  find \$doc_root -type d -exec chmod 711 {} \;
+
+  rm -rf \$doc_root.[0-9]*
   rm -f ~/.*.passwd ~/*.passwd ~/.bash_* ~/.viminfo ~/.mysql_history ~/.ssh/* \
     ~/.emacs ~/.my.cnf ~/.profile
   unset HISTFILE
-" "$web_user"
+" "$v__vhost__linux_user"
 
 if [ $? -ne 0 ]; then
   error "unable to cleanely setup environment"

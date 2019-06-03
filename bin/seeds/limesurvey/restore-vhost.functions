@@ -43,7 +43,7 @@ limesurvey_update_config()
    s/^[[:space:]]*\$databaselocation[[:space:]]*=[[:space:]]*.*/    \$databaselocation = '$mysql_host';/
    s/^[[:space:]]*\$databaseport[[:space:]]*=[[:space:]]*.*/    \$databaseport = '$mysql_port';/
    s/^[[:space:]]*\$databasename[[:space:]]*=[[:space:]]*.*/    \$databasename = '$hosting_database';/
-  " | run_ised "$home/public_html/$vhost/config.php"
+  " | run_ised "$public_html_dir/config.php"
 }
 
 limesurvey_custom() {

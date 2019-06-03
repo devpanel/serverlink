@@ -19,7 +19,7 @@ piwik_encrypt()
 
 piwik_get_admin_user()
 {
-   local admin=`grep -Eo '^[[:space:]]*login[[:space:]]=[[:space:]]\"(.+)\"' $home/public_html/$vhost/config/config.ini.php | cut -d "\"" -f2`
+   local admin=`grep -Eo '^[[:space:]]*login[[:space:]]=[[:space:]]\"(.+)\"' $public_html_dir/config/config.ini.php | cut -d "\"" -f2`
   echo -n "$admin"
 }
 
@@ -32,7 +32,7 @@ piwik_set_password()
 
   if [ "$user" == "$admin_user" ]; then
     echo "/\[superuser\]/,/^\[/ { s/^\(password *= *\).\+/\1 $encrypted_password/; };" \
-    | run_ised "$home/public_html/$vhost/config/config.ini.php" >&2
+    | run_ised "$public_html_dir/config/config.ini.php" >&2
   else
     sql_query "update piwik_user set password = '$encrypted_password', token_auth = '$token_auth' where login = '$user';"
 
@@ -58,13 +58,13 @@ piwik_update_config()
 	local salt=`"$dir/genpass"|md5sum|cut -d " " -f 1`
 	local encodedpassword=`echo -n "$sedphpencoded_mysql_password"|md5sum|cut -d " " -f 1`
 	
-	local lines=(`awk '/password/ { print NR }' $home/public_html/$vhost/config/config.ini.php`)
+	local lines=(`awk '/password/ { print NR }' $public_html_dir/config/config.ini.php`)
 	local passwords=($encodedpassword $sedphpencoded_mysql_password $sedphpencoded_mysql_password)
 	
 	for (( i = 0 ; i < ${#lines[@]} - 1 ; i++ )); do
 		echo "
 			${lines[$i]}s/^\([[:space:]]*password[[:space:]]=[[:space:]]*\"\)\(.*\)\"$/\1${passwords[$i]}\"/
-        	"  | run_ised "$home/public_html/$vhost/config/config.ini.php"
+        	"  | run_ised "$public_html_dir/config/config.ini.php"
 	done	
  
  
@@ -75,13 +75,13 @@ piwik_update_config()
 		s/^\([[:space:]]*username[[:space:]]=[[:space:]]*\"\)\(.*\)\"$/\1$mysql_user\"/
                 s/^\([[:space:]]*dbname[[:space:]]=[[:space:]]*\"\)\(.*\)\"$/\1$hosting_database\"/
 		s/^\([[:space:]]*port[[:space:]]=[[:space:]]*\)\([0-9]*\)$/\1$mysql_port/		
-        "  | run_ised "$home/public_html/$vhost/config/config.ini.php"
+        "  | run_ised "$public_html_dir/config/config.ini.php"
 
 }
 
 piwik_install_crontab()
 {
-  CRONJOB="0 * * * * $home/public_html/$vhost/misc/cron/archive.sh > /dev/null"
+  CRONJOB="0 * * * * $public_html_dir/misc/cron/archive.sh > /dev/null"
   crontab -l | { cat; echo "$CRONJOB"; } | crontab -
 }
 

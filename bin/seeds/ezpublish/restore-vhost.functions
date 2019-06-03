@@ -46,8 +46,8 @@ ezpublish_get_admin_user()
 
 ezpublish_update_config()
 {
-  local config1="$home/public_html/$vhost/settings/siteaccess/eng/site.ini.append.php"
-  local config2="$home/public_html/$vhost/settings/siteaccess/ezwebin_site_admin/site.ini.append.php"
+  local config1="$public_html_dir/settings/siteaccess/eng/site.ini.append.php"
+  local config2="$public_html_dir/settings/siteaccess/ezwebin_site_admin/site.ini.append.php"
 
   local tab=$(echo -e '\t')
 

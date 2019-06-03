@@ -52,7 +52,7 @@ magento_update_config()
    s/^\([[:space:]]*\)\(<username>.*<\/username>\)/\1<username><![CDATA[$mysql_user]]><\/username>/;
    s/^\([[:space:]]*\)\(<password>.*<\/password>\)/\1<password><![CDATA[$sedencoded_mysql_password]]><\/password>/;
    s/^\([[:space:]]*\)\(<dbname>.*<\/dbname>\)/\1<dbname><![CDATA[$hosting_database]]><\/dbname>/;
-  " | run_ised "$home/public_html/$vhost/app/etc/local.xml"
+  " | run_ised "$public_html_dir/app/etc/local.xml"
 
   # magento by default does some redirections with the full URL, but this
   # causes several incoveniences when the database is shared by different
@@ -78,7 +78,7 @@ magento_custom() {
     echo 'Clearing site access history'
     sql_clear_table core_session log_url log_url_info log_visitor log_visitor_info
     echo 'Clearing cache dir'
-    run find "$home/public_html/$vhost/var/cache/" \! -type d -exec rm -f {} \;
+    run find "$public_html_dir/var/cache/" \! -type d -exec rm -f {} \;
   fi
 
   echo "Updating settings.php"

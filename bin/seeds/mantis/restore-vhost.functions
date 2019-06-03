@@ -38,18 +38,18 @@ mantis_get_admin_user() {
 mantis_update_config()
 {
   fqdn_real=`echo $fqdn | cut -f2- -d\.`
-  [ -f "$home/public_html/$vhost/.htaccess" ] && \
+  [ -f "$public_html_dir/.htaccess" ] && \
     echo "
     s/http:\/\/[^/]*/http:\/\/$vhost.$fqdn_real/ ;
     s/{FQDN}/http:\/\/$vhost.$fqdn_real\//;
-" | run_ised_p "$home/public_html/$vhost/.htaccess"
+" | run_ised_p "$public_html_dir/.htaccess"
 
   echo "
      s/^[[:space:]]*\$g_hostname[[:space:]]*=[[:space:]]*'.*/\t\$g_hostname = '$mysql_host:$mysql_port';/
      s/^[[:space:]]*\$g_db_username[[:space:]]*=[[:space:]]*'.*/\t\$g_db_username = '$mysql_user';/
      s/^[[:space:]]*\$g_db_password[[:space:]]*=[[:space:]]*'.*/\t\$g_db_password = '$sedphpencoded_mysql_password';/
      s/^[[:space:]]*\$g_database_name[[:space:]]*=[[:space:]]*'.*/\t\$g_database_name = '$hosting_database';/
-      " | run_ised "$home/public_html/$vhost/config_inc.php"
+      " | run_ised "$public_html_dir/config_inc.php"
 
   // For 1.2
   echo "
@@ -57,7 +57,7 @@ mantis_update_config()
      s/^[[:space:]]*\$g_db_username[[:space:]]*=[[:space:]]*'.*/\t\$g_db_username = '$mysql_user';/
      s/^[[:space:]]*\$g_db_password[[:space:]]*=[[:space:]]*'.*/\t\$g_db_password = '$sedphpencoded_mysql_password';/
      s/^[[:space:]]*\$g_database_name[[:space:]]*=[[:space:]]*'.*/\t\$g_database_name = '$hosting_database';/
-  " | run_ised "$home/public_html/$vhost/config_inc.php"
+  " | run_ised "$public_html_dir/config_inc.php"
 }
 
 mantis_custom() {

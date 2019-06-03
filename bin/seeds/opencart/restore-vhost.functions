@@ -40,7 +40,7 @@ opencart_update_php_config()
   run_mysql -B -D "$hosting_database" \
             -e "UPDATE setting SET value = 'http://$fqdn/' WHERE \`key\` = 'config_url';"
 
-  local opencart_dir="$home/public_html/$vhost"
+  local opencart_dir="$public_html_dir"
   opencart_dir=$(echo -n "$opencart_dir" | sed 's|/|\\/|g;')
   local base_url=${WEBENABLED_HOSTING_LINK_BASE_URL:-"http:\/\/$fqdn"}
 
@@ -70,7 +70,7 @@ opencart_update_php_config()
 "$opencart_dir\/image\/" "$opencart_dir\/system\/cache\/" \
 "$opencart_dir\/download\/" "$opencart_dir\/system\/logs\/" \
 mysql "$mysql_host:$mysql_port" "$mysql_user" "$mysql_password" "$hosting_database" \
-"" | run_ised "$home/public_html/$vhost/config.php"
+"" | run_ised "$public_html_dir/config.php"
 
 
   printf "
@@ -107,7 +107,7 @@ mysql "$mysql_host:$mysql_port" "$mysql_user" "$mysql_password" "$hosting_databa
 "$opencart_dir\/system\/cache\/" "$opencart_dir\/download\/" \
 "$opencart_dir\/system\/logs\/" "$opencart_dir\/catalog\/" \
 mysql "$mysql_host:$mysql_port" "$mysql_user" "$mysql_password" "$hosting_database" \
-"" | run_ised "$home/public_html/$vhost/admin/config.php"
+"" | run_ised "$public_html_dir/admin/config.php"
 }
 
 opencart_get_admin_user() {
@@ -117,7 +117,7 @@ opencart_get_admin_user() {
 opencart_custom()
 {
   if [ -z "$opt_n" ]; then
-    rm -f "$home/public_html/$vhost/system/cache/"*
+    rm -f "$public_html_dir/system/cache/"*
   fi
 
   echo "Updating config.php"

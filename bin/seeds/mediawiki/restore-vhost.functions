@@ -41,7 +41,7 @@ mediawiki_update_config() {
     s/^\(\$wgDBname\) *= *.\+/\1 = \"$hosting_database\"\;/;
     s/^\(\$wgDBuser\) *= *.\+/\1 = \"$mysql_user\"\;/;
     s/^\(\$wgDBpassword\) *= *.\+/\1 = \"$mysql_password\"\;/;
-  " | run_ised_p "$home/public_html/$vhost/LocalSettings.php"
+  " | run_ised_p "$public_html_dir/LocalSettings.php"
 }
 
 mediawiki_custom() {

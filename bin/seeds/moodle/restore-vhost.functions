@@ -60,7 +60,7 @@ moodle_update_config() {
     s/^\(\$CFG->directorypermissions\) *= *.\+\;/\1 = 0755\;/;
     s/^\(\$CFG->dataroot\) *= *'.*'\;/\1 = '$dataroot'\;/;
     s/^ini_set([\"']mysqli.default_port[\"'].\+/ini_set('mysqli.default_port', $mysql_port)\;/;
-    " | run_ised_p "$home/public_html/$vhost/config.php"
+    " | run_ised_p "$public_html_dir/config.php"
 
   # moodle uses mysqli, which doesn't accept the host:port syntax as mysql
   # addr and the installation doesn't allow to set an alternate port

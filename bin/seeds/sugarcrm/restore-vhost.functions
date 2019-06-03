@@ -60,7 +60,7 @@ sugarcrm_update_php_config()
     s/^[[:space:]]*[\"']generatepasswordtmpl[\"'][[:space:]]*=>[[:space:]]*[\"']\\([^'\"]*\\)[\"'][[:space:]]*,/    'generatepasswordtmpl' => '$(uuidgen)',/;
     s/^[[:space:]]*[\"']lostpasswordtmpl[\"'][[:space:]]*=>[[:space:]]*[\"']\\([^'\"]*\\)[\"'][[:space:]]*,/    'lostpasswordtmpl' => '$(uuidgen)',/;
 
-" | run_ised "$home/public_html/$vhost/config.php"
+" | run_ised "$public_html_dir/config.php"
   status=$?
 
   return $status

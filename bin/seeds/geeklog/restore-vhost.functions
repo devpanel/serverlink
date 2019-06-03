@@ -65,7 +65,7 @@ geeklog_update_db_config()
 {
    echo "
           s@^\$_CONF\['path'][[:space:]]*=[[:space:]]*'\\([^']*\\)'*;@\$_CONF['path'] = '$home\/public_html\/';@
-" | run_ised "$home/public_html/$vhost/siteconfig.php"
+" | run_ised "$public_html_dir/siteconfig.php"
 
   status=$?
   return $status;

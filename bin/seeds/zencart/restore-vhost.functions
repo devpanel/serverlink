@@ -40,6 +40,7 @@ zencart_update_config()
 {
   local fqdn_real=`echo $fqdn | cut -f2- -d\.`
   local secret_admin_path='administration'
+  local public_html_esc=${public_html_dir//\//\\\/\\\/}
 
   echo "
    s/^[[:space:]]*define[[:space:]]*([[:space:]]*'DB_SERVER_USERNAME'.*/define('DB_SERVER_USERNAME', '$mysql_user');/
@@ -48,9 +49,9 @@ zencart_update_config()
    s/^[[:space:]]*define[[:space:]]*([[:space:]]*'DB_DATABASE'.*/define('DB_DATABASE', '$hosting_database');/
    s/^[[:space:]]*define[[:space:]]*([[:space:]]*'HTTP_SERVER'.*/define('HTTP_SERVER', 'http:\/\/$vhost.$fqdn_real');/
    s/^[[:space:]]*define[[:space:]]*([[:space:]]*'HTTPS_SERVER'.*/define('HTTPS_SERVER', 'https:\/\/$vhost.$fqdn_real');/
-   s/^[[:space:]]*define[[:space:]]*([[:space:]]*'DIR_FS_CATALOG'.*/define('DIR_FS_CATALOG', '\/home\/clients\/websites\/w_$vhost\/public_html\/$vhost\/');/
-   s/^[[:space:]]*define[[:space:]]*([[:space:]]*'DIR_FS_SQL_CACHE'.*/define('DIR_FS_SQL_CACHE', '\/home\/clients\/websites\/w_$vhost\/public_html\/$vhost\/cache\/');/
-  " | run_ised "public_html/$vhost/includes/configure.php"
+   s/^[[:space:]]*define[[:space:]]*([[:space:]]*'DIR_FS_CATALOG'.*/define('DIR_FS_CATALOG', '$public_html_esc\/');/
+   s/^[[:space:]]*define[[:space:]]*([[:space:]]*'DIR_FS_SQL_CACHE'.*/define('DIR_FS_SQL_CACHE', '$public_html_esc\/cache\/');/
+  " | run_ised "$public_html_dir/includes/configure.php"
 
   echo "
    s/^[[:space:]]*define[[:space:]]*([[:space:]]*'DB_SERVER_USERNAME'.*/define('DB_SERVER_USERNAME', '$mysql_user');/
@@ -61,12 +62,12 @@ zencart_update_config()
    s/^[[:space:]]*define[[:space:]]*([[:space:]]*'HTTPS_SERVER'.*/define('HTTPS_SERVER', 'https:\/\/$vhost.$fqdn_real');/
    s/^[[:space:]]*define[[:space:]]*([[:space:]]*'HTTP_CATALOG_SERVER'.*/define('HTTP_CATALOG_SERVER', 'http:\/\/$vhost.$fqdn_real');/
    s/^[[:space:]]*define[[:space:]]*([[:space:]]*'HTTPS_CATALOG_SERVER'.*/define('HTTPS_CATALOG_SERVER', 'https:\/\/$vhost.$fqdn_real');/
-   s/^[[:space:]]*define[[:space:]]*([[:space:]]*'DIR_FS_CATALOG'.*/define('DIR_FS_CATALOG', '\/home\/clients\/websites\/w_$vhost\/public_html\/$vhost\/');/
-   s/^[[:space:]]*define[[:space:]]*([[:space:]]*'DIR_FS_ADMIN'.*/define('DIR_FS_ADMIN', '\/home\/clients\/websites\/w_$vhost\/public_html\/$vhost\/$secret_admin_path\/');/
+   s/^[[:space:]]*define[[:space:]]*([[:space:]]*'DIR_FS_CATALOG'.*/define('DIR_FS_CATALOG', '$public_html_esc\/');/
+   s/^[[:space:]]*define[[:space:]]*([[:space:]]*'DIR_FS_ADMIN'.*/define('DIR_FS_ADMIN', '$public_html_esc\/$secret_admin_path\/');/
    s/^[[:space:]]*define[[:space:]]*([[:space:]]*'DIR_WS_ADMIN'.*/define('DIR_WS_ADMIN', '\/$secret_admin_path\/');/
    s/^[[:space:]]*define[[:space:]]*([[:space:]]*'DIR_WS_HTTPS_ADMIN'.*/define('DIR_WS_HTTPS_ADMIN', '\/$secret_admin_path\/');/
-   s/^[[:space:]]*define[[:space:]]*([[:space:]]*'DIR_FS_SQL_CACHE'.*/define('DIR_FS_SQL_CACHE', '\/home\/clients\/websites\/w_$vhost\/public_html\/$vhost\/cache\/');/
-  " | run_ised "public_html/$vhost/$secret_admin_path/includes/configure.php"
+   s/^[[:space:]]*define[[:space:]]*([[:space:]]*'DIR_FS_SQL_CACHE'.*/define('DIR_FS_SQL_CACHE', '$public_html_esc\/cache\/');/
+  " | run_ised "$public_html_dir/$secret_admin_path/includes/configure.php"
 }
 
 zencart_custom()
@@ -77,7 +78,7 @@ zencart_custom()
     echo 'Clearing table db_cache (ignore errors)'
     sql_clear_table db_cache
 
-    run rm -f "$HOME/public_html/$vhost/cache/sess_"*
+    run rm -f "$public_html_dir/cache/sess_"*
   fi
 
   zencart_update_config || error "Cannot update configure.php"

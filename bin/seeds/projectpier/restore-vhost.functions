@@ -47,12 +47,12 @@ projectpier_update_config()
     s/^[[:space:]]*define[[:space:]]*([[:space:]]*'DB_HOST'.*/define('DB_HOST', '$mysql_host:$mysql_port');/
     s/^[[:space:]]*define[[:space:]]*([[:space:]]*'DB_NAME'.*/define('DB_NAME', '$hosting_database');/
     s/^[[:space:]]*define[[:space:]]*([[:space:]]*'ROOT_URL'.*/define('ROOT_URL', 'http:\\/\\/$fqdn');/
-    " | run_ised "$home/public_html/$vhost/config/config.php"
+    " | run_ised "$public_html_dir/config/config.php"
 }
 
 projectpier_custom() {
   echo 'Clearing cache dir '
-  run rm -rf "$home/public_html/$vhost/cache/"*
+  run rm -rf "$public_html_dir/cache/"*
   echo "Updating config.php"
   projectpier_update_config || error "Cannot update config.php"
 }

@@ -38,6 +38,8 @@ cleanup() {
 
 # main
 app_type=magento2
+subsystem="$app_type"
+db_name="$app_type"
 
 unset archive_file
 getopt_flags='ho:'
@@ -111,49 +113,57 @@ if [ $? -ne 0 ]; then
 fi
 
 unset vhost_created
-if ! devpanel create vhost --vhost "$tmp_vhost" --from we://blank; then
+if ! devpanel create vhost --vhost "$tmp_vhost" --from we://blank --dedicated-mysql; then
   exit 1
 fi
 vhost_created=1
 
-devpanel set php version --version 7.1 --vhost "$tmp_vhost" || exit $?
+devpanel set php version --version 7 --vhost "$tmp_vhost" || exit $?
 
 trap 'cleanup' EXIT
 
-# app:0:_:db_host $mysql_host
-# app:0:_:db_port $mysql_port
-# app:0:_:db_user $mysql_user
-# app:0:_:db_password $mysql_password
-# app:0:_:seed_app $subsystem
-# app:0:_:db_name $subsystem
+if ! save_opts_in_vhost_config "$tmp_vhost"     \
+     "app.subsystem     = $subsystem"            \
+     "app.database_name = $db_name" ; then
 
-echo "
-set app:0:_:seed_app $app_type
-set app:0:_:db_name  $app_type
-" | "$sys_dir/libexec/apache-metadata-handler" -q "$tmp_vhost"
+  error "failed to update vhost config"
+fi
+
+if ! load_vhost_config "$tmp_vhost"; then
+  error "failed to load configuration of new vhost"
+fi
 
 su -l -s /bin/bash -c "
+  umask 022
   set -e
+
+  . $sys_dir/lib/functions
+
+  load_devpanel_config 
+
+  load_vhost_config $tmp_vhost
+
+  doc_root=\"\$v__vhost__document_root\"
+
+  rm -rf \$doc_root
+
+  mkdir -m 751 \$doc_root
+  
+  tar -zxf - -C \$doc_root
 
   mysql -e 'DROP DATABASE scratch;'
   mysql -e 'DROP DATABASE test;'
   mysql -e 'CREATE DATABASE magento2;'
 
-  rm -rf ~/public_html/$tmp_vhost/  # remove public_html/vhost
-
-  mkdir -m 751 ~/public_html/$tmp_vhost/
-  
-  tar -zxf - -C ~/public_html/$tmp_vhost
-
   $sys_dir/bin/restore-vhost-subsystem -n -F \
                  -O config_function=setup_from_cli
 
-  rm -rf ~/public_html/$tmp_vhost.[0-9]*
+  rm -rf \$doc_root.[0-9]*
   rm -f ~/.*.passwd ~/*.passwd ~/.bash_* ~/.viminfo ~/.mysql_history ~/.ssh/* \
     ~/.emacs ~/.my.cnf ~/.profile
   unset HISTFILE
 
-" "w_$tmp_vhost" < "$src_archive"
+" "$v__vhost__linux_user" < "$src_archive"
 
 if [ $? -ne 0 ]; then
   error "unable to cleanely setup environment"

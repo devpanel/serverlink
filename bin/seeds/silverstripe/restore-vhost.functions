@@ -49,11 +49,11 @@ silverstripe_update_config()
    s/^[[:space:]]*\"password\"[[:space:]]*=>[[:space:]]*.*/    \"password\" => '$sedphpencoded_mysql_password',/
    s/^[[:space:]]*\"server\"[[:space:]]*=>[[:space:]]*.*/    \"server\" => '$mysql_host:$mysql_port',/
    s/^[[:space:]]*\"database\"[[:space:]]*=>[[:space:]]*.*/    \"database\" => '$hosting_database',/
-  " | run_ised "$home/public_html/$vhost/mysite/_config.php"
+  " | run_ised "$public_html_dir/mysite/_config.php"
 }
 
 silverstripe_custom() {
   silverstripe_update_config || error "Cannot update _config.php"
-  run rm -rf "$home/public_html/$vhost/silverstripe-cache/"*
+  run rm -rf "$public_html_dir/silverstripe-cache/"*
 }
 

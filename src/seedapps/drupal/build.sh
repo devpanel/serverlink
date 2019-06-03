@@ -54,6 +54,7 @@ cleanup() {
 [ "$1" == "-h" -o -z "$1" ] && usage
 
 app_subsystem=drupal
+db_name=drupal
 unset drush_ver output_file
 getopt_flags='hD:o:'
 while getopts $getopt_flags OPTN; do
@@ -157,7 +158,7 @@ load_devpanel_config || exit $?
 
 unset vhost_created
 if ! devpanel create vhost --vhost "$tmp_vhost" \
-       --from webenabled://blank; then
+       --from webenabled://blank --dedicated-mysql; then
 
   error "unable to create temporary vhost"
 fi
@@ -166,9 +167,13 @@ trap 'cleanup' EXIT
 
 if ! save_opts_in_vhost_config "$tmp_vhost"     \
      "app.subsystem     = $app_subsystem"       \
-     "app.database_name = $app_subsystem"; then
+     "app.database_name = $db_name"; then
 
   error "failed to update vhost config"
+fi
+
+if [ "$drush_ver" == 8 ]; then
+  devpanel set php version --version 7 --vhost $tmp_vhost
 fi
 
 load_vhost_config "$tmp_vhost" || exit $?
@@ -181,14 +186,24 @@ mysql_pw=$v__mysql__client__password
 mysql_uri="mysql://$mysql_user:$mysql_pw@$mysql_host:$mysql_port/drupal"
 
 su -l -s /bin/bash -c "
-  set -ex
-  cd ~/public_html
+  umask 022
+  set -e
 
-  rm -r $tmp_vhost/  # remove public_html/vhost
-  
-  drush dl --drupal-project-rename=$tmp_vhost $distro
+  . $sys_dir/lib/functions
 
-  cd $tmp_vhost
+  load_devpanel_config 
+
+  load_vhost_config $tmp_vhost
+
+  doc_root=\"\$v__vhost__document_root\"
+
+  rm -rf \$doc_root
+
+  cd \${doc_root%/*}
+ 
+  drush dl --drupal-project-rename=\${doc_root##*/} $distro
+
+  cd \$doc_root
 
   # if drush was passed by user input, or guessed
   if [ -n \"$drush_ver\" ]; then
@@ -223,11 +238,11 @@ su -l -s /bin/bash -c "
   mysql -e 'DROP DATABASE test;' || true
   mysql -e 'DROP DATABASE scratch;'
 
-  rm -rf ~/public_html/$tmp_vhost.[0-9]*
+  rm -rf \$doc_root.[0-9]*
   rm -f ~/.*.passwd ~/*.passwd ~/.bash_* ~/.viminfo ~/.mysql_history ~/.ssh/* \
     ~/.emacs ~/.my.cnf ~/.profile
   unset HISTFILE
-" "w_$tmp_vhost"
+" "$v__vhost__linux_user"
 
 if [ $? -ne 0 ]; then
   error "unable to cleanely install drupal"
