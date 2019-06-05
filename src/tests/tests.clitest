@@ -21,7 +21,7 @@ $ devpanel get server info                          #=> --egrep ^Long vhost name
 $ devpanel get server info                          #=> --egrep ^PHP Version: [5-7](\.[0-9])?$
 $ devpanel get server info                          #=> --egrep ^Platform Version: [1-3]$
 
-$ devpanel list apps                                #=> --exit 0
+$ devpanel list seed apps                           #=> --exit 0
 
 $ devpanel list mysql instances | egrep '^default-mysql[[:space:]]+'  #=> --exit 0
 $ devpanel ping    mysql instance  --instance default-mysql           #=> --exit 0
@@ -39,7 +39,7 @@ $ stat -c %A /etc/devpanel/lamp/mysql/instances/default-mysql/root.client.cnf  #
 ##########
 #
 #########
-$ devpanel install app --vhost d7-test-one --app drupal-v7 --dedicated-mysql #=> --exit 0
+$ devpanel install seed app --vhost d7-test-one --app drupal-v7 --dedicated-mysql #=> --exit 0
 $ devpanel test http --vhost d7-test-one                   #=> --exit 0
 $ stat -c %A /etc/devpanel/lamp/vhosts/d7-test-one/mysql/my.cnf  #=> -rw-r-----
 $ d=/etc/devpanel/lamp/vhosts/d7-test-one ;  stat -c %G $d/mysql/my.cnf | fgrep -x `egrep '^linux_user=' $d/config.ini | cut -d= -f 2` #=> --exit 0
@@ -116,7 +116,7 @@ $ devpanel clone vhost --source-vhost d7-test-one --target-vhost d7-test-two   #
 $ devpanel test http --vhost d7-test-two   #=> --exit 0
 
 # Testing global PHP version
-$ devpanel create vhost --from webenabled://blank --vhost blk1 --skip-mysql #=> --exit 0
+$ devpanel create vhost --from webenabled://blank --vhost blk1 --skip-mysql --subsystem scratch #=> --exit 0
 $ devpanel set default php --version 7.1                       #=> --exit 0
 $ devpanel exec --vhost blk1 php -v                            #=> --egrep ^PHP 7.1.[0-9]+
 $ devpanel show vhost info --vhost blk1                        #=> --egrep ^PHP Version: 7.1
@@ -130,7 +130,7 @@ $ devpanel remove vhost --vhost blk1 --file - >/dev/null #=> --exit 0
 $ devpanel test http --vhost blk1      #=> --exit 1
 
 # Test migration of a vhost from a public MySQL instance to a private one
-$ devpanel install app --app wordpress-v4 --vhost wp-tstm2 --mysql-instance default-mysql  #=> --exit 0
+$ devpanel install seed app --app wordpress-v4 --vhost wp-tstm2 --mysql-instance default-mysql  #=> --exit 0
 $ devpanel test http --vhost wp-tstm2  #=> --exit 0
 $ devpanel create mysql instance --name wp-tstm2-mysql --shared no #=> --exit 0
 $ devpanel run mysql client as root --instance wp-tstm2-mysql -- -e "SHOW DATABASES"  #=> --exit 0
@@ -144,7 +144,7 @@ $ devpanel remove vhost --vhost wp-tstm2 --file - >/dev/null #=> --exit 0
 $ devpanel test http --vhost wp-tstm2      #=> --exit 1
 $ devpanel show mysql instance info --instance wp-tstm2-mysql #=> --exit 1
 
-$ devpanel install app --app wordpress-v4 --vhost wp-prv2pbl --dedicated-mysql  #=> --exit 0
+$ devpanel install seed app --app wordpress-v4 --vhost wp-prv2pbl --dedicated-mysql  #=> --exit 0
 $ devpanel remove mysql instance --instance wp-prv2pbl   #=> --exit 1
 $ devpanel test http --vhost wp-prv2pbl                  #=> --exit 0
 $ devpanel move vhost to mysql instance --vhost wp-prv2pbl --dest-instance default-mysql         #=> --exit 0
@@ -165,7 +165,7 @@ $ devpanel exec --vhost d7-test-one wc -l \< .ssh/authorized_keys #=> 2
 $ : ssh_rm  ; kf=$(mktemp) && rm -f $kf && trap 'rm -f $kf' EXIT && ssh-keygen -f $kf -t rsa -b 4096 -P '' && devpanel add ssh key --vhost d7-test-one --file $kf.pub && devpanel remove ssh key --vhost d7-test-one --file $kf.pub #=> --exit 0
 $ : #=> --exit 0
 
-$ devpanel install app  --vhost wp-four-test-one --app wordpress-v4 #=> --exit 0
+$ devpanel install seed app  --vhost wp-four-test-one --app wordpress-v4 #=> --exit 0
 $ devpanel ping mysql instance --vhost wp-four-test-one                   #=> --exit 0
 $ devpanel test http --vhost wp-four-test-one                      #=> --exit 0
 $ devpanel stop   mysql instance --vhost wp-four-test-one                   #=> --exit 0
@@ -174,7 +174,7 @@ $ devpanel ping mysql instance --vhost wp-four-test-one                   #=> --
 $ devpanel restart mysql instance --vhost wp-four-test-one                   #=> --exit 0
 $ devpanel ping mysql instance --vhost wp-four-test-one                   #=> --exit 0
 
-$ devpanel install app  --vhost grav1 --app grav-v1           #=> --exit 0
+$ devpanel install seed app  --vhost grav1 --app grav-v1           #=> --exit 0
 $ devpanel ping mysql instance --vhost grav1                #=> --exit 0
 $ devpanel test http --vhost grav1                            #=> --exit 0
 

@@ -10,7 +10,7 @@ set_usage_msg \
   Lists the applications available for installation.
 "
 
-devpanel_cmd__list_apps() {
+devpanel_cmd__list_seed_apps() {
 
   local name vhost arg publisher
   local -a cmd_args=()

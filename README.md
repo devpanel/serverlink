@@ -42,7 +42,7 @@ One of the most common operations is to install applications on a new virtual ho
 To see the applications available to install, run the following command:
 
 ```
-# devpanel list apps
+# devpanel list seed apps
 ```
 It'll display an output similar to the one below:
 ```
@@ -55,7 +55,7 @@ grav-v1        	Grav CMS 	1.02
 ```
 To install an application on a new vhost, run:
 ```
-# devpanel install app --app drupal-v7 --vhost d7new
+# devpanel install seed app --app drupal-v7 --vhost d7new
 ```
 This will create a new virtual host named `d7new` with a Drupal 7 configured on it. It'll display the basic information about the virtual host just after creating it:
 ```

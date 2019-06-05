@@ -1,8 +1,8 @@
 Usage: @self_basename@ <command> [args]
 
  Main Commands
-    list apps                 list apps available to install
-    install app               install an application on a new virtual host
+    list seed apps            list seed apps available to install
+    install seed app          install an application on a new virtual host
 
     list vhosts               lists all vhosts on this server
     backup vhost              creates a backup of the app files and database

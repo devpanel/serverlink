@@ -23,7 +23,7 @@ set_usage_msg \
   Installs the specified application in a new virtual host.
 "
 
-devpanel_cmd__install_app(){
+devpanel_cmd__install_seed_app(){
   [ -z "$1" ] && usage
 
   local name vhost arg publisher app app_url desc php_version

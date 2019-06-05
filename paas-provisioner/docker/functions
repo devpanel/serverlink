@@ -577,10 +577,10 @@ operation_create()
       return 1
     fi
 
-    ${sudo} devpanel install app --app "${app}" --publisher devpanel --vhost "${vhost}"
+    ${sudo} devpanel install seed app --app "${app}" --publisher devpanel --vhost "${vhost}"
     local st=$?
     if [ $st -ne 0 ]; then
-      echo "Error: failed to install app '$app' on vhost '$vhost'" 1>&2
+      echo "Error: failed to install seed app '$app' on vhost '$vhost'" 1>&2
       return $st
     fi
 

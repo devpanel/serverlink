@@ -4,8 +4,8 @@ You can get more information with command:
 @sb@ @self_basename@ help
 
 To get a list of available apps to install:
-@sb@ @self_basename@ list apps
+@sb@ @self_basename@ list seed apps
 
 Hint: to create a new virtual vhost with Drupal 7 run the command:
-@sb@ @self_basename@ install app --app drupal-v7
+@sb@ @self_basename@ install seed app --app drupal-v7
 

@@ -1,6 +1,6 @@
 
 
-$ devpanel list apps --all
+$ devpanel list seed apps --all
 $ devpanel get app info --name some-name
 
 $ devpanel create  app --name my-app-name [--engine <name>]
