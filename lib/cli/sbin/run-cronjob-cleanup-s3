@@ -1,0 +1,107 @@
+#!/bin/bash
+
+set_usage_msg \
+  "Usage: $bin_name ${cmd_ar[*]} --yes
+
+  Options:
+    --yes                       confirm the intent to run the command
+    --dry-run                   don't actually cleanup, only show what would
+                                be done
+  
+  Loop through each vhost and remove old files from S3.
+"
+
+devpanel_cmd__run_cronjob_cleanup_s3() {
+  [ $# -eq 0 -o -z "$1" ] && usage
+
+  local vhost confirmed dry_run cache_file curr_epoch_time
+  local -a cmd_args_ar=()
+
+  while [ -n "$1" ]; do
+    name="$1"
+    case "$name" in
+      --yes)
+        confirmed=yes
+        shift
+        ;;
+
+      --dry-run)
+        dry_run=yes
+        shift
+        ;;
+
+      --help)
+        usage
+        ;;
+
+      --)
+        shift
+        break
+        ;;
+
+      *)
+        error "unknown option $name" -
+        return $?
+        ;;
+    esac
+  done
+
+  if ! is_var_set_to_yes confirmed; then
+    error "to confirm the intent to run, please add --yes to the command line" -
+    return $?
+  fi
+
+  if ! is_current_hour_within_ops_range; then
+    exit 0
+  fi
+
+  local lock_name="cleanup_s3"
+  devpanel_lock $lock_name || return $?
+  devpanel_trap_exit_cmds_ar+=( "devpanel_unlock $lock_name" )
+
+  for vhost in $(get_list_of_enabled_vhosts); do
+    cmd_args_ar=()
+
+    if has_a_safe_level_of_free_ram; then
+      vhost_exists "$vhost" || continue
+
+      load_vhost_config "$vhost" || continue
+
+      cleanup_namespace cleanup_run
+
+      is_s3_uploads_enabled_for_vhost || continue
+
+      [ ! -d "$v__cache_dir" ] && continue
+      cache_file="$v__cache_dir/s3_cleanup.ltsv"
+
+      if [ -s "$cache_file" ]; then
+        ltsv_load_line_from_file_into_namespace cf "$cache_file" || continue
+
+        curr_epoch_time=$(date +%s)
+        if [ $? -eq 0 -a \
+             $(( $curr_epoch_time - $cf__previous_run_time_epoch )) -lt 86400 ]; then
+
+          # if it ran successfully less than 24 hours ago, then skip it
+          continue
+        fi
+      fi
+        
+      cmd_args_ar+=( --vhost "$vhost" )
+      if is_var_set_to_yes dry_run ; then
+        cmd_args_ar+=( --dry-run )
+      fi
+
+      devpanel_run cleanup old s3 files "${cmd_args_ar[@]}"
+      if [ $? -eq 0 ]; then
+        cleanup_run__previous_date=$(date +%Y-%m-%d)
+        cleanup_run__previous_run_time_epoch=$(date +%s)
+        ltsv_save_namespace_to_file cleanup_run "$cache_file"
+      fi
+    else
+      # not enough free ram, the server might be in a high memory pressure.
+      # Just stop trying
+      break
+    fi
+  done
+
+}

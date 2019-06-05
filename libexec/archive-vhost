@@ -29,6 +29,8 @@ usage() {
     -C        don't do checksum calculations
     -G        skip vhost group ownership changes on directories (used when
               removing a vhost)
+    -K k:v    specify key-value based metadata to store along with the
+              backup file
 
   This command creates an archive of the current state of a vhost, saving
   Apache files and MySQL databases into a tar ball.
@@ -69,7 +71,7 @@ process_still_exists() {
 
 [ $# -eq 0 -o -z "$1" ] && usage
 
-declare -a archive_web_args_ar=()
+declare -a archive_web_args_ar=() in_metadata_ar=()
 check_archive_pathname_options=""
 debug=""
 in_user_path=""
@@ -78,7 +80,7 @@ skip_group_changes=""
 
 umask 027
 
-while getopts "PudGCe:x:" OPTOPT
+while getopts "PudGCe:x:K:" OPTOPT
 do
   case "$OPTOPT" in
     P) archive_web_args_ar+=( -$OPTOPT ) ;;
@@ -95,6 +97,13 @@ do
       ;;
     x)
       archive_web_args_ar+=( -$OPTOPT "$OPTARG" )
+      ;;
+    K)
+      if [[ "$OPTARG" =~ ^[A-Za-z0-9_]+:.+$ ]]; then
+        in_metadata_ar+=( "$OPTARG" )
+      else
+        error "invalid format for metadata string. Accepted format: ^[A-Za-z0-9_]+:.+$"
+      fi
       ;;
     *) exit 1;
   esac
@@ -348,6 +357,9 @@ else
   fi
 fi
 
+cleanup_namespace fmeta
+fmeta__start_time=$(date +%s)
+
 echo "Archiving web files..." 1>&2
 ${debug:+run} "$0-web" "${archive_web_args_ar[@]}" "$vhost" "$tmp_archive_dir/web" 1>&2
 if [ $? -ne 0 ]; then
@@ -363,6 +375,7 @@ if [ -n "$v__mysql__instance" ]; then
 else
   opts_ar+=( "mysql.skip = yes" )
 fi
+fmeta__end_time=$(date +%s)
 
 # write devpanel.ini with the app metadata
 for var in app__database_name app__subsystem php__version; do
@@ -447,7 +460,18 @@ fi
 
 # now move the tmp file to the target location
 # don't overwrite in case the target file exists
-if ! ${debug:+run} mv -n "$tmp_target_file" "$target_file"; then
+if ${debug:+run} mv -n "$tmp_target_file" "$target_file"; then
+  for raw_kv in "${in_metadata_ar[@]}"; do
+    key=${raw_kv%%:*}
+    value=${raw_kv#*:}
+    set_global_var fmeta__${key} "$value"
+  done
+
+  metadata_file="${target_file%/*}/.${target_file##*/}.metadata.ltsv"
+  if ! ltsv_save_namespace_to_file fmeta "$metadata_file"; then
+    warn_3lines "failed to save metadata to file '$metadata_file'"
+  fi
+else
   error "unable to move '$tmp_target_file' to '$target_file'"
 fi
 

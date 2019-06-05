@@ -1,0 +1,75 @@
+#!/bin/bash
+
+set_usage_msg \
+  "Usage: $bin_name ${cmd_ar[*]} <--name name>
+
+  Required Options:
+    --name   <name>                 name of the profile
+
+
+  Removes a S3 server profile.
+"
+
+devpanel_cmd__remove_s3_server_profile() {
+  [ $# -eq 0 -o -z "$1" ] && usage
+
+  local name
+  local var opt
+  local config_file
+  local regex_str='^[a-z0-9]+([a-z0-9-]*[a-z0-9]+)*$'
+
+  while [ -n "$1" ]; do
+    opt="$1"
+    case "$opt" in
+      --name)
+        [ -z "$2" ] && error_missing_value "$opt"
+        name="$2"
+        shift 2
+        ;;
+
+      --help)
+        usage
+        ;;
+
+      --)
+        shift
+        break
+        ;;
+
+      *)
+        error "unknown option $opt" -
+        return $?
+        ;;
+    esac
+  done
+
+  for var in name ; do
+    if [ -z "${!var}" ]; then
+      error "missing required option. Please specify --${var//_/-}" -
+      return $?
+    fi
+  done
+
+  if [[ ! "$name" =~ $regex_str ]]; then
+    error "invalid format for --name value" -
+    return $?
+  fi
+
+  if ! s3_server_profile_exists "$name"; then
+    error "S3 server profile '$name' doesn't exist." -
+    return $?
+  fi
+
+  config_file="$conf__paths__s3__config_dir/$name.cfg"
+  if [ -f "$config_file" ]; then
+    if rm -- "$config_file"; then
+      echo "Successfully removed S3 profile $name"
+    else
+      error "failed to remove S3 profile $name" -
+      return $?
+    fi
+  else
+    error "missing file '$config_file'. Nothing done." -
+    return $?
+  fi
+}

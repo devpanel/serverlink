@@ -1,0 +1,195 @@
+#!/bin/bash
+
+set_usage_msg \
+  "Usage: $bin_name ${cmd_ar[*]} [opts] <--vhost name>
+
+  Options:
+    --vhost <name>              name of the vhost
+
+    --dry-run                   don't actually remove, just show the files
+                                to be removed
+
+  Removes old files from S3.
+"
+
+devpanel_cmd__cleanup_old_s3_files() {
+  [ $# -eq 0 -o -z "$1" ] && usage
+
+  local vhost name dry_run
+  local tmp_dir output _str _var now_epoch tmp_file mtime
+  local s3_addr s3_file_list unsorted_metadata_file
+  local retention_key metadata_file
+  local -i n_entries keep_n rm_from_n
+  local hdr_name="x-amz-meta-devpanel-vhost-snapshot"
+  local -a s3_cmd_args_ar=()
+
+  while [ -n "$1" ]; do
+    name="$1"
+    case "$name" in
+      --vhost)
+        [ -z "$2" ] && error_missing_value "$name"
+        vhost="$2"
+        shift 2
+        ;;
+
+      --dry-run)
+        dry_run=yes
+        shift
+        ;;
+
+      --help)
+        usage
+        ;;
+
+      --)
+        shift
+        break
+        ;;
+
+      *)
+        error "unknown option $name"
+        ;;
+    esac
+  done
+
+  [ -z "$vhost" ] && usage
+
+  if ! hash s3cmd &>/dev/null; then
+    error "command s3cmd is not installed." -
+    return $?
+  fi
+
+  if tmp_dir=$(mktemp -d); then
+    temp_dirs_ar+=( "$tmp_dir" )
+  else
+    error "failed to create temp dir" -
+    return $?
+  fi
+
+  load_vhost_config "$vhost" || exit $?
+
+  s3_addr="$v__s3___url"
+  s3_file_list="$tmp_dir/s3-file-list.txt"
+  s3_cmd_args_ar+=( --config="$v__s3___config_file" )
+  s3cmd "${s3_cmd_args_ar[@]}" ls --recursive "$s3_addr" >$s3_file_list
+  if [ $? -ne 0 ]; then
+    error "failed to list S3 path '$s3_addr'"
+  fi
+
+  if [ ! -s "$s3_file_list" ]; then
+    exit 0 # no files
+  fi
+
+  local tmp_file_metadata="$tmp_dir/tmp-file-metadata.txt"
+  local tmp_aggreg_metadata="$tmp_dir/unsorted-metadata"
+  local compiled_metadata="$tmp_dir/compiled-metadata"
+
+  while IFS=' ' read mod_date mod_hour size filename; do
+    for i in 1 2 ; do
+      s3cmd "${s3_cmd_args_ar[@]}" info "$filename" >$tmp_file_metadata
+      if [ $? -eq 0 ]; then
+        if output=$(egrep -m 1 '^[[:space:]]*'$hdr_name: $tmp_file_metadata ); then
+          _ltsv_line=${output# *$hdr_name:}
+
+          _ltsv_separator=" " ltsv_parse_line_into_namespace s3obj
+
+          for _str in host vhost run_type frequency end_time remove_after ; do
+            _var="s3obj__${_str}"
+            if [ -z "${!_var}" ]; then
+              # this file doesn't have the needed keys, skip to the next
+              # file
+              break 2
+            fi
+          done
+
+          if [ "$s3obj__run_type" != "scheduled" ]; then
+            break 2
+          fi
+
+          # check if the file is from this vhost and server
+          if [  "$s3obj__vhost" == "$vhost" -a                 \
+                "$s3obj__host"  == "$lamp__apache_vhosts__virtwww_domain" ]; then
+
+            now_epoch=$(date +%s)
+            tmp_file="$tmp_aggreg_metadata.$s3obj__frequency"
+            mtime="$s3obj__end_time"
+
+            if [ -n "$s3obj__remove_after" -a \
+                  $now_epoch -ge $s3obj__remove_after ]; then
+
+              # save the file as a candidate for deletion
+              printf '%s\t%s\n' "$mtime" "$filename" >>$tmp_file
+            fi
+
+            break # go to the next file
+          fi
+        else
+          break # no metadata, go to the next file
+        fi
+      else # failed to get file info
+        echo "Warning: failed to get info about '$filename'" 1>&2
+        sleep 10 # wait a bit just in case there's a connectivity problem
+        continue # go to the next attempt of getting file info
+      fi
+    done # for i in ...
+  done < $s3_file_list
+
+  for freq in daily weekly monthly; do
+    unsorted_metadata_file="$tmp_aggreg_metadata.$freq"
+    if [ ! -s "$unsorted_metadata_file" ]; then
+      # file empty (no S3 file with metadata found for this frequency)
+      continue
+    fi
+
+    n_entries=$(wc -l < $unsorted_metadata_file )
+    retention_key=v__recurring_snapshots_${freq}__retention_unit
+    keep_n=${!retention_key}
+    [ -z "$keep_n" ] && continue
+
+    if [ $n_entries -le $keep_n ]; then
+      continue # number of entries is ok
+    fi
+
+    metadata_file="$compiled_metadata.$freq"
+    sort -n < $unsorted_metadata_file > $metadata_file
+    if [ $? -eq 0 ]; then
+      ##########################################################################
+      #                                                                        #
+      # NOTE on debugging: eventually the number of files removed will be less #
+      # than expected due to the 'remove_after' parameter not reaching the     #
+      # expected time yet (...those files are not included on this list)       #
+      #                                                                        #
+      ##########################################################################
+      #
+      # the files to be kept are removed from the list of files
+      rm_from_n=$(( $n_entries - $keep_n + 1 ))
+      sed -i -e "${rm_from_n},\$d;" "$metadata_file"
+      if [ $? -ne 0 ]; then
+        printf "Warning: unable to remove lines from file '%s'.  Skipping..." \
+          "$metadata_file" 1>&2
+        continue
+      fi
+
+      while IFS=$'\t' read mtime filename; do
+        for i in 1 2; do
+          if [ -n "$dry_run" ]; then
+            echo "(dry-run) rm $filename"
+          else
+            s3cmd "${s3_cmd_args_ar[@]}" rm "$filename"
+          fi
+
+          if [ $? -eq 0 ]; then
+            break # go to the next file
+          else
+            sleep 10 # wait a bit, eventually it's a temporary network connectivity problem
+            continue
+          fi
+        done # // for
+      done < $metadata_file
+    else
+      printf "Warning: failed to create sorted file from '%s'" \
+             "$unsorted_metadata_file" 1>&2
+      continue
+    fi
+  done # // for freq
+}

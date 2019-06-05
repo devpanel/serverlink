@@ -1,0 +1,90 @@
+#!/bin/bash
+
+set_usage_msg \
+  "Usage: $bin_name ${cmd_ar[*]} <opt> <s3_args>
+
+  Options:
+    --vhost name          name of a vhost
+    --s3-profile name     name of a S3 server profile
+
+    NOTE: either --vhost or --s3-profile needs to be specified (one of it,
+          not both)
+
+  Run s3cmd on a S3 profile (either configured for a vhost, or a S3
+  profile directly).
+"
+
+devpanel_cmd__run_s3cmd() {
+  [ $# -eq 0 -o -z "$1" ] && usage
+
+  local name
+  local vhost s3_profile s3cfg_file
+
+  while [ -n "$1" ]; do
+    name="$1"
+    case "$name" in
+      --help)
+        usage
+        ;;
+
+      --vhost)
+        [ -z "$2" ] && error_missing_value "$name"
+        vhost="$2"
+        shift 2
+        ;;
+
+      --s3-profile)
+        [ -z "$2" ] && error_missing_value "$name"
+        s3_profile="$2"
+        shift 2
+        ;;
+
+      --)
+        shift
+        break
+        ;;
+
+      *)
+        break
+        ;;
+    esac
+  done
+
+  [ -z "$1" ] && usage
+
+  if ! hash s3cmd &>/dev/null; then
+    error "command s3cmd is not installed." -
+    return $?
+  fi
+
+  if [ -n "$vhost" -a -n "$s3_profile" ]; then
+    error "can't use --vhost and --s3-profile at the same time" -
+    return $?
+  elif [ -z "$vhost" -a -z "$s3_profile" ]; then
+    error "either --vhost or --s3-profile needs to be specified." -
+    return $?
+  fi
+
+  if [ -n "$vhost" ]; then
+    load_vhost_config "$vhost" || return $?
+
+    if [ -n "$v__s3___config_file" ]; then
+      s3cfg_file="$v__s3___config_file"
+    else
+      error "missing S3 config file definition on vhost" -
+      return $?
+    fi
+  elif [ -n "$s3_profile" ]; then
+    s3cfg_file="$conf__paths__s3__config_dir/$s3_profile.cfg"
+  else
+    error "unknown condition (internal bug)" -
+    return $?
+  fi
+
+  if [ ! -f "$s3cfg_file" ]; then
+    error "missing config file '$s3cfg_file'" -
+    return $?
+  fi
+
+  s3cmd --config="$s3cfg_file" "$@"
+}

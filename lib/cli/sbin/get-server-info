@@ -26,7 +26,7 @@ devpanel_cmd__get_server_info() {
   local linux_distro vhosts_domain distro_updates_st
   local apache_http_port apache_https_port
   local long_vhost_names_st https_redir_st
-  local s3_bucket s3_upload_by_default s3_delete_on_upload
+  local s3_bucket s3_enabled s3_delete_on_upload
   local mysql_instance_txt
   local -a vhosts_ar
   local -i n_vhosts=0
@@ -54,12 +54,6 @@ devpanel_cmd__get_server_info() {
     https_redir_st=enabled
   else
     https_redir_st=disabled
-  fi
-
-  if [ -n "$conf__s3__bucket_name" ]; then
-    s3_bucket="$conf__s3__bucket_name"
-    s3_upload_by_default=${conf__s3__upload_by_default:-no}
-    s3_delete_on_upload=${conf__s3__delete_after_upload:-no}
   fi
 
   if is_var_set_to_yes lamp__apache_ssl__lets_encrypt_on_base_domain; then
@@ -91,28 +85,18 @@ Let's Encrypt On Base Domain: $le_on_base_domain_st
   info_txt+="PHP Version: $lamp__php__default_version"
 
   info_txt+=$'\n'
-  info_txt+="Platform Version: $conf__platform__version"
+  info_txt+="Platform Version: $conf__platform__version"$'\n'
 
-  if [ -n "$s3_bucket" ]; then
+  info_txt+="S3 integration:"
+  if [ -n "$conf__s3__default_server" -a -n "$conf__s3__default_bucket" ]; then
     info_txt+=$'\n'
-    info_txt+="AWS S3 integration: enabled"$'\n'
-    info_txt+=" S3 bucket name: $s3_bucket"$'\n'
-    local s3_file="$conf__s3__default_config_file"
-    if [ -f "$s3_file" ]; then
-      if read_ini_file_into_namespace "$s3_file" s3 2>/dev/null; then
-        if [ -n "$s3__default__region" ]; then
-          info_txt+=" S3 region: $s3__default__region"$'\n'
-        fi
-        if [ -n "$s3__default__host_base" ]; then
-          info_txt+=" S3 host base: $s3__default__host_base"$'\n'
-        fi
-        if [ -n "$s3__default__host_bucket" ]; then
-          info_txt+=" S3 host bucket: $s3__default__host_bucket"$'\n'
-        fi
-        info_txt+=" Upload files by default: $s3_upload_by_default"$'\n'
-        info_txt+=" Delete files after upload: $s3_delete_on_upload"$'\n'
-      fi
-    fi
+    info_txt+=" S3 default server: $conf__s3__default_server"$'\n'
+    info_txt+=" S3 default bucket: $conf__s3__default_bucket"$'\n'
+    info_txt+=" S3 upload path   : $conf__s3__upload_path"$'\n'
+    info_txt+=" Upload files by default: $conf__s3__enabled"$'\n'
+    info_txt+=" Delete files after upload: $conf__s3__delete_after_upload"$'\n'
+  else
+    info_txt+=" not configured"$'\n'
   fi
 
   echo "$info_txt"

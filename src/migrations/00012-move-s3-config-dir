@@ -1,0 +1,16 @@
+#!/bin/bash
+
+old_s3_dir="$conf__paths__local_config_dir/provisioners/aws/.s3cfg"
+new_s3_dir="$conf__paths__local_config_dir/integrations/s3"
+
+if [ ! -d "${new_s3_dir%/*}" ]; then
+  mkdir -p -m 755 "${new_s3_dir%/*}"
+fi
+
+if [ -d "$old_s3_dir" ]; then
+  mv "$old_s3_dir" "$new_s3_dir"
+  chmod 711 "$new_s3_dir"
+  rmdir "${old_s3_dir%/*}"
+fi
+
+exit 0

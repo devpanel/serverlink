@@ -1,0 +1,3 @@
+#!/bin/bash
+
+devpanel run cronjob uploads to s3 --yes

@@ -202,7 +202,14 @@ if [ -n "$verbose" -a -n "$quiet" ]; then
   error "-v and -q are conflicting options. Use only one at a time."
 fi
 
-op=${0##*/}
+if [ "${0##*/}" == "${self_bin##*/}" ]; then
+  op="$1"
+  shift
+elif [ -L "$0" ]; then
+  op=${0##*/}
+else
+  error "don't know how determine what to execute."
+fi
 
 case $op in
   ${self_bin##*/})
@@ -367,18 +374,22 @@ case $op in
     fi
 
     start_time_epoch=$(date +%s)
-    # no archive for the same frequency exists, go and archive it
-    nice -n $niceness "$self_dir/archive-vhost" \
-      ${exclude_file:+-e $exclude_file} "$vhost" "$backup_str"
-    snap_st=$?
-
-    end_time_epoch=$(date +%s)
-
     if [ $n_rm_add_time -gt 0 ]; then
-      rm_after_time_epoch=$(( $end_time_epoch + $n_rm_add_time ))
+      rm_after_time_epoch=$(( $start_time_epoch + $n_rm_add_time ))
     else
       rm_after_time_epoch=0
     fi
+
+    # no archive for the same frequency exists, go and archive it
+    nice -n $niceness devpanel backup vhost --vhost "$vhost"   \
+      --file "$backup_str"                                     \
+      ${exclude_file:+--exclude-from "$exclude_file"}          \
+      --key-value run_type:scheduled                           \
+      --key-value frequency:$frequency                         \
+      --key-value remove_after:$rm_after_time_epoch
+    snap_st=$?
+
+    end_time_epoch=$(date +%s)
 
     if [ $snap_st -eq 0 ]; then
       if ln -s "$backup_basename" "$frequency_status_link"; then
@@ -550,6 +561,82 @@ case $op in
     for vhost in $(get_list_of_vhosts); do
       "$self_dir/remove-old-snapshot-files" "${aux_opts[@]}" "$vhost"
     done
+    ;;
+
+  new-s3-upload)
+    _entry_file="$1"
+    if [ ! -f "$_entry_file" ]; then
+      error "couldn't find file '$_entry_file'"
+    fi
+
+    if ! ltsv_load_line_from_file_into_namespace entry "$_entry_file"; then
+      exit 1
+    fi
+
+    declare -a s3_args_ar=()
+
+    vhost="$entry__vhost"
+    file="$entry__file"
+
+    load_devpanel_config || exit $?
+
+    if ! load_vhost_config "$vhost"; then
+      exit 1
+    fi
+
+    if [ "${file:0:1}" == / ]; then
+      file_fullpath="$file"
+    else
+      file_fullpath="$v__vhost__archives_dir/$file"
+    fi
+
+    if [ ! -f "$file_fullpath" ]; then
+      if [ -t 0 ]; then
+        error "couldn't find file '$file_fullpath'"
+      else
+        exit 1
+      fi
+    fi
+
+    load_vhost_archive_metadata "$file_fullpath" fmeta
+
+    if [ -n "$v__s3___config_file" -a -f "$v__s3___config_file" ]; then
+      s3_args_ar+=( --config="$v__s3___config_file" )
+    else
+      error "missing S3 config file"
+    fi
+
+    hdr_fields_txt=""
+    if [ "$v__vhost__server_name" != "$v__vhost__base_domain" ]; then
+      hdr_fields_txt+=" domain:$v__vhost__server_name"
+    fi
+    hdr_fields_txt+=" host:$v__vhost__base_domain"
+    hdr_fields_txt+=" vhost:$v__vhost__name"
+
+    for _key in ${!fmeta__*}; do
+      [ -z "${!_key}" ] && continue
+
+      _key_name=${_key#fmeta__}
+      ltsv_encode_string "${!_key}"
+      _key_value="$_ltsv_encoded"
+
+      hdr_fields_txt+=" ${_key_name}:${_key_value}"
+    done
+
+    hdr_name="x-amz-meta-devpanel-vhost-snapshot"
+    s3_args_ar+=( --add-header="$hdr_name:$hdr_fields_txt" )
+
+    target_s3_url="${v__s3___url%/}/${file_fullpath##*/}"
+    s3cmd "${s3_args_ar[@]}" --quiet --acl-private \
+      put "$file_fullpath" "$target_s3_url"
+    st=$?
+
+    if [ $st -eq 0 ] && is_to_delete_file_after_upload; then
+      rm_vhost_archive "$file_fullpath"
+    fi
+
+    exit $st
+
     ;;
 
   *)

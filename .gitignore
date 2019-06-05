@@ -1,11 +1,14 @@
 *~
 .*.sw[op]
 /etc/devpanel.conf
-/config/packages/*
+/config/packages/
+!/config/packages/apache_vhost
+!/config/packages/apache_vhost
 /config/key_value/linuxuser-vhost/
 /config/iptables*
-!/config/packages/apache_vhost
 /bin/gitolite.d/
+/bin/packages/
+!/bin/packages/cron.d/
 /bin/utils
 /compat/w_/public_html/
 !/compat/w_/public_html/cgi/cgit.cgi

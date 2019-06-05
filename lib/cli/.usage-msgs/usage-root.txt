@@ -1,4 +1,4 @@
-Usage: @self_basename@ <command> [args]
+Usage: @self_basename@ [general_opts] <command> [args]
 
  Main Commands
     list seed apps            list seed apps available to install
@@ -19,6 +19,11 @@ Usage: @self_basename@ <command> [args]
     refresh config            updates config files of the app with DB credentials
     clear app cache           clears the cache of the app on the specified vhost
 
+ General Options
+   --help                     display this help message
+   -v                         enable verbose mode
+   -L name                    create a named lock during the execution to
+                              avoid multiple runs of a same process
 
  For more information about a specific command, run:
  @sb@ @self_basename@ COMMAND --help

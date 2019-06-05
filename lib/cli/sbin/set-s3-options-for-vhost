@@ -1,16 +1,19 @@
 #!/bin/bash
 
 set_usage_msg \
-  "Usage: $bin_name ${cmd_ar[*]} <opts>
+  "Usage: $bin_name ${cmd_ar[*]} <--vhost name> <opts>
 
-  Options:
-    --default-server name           name of the profile of the default
-                                    S3 server to use
+  Required Options:
+    --vhost <name>                  name of the vhost
 
-    --default-bucket <name>         name of the bucket to be the default one
 
-    --enabled yes/no                upload vhost archives by default for all
-                                    vhosts (default: yes)
+  Optional Options:
+
+    --upload-enabled yes/no         enable/disable automated uploads to S3
+
+    --bucket <name>                 name of the bucket
+
+    --server <name>                 name of the server profile to use
 
     --upload-path <path>            relative path on S3 bucket where to upload
                                     the files (default: $conf__s3__upload_path)
@@ -23,40 +26,45 @@ set_usage_msg \
                                     previously saved (this option can't be used
                                     with other options in the same command line)
 
-
-  NOTE: all options above are optional (except --default-server and --bucket
-                                        when one of it was not saved in 
-                                        config previously).
-
-
-  Sets options for S3 integration.
+  Sets options for S3 integration specifically for a vhost.
 "
 
-devpanel_cmd__set_s3_options() {
+devpanel_cmd__set_s3_options_for_vhost() {
   [ $# -eq 0 -o -z "$1" ] && usage
 
-  local default_server default_bucket upload_path
-  local delete_after_upload enabled remove_all
-  local var st
-  local -a cmd_args=() opts_ar=() s3cfg_opts_ar=()
+  local vhost server bucket upload_path
+  local delete_after_upload upload_enabled remove_all
+  local var
+  local -a cmd_args=()
 
   while [ -n "$1" ]; do
     name="$1"
     case "$name" in
-      --default-server)
+      --vhost)
         [ -z "$2" ] && error_missing_value "$name"
-        default_server="$2"
-        if ! s3_server_profile_exists "$default_server"; then
-          error "S3 server profile '$default_server' doesn't exist" -
-          return 1
-        fi
-
+        vhost="$2"
         shift 2
         ;;
 
-      --default-bucket)
+      --upload-enabled)
         [ -z "$2" ] && error_missing_value "$name"
-        default_bucket="$2"
+        if [ "${2,,}" != yes -a "${2,,}" != no ]; then
+          error "invalid value for $name option. Must be yes/no." -
+          return 1
+        fi
+        upload_enabled="${2,,}"
+        shift 2
+        ;;
+
+      --server)
+        [ -z "$2" ] && error_missing_value "$name"
+        server="$2"
+        shift 2
+        ;;
+
+      --bucket)
+        [ -z "$2" ] && error_missing_value "$name"
+        bucket="$2"
         shift 2
         ;;
 
@@ -66,20 +74,10 @@ devpanel_cmd__set_s3_options() {
         shift 2
         ;;
 
-      --enabled)
-        [ -z "$2" ] && error_missing_value "$name"
-        if [ "$2" != yes -a "$2" != no ]; then
-          error "invalid value for $name option. Must be yes/no." -
-          return 1
-        fi
-        enabled="$2"
-        shift 2
-        ;;
-
       --delete-after-upload)
         [ -z "$2" ] && error_missing_value "$name"
         if [ "$2" != yes -a "$2" != no ]; then
-          error "invalid value for $name option. Must be yes/no." -
+          error "invalid value for --delete-after-upload option. Must be yes/no." -
           return 1
         fi
         delete_after_upload="$2"
@@ -106,18 +104,13 @@ devpanel_cmd__set_s3_options() {
     esac
   done
 
-  if [ -z "$default_bucket" -a -z "$conf__s3__default_bucket" ]; then
-    error "missing bucket name. Please specify it." -
-    return $?
-  fi
+  [ -z "$vhost" ] && usage
 
-  if [ -z "$default_server" -a -z "$conf__s3__default_server" ]; then
-    error "missing default server. Please specify it." -
-    return $?
-  fi
+  load_vhost_config "$vhost" || return $?
 
-  enabled=${enabled:-yes}
-  for var in default_server default_bucket upload_path enabled delete_after_upload; do
+  local st
+  local -a opts_ar=()
+  for var in  upload_enabled server bucket upload_path delete_after_upload; do
     if [ -n "${!var}" ]; then
       opts_ar+=( "s3.$var = ${!var}" )
     fi
@@ -129,15 +122,20 @@ devpanel_cmd__set_s3_options() {
       return $?
     fi
 
-    save_opts_in_devpanel_config "- s3"
+    save_opts_in_vhost_config "$vhost" "- s3"
     return $?
+  else
+    if [ ${#opts_ar} -eq 0 ]; then
+      error "no change specified." -
+      return $?
+    fi
   fi
 
-  save_opts_in_devpanel_config "${opts_ar[@]}"
+  save_opts_in_vhost_config "$vhost" "${opts_ar[@]}"
   st=$?
 
   if [ $st -eq 0 ]; then
-    echo "Successfully saved S3 options."
+    echo "Successfully saved S3 options for vhost '$vhost'."
   else
     error "failed to save s3 options" -
     return $?

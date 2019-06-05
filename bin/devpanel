@@ -276,8 +276,8 @@ trap _devpanel_cli_cleanup EXIT
 
 [ $# -eq 0 -o -z "$1" ] && usage
 
-unset verbose
-getopt_flags='vh-'
+unset verbose lock_name
+getopt_flags='vhL:-'
 while getopts $getopt_flags OPTN; do
   case $OPTN in
     v)
@@ -285,6 +285,9 @@ while getopts $getopt_flags OPTN; do
       ;;
     h)
       usage
+      ;;
+    L)
+      lock_name="$OPTARG"
       ;;
     -)
       case "$1" in
@@ -306,6 +309,14 @@ done
 lib_file="$sys_dir/lib/functions"
 if ! . "$lib_file"; then
   error "unable to load lib file '$lib_file'"
+fi
+
+if [ -n "$lock_name" ]; then
+  if devpanel_lock "$lock_name"; then
+    devpanel_trap_exit_cmds_ar+=( "devpanel_unlock $lock_name" )
+  else
+    exit 1
+  fi
 fi
 
 load_devpanel_config || exit $?

@@ -6,6 +6,8 @@ set_usage_msg \
   Options:
     --vhost <vhost>         the vhost to backup
     --file  <filename>      the file where to save the files and database
+    --key-value key:value   specify some key-value based metadata (accepted
+                            format: [A-Za-z0-9_]+:.+ )
     --exclude <filename>    a file name not to include on the archive
                             (relative to the vhost user's \$HOME dir,
                              e.g. ./drush-backups )
@@ -29,31 +31,44 @@ devpanel_cmd__backup_vhost() {
         vhost="$2"
         shift 2
         ;;
+
       --file)
         [ -z "$2" ] && error_missing_value file
         file="$2"
         shift 2
         ;;
+
+      --key-value)
+        [ -z "$2" ] && error_missing_value $name
+        cmd_args+=( -K "$2" )
+        shift 2
+        ;;
+
       --exclude)
         [ -z "$2" ] && error_missing_value "$name"
         cmd_args+=( -x "$2" )
         shift 2
         ;;
+
       --exclude-from)
         [ -z "$2" ] && error_missing_value "$name"
         cmd_args+=( -e "$2" )
         shift 2
         ;;
+
       --help)
         usage
         ;;
+
       --)
         shift
         break
         ;;
+
       --[A-Za-z0-9_-]*)
         error "unknown option $name"
         ;;
+
       *)
         # pass unknown arguments/options to the original command
         cmd_args+=( "$name" )

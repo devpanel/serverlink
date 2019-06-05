@@ -1,0 +1,78 @@
+#!/bin/bash
+
+set_usage_msg \
+  "Usage: $bin_name ${cmd_ar[*]} --yes
+
+  Options:
+    --yes                           confirm the intent to run the command
+    --ignore-time                   run it even outside the hour range
+
+  
+  Loop through each vhost and upload any file that needs to be uploaded to
+  S3.
+"
+
+devpanel_cmd__run_cronjob_uploads_to_s3() {
+  [ $# -eq 0 -o -z "$1" ] && usage
+
+  local name vhost confirmed verify_time=yes
+
+  while [ -n "$1" ]; do
+    name="$1"
+    case "$name" in
+      --yes)
+        confirmed=yes
+        shift
+        ;;
+
+      --ignore-time)
+        unset verify_time
+        shift
+        ;;
+
+      --help)
+        usage
+        ;;
+
+      --)
+        shift
+        break
+        ;;
+
+      *)
+        error "unknown option $name" -
+        return $?
+        ;;
+    esac
+  done
+
+  if ! is_var_set_to_yes confirmed; then
+    error "to confirm the intent to run, please add --yes to the command line" -
+    return $?
+  fi
+
+  if [ -n "$verify_time" ] && ! is_current_hour_within_ops_range ; then
+    [ -t 0 ] && error "current time is outside the time range" -
+    return 1
+  fi
+
+  local lock_name="cronjob_uploads_to_s3"
+  devpanel_lock $lock_name || return $?
+  devpanel_trap_exit_cmds_ar+=( "devpanel_unlock $lock_name" )
+
+  for vhost in $(get_list_of_enabled_vhosts); do
+    if has_a_safe_level_of_free_ram; then
+
+      if [ -n "$verify_time" ] && ! is_current_hour_within_ops_range ; then
+        break
+      fi
+
+      devpanel_run scan vhost files and upload to s3 --vhost "$vhost" \
+        --apply-delete-policy
+    else
+      # not enough free ram, the server might be in a high memory pressure.
+      # Just stop trying
+      break
+    fi
+  done
+}

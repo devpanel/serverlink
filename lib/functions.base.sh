@@ -55,6 +55,33 @@ cleanup_namespace() {
 
 }
 
+devpanel_lock() {
+  local str="$1"
+  local tmp_file="$conf__paths__lock_dir/$str"
+  local i
+
+  for i in {1..20}; do
+    if ln -s /dev/null "$tmp_file" 2>/dev/null; then
+      return 0
+    else
+      sleep 0.1
+    fi
+  done
+
+  return 1
+}
+
+devpanel_unlock() {
+  local str="$1"
+  local tmp_file="$conf__paths__lock_dir/$str"
+
+  if [ ! -L "$tmp_file" -a ! -e "$tmp_file" ]; then
+    return 1
+  fi
+
+  rm -f -- "$tmp_file"
+}
+
 read_ini_file_into_namespace() {
   local cleanup_env=yes
   local mysql_ext
@@ -209,9 +236,11 @@ load_devpanel_config() {
     mkdir -m 0711 "$conf__paths__lock_dir"
   fi
 
+  conf__paths__cache_dir="$DEVPANEL_HOME/var/cache"
   conf__distro="$distro"
   conf__distro_version="$distro_version"
-  conf__s3__default_config_file="$conf__paths__local_config_dir/provisioners/aws/.s3cfg/default"
+  conf__paths__s3__config_dir="$conf__paths__local_config_dir/integrations/s3"
+  conf__s3__default_config_file="$conf__paths__s3__config_dir/default"
   conf__paths__port_reservation_dir="$conf__paths__local_config_dir/ports"
   
   load_devpanel_lamp_config || return $?
@@ -329,6 +358,7 @@ load_vhost_config() {
   set_global_var "${ns}__vhost__file" "$config_dir/apache/vhost.conf"
   set_global_var "${ns}__vhost__config_link" "$lamp__paths__apache_local_virtwww_dir/$vhost.conf"
   set_global_var "${ns}__ssl__dir" "$config_dir/ssl"
+  set_global_var "${ns}__cache_dir" "$conf__paths__cache_dir/vhost/$vhost"
 
   local server_name_var
   local domains_var="${ns}__vhost__domains"
@@ -413,6 +443,72 @@ load_vhost_config() {
       set_global_var "${ns}__mysql__client_file" "$mysql_config_file"
     fi
   fi
+
+  local s3_cfg_file s3_server bucket
+  local key_s3_upl_enabled="${ns}__s3__upload_enabled"
+  local key_s3_server="${ns}__s3__server"
+  local key_s3_bucket="${ns}__s3__bucket"
+  local key_s3_del_after_upl="${ns}__s3__delete_after_upload"
+  local key_s3_calc_del_after_upl="${ns}__s3___delete_after_upload"
+  local key_s3_calc_upl_enabled="${ns}__s3___upload_enabled"
+  local key_s3_calc_server="${ns}__s3___server"
+  local key_s3_calc_url="${ns}__s3___url"
+  local key_s3_upload_path="${ns}__s3__upload_path"
+
+  if is_s3_fully_configured; then
+    if [ -n "${!key_s3_server}" ]; then
+      s3_server="${!key_s3_server}"
+    else
+      if [ -n "$conf__s3__default_server" ]; then
+        s3_server="$conf__s3__default_server"
+      fi
+    fi
+
+    if [ -n "$s3_server" ]; then
+      set_global_var $key_s3_calc_server "$s3_server"
+
+      s3_cfg_file="$conf__paths__s3__config_dir/$s3_server.cfg"
+      set_global_var ${ns}__s3___config_file "$s3_cfg_file"
+    fi
+
+    if [ -n "${!key_s3_bucket}" ]; then
+      bucket="${!key_s3_bucket}"
+    elif [ -n "$conf__s3__default_bucket" ]; then
+      bucket="$conf__s3__default_bucket"
+    fi
+
+    if [ -n "$bucket" ]; then
+      set_global_var "${ns}__s3___bucket" "$bucket"
+    fi
+
+    if is_var_cascanding_yes "${ns}__s3__upload_enabled" \
+      conf__s3__enabled ; then
+
+      set_global_var $key_s3_calc_upl_enabled yes
+    else
+      set_global_var $key_s3_calc_upl_enabled no
+    fi
+
+    if is_var_cascanding_yes "${ns}__s3__delete_after_upload" \
+      conf__s3__delete_after_upload; then
+
+      set_global_var $key_s3_calc_del_after_upl yes
+    else
+      set_global_var $key_s3_calc_del_after_upl no
+    fi
+
+    local s3_tmpl_str
+    if [ -n "${!key_s3_upload_path}" ]; then
+      s3_tmpl_str="${!key_s3_upload_path}"
+    elif [ -n "$conf__s3__upload_path" ]; then
+      s3_tmpl_str="$conf__s3__upload_path"
+    fi
+
+    if [ -n "$s3_tmpl_str" ]; then
+      s3_translate_uri_template "$s3_tmpl_str"
+      set_global_var $key_s3_calc_url "s3://$bucket/${_dp_value#/}"
+    fi
+  fi # // is_s3_uploads_enabled_for_vhost
 
   return 0
 }
@@ -502,4 +598,50 @@ save_opts_in_state() {
   fi
 
   write_ini_file "$file" "$@"
+}
+
+function load_vhost_archive_metadata() {
+  local in_file="$1"
+  local ns="$2"
+  local file_fullpath metadata_file
+
+  cleanup_namespace "$ns"
+
+  if [ "${in_file:0:1}" == / ]; then
+    file_fullpath="$in_file"
+  else
+    file_fullpath="$v__vhost__archives_dir/$file"
+  fi
+
+  if [ ! -f "$file_fullpath" ]; then
+    return 1
+  fi
+
+  metadata_file="${file_fullpath%/*}/.${file_fullpath##*/}.metadata.ltsv"
+  if [ -f "$metadata_file" ]; then
+    ltsv_load_line_from_file_into_namespace "$ns" "$metadata_file"
+    return $?
+  else
+    return 1
+  fi
+}
+
+function save_archive_metadata() {
+  local in_file="$1"
+  local ns="$2"
+  local file_fullpath metadata_file
+
+  if [ "${in_file:0:1}" == / ]; then
+    file_fullpath="$in_file"
+  else
+    file_fullpath="$v__vhost__archives_dir/$file"
+  fi
+
+  if [ ! -f "$file_fullpath" ]; then
+    return 1
+  fi
+
+  metadata_file="${file_fullpath%/*}/.${file_fullpath##*/}.metadata.ltsv"
+
+  ltsv_save_namespace_to_file "$ns" "$metadata_file"
 }

@@ -1,0 +1,8 @@
+[default]
+access_key = @@access_key@@
+secret_key = @@secret_key@@
+host_base  = @@region@@.s3.amazonaws.com
+host_bucket = %(bucket)s.@@region@@.s3.amazonaws.com
+bucket_location = @@region@@
+enable_multipart = True
+multipart_chunk_size_mb = 500

@@ -1,0 +1,88 @@
+#!/bin/bash
+
+set_usage_msg \
+  "Usage: $bin_name ${cmd_ar[*]} [opts] <--vhost name>
+
+  Options:
+    --vhost <name>              name of the vhost
+
+    --apply-delete-policy       check what is the file deletion policy and
+                                remove the file after uploading
+
+
+  Scan vhost archive dir and upload files to S3.
+"
+
+devpanel_cmd__scan_vhost_files_and_upload_to_s3() {
+  [ $# -eq 0 -o -z "$1" ] && usage
+
+  local vhost archives_dir metadata_file file name dry_run apply_del_policy
+  local -a upload_args_ar=()
+
+  while [ -n "$1" ]; do
+    name="$1"
+    case "$name" in
+      --vhost)
+        [ -z "$2" ] && error_missing_value "$name"
+        vhost="$2"
+        shift 2
+        ;;
+
+      --apply-delete-policy)
+        apply_del_policy=yes
+        shift
+        ;;
+
+      --help)
+        usage
+        ;;
+
+      --)
+        shift
+        break
+        ;;
+
+      *)
+        error "unknown option $name"
+        ;;
+    esac
+  done
+
+  [ -z "$vhost" ] && usage
+
+  if ! hash s3cmd &>/dev/null; then
+    error "command s3cmd is not installed." -
+    return $?
+  fi
+
+  load_vhost_config "$vhost" || return $?
+
+  if ! is_s3_uploads_enabled_for_vhost; then
+    [ -t 0 ] && echo "Warning: S3 uploads not enabled for this vhost" 1>&2
+    return 0
+  fi
+
+  archives_dir="$v__vhost__archives_dir"
+  if [ ! -d "$archives_dir" ]; then
+    [ -t 0 ] && echo "Warning: missing dir '$archives_dir'" 1>&2
+    return 0
+  fi
+
+  if is_var_set_to_yes apply_del_policy ; then
+    upload_args_ar+=( --apply-delete-policy )
+  fi
+
+  for file in "$archives_dir"/*; do
+    [ ! -f "$file" ] && continue
+    [[ "$file" == *.[Mm][Dd]5 || "$file" == *.[Ss][Hh][Aa]1 ]] && continue
+
+    if load_vhost_archive_metadata "$file" fmeta; then
+      if is_var_set_to_yes fmeta___uploaded_to_s3 ; then
+        continue
+      fi
+    fi
+
+    devpanel_run upload archive to s3 "${upload_args_ar[@]}" \
+      --vhost "$vhost" --file "$file"
+  done
+}

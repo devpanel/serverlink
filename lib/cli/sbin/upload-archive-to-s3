@@ -1,0 +1,143 @@
+#!/bin/bash
+
+set_usage_msg \
+  "Usage: $bin_name ${cmd_ar[*]} [opts] <--vhost name> <--file filepath>
+
+  Options:
+    --vhost <name>              name of the vhost
+    --file  <filepath>          path of the file to upload
+    --apply-delete-policy       check what is the file deletion policy and
+                                remove the file after uploading
+
+  Upload the specified archive file to S3.
+"
+
+devpanel_cmd__upload_archive_to_s3() {
+  [ $# -eq 0 -o -z "$1" ] && usage
+
+  local vhost in_file name file_fullpath hdr_fields_txt apply_del_policy
+  local hdr_name="x-amz-meta-devpanel-vhost-snapshot"
+  local _key _key_name _key_value target_s3_url st
+	declare -a s3_args_ar=()
+
+  while [ -n "$1" ]; do
+    name="$1"
+    case "$name" in
+      --vhost)
+        [ -z "$2" ] && error_missing_value "$name"
+        vhost="$2"
+        shift 2
+        ;;
+
+      --file)
+        [ -z "$2" ] && error_missing_value "$name"
+        in_file="$2"
+        shift 2
+        ;;
+
+      --apply-delete-policy)
+        apply_del_policy=yes
+        shift
+        ;;
+
+      --help)
+        usage
+        ;;
+
+      --)
+        shift
+        break
+        ;;
+
+      *)
+        error "unknown option $name" -
+        return $?
+        ;;
+    esac
+  done
+
+  [ -z "$vhost" -o -z "$in_file" ] && usage
+
+  if ! hash s3cmd &>/dev/null; then
+    error "command s3cmd is not installed." -
+    return $?
+  fi
+
+	if ! load_vhost_config "$vhost"; then
+		return 1
+	fi
+
+	if [ "${in_file:0:1}" == / ]; then
+		file_fullpath="$in_file"
+	else
+		file_fullpath="$v__vhost__archives_dir/$in_file"
+	fi
+
+	if [ ! -f "$file_fullpath" ]; then
+		if [ -t 0 ]; then
+			error "couldn't find file '$file_fullpath'" -
+      return $?
+		else
+			return 1
+		fi
+	fi
+
+	load_vhost_archive_metadata "$file_fullpath" fmeta
+
+	if [ -n "$v__s3___config_file" -a -f "$v__s3___config_file" ]; then
+		s3_args_ar+=( --config="$v__s3___config_file" )
+	else
+		error "missing S3 config file" -
+    return $?
+	fi
+
+	hdr_fields_txt=""
+	if [ "$v__vhost__server_name" != "$v__vhost__base_domain" ]; then
+		hdr_fields_txt+=" domain:$v__vhost__server_name"
+	fi
+	hdr_fields_txt+=" host:$v__vhost__base_domain"
+	hdr_fields_txt+=" vhost:$v__vhost__name"
+
+  for _key in ${!fmeta__*}; do
+    [ -z "${!_key}" ] && continue
+
+    _key_name=${_key#fmeta__}
+    [ "${_key_name:0:1}" == _ ] && continue # skip keys starting with _
+    ltsv_encode_string "${!_key}"
+    _key_value="$_ltsv_encoded"
+
+    hdr_fields_txt+=" ${_key_name}:${_key_value}"
+  done 
+
+  if [ ! -t 0 ]; then
+    s3_args_ar+=( --quiet )
+  fi
+
+  s3_args_ar+=( --add-header="$hdr_name:$hdr_fields_txt" )
+
+  # check if s3cmd command is recent enough, and supports the limit rate option
+  # to control the speed limit
+  if s3cmd --help 2>&1 | fgrep -q -- --limit-rate= && \
+    [ -n "$conf__s3__upload_speed_limit" ]; then
+
+    s3_args_ar+=( --limit-rate="$conf__s3__upload_speed_limit" )
+  fi
+
+  target_s3_url="${v__s3___url%/}/${file_fullpath##*/}"
+  s3cmd "${s3_args_ar[@]}" --acl-private \
+    put "$file_fullpath" "$target_s3_url"
+  st=$?
+
+  if [ $st -eq 0 ]; then
+    if is_var_set_to_yes apply_del_policy && is_to_delete_file_after_upload; then
+      rm_vhost_archive "$file_fullpath"
+    else
+      fmeta___uploaded_to_s3=yes
+      save_archive_metadata "$file_fullpath" fmeta
+    fi
+  fi
+
+  cleanup_namespace fmeta
+
+  return $st 
+}

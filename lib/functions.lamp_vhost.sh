@@ -614,3 +614,18 @@ mysql_unpriv_import_vhost_dbs_from_dir() {
 
   run_as_user "$lnx_user" "$sys_dir/bin/import-databases-from-dir" "$@"
 }
+
+rm_vhost_archive() {
+  local in_file="$1"
+  local file_fullpath metadata_file
+
+  if [ "${in_file:0:1}" == / ]; then
+    file_fullpath="$in_file"
+  else
+    file_fullpath="$v__vhost__archives_dir/$in_file"
+  fi
+
+  metadata_file="${file_fullpath%/*}/.${file_fullpath##*/}.metadata.ltsv"
+
+  rm -f -- "$file_fullpath" "$metadata_file"
+}

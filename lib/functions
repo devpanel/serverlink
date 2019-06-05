@@ -30,6 +30,15 @@ error() {
   fi
 }
 
+warn_3lines() {
+  local msg="$1"
+
+	echo 1>&2
+	[ -t 0 ] && sleep 2
+	echo "Warning: $msg" 1>&2
+	echo 1>&2
+}
+
 wedp_warn() {
   local msg="$1"
 
@@ -1985,96 +1994,6 @@ get_htpasswd_vhost_template() {
   fi
 }
 
-set_s3_options() {
-  save_opts_in_devpanel_config "$@"
-}
-
-write_s3cfg() {
-  local file="$1"
-  shift
-
-  if [ "$file" == @ ]; then
-    file=/etc/devpanel/provisioners/aws/.s3cfg/default
-  fi
-
-  if [ ! -f "$file" ]; then
-    touch "$file"
-    chmod 600 "$file"
-  fi
-
-  write_ini_file "$file" "$@"
-}
-
-set_s3_bucket() {
-  local bucket="$1"
-
-  save_opts_in_devpanel_config "s3.bucket_name = $bucket" \
-    "s3.upload_files = yes"
-}
-
-disable_s3_global_uploads() {
-  save_opts_in_devpanel_config "s3.upload_files = no"
-}
-
-is_global_s3_uploads_enabled() {
-  if [ -n "$conf__s3__upload_files" -a "$conf__s3__upload_files" == "yes" ]; then
-    return 0
-  else
-    return 1
-  fi
-}
-
-get_global_s3_bucket() {
-  if [ -n "$conf__s3__bucket_name" ]; then
-    echo "$conf__s3__bucket_name"
-    return 0
-  else
-    return 1
-  fi
-}
-
-get_global_s3_base_addr_template() {
-  if [ -n "$conf__s3__baseaddr_vhost_tmpl" ]; then
-    echo "$conf__s3__baseaddr_vhost_tmpl"
-    return 0
-  else
-    return 1
-  fi
-}
-
-get_s3_upload_speed_limit() {
-  if [ -n "$conf__s3__upload_speed_limit" ]; then
-    echo "$conf__s3__upload_speed_limit"
-    return 0
-  else
-    return 1
-  fi
-}
-
-get_s3_url_base_for_vhost() {
-  local vhost="$1"
-
-  local bucket_name virtwww_domain tmpl_url
-  local url var
-
-  tmpl_url=$(get_global_s3_base_addr_template ) || return $?
-  virtwww_domain=$(get_server_base_domain )     || return $?
-  bucket_name=$(get_global_s3_bucket )          || return $?
-
-  url="$tmpl_url"
-  for var in bucket_name virtwww_domain vhost ; do
-    url=${url//@$var@/${!var}}
-    url=${url//./-}
-  done
-
-  local -i url_len=${#url}
-  if [ "${url:$(( $url_len - 1 ))}" != / ]; then
-    url+="/"
-  fi
-
-  echo "$url"
-}
-
 get_aws_cluster_region() {
   deref_os_prop "$DEVPANEL_HOME" aws_cluster_region
 }
@@ -3673,6 +3592,38 @@ MySQL Database:  @db_name@
   if has_user_includes "$vhost"; then
     summ_txt+="Custom Includes: yes"$'\n'
   fi
+
+  if is_s3_fully_configured; then
+    summ_txt+="S3 Options:"$'\n'
+    summ_txt+=" Server: $v__s3___server"
+    if [ -z "$v__s3__server" ]; then
+      summ_txt+="  (system default)"
+    fi
+    summ_txt+=$'\n'
+
+    summ_txt+=" Bucket: $v__s3___bucket"
+    if [ -z "$v__s3__bucket" ]; then
+      summ_txt+="  (system default)"
+    fi
+    summ_txt+=$'\n'
+
+    summ_txt+=" Uploads enabled: "
+    if is_s3_uploads_enabled_for_vhost ; then
+      summ_txt+="yes"
+    else
+      summ_txt+="no"
+    fi
+    if [ -z "$v__s3__upload_enabled" ]; then
+      summ_txt+=" (system default)"
+    fi
+    summ_txt+=$'\n'
+
+    if [ -n "$v__s3__upload_path" ]; then
+      summ_txt+=" Upload path: $v__s3__upload_path"$'\n'
+    fi
+
+    summ_txt+=" URL: $v__s3___url"$'\n'
+  fi
  
   ssh_host=$lamp__apache_vhosts__virtwww_domain
 
@@ -3755,11 +3706,11 @@ print_server_metadata_json() {
     server.vhosts_base_domain=$vhosts_base_domain
   )
 
-  if [ -n "$conf__s3__bucket_name" ]; then
-    jo_args_ar+=( server.s3.bucket_name=$conf__s3__bucket_name )
+  if [ -n "$conf__s3__default_bucket" ]; then
+    jo_args_ar+=( server.s3.bucket=$conf__s3__default_bucket )
 
     local key var value
-    for key in upload_by_default delete_after_upload; do
+    for key in enabled delete_after_upload; do
       var="conf__s3__$key"
       value="${!var}"
       if [ -n "$value" -a "$value" == yes ]; then
@@ -4817,14 +4768,40 @@ am_i_on_digital_ocean() {
   bios_vendor_matches digitalocean
 }
 
-is_var_set_to_yes() {
-  local var="$1"
+is_yes() {
+  local str="$1"
 
-  if [ -n "${!var}" ] && [[ "${!var}" == [Yy][Ee][Ss] ]]; then
+  if [ -n "$str" ] && [[ "$str" == [Yy][Ee][Ss] ]]; then
     return 0
   else
     return 1
   fi
+}
+
+is_var_set_to_yes() {
+  local var="$1"
+
+  if [ -n "$var" ] && is_yes "${!var}"; then
+    return 0
+  else
+    return 1
+  fi
+}
+
+is_var_cascanding_yes() {
+  # is 'cascandingly' yes?
+  local var
+  for var in "$@"; do
+    [ -z "$var" ] && continue
+
+    if [ -n "${!var}" ] && ! is_yes "${!var}"; then
+      return 1
+    elif is_yes "${!var}"; then
+      return 0
+    fi
+  done
+
+  return 1
 }
 
 is_to_setup_lets_encrypt_on_base_domain() {
@@ -4844,10 +4821,147 @@ is_to_setup_lets_encrypt_on_base_domain() {
   is_var_set_to_yes lamp__apache_ssl__$base
 }
 
-for _name in base lamp_vhost linux-kernel mysql; do
+s3_translate_uri_template() {
+  local orig_str="$1"
+  local str="$orig_str"
+  local _key _key_name
+
+  unset _dp_value
+
+  # replace @key@ with the value of $v__{key} 
+  for _key in ${!v__*}; do
+    if [ -n "${!_key}" ]; then
+      _key_name=${_key#v__}
+      if [[ "$str" == *@$_key_name@* ]]; then
+        str=${str//@$_key_name@/${!_key}}
+      fi
+    fi
+  done
+
+  _dp_value="$str"
+}
+
+is_s3_upload_globally_enabled() {
+  is_yes "$conf__s3__enabled"
+}
+
+is_s3_fully_configured() {
+  local found_server found_bucket
+
+  if [ -n "$v__s3__server" ]; then
+    found_server=1
+  elif [ -n "$conf__s3__default_server" ]; then
+    found_server=1
+  fi
+
+  if [ -n "$v__s3__bucket" ]; then
+    found_bucket=1
+  elif [ -n "$conf__s3__default_bucket" ]; then
+    found_bucket=1
+  fi
+
+  if [ -n "$found_server" -a -n "$found_bucket" ]; then
+    return 0
+  else
+    return 1
+  fi
+}
+
+is_s3_uploads_enabled_for_vhost() {
+  if is_var_set_to_yes  v__s3___upload_enabled ; then
+    return 0
+  else
+    return 1
+  fi
+}
+
+is_to_delete_file_after_upload() {
+  local vhost_key="v__s3__delete_after_upload"
+  local conf_key="conf__s3__delete_after_upload"
+ 
+  if [ -n "${!vhost_key}" ] && is_var_set_to_yes $vhost_key; then
+    return 0
+  fi
+
+  if [ -n "${!conf_key}" ] && is_var_set_to_yes $conf_key; then
+    return 0
+  fi
+
+  return 1
+}
+
+s3_server_profile_exists() {
+  local profile_name="$1"
+  local config_file
+
+  config_file="$conf__paths__s3__config_dir/$profile_name.cfg"
+  if [ -f "$config_file" ]; then
+    return 0
+  else
+    return 1
+  fi
+}
+
+is_valid_hour_range() {
+  local test_range="$1"
+  local n1 n2 self_name
+
+  local regex='^((1?[0-9]|2[0-3])|(1?[0-9]|2[0-3])-(1?[0-9]|2[0-3])?)$'
+
+  if [[ "$test_range" =~ $regex ]]; then
+    if [[ "$test_range" == *-* ]]; then
+      # range n1-n2
+      n1=${test_range%-*}
+      n2=${test_range#*-}
+
+      if [ $n1 -le $n2 ]; then
+        return 0
+      fi
+    else
+      # single value
+      return 0
+    fi
+  fi
+
+  self_name=${FUNCNAME[1]:-${FUNCNAME[0]}}
+
+  echo "$self_name(): invalid hour range" 1>&2
+  return 1
+}
+
+is_current_hour_within_range() {
+  local range="$1"
+  local curr_hour start_hour end_hour
+
+  is_valid_hour_range "$range" || return $?
+
+  curr_hour=$(date +%H)
+
+  if [[ "$range" =~ - ]]; then
+    start_hour=${range%-*}
+    end_hour=${range#*-}
+
+    if [ $curr_hour -ge $start_hour -a $curr_hour -le $end_hour ]; then
+      return 0
+    fi
+  else
+    if [ $curr_hour -eq $range ]; then
+      return 0
+    fi
+  fi
+
+  return 1
+}
+
+is_current_hour_within_ops_range() {
+  local range=${1:-$conf__ops__hour_range}
+
+  is_current_hour_within_range "$range"
+}
+
+for _name in base lamp_vhost linux-kernel ltsv mysql; do
   if [ -f "$DEVPANEL_HOME/lib/functions.$_name.sh" ]; then
     . "$DEVPANEL_HOME/lib/functions.$_name.sh"
-  else
-    :
   fi
 done
+unset _name

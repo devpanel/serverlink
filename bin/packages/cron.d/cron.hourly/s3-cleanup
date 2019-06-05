@@ -1,0 +1,3 @@
+#!/bin/bash
+
+devpanel run cronjob cleanup s3 --yes
