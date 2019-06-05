@@ -19,8 +19,7 @@ set_usage_msg \
     --mysql-dbs               name of the mysql databases to create
     --db-name name            the name of the main database of the app
 
-    --php-version <version>   the PHP version to use on this vhost (e.g.
-                              5.6, 7.1)
+    --php-version <version>   the PHP version to use on this vhost (e.g.: 5, 7)
 
     --dont-activate-now       don't activate the vhost now (i.e. don't
                               reload Apache now). The normal behavior, when

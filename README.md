@@ -203,13 +203,13 @@ It'll generate the Let's Encrypt certificates and setup the virtual host with it
 ## Set a specific PHP version to be used by a vhost
 
 ```
-# devpanel set php version --version 7.1 --vhost d7new
+# devpanel set php version --version 7 --vhost d7new
 ```
 
 ## Set the default PHP version for the server
 
 ```
-# devpanel set default php --version 7.1
+# devpanel set default php --version 7
 ```
 
 ## Restart MySQL

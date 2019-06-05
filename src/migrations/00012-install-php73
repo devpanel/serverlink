@@ -1,0 +1,25 @@
+#!/bin/bash
+
+if [ -x "$lamp__php_paths__php_7_3" ]; then
+  # exit 0 if PHP 7.3 binary already exists
+  exit 0
+fi
+
+packages_file="$DEVPANEL_HOME/stacks/lamp/distros/$conf__distro/$conf__distro_version/distro-packages.txt"
+case "$conf__distro" in
+  centos)
+    pkg_list=$(egrep ^php73 "$packages_file" | tr '\n' ' ')
+    if [ $? -eq 0 -a -n "${pkg_list// /}" ]; then
+      yum -y install $pkg_list
+    fi
+    
+    ;;
+
+  ubuntu|debian)
+    pkg_list=$(egrep ^php7.3 "$packages_file" | tr '\n' ' ')
+    if [ $? -eq 0 -a -n "${pkg_list// /}" ]; then
+      apt-get update &&         \
+      apt-get -y install $pkg_list
+    fi
+    ;;
+esac

@@ -21,8 +21,7 @@ usage() {
                               this option if you want to generate an archive
                               in the right format, but to be used later.
 
-    -T php_version            PHP version to use on the vhost (e.g. 5.6,
-                              7.1)
+    -T php_version            PHP version to use on the vhost (e.g.: 5, 7)
 "
   exit 1
 }

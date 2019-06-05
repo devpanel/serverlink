@@ -78,7 +78,7 @@ Usage: restore-vhost [ OPTIONS ] VHOST ARCHIVE_LABEL
                       restore-vhost-subsystem that this is the initial 
                       deployment of the app
     -O name=value     subsystem values
-    -T version        PHP version to use on this vhost (e.g. 5.6, 7.1)
+    -T version        PHP version to use on this vhost (e.g.: 5, 7)
 
   VHOST is the 6 characters of after w_ of the linux username to be used
   ARCHIVE_LABEL can be any of: .tgz file, a directory, or a http/https/ftp url of a .tgz file

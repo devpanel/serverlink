@@ -23,8 +23,7 @@ set_usage_msg \
 
     --password-stdin          read app password from STDIN
 
-    --php-version <version>   the PHP version to use on this vhost (e.g.
-                              5.6, 7.1)
+    --php-version <version>   the PHP version to use on this vhost (e.g.: 5, 7)
 
     --no-summary              don't print the summary information after
                               creating the vhost

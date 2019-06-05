@@ -9,7 +9,7 @@ set_usage_msg \
     --vhost <name>             the name of the vhost where to install
     --desc <description>       a short description of the apps's purpose
     --password-stdin           read the app admin password from stdin
-    --php-version <version>    the PHP version to use (e.g. 5.6, 7.1)
+    --php-version <version>    the PHP version to use (e.g.: 5, 7)
     --password-inline <pass>   set the password for app (note: this option
                                is a bit insecure on shared servers as it's
                                possible to see the password with the ps command)

@@ -29,8 +29,7 @@ usage() {
     -O name=value             options to pass to restore-vhost (e.g
                               site_title, site_email,etc)
 
-    -T php_version            PHP version to use on the imported site (e.g.
-                              5.6, 7.1)
+    -T php_version            PHP version to use on the imported site (e.g.: 5, 7)
 "
   exit 1
 }
