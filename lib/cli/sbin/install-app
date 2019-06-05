@@ -112,7 +112,7 @@ devpanel_cmd__install_app(){
         ;;
 
       *)
-        error "unknown option $name" -
+        error "unknown option $arg" -
         return $?
         ;;
     esac

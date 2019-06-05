@@ -1,0 +1,6 @@
+# Test building of seed apps
+$ $SEEDAPPS_DIR/drupal/build.sh    -o /tmp/d7-pkg-$TEST_ID.tar.gz  $tests__apps__drupal7_pkg       #=> --exit 0
+$ $SEEDAPPS_DIR/drupal/build.sh    -o /tmp/d8-pkg-$TEST_ID.tar.gz  $tests__apps__drupal8_pkg       #=> --exit 0
+$ $SEEDAPPS_DIR/wordpress/build.sh -o /tmp/wordpress-pkg-$TEST_ID.tar.gz                           #=> --exit 0
+$ tmp_src=/tmp/doku-src-${TEST_ID}.tar.gz ; curl -sSLo $tmp_src $tests__apps__dokuwiki_pkg_url && $SEEDAPPS_DIR/dokuwiki/build.sh -o /tmp/dokuwiki-pkg-${TEST_ID}.tar.gz $tmp_src   #=> --exit 0
+$ $SEEDAPPS_DIR/grav/build.sh -o /tmp/grav-pkg-${TEST_ID}.tar.gz $tests__apps__grav_pkg_url          #=> --exit 0
