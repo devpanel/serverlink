@@ -3577,7 +3577,7 @@ MySQL Database:  @db_name@
   fi
 
   main_url=$(get_main_url_of_vhost "$vhost")
-  app_type=$v__app__subsystem
+  app_type=${v__app__subsystem:-"(none)"}
 
   if is_fastcgi_enabled_on_vhost "$vhost"; then
     fastcgi_status=enabled
@@ -3834,9 +3834,8 @@ print_vhost_metadata_json() {
 
   local vhost_st fastcgi_st htpasswd_st st
   local -a ssl_opts_ar mysql_opts_ar app_opts_ar
-  local app_type db_name doc_root user_inc_st https_redir_st
+  local db_name doc_root user_inc_st https_redir_st
   local mysql_host mysql_user mysql_port mysql_password
-  local linux_user
   local ssl_st ssl_type
   local php_version stack
 
@@ -3853,7 +3852,10 @@ print_vhost_metadata_json() {
     vhost_st=0
   fi
 
-  app_type=$v__app__subsystem
+  if [ -n "$v__app__subsystem" ]; then
+    app_opts_ar+=( "app.type=$v__app__subsystem" )
+  fi
+
   if [ -n "$v__mysql__instance" ]; then
     db_name=$v__app__database_name
     mysql_host=$v__mysql__client__host
@@ -3861,7 +3863,7 @@ print_vhost_metadata_json() {
     mysql_user=$v__mysql__client__user
   fi
 
-  linux_user=$v__vhost__linux_user
+  app_opts_ar+=( "app.linux_user=$v__vhost__linux_user" )
 
   if is_fastcgi_enabled_on_vhost "$vhost"; then
     fastcgi_st=1
@@ -3927,7 +3929,6 @@ print_vhost_metadata_json() {
     domains:=$tmp_domains_json_af document_root="$doc_root" \
     backup_files:=$tmp_bkp_files_json_ar user_includes@$user_inc_st \
     fastcgi.enabled@$fastcgi_st htpasswd.enabled@$htpasswd_st \
-    app.linux_user="$linux_user" app.type=$app_type \
     "${ssl_opts_ar[@]}" "${mysql_opts_ar[@]}" "${app_opts_ar[@]}"
   st=$?
 
