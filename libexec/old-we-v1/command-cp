@@ -1,14 +1,4 @@
 #!/bin/bash
-dir=`dirname $0`
-dir_bin="$dir/../../bin"
-vhost="$1"
-cp_src="$2"
-cp_dest="$3"
-param="$4"
-
-# using mode archive: it's OK to operate on a locked vhost
-$dir/../check-vhost-name archive "$vhost" || exit 1
-
 self_bin=`readlink -e "$0"`
 if [ $? -ne 0 ]; then
   echo "Error: unable to get self path" 1>&2
@@ -16,7 +6,7 @@ if [ $? -ne 0 ]; then
 fi
 
 self_dir="${self_bin%/*}"
-sys_dir="${self_dir%/*}"
+sys_dir="${self_dir%/*/*}"
 
 lib_f="$sys_dir/lib/functions"
 if ! source "$lib_f"; then
@@ -25,7 +15,12 @@ if ! source "$lib_f"; then
 fi
 load_devpanel_config || exit $?
 
+vhost="$1"
+cp_src="$2"
+cp_dest="$3"
+param="$4"
+
 load_vhost_config "$vhost" || exit $?
 user="$v__vhost__linux_user"
 
-su -l -c "cp $param $cp_src $cp_dest" $user
+su -c "cd ~$user ; cp $param $cp_src $cp_dest" "$user"
