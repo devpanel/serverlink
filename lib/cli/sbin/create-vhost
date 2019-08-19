@@ -307,6 +307,7 @@ devpanel_cmd__create_vhost() {
       esac
   fi # // if [ -n $from ]
 
+  echo "Extracting metadata from file '$src_archive'..."
   read_devpanel_ini_from_app_archive --missing-ok "$src_archive" || \
     return $?
 
