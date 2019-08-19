@@ -26,6 +26,7 @@ devpanel_cmd__tail_vhost_logs() {
         [ -z "$2" ] && error_missing_value "$arg" && return 1
         vhost_exists "$2" || return $?
         vhost="$2"
+        shift 2
         ;;
       --access-log)
         include_access_log=1
