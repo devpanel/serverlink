@@ -15,6 +15,8 @@ test_conf_ini="$self_dir/defaults.ini"
 
 read_ini_file_into_namespace "$test_conf_ini" tests
 
+load_devpanel_config || exit $?
+
 declare -a cmd_args_ar=()
 while [ -n "$1" ]; do
   cmd_args_ar+=( "$1" )
@@ -33,7 +35,7 @@ else
   fi
 fi
 
-for var in ${!tests__*}; do
+for var in ${!tests__*} ${!conf__*} ${!lamp__*}; do
   export $var
 done
 

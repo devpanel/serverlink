@@ -615,7 +615,7 @@ if [ -n "$platform_version" ]; then
   fi
 fi
 
-devpanel create mysql instance --name default-mysql --shared yes \
+devpanel create mysql instance --name local-mysql1 --shared yes \
   --set-as-default
 
 echo

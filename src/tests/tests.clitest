@@ -23,18 +23,18 @@ $ devpanel get server info                          #=> --egrep ^Platform Versio
 
 $ devpanel list seed apps                           #=> --exit 0
 
-$ devpanel list mysql instances | egrep '^default-mysql[[:space:]]+'  #=> --exit 0
-$ devpanel ping    mysql instance  --instance default-mysql           #=> --exit 0
-$ devpanel stop    mysql instance  --instance default-mysql           #=> --exit 0
-$ devpanel start   mysql instance  --instance default-mysql           #=> --exit 0
-$ devpanel ping    mysql instance  --instance default-mysql           #=> --exit 0
-$ devpanel restart mysql instance  --instance default-mysql           #=> --exit 0
-$ devpanel ping    mysql instance  --instance default-mysql           #=> --exit 0
-$ devpanel run mysql client as root --instance default-mysql -- -e "SHOW DATABASES" #=> --exit 0
-$ devpanel change mysql root password --instance default-mysql --generate    #=> --exit 0
-$ echo a\'toughly\'\'quoted_string\" | devpanel change mysql root password --instance default-mysql #=> --exit 0
-$ devpanel run mysql client as root --instance default-mysql -- -e "SHOW DATABASES" #=> --exit 0
-$ stat -c %A /etc/devpanel/lamp/mysql/instances/default-mysql/root.client.cnf  #=> -rw-r-----
+$ [ -z "$lamp__mysql__default_instance" ] || devpanel list mysql instances | egrep "^${lamp__mysql__default_instance}[[:space:]]+"  #=> --exit 0
+$ [ -z "$lamp__mysql__default_instance" ] || devpanel ping    mysql instance  --instance $lamp__mysql__default_instance             #=> --exit 0
+$ [ -z "$lamp__mysql__default_instance" ] || devpanel stop    mysql instance  --instance $lamp__mysql__default_instance             #=> --exit 0
+$ [ -z "$lamp__mysql__default_instance" ] || devpanel start   mysql instance  --instance $lamp__mysql__default_instance             #=> --exit 0
+$ [ -z "$lamp__mysql__default_instance" ] || devpanel ping    mysql instance  --instance $lamp__mysql__default_instance             #=> --exit 0
+$ [ -z "$lamp__mysql__default_instance" ] || devpanel restart mysql instance  --instance $lamp__mysql__default_instance             #=> --exit 0
+$ [ -z "$lamp__mysql__default_instance" ] || devpanel ping    mysql instance  --instance $lamp__mysql__default_instance             #=> --exit 0
+$ [ -z "$lamp__mysql__default_instance" ] || devpanel run mysql client as root --instance $lamp__mysql__default_instance -- -e "SHOW DATABASES" #=> --exit 0
+$ [ -z "$lamp__mysql__default_instance" ] || devpanel change mysql root password --instance $lamp__mysql__default_instance --generate    #=> --exit 0
+$ [ -z "$lamp__mysql__default_instance" ] || echo a\'toughly\'\'quoted_string\" | devpanel change mysql root password --instance $lamp__mysql__default_instance #=> --exit 0
+$ [ -z "$lamp__mysql__default_instance" ] || devpanel run mysql client as root --instance $lamp__mysql__default_instance -- -e "SHOW DATABASES" #=> --exit 0
+$ [ -z "$lamp__mysql__default_instance" ] || stat -c %A /etc/devpanel/lamp/mysql/instances/$lamp__mysql__default_instance/root.client.cnf  #=> -rw-r-----
 
 ##########
 #
@@ -122,22 +122,22 @@ $ devpanel exec --vhost blk1 php -v                            #=> --egrep ^PHP 
 $ devpanel show vhost info --vhost blk1                        #=> --egrep ^PHP Version: 7.3
 
 # Test mysql commands on vhost
-$ devpanel setup vhost on mysql instance --instance default-mysql --vhost blk1 #=> --exit 0
+$ devpanel setup vhost on mysql instance --instance $lamp__mysql__default_instance --vhost blk1 #=> --exit 0
 $ devpanel run mysql client --vhost blk1 -- -e "CREATE DATABASE blk1__test_1"     #=> --exit 0
-$ devpanel remove vhost from mysql instance --drop-databases --vhost blk1 --instance default-mysql #=> --exit 0
-$ devpanel show mysql instance info --instance default-mysql | egrep '^Vhosts: .*\bblk1\b'  #=> --exit 1
+$ devpanel remove vhost from mysql instance --drop-databases --vhost blk1 --instance $lamp__mysql__default_instance #=> --exit 0
+$ devpanel show mysql instance info --instance $lamp__mysql__default_instance | egrep '^Vhosts: .*\bblk1\b'  #=> --exit 1
 $ devpanel remove vhost --vhost blk1 --file - >/dev/null #=> --exit 0
 $ devpanel test http --vhost blk1      #=> --exit 1
 
 # Test migration of a vhost from a public MySQL instance to a private one
-$ devpanel install seed app --app wordpress-v4 --vhost wp-tstm2 --mysql-instance default-mysql  #=> --exit 0
+$ devpanel install seed app --app wordpress-v4 --vhost wp-tstm2 --mysql-instance $lamp__mysql__default_instance  #=> --exit 0
 $ devpanel test http --vhost wp-tstm2  #=> --exit 0
 $ devpanel create mysql instance --name wp-tstm2-mysql --shared no #=> --exit 0
 $ devpanel run mysql client as root --instance wp-tstm2-mysql -- -e "SHOW DATABASES"  #=> --exit 0
 $ devpanel list mysql instances | egrep '^wp-tstm2-mysql[[:space:]]+'  #=> --exit 0
 $ devpanel move vhost to mysql instance --vhost wp-tstm2 --dest-instance wp-tstm2-mysql   #=> --exit 0
 $ devpanel test http --vhost wp-tstm2  #=> --exit 0
-$ devpanel show mysql instance info --instance default-mysql | fgrep wp-tstm2  #=> --exit 1
+$ devpanel show mysql instance info --instance $lamp__mysql__default_instance | fgrep wp-tstm2  #=> --exit 1
 $ devpanel show mysql instance info --instance wp-tstm2-mysql | egrep '^Vhosts: .*\bwp-tstm2\b' #=> --exit 0
 $ devpanel remove mysql instance --instance wp-tstm2  #=> --exit 1
 $ devpanel remove vhost --vhost wp-tstm2 --file - >/dev/null #=> --exit 0
@@ -147,10 +147,10 @@ $ devpanel show mysql instance info --instance wp-tstm2-mysql #=> --exit 1
 $ devpanel install seed app --app wordpress-v4 --vhost wp-prv2pbl --dedicated-mysql  #=> --exit 0
 $ devpanel remove mysql instance --instance wp-prv2pbl   #=> --exit 1
 $ devpanel test http --vhost wp-prv2pbl                  #=> --exit 0
-$ devpanel move vhost to mysql instance --vhost wp-prv2pbl --dest-instance default-mysql         #=> --exit 0
+$ devpanel move vhost to mysql instance --vhost wp-prv2pbl --dest-instance $lamp__mysql__default_instance         #=> --exit 0
 $ devpanel run mysql client --vhost wp-prv2pbl -- -e "CREATE DATABASE wp_prv2pbl__test_1"        #=> --exit 0
 $ devpanel show mysql instance info --instance wp-prv2pbl | egrep '^Vhosts: .*\bwp-prv2pbl\b'    #=> --exit 1
-$ devpanel show mysql instance info --instance default-mysql | egrep '^Vhosts: .*\bwp-prv2pbl\b' #=> --exit 0
+$ devpanel show mysql instance info --instance $lamp__mysql__default_instance | egrep '^Vhosts: .*\bwp-prv2pbl\b' #=> --exit 0
 $ devpanel test http --vhost wp-prv2pbl                     #=> --exit 0
 $ devpanel remove mysql instance --instance wp-prv2pbl      #=> --exit 0
 $ devpanel show mysql instance info --instance wp-prv2pbl   #=> --exit 1
