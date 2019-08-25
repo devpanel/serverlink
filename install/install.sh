@@ -4,29 +4,45 @@ umask 022
 # default install dir.  can be overwritten with -I
 webenabled_install_dir="/opt/webenabled"
 
+error() {
+  local msg="$1"
+  local exit_code="${2:-1}"
+
+  [ -n "$msg" ] && echo "Error: $msg" 1>&2
+
+  if [ "$exit_code" == - ]; then
+    return 1
+  else
+    exit $exit_code
+  fi
+}
+
 usage() {
   local prog=`basename "$0"`
   echo "
 Usage: $prog [ options ] -Y
 
   Options:
-    -2                this host will connect to platform version 2
-    -3                this host will connect to platform version 3
-    -L distro         Assume the specified distro, don't try to auto-detect
-    -I directory      Install the software in the specified directory
-    -H hostname       hostname to use on the network services
-    -U server_uuid    UUID of the server to configure on devpanel.conf
-    -K secret_key     Secret key of the server to configure on devpanel.conf
-    -u api_url        URL of the user api
-    -A tasks_url      URL of the tasks api
-    -h                Displays this help message
-    -d                print verbose debug messages
-    -b                from bootstrap (don't update devpanel.conf and don't
-                      restart taskd)
-    -W                Webenabled v1.0 backwards compatibility
-    -Y                confirm the intent to install (just to avoid
-                      accidental start of installs)
+    -2                      this host will connect to platform version 2
+    -3                      this host will connect to platform version 3
+    -L distro               Assume the specified distro, don't try to auto-detect
+    -I directory            Install the software in the specified directory
+    -H hostname             hostname to use on the network services
+    -U server_uuid          UUID of the server to configure on devpanel.conf
+    -K secret_key           Secret key of the server to configure on devpanel.conf
+    -u api_url              URL of the user api
+    -A tasks_url            URL of the tasks api
+    -h                      Displays this help message
+    -d                      print verbose debug messages
+    -b                      from bootstrap (don't update devpanel.conf and don't
+                            restart taskd)
+    -W                      Webenabled v1.0 backwards compatibility
+    -Y                      confirm the intent to install (just to avoid
+                            accidental start of installs)
 
+  Other options:
+    --ext-mysql name:uri    add an external mysql instance (name and mysql_uri)
+    --skip-local-mysql      don't create a local mysql instance
 "
 
   if [ $EUID -ne 0 ]; then
@@ -401,9 +417,12 @@ if [ $? -ne 0 ]; then
 fi
 install_source_dir="${self_bin%/*/*}"
 
-getopt_flags="I:L:H:U:K:u:A:hdbW23Y"
+getopt_flags="I:L:H:U:K:u:A:hdbW23Y-"
 
 unset from_bootstrap we_v1_compat platform_version confirmed
+unset mysql_ext_name mysql_ext_uri
+with_local_mysql=1
+
 while getopts $getopt_flags OPTS; do
   case "$OPTS" in
     2|3)
@@ -446,6 +465,45 @@ while getopts $getopt_flags OPTS; do
     Y)
       confirmed=yes
       ;;
+    -)
+      sub_opt="${!OPTIND}"
+      case "$sub_opt" in
+        --ext-mysql)
+          sub_arg_n=$(( $OPTIND + 1 ))
+          sub_arg="${!sub_arg_n}"
+          [ -z "$sub_arg" ] && error "missing argument for option '$sub_opt'"
+
+          # basic validation of the desired input value
+          # i.e. name:user:password@host
+          if ! [[ "$sub_arg" == *:*:*@* ]]; then
+            error "invalid format for MySQL specification."
+          fi
+
+          mysql_ext_name=${sub_arg%%:*}
+          mysql_ext_uri=${sub_arg#*:}
+
+          if [ -z "$mysql_ext_name" -o -z "$mysql_ext_uri" ]; then
+            error "invalid mysql uri specified"
+          fi
+          shift
+          ;;
+
+        --skip-local-mysql)
+          unset with_local_mysql
+          ;;
+
+        *)
+          error "unknown option '$sub_opt'"
+          ;;
+      esac
+      if [ -n "$sub_arg" ]; then
+        OPTIND+=2
+        unset sub_arg
+      else
+        OPTIND+=1
+      fi
+      ;;
+
     h|*)
       usage
       ;;
@@ -615,8 +673,15 @@ if [ -n "$platform_version" ]; then
   fi
 fi
 
-devpanel create mysql instance --name local-mysql1 --shared yes \
-  --set-as-default
+if [ -n "$with_local_mysql" ]; then
+  devpanel create mysql instance --name local-mysql1 --shared yes \
+    --set-as-default
+fi
+
+if [ -n "$mysql_ext_uri" ]; then
+  devpanel add external mysql instance --name "$mysql_ext_name" \
+    --uri "$mysql_ext_uri" --set-as-default
+fi
 
 echo
 echo "Installation completed successfully"

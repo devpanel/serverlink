@@ -1,5 +1,17 @@
 #!/bin/bash
 
+is_valid_mysql_uri() {
+  local uri="$1"
+  # user:pw@host:port?options
+  local exp_regex='^[a-z0-9_.-]+:[^@]+@[a-z0-9_.-]+(:[0-9]{1,5})?(\?.+)?$'
+
+  if [[ "$uri" =~ $exp_regex ]]; then
+    return 0
+  else
+    return 1
+  fi
+}
+
 mysql_create_instance() {
   local socket_file config_dir config_ini tmp_init root_client_cnf
   local mysqld_cnf mysqld_cnf_inc mysqld_bin password_str

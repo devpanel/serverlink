@@ -20,6 +20,14 @@ set_usage_msg \
     --shared <yes|no>                   share with other vhosts (yes/no).
                                         Default: yes
 
+    --uri server_uri                    specify the host and port parameters
+                                        above as a concise URI address.
+                                        Format: user:pw@host:port?options
+
+
+  NOTE: the --uri option can be used alone to specify host, port, root user
+        and password.
+
   Add configuration information of an externally managed MySQL instance.
 "
 
@@ -31,6 +39,7 @@ devpanel_cmd__add_external_mysql_instance() {
   local host port mysql_root_user mysql_root_password
   local mysqld_cnf root_cnf dp_mysql_conf
   local shared_st
+  local tmp_user_n_pw tmp_host_port_n_options tmp_host_n_port tmp_options
   local -a root_opts_ar=() mysqld_opts_ar=() dp_mysql_opts_ar=()
 
   while [ -n "$1" ]; do
@@ -58,6 +67,35 @@ devpanel_cmd__add_external_mysql_instance() {
         [ -z "$2" ] && error_missing_value "$opt"
         port="$2"
         shift 2
+        ;;
+
+      --uri)
+        [ -z "$2" ] && error_missing_value "$opt"
+
+        # user:pw@host:port?options
+        if is_valid_mysql_uri "$2"; then
+          tmp_user_n_pw=${2%%@*}
+          tmp_host_port_n_options=${2##*@}
+          tmp_host_n_port=${tmp_host_port_n_options%\?*}
+
+          mysql_root_user=${tmp_user_n_pw%%:*}
+          mysql_root_password=${tmp_user_n_pw#*:}
+
+          if [[ "$tmp_host_n_port" == *:* ]]; then
+            # host:port defined
+            host=${tmp_host_n_port%%:*}
+            port=${tmp_host_n_port#*:}
+          else
+            # port is missing, will use default later
+            host="$tmp_host_n_port"
+          fi
+
+          shift 2
+        else
+          error "invalid URI specified." -
+          return $?
+        fi
+
         ;;
 
       --mysql-root-user)
