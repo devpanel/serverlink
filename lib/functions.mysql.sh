@@ -646,7 +646,7 @@ get_mysql_version() {
   fi
 
   local tmp_str
-  tmp_str=$(mysql -V 2>/dev/null | egrep -o 'Distrib [0-9]\.[0-9]+(\.[0-9]+)?')
+  tmp_str=$(mysql -V 2>/dev/null | egrep -o '(Ver|Distrib) [0-9]\.[0-9]+(\.[0-9]+)?')
   if [ $? -ne 0 -o -z "$tmp_str" ]; then
     echo "$FUNCNAME(): unable to get mysql version from mysql command" 1>&2
     return 1
