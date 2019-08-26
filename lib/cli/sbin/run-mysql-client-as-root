@@ -72,6 +72,11 @@ devpanel_cmd__run_mysql_client_as_root() {
     cmd_args_ar+=( "$@" )
   fi
 
-  # run mysql client as the linux user of the instance
-  run_as_user --shell /bin/bash "$mysql__params__linux_user" "${cmd_args_ar[@]}"
+  if [ "$mysql__params__host_type" == local ]; then
+    # run mysql client as the linux user of the instance
+    run_as_user --shell /bin/bash "$mysql__params__linux_user" "${cmd_args_ar[@]}"
+  else
+    "${cmd_args_ar[@]}"
+  fi
+
 }
