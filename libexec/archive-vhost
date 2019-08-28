@@ -385,7 +385,7 @@ if [ -n "${opts_ar[*]}" ]; then
 fi
 
 # write devpanel.ini with the app metadata
-for var in app__database_name app__subsystem php__version; do
+for var in app__subsystem php__version; do
   _real_var="v__$var"
   if [ -n "${!_real_var}" ]; then
     opts_ar+=( "${var//__/.} = ${!_real_var}" )
