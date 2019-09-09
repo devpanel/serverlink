@@ -230,7 +230,9 @@ devpanel_cmd__create_lamp_vhost() {
   if is_var_set_to_yes with_mysql; then
     if is_var_set_to_yes create_mysql_instance; then
       # create a new dedicated mysql instance
-      if ! mysql_create_instance_for_vhost "$vhost"; then
+      if mysql_create_instance_for_vhost "$vhost"; then
+        load_mysql_instance_config "$vhost"
+      else
         error "unable to create mysql instance" -
         return $?
       fi
@@ -302,6 +304,13 @@ devpanel_cmd__create_lamp_vhost() {
       echo "Warning: vhost created, but failed to activate it" 1>&2
       [ -t 0 ] && sleep 2
     fi
+  fi
+
+  if is_var_set_to_yes with_mysql && is_webenabled_backwards_compat_enabled ; then
+    # backwards compatibility with Webenabled v1
+    # print line so that the dashboard gets the mysql information
+    printf "started: user=%s type=mysql host=127.0.0.1:%s status=0\n" \
+      "$mysql__params__linux_user" "$mysql__params__port"
   fi
 
   echo
