@@ -485,7 +485,6 @@ while getopts $getopt_flags OPTS; do
           if [ -z "$mysql_ext_name" -o -z "$mysql_ext_uri" ]; then
             error "invalid mysql uri specified"
           fi
-          shift
           ;;
 
         --skip-local-mysql)
@@ -496,12 +495,15 @@ while getopts $getopt_flags OPTS; do
           error "unknown option '$sub_opt'"
           ;;
       esac
+
       if [ -n "$sub_arg" ]; then
-        OPTIND+=2
+        shift 2
         unset sub_arg
       else
-        OPTIND+=1
+        shift
       fi
+
+      OPTIND=$(( $OPTIND - 1 ))
       ;;
 
     h|*)
