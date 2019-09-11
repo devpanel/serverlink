@@ -19,7 +19,9 @@ devpanel_cmd__cleanup_old_s3_files() {
   local tmp_dir output _str _var now_epoch tmp_file mtime
   local s3_addr s3_file_list unsorted_metadata_file
   local retention_key metadata_file
-  local -i n_entries keep_n rm_from_n
+  local n_fresh_key
+  local -i n_could_rm keep_n rm_from_n n_still_fresh
+  local -i n_fresh_daily=0 n_fresh_weekly=0 n_fresh_monthly=0
   local hdr_name="x-amz-meta-devpanel-vhost-snapshot"
   local -a s3_cmd_args_ar=()
 
@@ -114,11 +116,17 @@ devpanel_cmd__cleanup_old_s3_files() {
             tmp_file="$tmp_aggreg_metadata.$s3obj__frequency"
             mtime="$s3obj__end_time"
 
-            if [ -n "$s3obj__remove_after" -a \
-                  $now_epoch -ge $s3obj__remove_after ]; then
-
-              # save the file as a candidate for deletion
-              printf '%s\t%s\n' "$mtime" "$filename" >>$tmp_file
+            if [[ -n "$s3obj__remove_after" && "$s3obj__remove_after" =~ ^[0-9]+$ ]]; then
+              if [ $now_epoch -ge $s3obj__remove_after ]; then
+                # save the file as a candidate for deletion
+                printf '%s\t%s\n' "$mtime" "$filename" >>$tmp_file
+              else
+                case "$s3obj__frequency" in
+                  daily)   n_fresh_daily+=1 ;;
+                  weekly)  n_fresh_weekly+=1 ;;
+                  monthly) n_fresh_monthly+=1 ;;
+                esac
+              fi
             fi
 
             break # go to the next file
@@ -141,12 +149,15 @@ devpanel_cmd__cleanup_old_s3_files() {
       continue
     fi
 
-    n_entries=$(wc -l < $unsorted_metadata_file )
     retention_key=v__recurring_snapshots_${freq}__retention_unit
     keep_n=${!retention_key}
     [ -z "$keep_n" ] && continue
 
-    if [ $n_entries -le $keep_n ]; then
+    n_fresh_key="n_fresh_${freq}"
+    n_still_fresh="${!n_fresh_key}"
+    n_could_rm=$(wc -l < "$unsorted_metadata_file") || continue
+
+    if [ $(( $n_still_fresh + $n_could_rm )) -le $keep_n ]; then
       continue # number of entries is ok
     fi
 
@@ -161,13 +172,15 @@ devpanel_cmd__cleanup_old_s3_files() {
       #                                                                        #
       ##########################################################################
       #
-      # the files to be kept are removed from the list of files
-      rm_from_n=$(( $n_entries - $keep_n + 1 ))
-      sed -i -e "${rm_from_n},\$d;" "$metadata_file"
-      if [ $? -ne 0 ]; then
-        printf "Warning: unable to remove lines from file '%s'.  Skipping..." \
-          "$metadata_file" 1>&2
-        continue
+      if [ $n_still_fresh -lt $keep_n ]; then
+        rm_from_n=$(( $keep_n - $n_still_fresh + 1 ))
+        # remove from the list the files that are to be kept
+        sed -i -e "${rm_from_n},\$d;" "$metadata_file"
+        if [ $? -ne 0 ]; then
+          printf "Warning: unable to remove lines from file '%s'.  Skipping..." \
+            "$metadata_file" 1>&2
+          continue
+        fi
       fi
 
       while IFS=$'\t' read mtime filename; do
