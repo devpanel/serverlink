@@ -613,10 +613,9 @@ mysql_import_databases_from_dir() {
 mysql_run_privileged_query() {
   local instance="$1"
   local sql_query="$2"
+  local my_cnf
 
   mysql_is_valid_instance_name "$instance" || return $?
-
-  local my_cnf sql_query
 
   my_cnf="$lamp__paths__mysql_instances_config_dir/$instance/root.client.cnf"
 
@@ -939,6 +938,12 @@ mysql_change_user_password() {
 
   if [ "${mysql_ver_two_dots%%.*}" -eq 5 -a "${mysql_ver_two_dots#*.}" -lt 7 ]; then
     sql_query="$sql_query_older"
+    if [ "$host" == "%" ]; then
+      # workaround for older versions that handle 127.0.0.1 == localhost :
+      #  duplicate the setting for 'localhost' (otherwise password change fails)
+      sql_query+=$'\n'"$sql_query"
+      sql_query=${sql_query/\'$user\'@\'$host\'/\'$user\'@\'localhost\'}
+    fi
   elif [ "${mysql_ver_two_dots%%.*}" -eq 5 -a "${mysql_ver_two_dots#*.}" -ge 7 ]; then
     mysql_ver_three_dots=$(get_mysql_version )
     if [ $? -ne 0 ]; then
