@@ -114,7 +114,7 @@ if ! source "$lib_file"; then
 fi
 load_devpanel_config || exit $?
 
-virtwww_log_dir=$(get_apache_virtwww_log_dir ) || exit 1
+virtwww_log_dir="$lamp__apache_paths__vhost_logs_dir"
 
 if tty -s; then
   has_tty=1

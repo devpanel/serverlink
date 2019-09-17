@@ -174,10 +174,9 @@ trap 'exit 1 ' HUP INT QUIT ILL TRAP ABRT BUS FPE KILL SEGV \
   PIPE STOP ALRM TERM
 trap 'cleanup' EXIT
 
-sys_data_dir=$(get_devpanel_datadir ) || exit 1
-sys_data_dir=$(readlink -e "$sys_data_dir")
-if [ $? -ne 0 ]; then
-  if   [ ! -e "$sys_data_dir" ]; then
+sys_data_dir="$conf__paths__data_dir"
+if ! sys_data_dir=$(readlink -e "$sys_data_dir"); then
+  if [ ! -e "$sys_data_dir" ]; then
     error "missing system data directory $sys_data_dir"
   elif [ ! -d "$sys_data_dir" ]; then
     error "path '$sys_data_dir' is not a directory."
@@ -186,9 +185,9 @@ if [ $? -ne 0 ]; then
   fi
 fi
 
-archive_template_str=$(get_vhost_archive_template_str ) || exit 1
+archive_template_str="$conf__template_strings__vhost_archive"
 
-apache_group=$(get_apache_group_name ) || exit 1
+apache_group="$lamp__apache__group"
 
 unset to_stdout webenabled_backwards
 if is_webenabled_backwards_compat_enabled; then

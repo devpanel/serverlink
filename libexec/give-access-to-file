@@ -52,7 +52,7 @@ out_fifo_esc=${out_fifo//\//-} # replace slashes(/) with dash(-)
 download_basename="${4##*/}" # optional
 
 server_domain=$(get_server_base_domain )        || exit $?
-admin_apps_base_url=$(get_admin_apps_base_url ) || exit $?
+admin_apps_base_url="$conf__template_urls__admin_apps"
 
 if [ ! -f "$file" ]; then
   error "file path is not a regular file: $file"

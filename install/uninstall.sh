@@ -126,7 +126,6 @@ apache_base_dir="$lamp__apache_paths__base_dir"
 apache_includes_dir="$lamp__apache_paths__includes_dir"
 
 mysql_inc_dir="$conf__mysql_paths__conf_d"
-php_inc_dir=$(deref_os_fs_path_ex "$install_dir" pathnames/etc/php_ini_d)
 
 uninstall_base_dir="$conf__paths__data_dir/.previous_installs"
 if [ ! -d "$uninstall_base_dir" ] && ! mkdir -m 700 "$uninstall_base_dir"; then
@@ -237,7 +236,7 @@ for v_path in "$mysqls_dir"/*; do
   mv -v -f "$v_path" "$db_stale_dir"
 done
 
-for inc_dir in "$mysql_inc_dir" "$php_inc_dir"; do
+for inc_dir in "$mysql_inc_dir"; do
   rm -v -f -- "$inc_dir/"*devpanel*
 done
 

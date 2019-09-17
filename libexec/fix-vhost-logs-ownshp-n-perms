@@ -71,7 +71,7 @@ else
   exit 1
 fi
 
-logs_dir=$(get_apache_virtwww_log_dir ) || exit $?
+logs_dir="$lamp__apache_paths__vhost_logs_dir"
 
 for vhost in ${vhost_ar[*]}; do
   if ! "$self_dir/check-vhost-name" name-only "$vhost"; then

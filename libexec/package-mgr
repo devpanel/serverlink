@@ -750,8 +750,8 @@ if ! source "$lib_file"; then
 fi
 load_devpanel_config || exit $?
 
-packages_url=$(get_packages_url_base )     || exit 1
-metadata_url=$(get_packages_metadata_url ) || exit 1
+packages_url="$conf__packages__url_base"
+metadata_url="$conf__packages__metadata_url"
 
 if ! lock_path "$lock_file" >/dev/null; then
   error "unable to lock. There's probably another instance running."

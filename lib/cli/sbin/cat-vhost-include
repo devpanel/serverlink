@@ -48,12 +48,14 @@ devpanel_cmd__cat_vhost_include() {
     return $?
   fi
 
-  if ! has_user_includes "$vhost"; then
+  load_vhost_config "$vhost" || return $?
+
+  if ! is_yes "$v__vhost__user_includes"; then
     echo "Warning: vhost doesn't contain custom user includes" 1>&2
     return 0
   fi
 
-  file=$(get_vhost_include_filename "$vhost") || return $?
+  file="$v__vhost__config_dir/apache/user_includes.inc"
 
   if [ ! -f "$file" ]; then
     error "missing file '$file'" -

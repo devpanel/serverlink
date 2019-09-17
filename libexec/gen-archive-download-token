@@ -55,7 +55,7 @@ user="$v__vhost__linux_user"
 
 archive_file_in="$2"
 
-url_tmpl=$(get_template_url_for_archive_download ) || exit $?
+url_tmpl="$lamp__apache_url_tmpls__archive_download"
 
 archives_dir=$(readlink -m "$v__vhost__archives_dir")
 archive_file=$(readlink -m "$archives_dir/$archive_file_in")

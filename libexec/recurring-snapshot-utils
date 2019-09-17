@@ -193,7 +193,7 @@ if ! source "$lib_file"; then
 fi
 load_devpanel_config || exit $?
 
-system_data_dir=$(get_devpanel_datadir ) || exit 1
+system_data_dir="$conf__paths__data_dir"
 
 # make file expansions return empty when no match is found
 shopt -s nullglob

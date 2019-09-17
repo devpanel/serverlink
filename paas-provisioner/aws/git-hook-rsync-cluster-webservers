@@ -1,5 +1,32 @@
 #!/bin/bash
 
+get_metadata_value() {
+  local dir="$1"
+  local key="`basename "$2"`"
+
+  local user_def_path="$dir/local/$key"
+  local usual_path="$dir/$key"
+  local link_path="" link_value=""
+
+  if [ -L "$user_def_path" ]; then
+    link_path="$user_def_path"
+  elif [ -L "$usual_path" ]; then
+    link_path="$usual_path"
+  else
+    echo "$FUNCNAME(): didn't find key '$2'" 1>&2
+    return 1
+  fi
+
+  link_value="`readlink "$link_path"`"
+  if [ $? -eq 0 ]; then
+    echo "$link_value"
+    return 0
+  else
+    echo "$FUNCNAME(): found, but couldn't read link value on '$link_path'" 1>&2
+    return 1
+  fi
+}
+
 usage() {
   :
 }

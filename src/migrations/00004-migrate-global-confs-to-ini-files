@@ -113,6 +113,31 @@ old_deref_os_fs_path() {
   echo -n "$value_norm"
 }
 
+old_deref_os_fs_path_ex() {
+  # the different from deref_os_fs_path() is that this _ex() function
+  # requires the file existence
+  local base_dir="$1"
+  local key_name="$2"
+
+  local orig_value="" value="" value_norm="" key_dir=""
+
+  orig_value=`old_deref_os_prop "$base_dir" "$key_name"`
+  [ $? -ne 0 -o -z "$orig_value" ] && return 1
+
+  if [ "${orig_value:0:1}" != "/" ]; then
+    key_dir=`dirname "$base_dir/config/os/$key_name"`
+    value="$key_dir/$orig_value"
+  else
+    value="$orig_value"
+  fi
+
+  # requires the existence of the target path
+  value_norm=`readlink -e "$value"`
+  [ $? -ne 0 ] && return 1
+
+  echo -n "$value_norm"
+}
+
 old_get_vhost_key_value() {
   local key="$1"
   local vhost="$2"
@@ -422,19 +447,19 @@ old_get_apache_group_name() {
 }
 
 old_get_apache_main_config_dir() {
-  deref_os_fs_path_ex "$DEVPANEL_HOME" pathnames/etc/apache_base_dir
+  old_deref_os_fs_path_ex "$DEVPANEL_HOME" pathnames/etc/apache_base_dir
 }
 
 old_get_apache_virtwww_config_dir() {
-  deref_os_fs_path_ex "$DEVPANEL_HOME" pathnames/etc/apache_vhosts
+  old_deref_os_fs_path_ex "$DEVPANEL_HOME" pathnames/etc/apache_vhosts
 }
 
 old_get_apache_virtwww_log_dir() {
-  deref_os_fs_path_ex "$DEVPANEL_HOME" pathnames/var/log/apache_vhosts
+  old_deref_os_fs_path_ex "$DEVPANEL_HOME" pathnames/var/log/apache_vhosts
 }
 
 old_get_apache_global_includes_dir() {
-  deref_os_fs_path_ex "$DEVPANEL_HOME" pathnames/etc/apache_includes_dir
+  old_deref_os_fs_path_ex "$DEVPANEL_HOME" pathnames/etc/apache_includes_dir
 }
 
 old_get_tools_base_url_template() {

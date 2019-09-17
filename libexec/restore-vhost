@@ -163,7 +163,7 @@ fi
 
 load_devpanel_config || exit $?
 
-sys_datadir=$(get_devpanel_datadir ) || exit 1
+sys_datadir="$conf__paths__data_dir"
 
 if [ -n "$subsystem" ]; then
   if ! is_known_seedapp_subsystem "$subsystem"; then

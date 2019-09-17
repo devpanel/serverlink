@@ -57,7 +57,7 @@ app="${2##*/}"
 load_vhost_config "$vhost" || exit $?
 user="$v__vhost__linux_user"
 
-url_tmpl=$(get_tools_base_url_template ) || exit $?
+url_tmpl="$lamp__apache_url_tmpls__tools_base"
 
 virtwww_base_domain=$(get_server_base_domain) || exit 1
 

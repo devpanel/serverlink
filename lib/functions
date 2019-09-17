@@ -222,63 +222,6 @@ get_linux_distro_name_pretty() {
   fi
 }
 
-get_apache_ssl_template_name() {
-  local ssl_dir ssl_tmpl
-  ssl_tmpl=$(deref_os_prop "$DEVPANEL_HOME" names/apache_vhost_ssl_template )
-  if [ $? -eq 0 ]; then
-    echo "$ssl_tmpl"
-    return 0
-  else
-    echo "$FUNCNAME(): unable to get the name of the SSL template" 1>&2
-    return 1
-  fi
-}
-
-get_apache_http_port() {
-  local apache_config_dir="$DEVPANEL_HOME/config/packages/apache_vhost"
-  get_metadata_value "$apache_config_dir" _:Port
-}
-
-get_apache_https_port() {
-  local ssl_tmpl ssl_dir
-  ssl_tmpl=$(get_apache_ssl_template_name) || return $?
-  ssl_dir="$DEVPANEL_HOME/config/packages/apache_vhost/templates/$ssl_tmpl"
-
-  get_metadata_value "$ssl_dir" _:Port
-}
-
-set_apache_http_port() {
-  local port="$1"
-  if [ -z "$port" ]; then
-    echo "$FUNCNAME(): missing port" 1>&2
-    return 1
-  elif [[ ! "$port" =~ ^[0-9]+$ ]]; then
-    echo "$FUNCNAME(): received a malformed port" 1>&2
-    return 1
-  fi
-
-  echo "set-local _:Port $port" | "$DEVPANEL_HOME/bin/metadata-handler" -q \
-                                    "$DEVPANEL_HOME/config/packages/apache_vhost"
-}
-
-set_apache_https_port() {
-  local port="$1"
-  if [ -z "$port" ]; then
-    echo "$FUNCNAME(): missing port" 1>&2
-    return 1
-  elif [[ ! "$port" =~ ^[0-9]+$ ]]; then
-    echo "$FUNCNAME(): received a malformed port" 1>&2
-    return 1
-  fi
-
-  local ssl_dir ssl_tmpl
-  ssl_tmpl=$(get_apache_ssl_template_name) || return $?
-  ssl_dir="$DEVPANEL_HOME/config/packages/apache_vhost/templates/$ssl_tmpl"
-
-  echo "set-local _:Port $port" | "$DEVPANEL_HOME/bin/metadata-handler" -q \
-                                    "$ssl_dir"
-}
-
 print_quoted_variables() {
   local line=""
   local var=""
@@ -355,21 +298,6 @@ resolve_local_dir() {
   else
     return 1
   fi 
-}
-
-wedp_resolve_link() {
-  local source="$1"
-  local target=""
-
-  [ -z "$source" ] && return 1
-
-  target=$(readlink -m "$source")
-  if [ $? -eq 0 ]; then
-    echo "$target"
-    return 0
-  else
-    return 1
-  fi
 }
 
 wedp_gen_random_str() {
@@ -521,40 +449,6 @@ get_vhost_from_linuxuser() {
   fi
 
   return 1
-}
-
-get_docroot_from_vhost() {
-  local vhost="$1"
-
-  local docroot_dir virtwww_homedir
-
-  get_key_value_from_vhost apache_vhost:_:document_root "$vhost" && \
-    docroot_dir="$_dp_value"
-
-  if [ $? -ne 0 ]; then
-    # backwards compatibility
-    virtwww_homedir=$(deref_os_prop "$DEVPANEL_HOME" apache_virtwww_homedir) \
-      || return 1
-
-    docroot_dir="$virtwww_homedir/w_$vhost/public_html/$vhost"
-	fi
-  
-  echo "$docroot_dir"
-
-  return 0
-}
-
-get_docroot_from_user() {
-  local user="${1:-${USER:-$LOGNAME}}"
-  local vhost
-
-  vhost=$(get_vhost_from_linuxuser "$user") || return 1
-
-  get_docroot_from_vhost "$vhost"
-}
-
-get_linuxuser_vhost_dir() {
-  echo "$lamp__paths__user_vhost_map"
 }
 
 get_shell_from_user() {
@@ -1161,34 +1055,6 @@ deref_contents() {
   echo -n "$value"
 }
 
-deref_contents_or_exit() {
-  local path="$1"
-
-  deref_contents "$path"
-  if [ $? -eq 0 ]; then
-    return 0
-  else
-    echo "Error: unable to de-reference path '$path'" 1>&2
-    exit 1
-  fi
-}
-
-assign_deref_contents_or_exit() {
-  local var="$1"
-  local path="$2"
-  local value=""
-
-  value=`deref_contents "$path"`
-  if [ $? -ne 0 -o -z "$value" ]; then
-    echo "Error: unable to de-reference path '$path'" 1>&2
-    exit 1
-  else
-    eval $var="$value"
-    return $?
-  fi
-}
-
-
 deref_os_prop() {
   local base_dir="$1"
   local key_name="$2"
@@ -1235,37 +1101,6 @@ deref_os_prop() {
   deref_contents "$key_path" || return 1
 }
 
-deref_os_prop_or_exit() {
-  local base_dir="$1"
-  local key_name="$2"
-
-  deref_os_prop "$base_dir" "$key_name"
-  [ $? -ne 0 ] && exit 1
-}
-
-assign_deref_os_prop_or_exit() {
-  local var="$1"
-  local base_dir="$2"
-  local key_name="$3"
-
-  local value=""
-
-  value=`deref_os_prop "$base_dir" "$key_name"`
-  if [ $? -ne 0 -o -z "$value" ]; then
-    echo "Error: unable to de-reference key '$key_name'" 1>&2
-    exit 1
-  else
-    eval $var="$value"
-    return $?
-  fi
-}
-
-get_system_key() {
-  local key="$1"
-
-  deref_os_prop "$DEVPANEL_HOME" "$key"
-}
-
 deref_os_fs_path() {
   local base_dir="$1"
   local key_name="$2"
@@ -1286,65 +1121,6 @@ deref_os_fs_path() {
   value_norm=`readlink -m "$value"`
 
   echo -n "$value_norm"
-}
-
-deref_os_fs_path_ex() {
-  # the different from deref_os_fs_path() is that this _ex() function
-  # requires the file existence
-  local base_dir="$1"
-  local key_name="$2"
-
-  local orig_value="" value="" value_norm="" key_dir=""
-
-  orig_value=`deref_os_prop "$base_dir" "$key_name"`
-  [ $? -ne 0 -o -z "$orig_value" ] && return 1
-
-  if [ "${orig_value:0:1}" != "/" ]; then
-    key_dir=`dirname "$base_dir/config/os/$key_name"`
-    value="$key_dir/$orig_value"
-  else
-    value="$orig_value"
-  fi
-
-  # requires the existence of the target path
-  value_norm=`readlink -e "$value"`
-  [ $? -ne 0 ] && return 1
-
-  echo -n "$value_norm"
-}
-
-
-deref_os_fs_path_or_exit() {
-  local base_dir="$1"
-  local key_name="$2"
-
-  deref_os_fs_path "$base_dir" "$key_name"
-  [ $? -ne 0 ] && exit 1
-}
-
-deref_os_fs_path_ex_or_exit() {
-  local base_dir="$1"
-  local key_name="$2"
-
-  deref_os_fs_path_ex "$base_dir" "$key_name"
-  [ $? -ne 0 ] && exit 1
-}
-
-assign_deref_os_fs_path_ex_or_exit() {
-  local var="$1"
-  local base_dir="$2"
-  local key_name="$3"
-
-  local value=""
-
-  value=`deref_os_fs_path_ex "$base_dir" "$key_name"`
-  if [ $? -eq 0 -a -n "$value" ]; then
-    eval $var="$value"
-    return $?
-  else
-    echo "Error: unable to dereference path: $key_name" 1>&2
-    exit 1
-  fi
 }
 
 get_lock_filename() {
@@ -1433,33 +1209,6 @@ rm_rf_safer() {
   rm -rf "$dir_full_path"
 }
 
-get_metadata_value() {
-  local dir="$1"
-  local key="`basename "$2"`"
-
-  local user_def_path="$dir/local/$key"
-  local usual_path="$dir/$key"
-  local link_path="" link_value=""
-
-  if [ -L "$user_def_path" ]; then
-    link_path="$user_def_path"
-  elif [ -L "$usual_path" ]; then
-    link_path="$usual_path"
-  else
-    echo "$FUNCNAME(): didn't find key '$2'" 1>&2
-    return 1
-  fi
-
-  link_value="`readlink "$link_path"`"
-  if [ $? -eq 0 ]; then
-    echo "$link_value"
-    return 0
-  else
-    echo "$FUNCNAME(): found, but couldn't read link value on '$link_path'" 1>&2
-    return 1
-  fi
-}
-
 looks_like_an_app_url() {
   local url="$1"
 
@@ -1489,24 +1238,6 @@ looks_like_a_publisher_url() {
   elif [[ "$url" =~ ^[a-z0-9]://.+$ ]]; then
     return 0
   fi
-}
-
-get_apache_metadata_value() {
-  local system_dir="$1"
-  local key="$2"
-
-  local apache_config_dir="$system_dir/config/vhosts"
-  local vhost
-  vhost=$(get_vhost_from_linuxuser) || return $?
-
-  local vhost_conf_dir="$apache_config_dir/$vhost"
-
-  if [ ! -d "$vhost_conf_dir" ]; then
-    echo "$FUNCNAME(): missing vhost conf dir $vhost_conf_dir" 1>&2
-    return 1
-  fi
-
-  get_metadata_value "$vhost_conf_dir" "$key"
 }
 
 is_vhost_enabled() {
@@ -1663,335 +1394,16 @@ are_snapshots_enabled_for_vhost() {
   fi
 }
 
-get_snapshot_defs_for_vhost() {
-  # returns the definitions of a vhost snapshot in a single line, with
-  # elements separated by space. In the format: day hour retention_unit
-  # note: daily backups don't have the 'day' field 
-
-  local vhost="$1"
-  local freq="$2"
-  local _var
-
-  for _var in vhost freq; do 
-    if [ -z "${!_var}" ]; then
-      echo "$FUNCNAME(): missing $_var" 1>&2
-      return 1
-    fi
-  done
-
-  if ! in_array "$freq" daily weekly monthly; then
-    echo "$FUNCNAME(): invalid frequency received" 1>&2
-    return 1
-  fi
-
-  if ! are_snapshots_enabled_for_vhost "$vhost" "$freq"; then
-    echo "$FUNCNAME(): $freq snapshots disabled for vhost $vhost" 1>&2
-    return 1
-  fi
-
-  local day day_name hour retention_unit
-  local key_prefix="config:backup_snapshot:$freq"
-
-  if [ "$freq" != daily ]; then
-    day=$(get_vhost_key_value "$key_prefix:day" "$vhost") || return $?
-    day_name=$(translate_daynumber_to_name "$day") || return $?
-  fi
-
-  hour=$(get_vhost_key_value "$key_prefix:hour" "$vhost") || return $?
-  retention_unit=$(get_vhost_key_value "$key_prefix:retention_unit" \
-                    "$vhost") || return $?
-
-  local out_str
-  if [ "$freq" != daily ]; then
-    out_str+="$day_name "
-  fi
-
-  out_str+="$hour $retention_unit"
-
-  echo "$out_str"
-}
-
-get_devpanel_datadir() {
-  local var value
-  var="conf__paths__data_dir"
-  value="${!var}"
-  
-  if [ -n "$value" ]; then
-    echo "$value"
-    return 0
-  else
-    return 1
-  fi
-}
-
 get_vhost_archives_dir() {
   local vhost="$1"
 
-  local data_dir vhost_archives_dir
+  local vhost_archives_dir
 
-  data_dir=$(get_devpanel_datadir ) || return $?
-
-  vhost_archives_dir="$data_dir/vhost_archives/$vhost"
+  vhost_archives_dir="$conf__paths__data_dir/vhost_archives/$vhost"
 
   echo "$vhost_archives_dir"
 
   return 0
-}
-
-get_apache_service_name() {
-  local var value
-  var="lamp__apache__service_name"
-  value="${!var}"
-  
-  if [ -n "$value" ]; then
-    echo "$value"
-    return 0
-  else
-    return 1
-  fi
-}
-
-get_apache_vhost_template() {
-  local var value
-  var="lamp__apache_templates__default_vhost"
-  value="${!var}"
-  
-  if [ -n "$value" ]; then
-    echo "$value"
-    return 0
-  else
-    return 1
-  fi
-}
-
-get_vhosts_homedir() {
-  local var value
-  var="lamp__apache_paths__virtwww_homedir"
-  value="${!var}"
-  
-  if [ -n "$value" ]; then
-    echo "$value"
-    return 0
-  else
-    return 1
-  fi
-}
-
-get_apache_group_name() {
-  local var value
-  var="lamp__apache__group"
-  value="${!var}"
-  
-  if [ -n "$value" ]; then
-    echo "$value"
-    return 0
-  else
-    return 1
-  fi
-}
-
-get_apache_main_config_dir() {
-  local var value
-  var="lamp__apache_paths__base_dir"
-  value="${!var}"
-  
-  if [ -n "$value" ]; then
-    echo "$value"
-    return 0
-  else
-    return 1
-  fi
-}
-
-get_apache_virtwww_config_dir() {
-  local var value
-  var="lamp__apache_paths__vhosts_include_dir"
-  value="${!var}"
-  
-  if [ -n "$value" ]; then
-    echo "$value"
-    return 0
-  else
-    return 1
-  fi
-}
-
-get_apache_virtwww_log_dir() {
-  local var value
-  var="lamp__apache_paths__vhost_logs_dir"
-  value="${!var}"
-  
-  if [ -n "$value" ]; then
-    echo "$value"
-    return 0
-  else
-    return 1
-  fi
-}
-
-get_apache_global_includes_dir() {
-  local var value
-  var="lamp__apache_paths__includes_dir"
-  value="${!var}"
-  
-  if [ -n "$value" ]; then
-    echo "$value"
-    return 0
-  else
-    return 1
-  fi
-}
-
-get_tools_base_url_template() {
-  local var value
-  var="lamp__apache_url_tmpls__tools_base"
-  value="${!var}"
-  
-  if [ -n "$value" ]; then
-    echo "$value"
-    return 0
-  else
-    return 1
-  fi
-}
-
-get_template_url_for_archive_download() {
-  local var value
-  var="lamp__apache_url_tmpls__archive_download"
-  value="${!var}"
-  
-  if [ -n "$value" ]; then
-    echo "$value"
-    return 0
-  else
-    return 1
-  fi
-}
-
-get_apache_exec_group_name() {
-  local var value
-  var="lamp__apache__exec_group"
-  value="${!var}"
-  
-  if [ -n "$value" ]; then
-    echo "$value"
-    return 0
-  else
-    return 1
-  fi
-}
-
-get_mysql_instances_homedir() {
-  local var value
-  var="lamp__mysql_paths__instances_homedir"
-  value="${!var}"
-  
-  if [ -n "$value" ]; then
-    echo "$value"
-    return 0
-  else
-    return 1
-  fi
-}
-
-get_packages_url_base() {
-  local var value
-  var="conf__packages__url_base"
-  value="${!var}"
-  
-  if [ -n "$value" ]; then
-    echo "$value"
-    return 0
-  else
-    return 1
-  fi
-}
-
-get_packages_metadata_url() {
-  local var value
-  var="conf__packages__metadata_url"
-  value="${!var}"
-  
-  if [ -n "$value" ]; then
-    echo "$value"
-  else
-    return 1
-  fi
-}
-
-get_path_of_chcgi() {
-  local test_bin="$DEVPANEL_HOME/compat/suexec/chcgi"
-  if [ -f "$test_bin" -a -x "$test_bin" ]; then
-    echo "$test_bin"
-    return 0
-  else
-    return 1
-  fi
-}
-
-get_vhost_archive_template_str() {
-  local var value
-  var="conf__template_strings__vhost_archive"
-  value="${!var}"
-  
-  if [ -n "$value" ]; then
-    echo "$value"
-    return 0
-  else
-    return 1
-  fi
-}
-
-get_admin_apps_base_url() {
-  local var value
-  var="conf__template_urls__admin_apps"
-  value="${!var}"
-  
-  if [ -n "$value" ]; then
-    echo "$value"
-    return 0
-  else
-    return 1
-  fi
-}
-
-get_domain_of_autogenerated_hostnames() {
-  local var value
-  var="lamp__apache_vhosts__auto_gen_domain"
-  value="${!var}"
-  
-  if [ -n "$value" ]; then
-    echo "$value"
-    return 0
-  else
-    return 1
-  fi
-}
-
-get_git_vhost_template() {
-  local var value
-  var="lamp__apache_templates__git_vhost"
-  value="${!var}"
-  
-  if [ -n "$value" ]; then
-    echo "$value"
-    return 0
-  else
-    return 1
-  fi
-}
-
-get_htpasswd_vhost_template() {
-  local var value
-  var="lamp__apache_templates__htpasswd"
-  value="${!var}"
-  
-  if [ -n "$value" ]; then
-    echo "$value"
-    return 0
-  else
-    return 1
-  fi
 }
 
 get_aws_cluster_region() {
@@ -2253,76 +1665,6 @@ get_server_base_domain() {
   fi
 }
 
-format_hostname_internal() {
-  local test_hostname="$1"
-  local force_subdomain="${2:-0}"
-  local base_domain="$3"
-
-  if [ -z "$base_domain" ]; then
-    base_domain=$(get_server_base_domain) || return $?
-  fi
-
-  local test_host_stripped="" final_hostname="" has_dot=""
-
-  if [[ "$test_hostname" =~ \. ]]; then
-   has_dot=1
-  fi
-
-  # remove the server hostname from the end of name
-  if [ "${test_hostname: -1}" == "." ]; then
-    test_host_stripped=${test_hostname%.$base_domain.}
-  else
-    test_host_stripped=${test_hostname%.$base_domain}
-  fi
-
-  if [ "$force_subdomain" == "1" ]; then
-    if [ "${test_hostname: -1}" == "." ]; then
-      # $len_minus_one is a workaround for older bash versions that don't know
-      # negative lengths (e.g. CentOS 6.5 and previous)
-      local len_minus_one=$(( ${#test_hostname} - 1 ))
-      final_hostname="${test_host_stripped:0:$len_minus_one}"
-    else
-      final_hostname="$test_host_stripped"
-    fi
-  else
-    if [ "$test_host_stripped" != "$test_hostname" ]; then
-      # had the server name successfully stripped, so it's a subdomain
-      final_hostname="$test_host_stripped"
-    elif [ "${test_hostname: -1}" == "." ]; then
-      # if the hostname ends with a dot, then take it as fully defined
-      final_hostname="$test_hostname"
-    elif [ -n "$has_dot" ]; then
-      # hostname doesn't end with a dot, but has a dot in the name
-      # so let's guess it's a full domain
-      final_hostname="$test_hostname."
-    else
-      # hostname doesn't end with a dot, doesn't have a dot
-      # consider it a sub domain of the default server domain
-      final_hostname="$test_hostname"
-    fi
-  fi
-
-  echo -n "$final_hostname"
-}
-
-get_real_hostname() {
-  local hostname="$1"
-
-  local host_fmt="" server_base_domain=""
-
-  if [ "${hostname: -1}" == "." ]; then
-    # $len_minus_one is a workaround for older bash versions that don't know
-    # negative lengths (e.g. CentOS 6.5 and previous)
-    local len_minus_one=$(( ${#hostname} - 1 ))
-    host_fmt="${hostname:0:$len_minus_one}" # remove the last dot
-  else
-    server_base_domain=$(get_server_base_domain) || return $?   
-    host_fmt="$hostname.$server_base_domain"
-  fi
-
-  echo -n "$host_fmt"
-}
-
 get_list_of_vhosts() {
   local vhost_config_dir="$lamp__paths__vhosts_config_dir"
   local vhost vhost_dir
@@ -2413,63 +1755,6 @@ get_vhost_with_hostname() {
   cleanup_namespace tmp_vhost
 
   return 1 # not found in any vhost
-}
-
-get_hostnames_from_vhost() {
-  local vhost="$1"
-
-  local vhost_conf_dir="$DEVPANEL_HOME/config/vhosts/$vhost"
-
-  local base_domain default_domain
-  local tmp_link tmp_name tmp_fmt_name 
-  local -a hosts_ar=()
-
-  base_domain=$(get_vhost_base_domain "$vhost") || return $?
-
-  default_domain=$(get_vhost_default_hostname "$vhost") || return $?
-
-  hosts_ar+=( "$base_domain" )
-  if [ "$base_domain" != "$default_domain" ]; then
-    hosts_ar+=( "$default_domain" )
-  fi
-
-  for tmp_link in "$vhost_conf_dir/apache_vhost:0:_:ServerAlias:"*; do
-    if [ ! -L "$tmp_link" ]; then
-      continue
-    fi
-
-    # apache_vhost:0:_:ServerAlias:domain.com.
-    tmp_name=${tmp_link##*:}
-    tmp_fmt_name=$(get_real_hostname "$tmp_name") || return $?
-
-    if [ "$tmp_fmt_name" == "$base_domain" ]; then
-      continue
-    fi
-
-    hosts_ar+=( $tmp_fmt_name )
-  done
-
-  local IFS=$'\n'
-  echo "${hosts_ar[*]}"
-}
-
-has_custom_domain() {
-  local vhost="$1"
-  local hosts_ar=()
-
-  local vhosts_basedomain
-  vhosts_basedomain=$(get_server_base_domain ) || return $?
-
-  hosts_ar=( $(get_hostnames_from_vhost "$vhost") ) || return $?
-
-  local tmp_host
-  for tmp_host in "${hosts_ar[@]}"; do
-    if [[ ! "$tmp_host" == *.$vhosts_basedomain ]]; then
-      return 0
-    fi
-  done
-
-  return 1
 }
 
 translate_archive_placeholders() {
@@ -3275,51 +2560,6 @@ is_fastcgi_enabled_on_vhost() {
   fi
 }
 
-get_mysql_db_name_from_vhost() {
-  local vhost="$1"
-
-  get_1st_level_field_value_from_app "$vhost" db_name
-}
-
-get_mysql_db_host_from_vhost() {
-  local vhost="$1"
-
-  get_1st_level_field_value_from_app "$vhost" db_host
-}
-
-get_mysql_db_port_from_vhost() {
-  local vhost="$1"
-
-  get_1st_level_field_value_from_app "$vhost" db_port
-}
-
-get_mysql_db_host_port_from_vhost() {
-  local vhost="$1"
-  local db_host db_port
-
-  db_host=$(get_mysql_db_host_from_vhost "$vhost" 2>/dev/null)
-  db_port=$(get_mysql_db_port_from_vhost "$vhost" 2>/dev/null)
-
-  if [ -n "$db_host" -a -n "$db_port" ]; then
-    echo "$db_host:$db_port"
-    return 0
-  else
-    return 1
-  fi
-}
-
-get_mysql_db_user_from_vhost() {
-  local vhost="$1"
-
-  get_1st_level_field_value_from_app "$vhost" db_user
-}
-
-get_mysql_db_password_from_vhost() {
-  local vhost="$1"
-
-  get_1st_level_field_value_from_app "$vhost" db_password
-}
-
 can_do_fp_calcs() {
   # can do floiting point calculations?
 
@@ -3589,7 +2829,7 @@ MySQL Database:  @db_name@
     php_ver="$lamp__php__default_version (system default)"
   fi
 
-  if has_user_includes "$vhost"; then
+  if is_yes "$v__vhost__user_includes"; then
     summ_txt+="Custom Includes: yes"$'\n'
   fi
 
@@ -3858,7 +3098,7 @@ print_vhost_metadata_json() {
     stack="$php_version"
   fi
 
-  if has_user_includes "$vhost"; then
+  if is_yes "$v__vhost__user_includes"; then
     user_inc_st=1
   else
     user_inc_st=0
@@ -3910,29 +3150,6 @@ is_https_redirect_enabled_for_current_vhost() {
   else
     return 1
   fi
-}
-
-get_vhost_include_filename() {
-  local vhost="$1"
-
-  local file_base
-  local config_dir="$DEVPANEL_HOME/config/vhosts/$vhost"
-
-  file_base=$(get_user_include_metadata "$vhost" user_includes)
-  if [ $? -ne 0 ]; then
-    echo "$FUNCNAME(): unable to get user include base name" 1>&2
-    return 1
-  fi
-
-  local config_file="$config_dir/$file_base.inc"
-
-  echo "$config_file"
-}
-
-has_user_includes() {
-  local vhost="$1"
-
-  get_user_include_metadata "$vhost" user_includes &>/dev/null
 }
 
 ltsv_get_value() {
@@ -4330,7 +3547,7 @@ get_ssl_key_dir() {
 is_nginx_on_port80() {
   local apache_port pids_on_port80 tst_pid pid_exe
 
-  apache_port=$(get_apache_http_port ) || return $?
+  apache_port="$lamp__apache_vhosts__http_port"
 
   if [ "$apache_port" != 80 ]; then
     if pids_on_port80=$(fuser 80/tcp 2>/dev/null ); then
@@ -4366,7 +3583,7 @@ write_nginx_local_vhost() {
 
   server_base_domain=$(get_server_base_domain )       || return $?
   vhost_base_domain=$(get_vhost_base_domain "$vhost") || return $?
-  apache_http_port=$(get_apache_http_port )           || return $?
+  apache_http_port="$lamp__apache_vhosts__http_port"
 
   nginx_vhost_dir="/etc/nginx/sites-available"
   if [ ! -d "$nginx_vhost_dir" ]
@@ -4471,57 +3688,18 @@ extract_vhost_files_from_dir() {
   fi
 }
 
-mysql_write_my_cnf() {
-  local vhost="$1"
-  local user="$2"
-  local dir="$3"
-
-  local host port user password
-  local contents
-  local -a cmd_ar=( 
-    "$DEVPANEL_HOME/bin/update-ini-file" -q -c "$dir/.my.cnf"
-  )
-
-  host=$(get_1st_level_field_value_from_app "$vhost" db_host )
-  port=$(get_1st_level_field_value_from_app "$vhost" db_port )
-  user=$(get_1st_level_field_value_from_app "$vhost" db_user )
-  password=$(get_1st_level_field_value_from_app "$vhost" db_password )
-
-  contents=$( \
-    printf 'client.host = %s\nclient.port = %s\nclient.user = %s\n' \
-        "$host" "$port" "$user" ;
-     printf 'client.password = %s\n' "$password"; \
-  )
-    
-  if [ $EUID -eq 0 ]; then
-    echo "$contents" | run_as_user "$user" "${cmd_ar[@]}"
-  else
-    echo "$contents" | "${cmd_ar[@]}"
-  fi
-}
-
 is_apache_running() {
-  local port
-
-  port=$(get_apache_http_port ) || return $?
+  local port="$lamp__apache_vhosts__http_port"
 
   fuser -s $port/tcp 2>/dev/null
 }
 
 start_apache() {
-  local svc_name
-
-  svc_name=$(get_apache_service_name 2>/dev/null) || return $?
-
-  service $svc_name start
+  service "$lamp__apache__service_name" start
 }
 
 stop_apache() {
-  local svc_name
-
-  svc_name=$(get_apache_service_name 2>/dev/null) || return $?
-
-  service $svc_name stop
+  service "$lamp__apache__service_name" stop
 }
 
 restart_apache() {
@@ -4533,20 +3711,13 @@ restart_apache() {
 }
 
 reload_apache() {
-  local svc_name
-
-  svc_name=$(get_apache_service_name 2>/dev/null) || return $?
-
-  service $svc_name reload
+  service "$lamp__apache__service_name" reload
 }
 
 apache_configtest() {
-  local svc_name
   local apachectl_bin
 
-  svc_name=$(get_apache_service_name 2>/dev/null) || return $?
-
-  if [ "$svc_name" == apache2 ]; then
+  if [ "$lamp__apache__service_name" == apache2 ]; then
     apachectl_bin=apache2ctl
   else
     apachectl_bin=apachectl
@@ -4567,24 +3738,6 @@ rewrite_vhost_apache_config() {
   local vhost="$1"
 
   "$DEVPANEL_HOME/libexec/rewrite-vhost-config" "$vhost"
-}
-
-get_system_lock_dir() {
-  local lock_dir_1="/run/devpanel/lock"
-  local lock_dir_2="/var/run/devpanel/lock"
-  local lock_dir
-
-  if [ -d "$lock_dir_1" ]; then
-    lock_dir="$lock_dir_1"
-  elif [ -d "$lock_dir_2" ]; then
-    lock_dir="$lock_dir_2"
-  else
-    echo "$FUNCNAME(): no lock dir found" 1>&2
-    return 1
-  fi
-
-  echo "$lock_dir"
-  return 0
 }
 
 reserve_port() {

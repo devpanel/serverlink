@@ -359,8 +359,8 @@ detect_running_apache_and_patch_configs()
 {
   local apache_port
 
-  apache_port=$(get_apache_http_port)
-  
+  apache_port="$lamp__apache_vhosts__http_port"
+ 
   if [ "$apache_port" == 80 ]; then
     move_apache_ports
     create_nginx_config
