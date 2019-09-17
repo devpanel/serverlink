@@ -615,9 +615,11 @@ mysql_unpriv_import_vhost_dbs_from_dir() {
   run_as_user "$lnx_user" "$sys_dir/bin/import-databases-from-dir" "$@"
 }
 
-rm_vhost_archive() {
+get_vhost_archive_path() {
   local in_file="$1"
-  local file_fullpath metadata_file
+  local file_fullpath
+
+  unset _dp_value
 
   if [ "${in_file:0:1}" == / ]; then
     file_fullpath="$in_file"
@@ -625,7 +627,27 @@ rm_vhost_archive() {
     file_fullpath="$v__vhost__archives_dir/$in_file"
   fi
 
+  _dp_value="$file_fullpath"
+}
+
+does_vhost_archive_file_exist() {
+  local in_file="$1"
+  local file_full_path
+
+  get_vhost_archive_path "$in_file" && \
+    file_full_path="$_dp_value" || return $?
+
+  [ -f "$file_full_path" ]
+}
+
+rm_vhost_archive() {
+  local in_file="$1"
+  local file_fullpath metadata_file
+
+  get_vhost_archive_path "$in_file" && \
+    file_fullpath="$_dp_value" || return $?
+
   metadata_file="${file_fullpath%/*}/.${file_fullpath##*/}.metadata.ltsv"
 
-  rm -f -- "$file_fullpath" "$metadata_file"
+  rm -f -- "$file_fullpath" "$metadata_file" "$file_fullpath".{sha1,md5}
 }

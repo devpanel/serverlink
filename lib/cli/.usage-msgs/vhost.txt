@@ -13,12 +13,11 @@
   Backup vhosts:
     list backups                    list the backup files available for the specified
     backup vhost                    creates a backup of the app files and database
+    remove backup                   removes a backup file from a vhost
     enable vhost snapshots          enables backup snashots for the specified vhost
     disable vhost snapshots         disables backup snashots for the specified vhost
     extract backup                  extracts the contents of a backup file
     get link to backup              get a temporary link to download a backup file
-
-    enter                           start a shell for the specified vhost
 
   MySQL commands on vhost:
     start   mysql instance          starts mysql for the specified vhost or domain
@@ -71,6 +70,7 @@
     change sftp password            changes SFTP/SSH password of the vhost
     edit vhost crontab              edits/updates the crontab of the specified vhost
     exec                            execute commands with the vhost user
+    enter                           start a shell with the linux user of a vhost
     add ssh key                     adds ssh keys to the specified vhost
     remove ssh key                  remove ssh keys from the specified vhost
     get token                       get a token for one of the admin tools (e.g. phpmyadmin)
