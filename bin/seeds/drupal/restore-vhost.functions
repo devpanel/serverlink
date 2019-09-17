@@ -578,11 +578,6 @@ drupal_custom()
       ( cd "$public_html_dir" && drush-8 cache-rebuild )
     fi
 
-    aws_cdn_endpoint=`get_aws_cdn_endpoint 2>/dev/null`
-    if [ -n "$initial_deployment" -a -n "$aws_cdn_endpoint" ]; then
-      "$we_base_dir/bin/seeds/drupal/install-modules" cdn
-    fi
-
     if [ -f "$civic_crm_conf" ]; then
       drupal_update_civicrm_config
     fi

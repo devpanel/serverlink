@@ -1406,24 +1406,6 @@ get_vhost_archives_dir() {
   return 0
 }
 
-get_aws_cluster_region() {
-  deref_os_prop "$DEVPANEL_HOME" aws_cluster_region
-}
-
-get_aws_cluster_stack_id() {
-  deref_os_prop "$DEVPANEL_HOME" aws_cluster_stack_id
-}
-
-get_aws_cdn_endpoint() {
-  deref_os_prop "$DEVPANEL_HOME" aws_cdn_endpoint
-}
-
-get_template_str_for_recurring_archive_snapshot() {
-  local frequency="$1"
-
-  deref_os_prop "$DEVPANEL_HOME" vhost_snapshot_${frequency}_template_str
-}
-
 enable_webenabled_backwards_compat() {
   save_opts_in_lamp_config "apache.webenabled_backwards_compat = yes"
 }
