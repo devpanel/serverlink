@@ -2,32 +2,38 @@
 
 This repository is a collection of scripts to be installed on Linux servers to automate the management of web applications. The servers can be linked and managed through the devPanel dashboard, or can be  standalone just like any other Linux server used for web hosting.
 
-## Installing with Vagrant
+## Installing on a Linux server
 
-If you're familiar with Vagrant, you can start quickly from this repository with:
-```
-$ vagrant up
-```
+The installation is done by executing the install script that installs the
+required packages and configures a LAMP stack (Apache, MySQL, PHP). The best
+is to run it on a just deployed server without prior modifications. The
+supported distributions are: CentOS 7, Ubuntu 16.04 LTS and 18.04 LTS.
 
-To start without cloning this repository, run:
-```
-$ vagrant box add https://files.devpanel.com/vagrant/box.json
-$ mkdir my-devpanel-box
-$ cd my-devpanel-box
-$ vagrant init -m devpanel/ubuntu64
-$ vagrant up
-```
+Download and run the install script with the following commands:
 
-At the moment it only works with `Virtualbox` as the provider.
-
-## Installing without using Vagrant
-
-Run the installation script on the server you want to manage:
 ```
 # curl -O https://get.devpanel.com/install.sh
 # chmod 755 install.sh
 # ./install.sh
 ```
+
+## Installing with Vagrant
+
+This section is optional. It applies only if you're familiar with Vagrant.
+Feel free to safely skip this section if you're not sure what it means.
+
+To add the Vagrant box to your local machine and start a first environment,
+run the following commands:
+
+```
+$ vagrant box add devpanel/serverlink
+$ mkdir my-devpanel-box
+$ cd my-devpanel-box
+$ vagrant init -m devpanel/serverlink
+$ vagrant up
+```
+
+At the moment it only works with `Virtualbox` as the provider.
 
 # Layout of the websites and apps
 

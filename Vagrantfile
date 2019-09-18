@@ -9,7 +9,6 @@
 # Currently the only provider supported is Virtualbox.
 
 Vagrant.configure("2") do |config|
-  config.vm.define "test-1.devpanel.net"
-  config.vm.box = "devpanel/ubuntu64"
-  config.vm.box_url = "https://files.devpanel.com/vagrant/box.json"
+  config.vm.define "serverlink-1.devpanel.net"
+  config.vm.box = "devpanel/serverlink"
 end
