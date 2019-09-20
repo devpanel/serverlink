@@ -173,7 +173,8 @@ devpanel_cmd__cleanup_old_s3_files() {
       ##########################################################################
       #
       if [ $n_still_fresh -lt $keep_n ]; then
-        rm_from_n=$(( $keep_n - $n_still_fresh + 1 ))
+        rm_from_n=$(( $n_could_rm - ($keep_n - $n_still_fresh) + 1 ))
+
         # remove from the list the files that are to be kept
         sed -i -e "${rm_from_n},\$d;" "$metadata_file"
         if [ $? -ne 0 ]; then
