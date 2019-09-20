@@ -8,7 +8,7 @@
 # $ sudo ./install
 
 usage() {
-  echo "Usage: ${0##*/} [options]
+  echo "Usage: ${0##*/} [options] [--] [extra_args]
 
   Options:
     -b <branch>           clone the code from the specified git branch
@@ -17,6 +17,13 @@ usage() {
     -2                    enable extensions for platform version 2
     -3                    enable extensions for platform version 3
     -h                    show this help message
+
+  NOTE: additional arguments are passed to install.sh of the serverlink
+        package.
+
+
+  Installer of the serverlink package on a server. This script clones the
+  serverlink repository and runs it's installer script.
 "
   exit 1
 }
@@ -221,7 +228,8 @@ fi
  ${from_bootstrap:+-b} ${tasks_url:+-A "$tasks_url"} \
  ${server_hostname:+-H "$server_hostname"} \
  ${platform_version:+-$platform_version} \
- ${server_uuid:+-U "$server_uuid"} ${server_key:+-K "$server_key"}
+ ${server_uuid:+-U "$server_uuid"} ${server_key:+-K "$server_key"} \
+ "$@"
 
 status=$?
 
