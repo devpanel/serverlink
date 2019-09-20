@@ -8,6 +8,7 @@ $ fuser -v http/tcp                                 #=> --exit 0
 $ fuser -v smtp/tcp                                 #=> --exit 0
 $ fuser -v ssh/tcp                                  #=> --exit 0
 $ pidof cron || pidof crond                         #=> --exit 0
+$ logrotate -d -v /etc/logrotate.conf 2>&1          #=> --egrep ^rotating pattern: /var/log/(httpd|apache2)/virtwww/
 
 $ devpanel get server info                          #=> --exit 0
 $ devpanel get server info                          #=> --egrep ^Linux Distribution: [^ ].+$

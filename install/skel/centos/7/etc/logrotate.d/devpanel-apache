@@ -1,6 +1,5 @@
 /var/log/httpd/virtwww/*/*log {
     weekly
-    rotate 8
     missingok
     notifempty
     sharedscripts
@@ -14,7 +13,6 @@
 /var/log/httpd/cgi_log {
         weekly
         missingok
-        rotate 4
         compress
         delaycompress
         notifempty
