@@ -95,7 +95,7 @@ devpanel_cmd__upload_archive_to_s3() {
 	if [ "$v__vhost__server_name" != "$v__vhost__base_domain" ]; then
 		hdr_fields_txt+=" domain:$v__vhost__server_name"
 	fi
-	hdr_fields_txt+=" host:$v__vhost__base_domain"
+	hdr_fields_txt+=" host:$lamp__apache_vhosts__virtwww_domain"
 	hdr_fields_txt+=" vhost:$v__vhost__name"
 
   for _key in ${!fmeta__*}; do
