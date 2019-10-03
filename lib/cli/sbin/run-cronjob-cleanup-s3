@@ -92,7 +92,7 @@ devpanel_cmd__run_cronjob_cleanup_s3() {
       fi
 
       devpanel_run cleanup old s3 files "${cmd_args_ar[@]}"
-      if [ $? -eq 0 ]; then
+      if [ $? -eq 0 ] && ! is_yes "$dry_run"; then
         cleanup_run__previous_date=$(date +%Y-%m-%d)
         cleanup_run__previous_run_time_epoch=$(date +%s)
         ltsv_save_namespace_to_file cleanup_run "$cache_file"
