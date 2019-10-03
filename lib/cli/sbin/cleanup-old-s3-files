@@ -68,7 +68,7 @@ devpanel_cmd__cleanup_old_s3_files() {
     return $?
   fi
 
-  load_vhost_config "$vhost" || exit $?
+  load_vhost_config "$vhost" || return $?
 
   s3_addr="$v__s3___url"
   s3_file_list="$tmp_dir/s3-file-list.txt"
@@ -79,7 +79,7 @@ devpanel_cmd__cleanup_old_s3_files() {
   fi
 
   if [ ! -s "$s3_file_list" ]; then
-    continue # no files, go to the next vhost
+    return 0 # no files, just return 0
   fi
 
   local tmp_file_metadata="$tmp_dir/tmp-file-metadata.txt"

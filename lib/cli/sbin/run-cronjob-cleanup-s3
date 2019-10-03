@@ -52,7 +52,7 @@ devpanel_cmd__run_cronjob_cleanup_s3() {
   fi
 
   if ! is_current_hour_within_ops_range; then
-    exit 0
+    return 0
   fi
 
   local lock_name="cleanup_s3"
