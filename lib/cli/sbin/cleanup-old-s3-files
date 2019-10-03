@@ -79,7 +79,7 @@ devpanel_cmd__cleanup_old_s3_files() {
   fi
 
   if [ ! -s "$s3_file_list" ]; then
-    exit 0 # no files
+    continue # no files, go to the next vhost
   fi
 
   local tmp_file_metadata="$tmp_dir/tmp-file-metadata.txt"
