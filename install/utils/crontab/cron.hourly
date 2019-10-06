@@ -17,4 +17,6 @@ sys_dir=${self_dir%/*/*/*}
 
 "$sys_dir/libexec/remove-old-snapshots-starter" -q -Y
 
+run-parts "$sys_dir/bin/packages/cron.d/cron.hourly"
+
 /bin/true
