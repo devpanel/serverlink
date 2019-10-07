@@ -5,6 +5,7 @@ set_usage_msg \
 
   Options:
     --yes                       confirm the intent to run the command
+    --ignore-time               run it even outside the ops hours range
     --dry-run                   don't actually cleanup, only show what would
                                 be done
   
@@ -14,7 +15,7 @@ set_usage_msg \
 devpanel_cmd__run_cronjob_cleanup_s3() {
   [ $# -eq 0 -o -z "$1" ] && usage
 
-  local vhost confirmed dry_run cache_file curr_epoch_time
+  local vhost confirmed dry_run cache_file curr_epoch_time ignore_time
   local -a cmd_args_ar=()
 
   while [ -n "$1" ]; do
@@ -27,6 +28,11 @@ devpanel_cmd__run_cronjob_cleanup_s3() {
 
       --dry-run)
         dry_run=yes
+        shift
+        ;;
+
+      --ignore-time)
+        ignore_time=yes
         shift
         ;;
 
@@ -51,7 +57,7 @@ devpanel_cmd__run_cronjob_cleanup_s3() {
     return $?
   fi
 
-  if ! is_current_hour_within_ops_range; then
+  if ! is_yes "$ignore_time" && ! is_current_hour_within_ops_range; then
     return 0
   fi
 
