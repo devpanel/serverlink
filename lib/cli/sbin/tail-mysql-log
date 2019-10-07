@@ -1,20 +1,22 @@
 #!/bin/bash
 
 set_usage_msg \
-  "Usage: $bin_name ${cmd_ar[*]} [opts] --vhost <vhost>
+  "Usage: $bin_name ${cmd_ar[*]} [opts] <--instance|--vhost> <name>
 
   Options:
-    --vhost <vhost>         the vhost to get the logs for
+    --instance <name>       name of the mysql instance
+    --vhost <vhost>         use the mysql instance related to the vhost
     --once                  show the lines once, don't follow the log
                             changes (i.e. tail without -f)
 
-  Tails the MySQL log file for the specified vhost.
+  Tails the MySQL log file for the specified mysql instance. Either
+  --instance or --vhost need to be specified.
 "
 
 devpanel_cmd__tail_mysql_log() {
   [ $# -eq 0 -o -z "$1" ] && usage
 
-  local name vhost show_once
+  local name vhost instance show_once
   local -a tail_args_ar=()
 
   while [ -n "$1" ]; do
@@ -23,6 +25,12 @@ devpanel_cmd__tail_mysql_log() {
       --vhost)
         [ -z "$2" ] && { error_missing_value "$name" ; return $?; }
         vhost="$2"
+        shift 2
+        ;;
+
+      --instance)
+        [ -z "$2" ] && { error_missing_value "$name" ; return $?; }
+        instance="$2"
         shift 2
         ;;
 
@@ -47,19 +55,29 @@ devpanel_cmd__tail_mysql_log() {
     esac
   done
 
-  [ -z "$vhost" ] && { error_missing_param vhost; return $?; }
-
-  if ! vhost_exists "$vhost"; then
-    error "vhost '$vhost' doesn't exist" -
-    return 1
+  if [ -n "$instance" -a -n "$vhost" ]; then
+    error "can't use both --instance and --vhost on the same command" -
+    return $?
+  elif [ -z "$instance" -a -z "$vhost" ]; then
+    usage
   fi
 
-  local log_file db_user vhost_user
+  if [ -n "$vhost" ]; then
+    load_vhost_config "$vhost" || return $?
 
-  load_vhost_config "$vhost" || return $?
-  vhost_user="$v__vhost__linux_user"
+    if [ -n "$v__mysql__instance" ]; then
+      instance="$v__mysql__instance"
+    else
+      error "this vhost is not associated to any mysql instance." -
+      return $?
+    fi
+  fi
 
-  db_user="b_${vhost_user#w_}"
+  load_mysql_instance_config "$instance" || return $?
+
+  local log_file db_user
+
+  db_user="$mysql__params__linux_user"
   if ! linuxuser_exists "$db_user"; then
     error "user '$db_user' doesn't exist." -
     return $?

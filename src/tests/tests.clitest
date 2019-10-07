@@ -36,6 +36,7 @@ $ [ -z "$lamp__mysql__default_instance" ] || devpanel change mysql root password
 $ [ -z "$lamp__mysql__default_instance" ] || echo a\'toughly\'\'quoted_string\" | devpanel change mysql root password --instance $lamp__mysql__default_instance #=> --exit 0
 $ [ -z "$lamp__mysql__default_instance" ] || devpanel run mysql client as root --instance $lamp__mysql__default_instance -- -e "SHOW DATABASES" #=> --exit 0
 $ [ -z "$lamp__mysql__default_instance" ] || stat -c %A /etc/devpanel/lamp/mysql/instances/$lamp__mysql__default_instance/root.client.cnf  #=> -rw-r-----
+$ [ -z "$lamp__mysql__default_instance" ] || devpanel tail mysql log --instance "$lamp__mysql__default_instance" --once             #=> --exit 0
 
 ##########
 #
@@ -136,6 +137,7 @@ $ devpanel test http --vhost wp-tstm2  #=> --exit 0
 $ devpanel create mysql instance --name wp-tstm2-mysql --shared no #=> --exit 0
 $ devpanel run mysql client as root --instance wp-tstm2-mysql -- -e "SHOW DATABASES"  #=> --exit 0
 $ devpanel list mysql instances | egrep '^wp-tstm2-mysql[[:space:]]+'  #=> --exit 0
+$ devpanel tail mysql log --instance wp-tstm2-mysql --once             #=> --exit 0
 $ devpanel move vhost to mysql instance --vhost wp-tstm2 --dest-instance wp-tstm2-mysql   #=> --exit 0
 $ devpanel test http --vhost wp-tstm2  #=> --exit 0
 $ devpanel show mysql instance info --instance $lamp__mysql__default_instance | fgrep wp-tstm2  #=> --exit 1
