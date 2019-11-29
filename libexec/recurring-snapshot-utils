@@ -307,69 +307,59 @@ case $op in
     frequency_status_link="$cache_dir/backup_snapshot.$frequency.$epoch_str"
 
     if [ -L "$epoch_status_link" ]; then
-      epoch_link_contents=$(readlink "$epoch_status_link")
+      if ! epoch_target_f=$(readlink "$epoch_status_link") || \
+        ! does_vhost_archive_file_exist "$epoch_target_f" ; then
 
-      # another frequency of the same hour has already completed a backup
-      epoch_status_real_path="$vhost_archive_dir/$epoch_link_contents"
-      frequency_status_real_path="$vhost_archive_dir/$epoch_link_contents"
-
-      if [ -f "$epoch_status_real_path" ]; then
-        # the epoch file already exists, check if it just needs to duplicate
-        #  the frequency status (to avoid duplicating the data)
-        #
-        #  Will only hardlink if there are no exclude files for the
-        #  frequencies (as the exclude files can be different and
-        #  generate different backup files)
-        if [ $n_excl_files -eq 0 -a \
-             ! -e "$frequency_status_link" -a ! -L "$frequency_status_link" ];
-          then
-
-          if ln "$epoch_status_real_path" "$archive_file"; then
-            if ! ln -s "$backup_basename" "$frequency_status_link" ; then
-              error "unable to create frequency link $frequency_status_link"
-            fi
-
-            [ -z "$quiet" ] && echo "Successfully created (hardlinked) $archive_file"
-            exit 0
-          else
-            error "unable to link '$epoch_status_real_path' to '$archive_file'"
-          fi
-        fi
-      else # broken $epoch_status_link
         echo "Warning: broken time link $epoch_status_link, removing..." 1>&2
-        sleep 1
-        if ! rm -f "$epoch_status_link"; then
-          error "unable to remove link $epoch_status_link"
-        fi
+        rm -f "$epoch_status_link"
       fi
     fi
 
-    if [ -L "$frequency_status_link" ]; then
-      freq_link_contents=$(readlink "$frequency_status_link")
-      freq_real_path="$vhost_archive_dir/$freq_link_contents"
+    if [ -L "$frequency_status_link" ]                       && \
+      freq_target_f=$(readlink "$frequency_status_link" )    && \
+      does_vhost_archive_file_exist "$freq_target_f" ; then
 
-      if [ -f "$freq_real_path" ]; then
-        if [ ! -L "$epoch_status_link" ]; then
-          # try to fix missing epoch link
-          if ! cp -P "$frequency_status_link" "$epoch_status_link"; then
-            echo "Warning: failed to copy $frequency_status_link to $epoch_status_link" 1>&2
+      # backup was already done previously
+      if [ -z "$quiet" ]; then
+        msg="file exists '$freq_target_f'."
+        msg+=" Recurring $frequency backup already done"
+        msg+=" for $vhost (no need to do it again now)"
+        echo "Warning: $msg" 1>&2
+      fi
+
+      exit 0
+    fi
+
+    if [ -L "$epoch_status_link" -a $n_excl_files -eq 0 ] && \
+      does_vhost_archive_file_exist "$epoch_target_f"     && \
+      orig_file="$_dp_value"                              && \
+      load_vhost_archive_metadata "$orig_file" metadata_f_ns ; then
+
+      # another frequency of the same hour has already completed a backup
+      #
+      #  Will only hardlink if there are no exclude files for the
+      #  frequencies (as the exclude files can be different and
+      #  generate different backup files)
+
+      # just create a hardlink instead of going through a new full
+      # archive operation
+      if ln "$orig_file" "$archive_file"; then
+        set_global_var metadata_f_ns__frequency "$frequency"
+        set_global_var metadata_f_ns__remove_after \
+          $(( $(date +%s) + $n_rm_add_time ))
+
+        # duplicate the metadata from the original file
+        if save_archive_metadata "$archive_file" metadata_f_ns ; then
+          rm -f "$frequency_status_link"
+          if ln -s "$backup_basename" "$frequency_status_link" ; then
+            [ -z "$quiet" ] && echo "Successfully created (hardlinked) $archive_file"
+            exit 0
+          else
+            error "unable to create frequency link $frequency_status_link"
           fi
         fi
-
-        if [ -z "$quiet" ]; then
-          echo "Warning: file exists $freq_real_path" 1>&2
-          msg="recurring $frequency backup already done"
-          msg+=" for $vhost (no need to do it again now)"
-          echo "Warning: $msg" 1>&2
-        fi
-
-        exit 0
       else
-        echo "Warning: stale link exists $frequency_status_link, removing..." 1>&2
-        sleep 1
-        if ! rm -f "$frequency_status_link"; then
-          error "unable to remove link $frequency_status_link"
-        fi
+        error "unable to link '$orig_file' to '$archive_file'"
       fi
     fi
 
@@ -392,6 +382,7 @@ case $op in
     end_time_epoch=$(date +%s)
 
     if [ $snap_st -eq 0 ]; then
+      rm -f "$frequency_status_link"
       if ln -s "$backup_basename" "$frequency_status_link"; then
         rm -f "$epoch_status_link"
         if ! ln -s "$backup_basename" "$epoch_status_link"; then
@@ -524,13 +515,8 @@ case $op in
           continue
         fi
 
-        file_path="$vhost_archive_dir/$target"
         if rm -f "$cache_link" && [ -n "$verbose" ]; then
           echo "Removed $cache_link"
-        fi
-
-        if rm -f "$file_path"{,.md5,.sha1} && [ -n "$verbose" ]; then
-          echo "Removed $file_path"
         fi
 
         epoch_str=${cache_link##*.}
@@ -538,6 +524,18 @@ case $op in
         time_link="$cache_dir/backup_snapshot.time.$epoch_str"
         if [ -L "$time_link" ] && rm -f "$time_link"; then
           [ -n "$verbose" ] && echo "Removed $time_link"
+        fi
+
+        if get_vhost_archive_path "$target"; then
+          file_path="$_dp_value"
+        else
+          echo "Warning: unable to find path of '$target'" 1>&2
+          [ -t 0 ] && sleep 1
+          continue
+        fi
+
+        if rm_vhost_archive "$file_path" && [ -n "$verbose" ] ; then
+          echo "Removed $file_path"
         fi
 
       done
@@ -561,82 +559,6 @@ case $op in
     for vhost in $(get_list_of_vhosts); do
       "$self_dir/remove-old-snapshot-files" "${aux_opts[@]}" "$vhost"
     done
-    ;;
-
-  new-s3-upload)
-    _entry_file="$1"
-    if [ ! -f "$_entry_file" ]; then
-      error "couldn't find file '$_entry_file'"
-    fi
-
-    if ! ltsv_load_line_from_file_into_namespace entry "$_entry_file"; then
-      exit 1
-    fi
-
-    declare -a s3_args_ar=()
-
-    vhost="$entry__vhost"
-    file="$entry__file"
-
-    load_devpanel_config || exit $?
-
-    if ! load_vhost_config "$vhost"; then
-      exit 1
-    fi
-
-    if [ "${file:0:1}" == / ]; then
-      file_fullpath="$file"
-    else
-      file_fullpath="$v__vhost__archives_dir/$file"
-    fi
-
-    if [ ! -f "$file_fullpath" ]; then
-      if [ -t 0 ]; then
-        error "couldn't find file '$file_fullpath'"
-      else
-        exit 1
-      fi
-    fi
-
-    load_vhost_archive_metadata "$file_fullpath" fmeta
-
-    if [ -n "$v__s3___config_file" -a -f "$v__s3___config_file" ]; then
-      s3_args_ar+=( --config="$v__s3___config_file" )
-    else
-      error "missing S3 config file"
-    fi
-
-    hdr_fields_txt=""
-    if [ "$v__vhost__server_name" != "$v__vhost__base_domain" ]; then
-      hdr_fields_txt+=" domain:$v__vhost__server_name"
-    fi
-    hdr_fields_txt+=" host:$v__vhost__base_domain"
-    hdr_fields_txt+=" vhost:$v__vhost__name"
-
-    for _key in ${!fmeta__*}; do
-      [ -z "${!_key}" ] && continue
-
-      _key_name=${_key#fmeta__}
-      ltsv_encode_string "${!_key}"
-      _key_value="$_ltsv_encoded"
-
-      hdr_fields_txt+=" ${_key_name}:${_key_value}"
-    done
-
-    hdr_name="x-amz-meta-devpanel-vhost-snapshot"
-    s3_args_ar+=( --add-header="$hdr_name:$hdr_fields_txt" )
-
-    target_s3_url="${v__s3___url%/}/${file_fullpath##*/}"
-    s3cmd "${s3_args_ar[@]}" --quiet --acl-private \
-      put "$file_fullpath" "$target_s3_url"
-    st=$?
-
-    if [ $st -eq 0 ] && is_to_delete_file_after_upload; then
-      rm_vhost_archive "$file_fullpath"
-    fi
-
-    exit $st
-
     ;;
 
   *)
