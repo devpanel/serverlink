@@ -607,13 +607,15 @@ function load_vhost_archive_metadata() {
 
   cleanup_namespace "$ns"
 
-  if [ "${in_file:0:1}" == / ]; then
-    file_fullpath="$in_file"
+  if get_vhost_archive_path "$in_file" ; then
+    file_fullpath="$_dp_value"
   else
-    file_fullpath="$v__vhost__archives_dir/$file"
+    echo "$FUNCNAME(): unable to get path of file '$in_file'" 1>&2
+    return 1
   fi
 
   if [ ! -f "$file_fullpath" ]; then
+    echo "$FUNCNAME(): unable to find file '$in_file'" 1>&2
     return 1
   fi
 
