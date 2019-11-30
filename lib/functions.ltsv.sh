@@ -173,7 +173,7 @@ ltsv_namespace_to_string() {
 
   _ltsv_value=""
 
-  for raw_var in $(eval echo \${!${namespace}__*}); do
+  for raw_var in $(eval echo '${!'${namespace}'__*}'); do
     if [ -z "${!raw_var}" ]; then
       continue
     else
@@ -205,7 +205,7 @@ ltsv_save_namespace_to_file() {
   local raw_var key key_esc value value_esc
   local txt_str=""
 
-  for raw_var in $(eval echo \${!${namespace}__*}); do
+  for raw_var in $(eval echo '${!'${namespace}'__*}'); do
     if [ -z "${!raw_var}" ]; then
       continue
     else
