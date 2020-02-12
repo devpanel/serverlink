@@ -116,7 +116,7 @@ devpanel_cmd__restore_backup() {
 
   doc_root="$v__vhost__document_root"
 
-  temp_dir=$(mktemp -d)
+  temp_dir=$(mktemp -d ${conf__paths__temp_path:+-t -p "$conf__paths__temp_dir"})
   if [ $? -ne 0 ]; then
     error "unable to create temporary directory" -
     return $?

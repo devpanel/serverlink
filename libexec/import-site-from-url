@@ -168,7 +168,7 @@ esac
 db_file_extension="$db_dump_type"
 db_dump_file_url=${db_dump_file_url_raw#$db_file_type_orig:}
 
-temp_dir=$(mktemp -d)
+temp_dir=$(mktemp -d ${conf__paths__temp_dir:+-t -p "$conf__paths__temp_dir"})
 if [ $? -ne 0 ]; then
   error "unable to create temporary directory"
 fi

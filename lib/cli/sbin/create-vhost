@@ -271,7 +271,7 @@ devpanel_cmd__create_vhost() {
         ;;
 
       stdin)
-        if src_archive=$(mktemp); then
+        if src_archive=$(mktemp ${conf__paths__temp_dir:+-t -p "$conf__paths__temp_dir"}); then
           temp_files_ar+=( "$src_archive" )
         else
           error "unable to create temp file" -
@@ -290,7 +290,7 @@ devpanel_cmd__create_vhost() {
         ;;
 
       url)
-        if src_archive=$(mktemp); then
+        if src_archive=$(mktemp ${conf__paths__temp_dir:+-t -p "$conf__paths__temp_dir"}); then
           temp_files_ar+=( "$src_archive" )
         else
           error "unable to create temp file" -

@@ -1953,7 +1953,7 @@ guess_subsystem_from_app_archive() {
   local tmp_dir subsystem _sub_dir _tmp_subsystem
   local db_dir db_dir_tst db_ext db_dir_1 db_dir_2
 
-  if ! tmp_dir=$(mktemp -d); then
+  if ! tmp_dir=$(mktemp -d ${conf__paths__temp_dir:+-t -p "$conf__paths__temp_dir"}); then
     echo "$FUNCNAME(): unable to create temp dir" 1>&2
     return 1
   fi
@@ -1967,6 +1967,7 @@ guess_subsystem_from_app_archive() {
       if tar -zxf "$archive" -C "$tmp_dir" "$db_ext"; then
         break
       else
+        rm -rf "$tmp_dir"
         echo "$FUNCNAME(): failed to extract '$db_ext' from '$archive'" 1>&2
         return 1
       fi
@@ -1974,6 +1975,7 @@ guess_subsystem_from_app_archive() {
   done
 
   if [ -z "$db_dir" ]; then
+    rm -rf "$tmp_dir"
     echo "$FUNCNAME(): didn't find database dir on archive '$archive'" 1>&2
     return 1
   fi

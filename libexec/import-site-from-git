@@ -195,7 +195,7 @@ if [ "$db_dump_type" == zip ]; then
   fi
 fi
 
-temp_dir=$(mktemp -d)
+temp_dir=$(mktemp -d ${conf__paths__temp_dir:+-t -p "$conf__paths__temp_dir"})
 if [ $? -ne 0 ]; then
   error "unable to create temporary directory"
 fi

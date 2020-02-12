@@ -92,7 +92,7 @@ devpanel_cmd__move_vhost_to_mysql_instance() {
   fi
 
   # dump databases on original instance
-  if tmp_dump_dir=$(mktemp -d ); then
+  if tmp_dump_dir=$(mktemp -d ${conf__paths__temp_dir:+-t -p "$conf__paths__temp_dir"} ); then
     temp_dirs_ar+=( "$tmp_dump_dir" )
     chmod 770 "$tmp_dump_dir"
     chgrp "$v__vhost__linux_user" "$tmp_dump_dir"

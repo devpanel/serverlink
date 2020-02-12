@@ -113,7 +113,7 @@ mysql_test_split_dump() {
   fi
 
   if [ "$dump_type" == "file" ]; then
-    tmp_dump_dir=$(mktemp -d)
+    tmp_dump_dir=$(mktemp -d ${conf__paths__temp_dir:+-t -p "$conf__paths__temp_dir"})
     if [ $? -ne 0 ]; then
       echo "$FUNCNAME(): unable to create temporary directory" 1>&2
       return 1
@@ -442,7 +442,7 @@ case "$operation" in
     trap 'cleanup_import_split_db' EXIT
     dump_file="$2"
     if [ "$dump_file" == "-" ]; then
-      tmp_dump_file=$(mktemp)
+      tmp_dump_file=$(mktemp ${conf__paths__temp_dir:+-t -p "$conf__paths__temp_dir"})
       if [ $? -ne 0 ]; then
         error "unable to create temporary file"
       fi
@@ -460,7 +460,7 @@ case "$operation" in
       fi
     fi
 
-    tmp_dump_dir=$(mktemp -d)
+    tmp_dump_dir=$(mktemp -d ${conf__paths__temp_dir:+-t -p "$conf__paths__temp_dir"})
     if [ $? -ne 0 ]; then
       error "unable to create temporary directory"
     fi
@@ -529,7 +529,7 @@ case "$operation" in
       error "unable to create temporary target file"
     fi
 
-    tmp_db_dir=$(mktemp -d)
+    tmp_db_dir=$(mktemp -d ${conf__paths__temp_dir:+-t -p "$conf__paths__temp_dir"})
     if [ $? -ne 0 -o -z "$tmp_db_dir" ]; then
       error "unable to create temporary directory"
     else

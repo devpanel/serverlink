@@ -236,6 +236,7 @@ load_devpanel_config() {
     mkdir -m 0711 "$conf__paths__lock_dir"
   fi
 
+  conf__paths__temp_dir="${conf__paths__temp_dir:-$conf__paths__data_dir/tmp}"
   conf__paths__cache_dir="$DEVPANEL_HOME/var/cache"
   conf__distro="$distro"
   conf__distro_version="$distro_version"
