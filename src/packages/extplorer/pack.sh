@@ -29,8 +29,6 @@ pack_dir="$temp_dir/pack"
 
 main_pkg_dir="$pack_dir/compat/w_/public_html/cgi/$pkg_name"
 
-apache_tmpls_path="config/packages/apache_vhost/templates"
-
 src_tar_file="$temp_dir/$pkg_name-$version.tar.gz"
 
 umask 022
@@ -51,13 +49,6 @@ rm -f "$main_pkg_dir/scripts.tar.gz"
 echo 'include("devpanel_auth.php");' >> "$main_pkg_dir/config/conf.php"
 
 cp "$self_dir/devpanel_auth.php" "$main_pkg_dir/config/"
-
-# create the links for it to be included in the tools vhost automatically
-for t_dir in "tools_vhost_2_2" "tools_vhost_2_4" ; do
-  include_dir="$pack_dir/$apache_tmpls_path/$t_dir"
-  mkdir -p "$include_dir"
-  ln -s "$pkg_name" "$include_dir/include:$pkg_name"
-done
 
 "$sys_dir/libexec/pack-package" -s "$self_dir/setup-package" \
   -d "$pack_dir" "$pkg_name-$version.tar.gz" .

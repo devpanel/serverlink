@@ -2,8 +2,6 @@
 .*.sw[op]
 /etc/devpanel.conf
 /config/packages/
-!/config/packages/apache_vhost
-!/config/packages/apache_vhost
 /config/key_value/linuxuser-vhost/
 /config/iptables*
 /bin/gitolite.d/
