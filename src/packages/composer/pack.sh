@@ -48,6 +48,8 @@ ln -s "${target_file##*/}" "$main_pkg_dir/compose"
 
 ln -s "../${main_pkg_dir#$pack_dir/bin/}/compose" "$path_dir/compose"
 
+ln -s "../${main_pkg_dir#$pack_dir/bin/}/compose" "$path_dir/composer"
+
 "$sys_dir/libexec/pack-package" -d "$pack_dir" "composer-$version.tar.gz" .
 
 echo "Inspect: $temp_dir"
