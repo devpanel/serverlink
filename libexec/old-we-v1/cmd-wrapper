@@ -223,10 +223,10 @@ cmd__htaccess_lock_status_vhost() {
 
   load_vhost_config "$vhost" || return $?
 
-  if is_vhost_enabled "$vhost"; then
-    echo 0
-  else
+  if is_htpasswd_enabled_on_vhost ; then
     echo 1
+  else
+    echo 0
   fi
 }
 
