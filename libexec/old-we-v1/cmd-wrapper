@@ -203,9 +203,25 @@ cmd__config_vhost_names() {
 cmd__htaccess_lock_vhost() {
   [ -z "$1" ] && usage
 
+  local vhost password
+
   vhost="$1"
 
-	devpanel enable htpasswd --vhost "$vhost"
+  password="${2:-}"
+
+	devpanel enable htpasswd --vhost "$vhost" || return $?
+
+  if [ -z "$password" ]; then
+    password=$(gen_random_str_az09_lower 12)
+  fi
+
+  if printf '%s\n' "$password" | devpanel add htpasswd user --vhost "$vhost" --username guest ; then
+    printf '%s\n' "$password"
+    return 0
+  else
+    echo ERROR-FAILED-TO-SET-PASSWORD
+    return 1
+  fi
 }
 
 cmd__htaccess_unlock_vhost() {
