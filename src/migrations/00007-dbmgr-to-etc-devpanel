@@ -102,9 +102,14 @@ password = $old_mysql__client__password" >$vhost_my_cnf
   reserve_port tcp "$port"
 
   mysqladmin --defaults-file="$previous_root_cnf" shutdown
-  sleep 2
-  devpanel_run start mysql --vhost "$vhost"
 
+  load_vhost_config "$vhost" || continue
+
+  if is_vhost_enabled "$vhost"; then
+    devpanel_run start mysql instance --vhost "$vhost"
+  fi
+
+  cleanup_namespace v
 done < $shadow_file
 
 mv "$shadow_file" "$lamp__paths__mysql_instances_config_dir/.old-db-shadow.conf"
