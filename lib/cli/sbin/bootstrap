@@ -31,7 +31,7 @@ devpanel_cmd__bootstrap() {
   [ -z "$confirmed" ] && usage
 
   if ! is_var_set_to_yes state__host__initialized ; then
-    devpanel init config --gen-hostname-from-ip || return $?
+    devpanel init config --conditionally-gen-hostname --gen-hostname-from-ip || return $?
   fi
 
   devpanel_run start mysql instances --yes

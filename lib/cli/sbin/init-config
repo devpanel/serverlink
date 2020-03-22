@@ -18,6 +18,10 @@ set_usage_msg \
     --virtualbox-net-workaround     try to find an IP of an interface that is
                                     not the NAT one
 
+    --conditionally-gen-hostname    only generate hostname if it's not set yet
+                                    (skips hostname generation even if the
+                                     options above are present)
+
     --update                        update devPanel software before doing
                                     the initializations
 
@@ -231,7 +235,7 @@ devpanel_cmd__init_config() {
   [ $# -eq 0 -o -z "$1" ] && usage
 
   local arg hostname ipv4 domain
-  local auto_gen_hostname ipv4_detect_type
+  local auto_gen_hostname cond_gen_hostname ipv4_detect_type
   local show_intro st
   local do_update
 
@@ -241,7 +245,12 @@ devpanel_cmd__init_config() {
       --gen-hostname-from-ip)
         auto_gen_hostname=1
         shift
-      ;;
+        ;;
+
+      --conditionally-gen-hostname)
+        cond_gen_hostname=1
+        shift
+        ;;
 
       --hostname-from-external-ip)
         auto_gen_hostname=1
@@ -290,10 +299,16 @@ devpanel_cmd__init_config() {
     esac
   done
 
+  if [ -n "$cond_gen_hostname" -a -n "$lamp__apache_vhosts__virtwww_domain" ]; then
+    # if --conditionally-gen-hostname was passed and the server hostname is
+    # already set, then skip hostname generation
+    unset auto_gen_hostname
+  fi
+
   if [ -n "$auto_gen_hostname" ]; then
     if [ -n "$hostname" ]; then
-      error "received conflicting parameters about hostname generation." - && \
-        return 1
+      error "received conflicting parameters about hostname generation." -
+      return 1
     fi
 
     if [ -n "$lamp__apache_vhosts__auto_gen_domain" ]; then
@@ -305,7 +320,11 @@ devpanel_cmd__init_config() {
 
     if [ -z "$ipv4_detect_type" ]; then
       if am_i_on_virtualbox; then
-        ipv4_detect_type=local_ifaces_vbox_workaround
+        if find_non_local_virtualbox_ipv4 &>/dev/null; then
+          ipv4_detect_type=local_ifaces_vbox_workaround
+        else
+          ipv4_detect_type=default_route
+        fi
       elif am_i_on_digital_ocean; then
         ipv4_detect_type=default_route
       elif am_i_on_aws ; then
@@ -349,19 +368,14 @@ devpanel_cmd__init_config() {
     else
       error "failed to generate hostname from IPv4 '$ipv4'"
     fi
-  else
-    # auto detect no specified, nor hostname specified
-    [ -z "$hostname" ] && usage
   fi # // auto_gen_hostname
+
+  if [ -n "$hostname" -a "$hostname" != "$lamp__apache_vhosts__virtwww_domain" ]; then
+    devpanel_run set base hostname --name "$hostname" || return $?
+  fi
 
   if [ -n "$do_update" ]; then
     devpanel_run update || return $?
-  fi
-
-  devpanel_run set base hostname --name "$hostname"
-  st=$?
-  if [ $st -ne 0 ]; then
-    return $st
   fi
 
   save_opts_in_state "host.initialized = yes"
@@ -370,5 +384,5 @@ devpanel_cmd__init_config() {
     devpanel_run help --section intro
   fi
 
-  return $st
+  return 0
 }
