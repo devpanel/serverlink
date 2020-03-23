@@ -88,16 +88,14 @@ devpanel_cmd__run_migrations() {
   local -i curr_n=$start_n prev_n=0
   local -i n_run=0
 
-  for file in "$scripts_dir"/*; do
+  # test all files starting in 5 digits (...that don't end with a tilde ~)
+  for file in "$scripts_dir"/[0-9][0-9][0-9][0-9][0-9]-*[^~]; do
     if ! [ -f "$file" -a -x "$file" ]; then
+      # skip non-regular files and files not executable
       continue
     fi
 
     file_basename="${file##*/}"
-
-    if [[ ! "$file_basename" =~ ^[0-9]{5}- ]]; then
-      continue
-    fi
 
     file_n=${file_basename%%-*}
     if [ $file_n -gt $conf__migrations__latest_step ]; then
