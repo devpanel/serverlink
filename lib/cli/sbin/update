@@ -17,6 +17,16 @@ devpanel_cmd__update() {
         shift
         ;;
 
+      --help)
+        usage
+        return $?
+        ;;
+
+      --)
+        shift
+        break
+        ;;
+
       *)
         error "unknown option '$arg'" -
         shift
