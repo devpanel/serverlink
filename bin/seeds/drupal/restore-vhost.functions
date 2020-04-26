@@ -468,16 +468,37 @@ drupal_set_cron_key_8() {
 
 
 drupal_update_civicrm_config() {
+  local url url_esc
+
+  if is_ssl_enabled_on_vhost "$vhost"; then
+    url="https://$fqdn/"
+  else
+    url="http://$fqdn/"
+  fi
+  url_esc=${url//\//\\\/}
+
+  local template_cache_dir template_cache_dir_esc
+  local site_module_dir site_module_dir_esc
+  local mysql_uri mysql_uri_esc
+
+  template_cache_dir="$public_html_dir/sites/default/files/civicrm/templates_c/"
+  template_cache_dir_esc=${template_cache_dir//\//\\\/}
+
+  site_module_dir="$public_html_dir/sites/all/modules/civicrm"
+  site_module_dir_esc=${site_module_dir//\//\\\/}
+
+  mysql_uri="mysql://$mysql_user:$urlencoded_mysql_password@$mysql_host:$mysql_port/${database_prefix:-}civicrm\?new_link=true"
+  mysql_uri_esc="${mysql_uri//\//\\\/}"
+
   /bin/echo "
-     s/^[[:space:]]*define([[:space:]]*'CIVICRM_UF_DSN'[[:space:]]*,[[:space:]]*'mysql:\/\/.*/define('CIVICRM_UF_DSN', 'mysql:\/\/$mysql_user:$urlencoded_mysql_password@$mysql_host:$mysql_port\/${database_prefix:-}civicrm\?new_link=true');/
-     s/^[[:space:]]*define([[:space:]]*'CIVICRM_DSN'[[:space:]]*,[[:space:]]*'mysql:\/\/.*/define('CIVICRM_DSN', 'mysql:\/\/$mysql_user:$urlencoded_mysql_password@$mysql_host:$mysql_port\/${database_prefix:-}civicrm\?new_link=true');/
-     s/^[[:space:]]*\$civicrm_root[[:space:]]*=[[:space:]]*.*/\$civicrm_root = '${public_html_dir//\//\/\/}\/sites\/all\/modules\/civicrm';/
-     s/^[[:space:]]*define([[:space:]]*'CIVICRM_TEMPLATE_COMPILEDIR'[[:space:]]*,[[:space:]]*'.*/define('CIVICRM_TEMPLATE_COMPILEDIR', '${public_html_dir//\//\/\/}\/sites\/default\/files\/civicrm\/templates_c\/');/
-     s/^[[:space:]]*define([[:space:]]*'CIVICRM_TEMPLATE_COMPILEDIR'[[:space:]]*,[[:space:]]*'.*/define('CIVICRM_TEMPLATE_COMPILEDIR', '${public_html_dir//\//\/\/}\/sites\/default\/files\/civicrm\/templates_c\/');/
-     s/^[[:space:]]*define([[:space:]]*'CIVICRM_UF_BASEURL'[[:space:]]*,[[:space:]]*'.*/define('CIVICRM_UF_BASEURL', 'htpp:\/\/$fqdn\/');/
+     s/^[[:space:]]*define([[:space:]]*'CIVICRM_UF_DSN'[[:space:]]*,[[:space:]]*'mysql:\/\/.*/define('CIVICRM_UF_DSN', '$mysql_uri_esc');/
+     s/^[[:space:]]*define([[:space:]]*'CIVICRM_DSN'[[:space:]]*,[[:space:]]*'mysql:\/\/.*/define('CIVICRM_DSN', '$mysql_uri_esc');/
+     s/^[[:space:]]*\$civicrm_root[[:space:]]*=[[:space:]]*.*/\$civicrm_root = '$site_module_dir_esc';/
+     s/^[[:space:]]*define([[:space:]]*'CIVICRM_TEMPLATE_COMPILEDIR'[[:space:]]*,[[:space:]]*'.*/define('CIVICRM_TEMPLATE_COMPILEDIR', '$template_cache_dir_esc');/
+     s/^[[:space:]]*define([[:space:]]*'CIVICRM_UF_BASEURL'[[:space:]]*,[[:space:]]*'.*/define('CIVICRM_UF_BASEURL', '$url_esc');/
     " | run_ised "$public_html_dir/sites/default/civicrm.settings.php"
 
-  local cfg_ids_file="$public_html_dir/sites/default/files/civicrm/templates_c/en_US/ConfigAndLog/Config.IDS.ini"
+  local cfg_ids_file="${template_cache_dir%/}/en_US/ConfigAndLog/Config.IDS.ini"
   if [ -f "$cfg_ids_file" ]; then
     echo "
            s/w_[[:alnum:]]\{2,6\}/$v__vhost__linux_user/g;
