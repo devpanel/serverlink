@@ -255,6 +255,8 @@ devpanel_cmd__create_lamp_vhost() {
 
       save_opts_in_mysql_instance "$mysql_instance" \
         "params.vhosts +=w $vhost"
+
+      load_mysql_instance_config "$mysql_instance"
     fi
 
     opts_ar+=( "mysql.instance      = $mysql_instance" )
@@ -277,6 +279,13 @@ devpanel_cmd__create_lamp_vhost() {
 
     if [ -n "$mysql_db_name" ]; then
       opts_ar+=( "app.database_name   = $mysql_db_name"  )
+    fi
+
+    if is_webenabled_backwards_compat_enabled ; then
+      # backwards compatibility with Webenabled v1
+      # print line so that the dashboard gets the mysql information
+      printf "started: user=%s type=mysql host=127.0.0.1:%s status=0\n" \
+        "$mysql__params__linux_user" "$mysql__params__port"
     fi
   fi # // with_mysql
 
@@ -304,13 +313,6 @@ devpanel_cmd__create_lamp_vhost() {
       echo "Warning: vhost created, but failed to activate it" 1>&2
       [ -t 0 ] && sleep 2
     fi
-  fi
-
-  if is_var_set_to_yes with_mysql && is_webenabled_backwards_compat_enabled ; then
-    # backwards compatibility with Webenabled v1
-    # print line so that the dashboard gets the mysql information
-    printf "started: user=%s type=mysql host=127.0.0.1:%s status=0\n" \
-      "$mysql__params__linux_user" "$mysql__params__port"
   fi
 
   echo
