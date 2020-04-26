@@ -17,5 +17,9 @@ $domain_config['customFileUploadDir']      = "{$vhost_public_dir}/sites/default/
 $domain_config['imageUploadURL']           = "$proto_prefix://{$vhost_main_domain}/sites/default/files/civicrm/persist/contribute/";
 $domain_config['userFrameworkResourceURL'] = "$proto_prefix://{$vhost_main_domain}/sites/all/modules/civicrm/";
 
-echo(serialize($domain_config));
+$serialized_str = serialize($domain_config);
+
+$serialized_escape_quote = str_replace("'", "\\'", $serialized_str);
+
+echo($serialized_escape_quote);
 ?>

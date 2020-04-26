@@ -477,10 +477,13 @@ drupal_update_civicrm_config() {
      s/^[[:space:]]*define([[:space:]]*'CIVICRM_UF_BASEURL'[[:space:]]*,[[:space:]]*'.*/define('CIVICRM_UF_BASEURL', 'htpp:\/\/$fqdn\/');/
     " | run_ised "$public_html_dir/sites/default/civicrm.settings.php"
 
-  echo "
-         s/w_[[:alnum:]]\{2,6\}/$mysql_user/g
-         s/\/public_html\/[[:alnum:]]\{2,6\}\/sites/\/public_html\/$vhost\/sites/g
-  " | run_ised "$public_html_dir/sites/default/files/civicrm/templates_c/en_US/ConfigAndLog/Config.IDS.ini"
+  local cfg_ids_file="$public_html_dir/sites/default/files/civicrm/templates_c/en_US/ConfigAndLog/Config.IDS.ini"
+  if [ -f "$cfg_ids_file" ]; then
+    echo "
+           s/w_[[:alnum:]]\{2,6\}/$v__vhost__linux_user/g;
+           s/\/public_html\/[[:alnum:]]\{2,6\}\/sites/\/public_html\/$vhost\/sites/g;
+    " | run_ised "$cfg_ids_file"
+  fi
 
   local db_orig="$database" # save the default $database value to restore later
   database="${database_prefix:-}civicrm"      # work on the civic_crm db, not drupal
