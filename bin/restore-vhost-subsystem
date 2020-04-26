@@ -121,6 +121,7 @@ set_database_variables() {
 
   if [ -n "$v__app__database_name" ]; then
     database="$v__app__database_name"
+    database_prefix="${v__mysql__database_prefix:-}"
   else
     database=`deref_contents "$config_dir/app:0:_:db_name"`
     if [ $? -ne 0 ]; then
@@ -226,7 +227,7 @@ cleanup_env_vars() {
   use_my_cnf=""
   initial_deployment="" clear_cache=""
   config_function="" git_db_type="" git_db_source=""
-  update_app=""
+  update_app="" database="" database_prefix=""
 }
 
 generate_password() {
