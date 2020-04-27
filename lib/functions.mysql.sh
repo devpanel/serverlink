@@ -255,7 +255,7 @@ mysql_grant_all_privs_to_user() {
 
   config_file="$lamp__paths__mysql_instances_config_dir/$instance/root.client.cnf"
   line="GRANT ALL PRIVILEGES ON \`%\`.* TO '$user';"
-  line=$'\n'"GRANT TRIGGER ON \`%\`.* TO '$user';"
+  line+=$'\n'"GRANT TRIGGER ON \`%\`.* TO '$user';"
   line+=$'\n'"GRANT ALL PRIVILEGES ON \`%\`.* TO '$user'@'localhost';"$'\n'
   line+=$'\n'"GRANT TRIGGER ON \`%\`.* TO '$user'@'localhost';"$'\n'
 
