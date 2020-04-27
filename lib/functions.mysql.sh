@@ -255,7 +255,9 @@ mysql_grant_all_privs_to_user() {
 
   config_file="$lamp__paths__mysql_instances_config_dir/$instance/root.client.cnf"
   line="GRANT ALL PRIVILEGES ON \`%\`.* TO '$user';"
+  line=$'\n'"GRANT TRIGGER ON \`%\`.* TO '$user';"
   line+=$'\n'"GRANT ALL PRIVILEGES ON \`%\`.* TO '$user'@'localhost';"$'\n'
+  line+=$'\n'"GRANT TRIGGER ON \`%\`.* TO '$user'@'localhost';"$'\n'
 
   # NOTE: mysql cli needs to parse two dashed options first
   mysql --defaults-file="$config_file" -B -N -e "$line"
@@ -299,6 +301,7 @@ mysql_grant_privs_to_user() {
   db_prefix_esc=${db_prefix//_/\\_}
   
   line="GRANT ALL PRIVILEGES ON \`$db_prefix_esc%\`.* TO '$user';"
+  line+=$'\n'"GRANT TRIGGER ON \`$db_prefix_esc%\`.* TO '$user';"
 
   # NOTE: mysql cli needs to parse two dashed options first
   mysql --defaults-file="$cnf_file" -B -N -e "$line"
@@ -582,7 +585,8 @@ mysql_import_databases_from_dir() {
 
     if [ -n "$grant_user" ]; then
       mysql "${args_ar[@]}" -B -e \
-        "GRANT ALL PRIVILEGES ON \`$database\`.* TO '$grant_user'@'%'"
+        "GRANT ALL PRIVILEGES ON \`$database\`.* TO '$grant_user'@'%';
+         GRANT TRIGGER ON \`$database\`.* TO '$grant_user'@'%';"
     fi
 
     # if the import name is not equal to the import database, rename the
