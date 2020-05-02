@@ -84,6 +84,7 @@ cmd__restore_vhost() {
   done
 
   [ $# -lt 2 -o -z "$1" -o -z "$2" ] && usage
+  [ $OPTIND -gt 1 ] && shift $(( $OPTIND - 1 ))
 
   vhost="$1"
   source_file="$2"
