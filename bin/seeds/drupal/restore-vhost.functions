@@ -593,6 +593,10 @@ drupal_custom()
       fi
     fi
 
+    if [ -f "$civic_crm_conf" ]; then
+      drupal_update_civicrm_config
+    fi
+
     if [ "$version" == 6 -o "$version" == 7 ]; then
       drupal_set_tmp_6_or_7
       drupal_set_cron_key_6_or_7
@@ -601,10 +605,6 @@ drupal_custom()
       "drupal_set_tmp_$version"
       "drupal_set_cron_key_$version"
       ( cd "$public_html_dir" && drush-8 cache-rebuild )
-    fi
-
-    if [ -f "$civic_crm_conf" ]; then
-      drupal_update_civicrm_config
     fi
   fi
 }
