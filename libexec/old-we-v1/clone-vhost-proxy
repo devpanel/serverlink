@@ -84,7 +84,7 @@ usage()
 
 if [ $opt_i = 1 ]
 then
-  read -r password || error "Cannot read password"
+  read -p "Reading password from STDIN: " -r password || error "Cannot read password"
   [ -n "$password" ] || error "Empty password"
 fi
 
@@ -92,30 +92,34 @@ fi
 
 set -o pipefail
 echo "Cloning stage 1 & 2: archive $source | restore $target"
-tmp_dir="/opt/webenabled-data/tmp"
-tmp_archive="$tmp_dir/_${source}-$(date +%b-%d-%Y--%H-%M)-$RANDOM.tgz"
 
 # don't overwrite existing files
 set -o noclobber
 
+restore_args_ar+=( --vhost "$target" --from - )
+
 WEBENABLED_SERVER="$source_server" $sys_dir/sbin/archive-vhost $options \
-  "$source" - >$tmp_archive
-if [ $? -ne 0 ]; then
-  error "failed to archive vhost '$source' on server '$source_server'"
-fi
-trap 'rm -f $tmp_archive' EXIT
+  "$source" - | {
 
-restore_args_ar+=( --vhost "$target" --from "$tmp_archive" )
+  # NOTE: doing this as a pipe to avoid creating a big temporary file and
+  # extracting from it. Previously it was implemented like that, but it
+  # required at least 3 times as much free disk space as the size of the 
+  # temporary file (due to how the internal structure of the archive file 
+  # is designed, what is a problem for small VPSs with sites that use
+  # lots of disk space).
 
-if [ -n "$password" ]; then
-  restore_args_ar+=( --password-stdin )
-  echo "$password" | devpanel create vhost "${restore_args_ar[@]}"
+  if [ -n "$password" ]; then
+    restore_args_ar+=( --password-stdin )
+    { echo "$password"; cat; } | devpanel create vhost "${restore_args_ar[@]}"
+  else
+    devpanel create vhost "${restore_args_ar[@]}"
+  fi
+}
+st=$?
+
+if [ $st -eq 0 ]; then
+  echo
+  echo Done
 else
-  devpanel create vhost "${restore_args_ar[@]}"
+  error "failed to create vhost '$target'"
 fi
-if [ $? -ne 0 ]; then
-  error "failed to create vhost '$target_vhost'"
-fi
-
-echo
-echo Done

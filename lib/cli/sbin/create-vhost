@@ -53,8 +53,9 @@ devpanel_cmd__create_vhost() {
   local branch app_password read_pw_stdin php_version subsystem
   local source_type publisher uri_part app_url mysql_instance db_name
   local dedicated_mysql with_mysql=yes
+  local st_archive_extracted st_extracted_dir
   local print_summary=yes do_config_app=yes
-  local -a cmd_args=() lamp_cmd_args=() app_cmd_ar=()
+  local -a cmd_args=() lamp_cmd_args=() app_cmd_ar=() restore_cmd_args=()
 
   while [ -n "$1" ]; do
     name="$1"
@@ -213,6 +214,13 @@ devpanel_cmd__create_vhost() {
     return $?
   fi
 
+  if st_extracted_dir=$(mktemp -d "$conf__paths__temp_dir/vhost_extract.XXXXXX"); then
+    temp_dirs_ar+=( "$st_extracted_dir" )
+  else
+    echo "$FUNCNAME(): failed to create temporary dir" 1>&2
+    return 1
+  fi
+
   # detect the source type
   # e.g. devpanel://wordpress-v4, webenabled://drupal-v7
   #      http://...
@@ -271,33 +279,29 @@ devpanel_cmd__create_vhost() {
         ;;
 
       stdin)
-        if src_archive=$(mktemp ${conf__paths__temp_dir:+-t -p "$conf__paths__temp_dir"}); then
-          temp_files_ar+=( "$src_archive" )
-        else
-          error "unable to create temp file" -
-          return $?
-        fi
-
         if [ -t 0 ]; then
           echo "Reading archive file from STDIN..." 1>&2
         fi
 
-        if ! cat >$src_archive; then
-          error "failed to save archive file '$src_archive'" -
-          return $?
+        if tar --no-same-owner -zxpSf - -C "$st_extracted_dir"; then
+          st_archive_extracted=yes
+        else
+          echo "$FUNCNAME(): failed to extract archive from STDIN..." 1>&2
+          return 1
         fi
 
         ;;
 
       url)
-        if src_archive=$(mktemp ${conf__paths__temp_dir:+-t -p "$conf__paths__temp_dir"}); then
-          temp_files_ar+=( "$src_archive" )
-        else
-          error "unable to create temp file" -
-          return $?
-        fi
+        download_file "$app_url" - | \
+          tar --no-same-owner -zxpSf - -C "$st_extracted_dir"
 
-        download_url_n_cache "$app_url" "$src_archive" || return $?
+        if [ $? -eq 0 ]; then
+          st_archive_extracted=yes
+        else
+          echo "$FUNCNAME(): failed to extract tar ball from url" 1>&2
+          return 1
+        fi
         ;;
 
         *)
@@ -307,9 +311,17 @@ devpanel_cmd__create_vhost() {
       esac
   fi # // if [ -n $from ]
 
-  echo "Extracting metadata from file '$src_archive'..."
-  read_devpanel_ini_from_app_archive --missing-ok "$src_archive" || \
-    return $?
+  if is_yes "$st_archive_extracted"; then
+    local _tmp_app_ini="$st_extracted_dir/.devpanel/app.ini"
+    if [ -f "$_tmp_app_ini" ] && ! read_ini_file_into_namespace "$_tmp_app_ini" src; then
+      echo "$FUNCNAME(): failed to read from '$_tmp_app_ini'" 1>&2
+      return 1
+    fi
+  else
+    echo "Extracting metadata from file '$src_archive'..."
+    read_devpanel_ini_from_app_archive --missing-ok "$src_archive" || \
+      return $?
+  fi
 
   if [ -n "$subsystem" ]; then
     src__app__subsystem="$subsystem"
@@ -317,8 +329,18 @@ devpanel_cmd__create_vhost() {
     if [ -n "$src__app__subsystem" ]; then
       subsystem="$src__app__subsystem"
     else
-      # guess app type from tar ball when --subsystem not specified
-      if ! subsystem=$(guess_subsystem_from_app_archive "$src_archive" ); then
+      # guess app type when --subsystem not specified
+      if is_yes "$st_archive_extracted"; then
+        if guess_subsystem_from_database_filelist "$st_extracted_dir/db/databases"; then
+          subsystem="$_dp_value"
+        fi
+      else
+        if guess_subsystem_from_app_archive "$src_archive"; then
+          subsystem="$_dp_value"
+        fi
+      fi
+
+      if [ -z "$subsystem" ]; then
         error "couldn't detect the subsystem of the app. Please specify it on command line." -
         return $?
       fi
@@ -363,8 +385,14 @@ devpanel_cmd__create_vhost() {
     return $?
   fi
 
+  if [ "$source_type" == "file" ]; then
+    restore_cmd_args+=( --filename "$src_archive" )
+  else
+    restore_cmd_args+=( --from-dir "$st_extracted_dir" )
+  fi
+
   if ! devpanel_run restore backup --vhost "$vhost" --dont-remove-files \
-       --filename "$src_archive" --dont-disable-vhost --quiet; then
+       "${restore_cmd_args[@]}" --dont-disable-vhost --quiet; then
     error "failed to extract the contents of tar ball" -
     return $?
   fi

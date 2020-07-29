@@ -1948,9 +1948,37 @@ detect_app_type_on_dir() {
   fi
 }
 
+guess_subsystem_from_database_filelist() {
+  local db_file="$1"
+  local subsystem _sub_dir _tmp_subsystem
+
+  unset _dp_value
+
+  for _sub_dir in "$DEVPANEL_HOME/bin/seeds/"*; do
+    if [ ! -d "$_sub_dir" ]; then
+      continue
+    fi
+
+    _tmp_subsystem=${_sub_dir##*/}
+    if is_known_seedapp_subsystem "$_tmp_subsystem"; then
+      if fgrep -qx "$_tmp_subsystem" "$db_file"; then
+        subsystem="$_tmp_subsystem"
+        break
+      fi
+    fi
+  done
+
+  if [ -n "$subsystem" ]; then
+    _dp_value="$subsystem"
+    return 0
+  else
+    return 1
+  fi
+}
+
 guess_subsystem_from_app_archive() {
   local archive="$1"
-  local tmp_dir subsystem _sub_dir _tmp_subsystem
+  local tmp_dir subsystem _sub_dir _tmp_subsystem st
   local db_dir db_dir_tst db_ext db_dir_1 db_dir_2
 
   if ! tmp_dir=$(mktemp -d ${conf__paths__temp_dir:+-t -p "$conf__paths__temp_dir"}); then
@@ -1980,28 +2008,16 @@ guess_subsystem_from_app_archive() {
     return 1
   fi
 
-  for _sub_dir in "$DEVPANEL_HOME/bin/seeds/"*; do
-    if [ ! -d "$_sub_dir" ]; then
-      continue
-    fi
-
-    _tmp_subsystem=${_sub_dir##*/}
-    if is_known_seedapp_subsystem "$_tmp_subsystem"; then
-      if fgrep -qx "$_tmp_subsystem" "$tmp_dir/db/databases"; then
-        subsystem="$_tmp_subsystem"
-        break
-      fi
-    fi
-  done
+  if guess_subsystem_from_database_filelist "$tmp_dir/db/databases"; then
+    subsystem="$_dp_value"
+    st=0
+  else
+    st=1
+  fi
 
   rm -rf "$tmp_dir"
 
-  if [ -n "$subsystem" ]; then
-    echo "$subsystem"
-    return 0
-  else
-    return 1
-  fi
+  return $st
 }
 
 read_devpanel_ini_from_app_archive() {
