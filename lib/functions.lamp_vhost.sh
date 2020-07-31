@@ -22,6 +22,15 @@ apache_vhost_create() {
           domains_txt+="$2"
         fi
 
+        # NOTE: on Webenabled-v1 for each domain added it's also added the
+        # corresponding domain prefixed with "www.".
+        if is_webenabled_backwards_compat_enabled && [[ ! "$2" == www.* ]] && \
+            ! is_word_in_string "www.$2" "$domains_txt"; then
+
+          [ -n "$domains_txt" ] && domains_txt+=" "
+          domains_txt+="www.$2"
+        fi
+
         shift 2
         ;;
 
@@ -156,9 +165,17 @@ apache_vhost_create() {
 
   base_domain="$vhost.$lamp__apache_vhosts__virtwww_domain"
   if [ -n "$domains_txt" ]; then
-    domains_txt="$base_domain $domains_txt"
+    if is_webenabled_backwards_compat_enabled && ! is_word_in_string "www.$base_domain" "$domains_txt" ; then
+      domains_txt="www.$base_domain $domains_txt"
+    fi
+    if is_word_in_string "$base_domain" "$domains_txt" ; then
+      domains_txt="$base_domain $domains_txt"
+    fi
   else
     domains_txt="$base_domain"
+    if is_webenabled_backwards_compat_enabled ; then
+      domains_txt+=" www.$base_domain"
+    fi
   fi
 
   local -a vhost_opts_ar=(
