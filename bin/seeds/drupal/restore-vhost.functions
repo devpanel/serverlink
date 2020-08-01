@@ -119,16 +119,9 @@ drupal_set_email()
 
   if [ "$version" == 6 -o "$version" == 7 ]; then
     sql_query "update users set mail = '$email' where name = '$user';"
-
-    echo "Changing site_mail to admin's email $email"
-
-    email=${email//\'/} # remove ' from e-mail
-    sql_query "update variable set value='s:${#email}:\"$email\"' where name='site_mail';"
-
   elif [ "$version" == 8 ]; then
     sql_query "update users_field_data set mail = '$email' where name = '$user';"
   fi
-
 }
 
 drupal_get_email()
