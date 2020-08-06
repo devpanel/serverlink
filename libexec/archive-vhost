@@ -459,18 +459,7 @@ fi
 
 # now move the tmp file to the target location
 # don't overwrite in case the target file exists
-if ${debug:+run} mv -n "$tmp_target_file" "$target_file"; then
-  for raw_kv in "${in_metadata_ar[@]}"; do
-    key=${raw_kv%%:*}
-    value=${raw_kv#*:}
-    set_global_var fmeta__${key} "$value"
-  done
-
-  metadata_file="${target_file%/*}/.${target_file##*/}.metadata.ltsv"
-  if ! ltsv_save_namespace_to_file fmeta "$metadata_file"; then
-    warn_3lines "failed to save metadata to file '$metadata_file'"
-  fi
-else
+if ! ${debug:+run} mv -n "$tmp_target_file" "$target_file"; then
   error "unable to move '$tmp_target_file' to '$target_file'"
 fi
 
@@ -497,6 +486,7 @@ if [ -n "$calc_checksum" ]; then
     fi
 
     echo "$md5_str" >"$md5_file"
+    in_metadata_ar+=( "md5_sum:$md5_str" )
   fi
 
   if [ -n "$sha1_output" ]; then
@@ -515,6 +505,7 @@ if [ -n "$calc_checksum" ]; then
     fi
 
     echo "$sha1_str" >"$sha1_file"
+    in_metadata_ar+=( "sha1_sum:$sha1_str" )
   fi
 
   if [ -n "$webenabled_backwards" ]; then
@@ -533,6 +524,18 @@ if [ -n "$calc_checksum" ]; then
     ' "$user_web"
   fi
  
+fi
+
+# save metadata for the file
+for raw_kv in "${in_metadata_ar[@]}"; do
+  key=${raw_kv%%:*}
+  value=${raw_kv#*:}
+  set_global_var fmeta__${key} "$value"
+done
+
+metadata_file="${target_file%/*}/.${target_file##*/}.metadata.ltsv"
+if ! ltsv_save_namespace_to_file fmeta "$metadata_file"; then
+  warn_3lines "failed to save metadata to file '$metadata_file'"
 fi
 
 echo
