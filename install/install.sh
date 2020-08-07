@@ -122,7 +122,9 @@ install_ce_software() {
   local t_dir
   for t_dir in "$skel_dir_common" "$skel_dir_major" "$skel_dir_major_minor"; do
     if [ -d "$t_dir" ]; then
-      tar -cpf - -C "$t_dir" . | tar -xpf - -C / --no-overwrite-dir
+      echo "Copying $t_dir to / ..."
+      tar -cpf - -C "$t_dir" . | tar --no-same-owner -xpf - -C / \
+        --no-overwrite-dir --exclude='*~'
       if [ $? -ne 0 ]; then
         echo -e "\n\nWarning: unable to copy distro skel files from $t_dir to /\n\n" 1>&2
         sleep 3
