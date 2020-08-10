@@ -52,8 +52,8 @@ devpanel_cmd__run_cronjob_uploads_to_s3() {
   fi
 
   if [ -n "$verify_time" ] && ! is_current_hour_within_ops_range ; then
-    [ -t 0 ] && error "current time is outside the time range" -
-    return 1
+    [ -t 0 ] && echo "Warning: current time is outside the time range" 1>&2
+    return 0
   fi
 
   local lock_name="cronjob_uploads_to_s3"
