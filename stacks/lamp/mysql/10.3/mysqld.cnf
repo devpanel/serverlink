@@ -1,0 +1,9 @@
+[mysqldump]
+max_allowed_packet=128M
+
+[mysqld]
+bind-address=127.0.0.1
+skip-external-locking
+skip-name-resolve
+explicit_defaults_for_timestamp = ON
+log_bin_trust_function_creators=1

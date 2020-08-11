@@ -102,12 +102,12 @@ $ devpanel rewrite vhost config --vhost d7-test-one        #=> --exit 0
 $ devpanel test http --vhost d7-test-one                   #=> --exit 0
 
 # Testing vhost specific PHP version
-$ devpanel set php version --vhost d7-test-one --version 7.2    #=> --exit 0
-$ devpanel exec --vhost d7-test-one php -v                      #=> --egrep ^PHP 7.2.[0-9]+
-$ devpanel show vhost info  --vhost d7-test-one                 #=> --egrep ^PHP Version: 7.2
 $ devpanel set php version --vhost d7-test-one --version 7.3    #=> --exit 0
 $ devpanel exec --vhost d7-test-one php -v                      #=> --egrep ^PHP 7.3.[0-9]+
 $ devpanel show vhost info  --vhost d7-test-one                 #=> --egrep ^PHP Version: 7.3
+$ devpanel set php version --vhost d7-test-one --version 7.4    #=> --exit 0
+$ devpanel exec --vhost d7-test-one php -v                      #=> --egrep ^PHP 7.4.[0-9]+
+$ devpanel show vhost info  --vhost d7-test-one                 #=> --egrep ^PHP Version: 7.4
 $ devpanel set php version --vhost d7-test-one --version 5.6    #=> --exit 0
 $ devpanel exec --vhost d7-test-one php -v                      #=> --egrep ^PHP 5.6.[0-9]+
 $ devpanel show vhost info  --vhost d7-test-one                 #=> --egrep ^PHP Version: 5.6

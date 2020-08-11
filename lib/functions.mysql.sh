@@ -661,7 +661,7 @@ get_mysql_version() {
   fi
 
   local tmp_str
-  tmp_str=$(mysql -V 2>/dev/null | egrep -o '(Ver|Distrib) [0-9]\.[0-9]+(\.[0-9]+)?')
+  tmp_str=$(mysql -V 2>/dev/null | egrep -o 'Distrib [1-9][0-9]?\.[0-9]+(\.[0-9]+)?')
   if [ $? -ne 0 -o -z "$tmp_str" ]; then
     echo "$FUNCNAME(): unable to get mysql version from mysql command" 1>&2
     return 1
@@ -960,6 +960,8 @@ mysql_change_user_password() {
     else
       sql_query="$sql_query_older"
     fi
+  elif [[ "$mysql_ver_two_dots" == 10.* ]]; then
+    sql_query="$sql_query_newer"
   else
     echo "$FUNCNAME(): don't know how to change password on this mysql version" 1>&2
     return 1
