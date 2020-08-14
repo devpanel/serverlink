@@ -2,28 +2,28 @@ Usage: @self_basename@ <command> [args]
 
  S3 commands:
 
-    create s3 server profile            create a new server profile
+    create s3 server profile               create a new server profile
 
-    remove s3 server profile            remove a server profile
+    remove s3 server profile               remove a server profile
 
-    set s3 options                      set global options for s3
+    set s3 options                         set global options for s3
 
-    set s3 options for vhost            set vhost specific options
+    set s3 options for vhost               set vhost specific options
 
-    upload archive to s3                uploads a vhost archive to S3
+    upload archive to s3                   uploads a vhost archive to S3
 
-    scan vhost files and upload to s3   upload all vhost archives to S3
+    scan vhost files and upload to s3      upload all vhost archives to S3
 
-    cleanup old s3 files                remove old vhost archives from S3
+    cleanup old s3 files                   remove old vhost archives from S3
 
 
   Cron specific commands (it'll only run on the 'ops hours' of the server):
 
-    run cronjob uploads to s3           run the cronjob that uploads vhost
-                                        archives to S3
+    run cronjob uploads to s3              run the cronjob that uploads vhost
+                                           archives to S3
 
-    run cronjob cleanup s3              run the cronjob that removes old vhost
-                                        archive files on S3
+    run cronjob cleanup s3                 run the cronjob that removes old vhost
+                                           archive files on S3
 
 
  For help with a specific command, please run:

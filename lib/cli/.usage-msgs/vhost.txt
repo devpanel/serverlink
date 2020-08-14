@@ -1,83 +1,83 @@
   Vhost Oriented Commands:
 
   Create, List, Display Info, Enable/Disable Remove vhosts:
-    create vhost                    creates a new site with the specified application
-    remove vhost                    removes an existing application
-    list vhosts                     lists all vhosts on this server
-    show vhost info                 displays information about a given vhost
-    disable vhost                   disables the specified vhost
-    enable  vhost                   enables the specified vhost (case it's disabled)
-    clone vhost                     creates a new vhost based on an existing one
-    set vhost description           sets a a short description of the vhost's purpose
+    create vhost                           creates a new site with the specified application
+    remove vhost                           removes an existing application
+    list vhosts                            lists all vhosts on this server
+    show vhost info                        displays information about a given vhost
+    disable vhost                          disables the specified vhost
+    enable  vhost                          enables the specified vhost (case it's disabled)
+    clone vhost                            creates a new vhost based on an existing one
+    set vhost description                  sets a a short description of the vhost's purpose
 
   Backup vhosts:
-    list backups                    list the backup files available for the specified
-    backup vhost                    creates a backup of the app files and database
-    remove backup                   removes a backup file from a vhost
-    enable vhost snapshots          enables backup snashots for the specified vhost
-    disable vhost snapshots         disables backup snashots for the specified vhost
-    extract backup                  extracts the contents of a backup file
-    get link to backup              get a temporary link to download a backup file
+    list backups                           list the backup files available for the specified
+    backup vhost                           creates a backup of the app files and database
+    remove backup                          removes a backup file from a vhost
+    enable vhost snapshots                 enables backup snashots for the specified vhost
+    disable vhost snapshots                disables backup snashots for the specified vhost
+    extract backup                         extracts the contents of a backup file
+    get link to backup                     get a temporary link to download a backup file
 
   MySQL commands on vhost:
-    start   mysql instance          starts mysql for the specified vhost or domain
-    stop    mysql instance          stops  mysql for the specified vhost or domain
-    restart mysql instance          restarts mysql for the specified vhost or domain
-    repair  mysql database          run a mysql repair on the vhost database
-    run     mysql client            run the mysql client with the mysql privileges
-                                    of the web app
+    start   mysql instance                 starts mysql for the specified vhost or domain
+    stop    mysql instance                 stops  mysql for the specified vhost or domain
+    restart mysql instance                 restarts mysql for the specified vhost or domain
+    repair  mysql database                 run a mysql repair on the vhost database
+    run     mysql client                   run the mysql client with the mysql privileges
+                                           of the web app
 
   Domain Operations on vhost:
-    add domain                      adds a domain to a vhost
-    remove domain                   adds a domain from a vhost
-    find domain                     finds the vhost with a specific domain name
+    add domain                             adds a domain to a vhost
+    remove domain                          adds a domain from a vhost
+    find domain                            finds the vhost with a specific domain name
 
   Apache htpasswd password protection operations:
-    enable htpasswd                 enables htpasswd password protection for the
-                                    specified site
-    disable htpasswd                disables htpasswd password protection for the
-                                    specified site
-    add    htpasswd user            adds a new user on htpasswd authentication
-    remove htpasswd user            removes a user from htpasswd authentication
-    change htpasswd password        changes the htpasswd password for a user
+    enable htpasswd                        enables htpasswd password protection for the
+                                           specified site
+    disable htpasswd                       disables htpasswd password protection for the
+                                           specified site
+    add    htpasswd user                   adds a new user on htpasswd authentication
+    remove htpasswd user                   removes a user from htpasswd authentication
+    change htpasswd password               changes the htpasswd password for a user
 
   Apache SSL operations:
-    configure ssl                   configures SSL for the specified site
-    disable   ssl                   disable SSL for the specified site
-    enable  lets-encrypt            enable Let's Encrypt SSL certificates on the vhost
-    disable lets-encrypt            disable Let's Encrypt SSL certificates on the vhost
-    renew   lets-encrypt            renew Let's Encrypt SSL certificates on the vhost
-    enable https redirect           enables HTTP to HTTPS redirect for the vhost
-    disable https redirect          disables HTTP to HTTPS redirect for the vhost
+    configure ssl                          configures SSL for the specified site
+    disable   ssl                          disable SSL for the specified site
+    enable  lets-encrypt                   enable Let's Encrypt SSL certificates on the vhost
+    disable lets-encrypt                   disable Let's Encrypt SSL certificates on the vhost
+    renew   lets-encrypt                   renew Let's Encrypt SSL certificates on the vhost
+    enable https redirect                  enables HTTP to HTTPS redirect for the vhost
+    disable https redirect                 disables HTTP to HTTPS redirect for the vhost
 
   Apache httpd commands on vhost:
-    enable  fastcgi                 enables FastCGI for the specified vhost
-    disable fastcgi                 disables FastCGI for the specified vhost
-    rewrite vhost httpd config      updates the vhost configuration on the web server
-    add vhost include               include custom Apache config lines into vhost
-    remove vhost include            remove Apache custom config lines from vhost
+    enable  fastcgi                        enables FastCGI for the specified vhost
+    disable fastcgi                        disables FastCGI for the specified vhost
+    rewrite vhost httpd config             updates the vhost configuration on the web server
+    add vhost include                      include custom Apache config lines into vhost
+    remove vhost include                   remove Apache custom config lines from vhost
 
   Operations on vhost logs:
-    tail vhost logs                 shows the last lines of the vhost log files
-    tail mysql log                  shows the last lines of the MySQL log files
+    tail vhost logs                        shows the last lines of the vhost log files
+    tail mysql log                         shows the last lines of the MySQL log files
 
   Importing apps on a new vhost:
-    import from git                 import a new virtual host from git
-    import from files               import a new virtual host from files
-    import app from url             import a new virtual host from a URL
+    import from git                        import a new virtual host from git
+    import from files                      import a new virtual host from files
+    import app from url                    import a new virtual host from a URL
 
   Basic access and command execution on vhosts:
-    change sftp password            changes SFTP/SSH password of the vhost
-    edit vhost crontab              edits/updates the crontab of the specified vhost
-    exec                            execute commands with the vhost user
-    enter                           start a shell with the linux user of a vhost
-    add ssh key                     adds ssh keys to the specified vhost
-    remove ssh key                  remove ssh keys from the specified vhost
-    get token                       get a token for one of the admin tools (e.g. phpmyadmin)
+    change sftp password                   changes SFTP/SSH password of the vhost
+    edit vhost crontab                     edits/updates the crontab of the specified vhost
+    exec                                   execute commands with the vhost user
+    enter                                  start a shell with the linux user of a vhost
+    add ssh key                            adds ssh keys to the specified vhost
+    remove ssh key                         remove ssh keys from the specified vhost
+    get token                              get a token for one of the admin tools (e.g. phpmyadmin)
 
 
   PHP options on vhosts:
-    set php version                 use a specific PHP version for the vhost
+    set php version                        use a specific PHP version for the vhost
 
   For help with a specific command, please run:
   @sb@ @self_basename@ <command> --help

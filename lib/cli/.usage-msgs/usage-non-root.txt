@@ -2,12 +2,12 @@ Usage: @self_basename@ <command> [args]
 
  Commands
 
-    refresh app config       update config files of the app with DB credentials
-    list backups             list the backup files available
-    extract backup           extracts the contents of a backup file
-    clear app cache          clear the cache of the app on the specified vhost
-    reset app password       reset the password for the admin user of the app
-    repair mysql database    run a mysql repair on the vhost database
+    refresh app config                     update config files of the app with DB credentials
+    list backups                           list the backup files available
+    extract backup                         extracts the contents of a backup file
+    clear app cache                        clear the cache of the app on the specified vhost
+    reset app password                     reset the password for the admin user of the app
+    repair mysql database                  run a mysql repair on the vhost database
 
 
  For more information about a specific command, run:

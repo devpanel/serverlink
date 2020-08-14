@@ -2,48 +2,47 @@ Usage: @self_basename@ <command> [args]
 
  Server Oriented Commands:
 
-    update                                updates devPanel software
-    init config                           initializes the basic configuration of
-                                          devPanel
-    get server info                       prints server information
-    dump metadata                         shows server metadata
-    dump vhost metadata                   shows vhost metadata
-    set base hostname                     sets the base hostname for virtual hosts
-    cat vhost httpd config                shows the apache configuration for the vhost
-    enable long vhost names               enable long vhost names (up to 30 characters)
+    update                                 updates devPanel software
+    init config                            initializes the basic configuration of
+                                           devPanel
+    get server info                        prints server information
+    dump metadata                          shows server metadata
+    dump vhost metadata                    shows vhost metadata
+    set base hostname                      sets the base hostname for virtual hosts
+    cat vhost httpd config                 shows the apache configuration for the vhost
+    enable long vhost names                enable long vhost names (up to 30 characters)
 
-    enable  webenabled compat             enable backwards compatibility with WE v1
-    disable webenabled compat             disable backwards compatibility with WE v1
+    enable  webenabled compat              enable backwards compatibility with WE v1
+    disable webenabled compat              disable backwards compatibility with WE v1
 
-    run distro update                     run now the update of the Linux distro
-                                          packages
+    run distro update                      run now the update of the Linux distro
+                                           packages
 
-    run scheduled snapshots               run now the scheduled backup snapshots
-                                          for the virtual hosts
+    run scheduled snapshots                run now the scheduled backup snapshots
+                                           for the virtual hosts
 
-    add base domain on lets-encrypt       add the base domain to Let's Encrypt
-                                          certificates
+    add base domain on lets-encrypt        add the base domain to Let's Encrypt certificates
 
-    disable base domain on lets-encrypt   stop adding base domain to Let's Encrypt certs
+    disable base domain on lets-encrypt    stop adding base domain to Let's Encrypt certs
 
-    set default php                       sets the default PHP version for virtual hosts
-    restart taskd                         restart devPanel taskd
-    stop  taskd                           stop devPanel taskd
-    debug taskd                           starts devPanel taskd in debug mode
-    manage root ssh keys                  manages ssh keys for the user root
-    set apache port                       sets the HTTP and HTTPS ports of Apache
-    set platform version                  sets the platform version to which this
-                                          host will connect to
+    set default php                        sets the default PHP version for virtual hosts
+    restart taskd                          restart devPanel taskd
+    stop  taskd                            stop devPanel taskd
+    debug taskd                            starts devPanel taskd in debug mode
+    manage root ssh keys                   manages ssh keys for the user root
+    set apache port                        sets the HTTP and HTTPS ports of Apache
+    set platform version                   sets the platform version to which this
+                                           host will connect to
 
-    set s3 options                        set global options for s3
+    set s3 options                         set global options for s3
 
-    skip nginx vhost                      Skips the writing of nginx config for the
-                                          specified vhost
+    skip nginx vhost                       Skips the writing of nginx config for the
+                                           specified vhost
 
-    stop skipping nginx vhost             Stops skipping writing of nginx config for the
-                                          given vhost
+    stop skipping nginx vhost              Stops skipping writing of nginx config for the
+                                           given vhost
 
-    create mysql instance                 create a new MySQL instance
+    create mysql instance                  create a new MySQL instance
 
  For help with a specific command, please run:
  # @self_basename@ <command> --help

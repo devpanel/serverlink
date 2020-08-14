@@ -1,29 +1,29 @@
 Usage: @self_basename@ [general_opts] <command> [args]
 
  Main Commands
-    list seed apps            list seed apps available to install
-    install seed app          install an application on a new virtual host
+    list seed apps                         list seed apps available to install
+    install seed app                       install an application on a new virtual host
 
-    list vhosts               lists all vhosts on this server
-    backup vhost              creates a backup of the app files and database
-    extract backup            extracts the contents of a backup file
-    enter                     start a shell for the specified vhost
-    restart mysql instance    restarts mysql for the specified vhost or domain
-    enable htpasswd           enables htpasswd password protection for the specified site
-    disable vhost             disables the specified vhost
+    list vhosts                            lists all vhosts on this server
+    backup vhost                           creates a backup of the app files and database
+    extract backup                         extracts the contents of a backup file
+    enter                                  start a shell for the specified vhost
+    restart mysql instance                 restarts mysql for the specified vhost or domain
+    enable htpasswd                        enables htpasswd password protection for the specified site
+    disable vhost                          disables the specified vhost
 
  Other common commands
-    add htpasswd user         adds a new user on htpasswd authentication
-    configure ssl             configures SSL for the specified site
-    enable lets-encrypt       enable Let's Encrypt certificates on the specified vhost
-    refresh app config        updates config files of the app with DB credentials
-    clear app cache           clears the cache of the app on the specified vhost
+    add htpasswd user                      adds a new user on htpasswd authentication
+    configure ssl                          configures SSL for the specified site
+    enable lets-encrypt                    enable Let's Encrypt certificates on the specified vhost
+    refresh app config                     updates config files of the app with DB credentials
+    clear app cache                        clears the cache of the app on the specified vhost
 
  General Options
-   --help                     display this help message
-   -v                         enable verbose mode
-   -L name                    create a named lock during the execution to
-                              avoid multiple runs of a same process
+   --help                                  display this help message
+   -v                                      enable verbose mode
+   -L name                                 create a named lock during the execution to
+                                           avoid multiple runs of a same process
 
  For more information about a specific command, run:
  @sb@ @self_basename@ COMMAND --help

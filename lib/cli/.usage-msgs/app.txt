@@ -2,20 +2,20 @@ Usage: @self_basename@ <command> [args]
 
  Application Oriented Commands:
 
-    refresh app config              updates config files of the app with
-                                    DB credentials
+    refresh app config                     updates config files of the app with
+                                           DB credentials
 
-    clear app cache                 clears the cache of the app on the
-                                    specified vhost
+    clear app cache                        clears the cache of the app on the
+                                           specified vhost
 
-    reset app password              resets the password for the admin user
-                                    of the app
+    reset app password                     resets the password for the admin user
+                                           of the app
 
-    update app                      updates the app to the latest stable
-                                    version
+    update app                             updates the app to the latest stable
+                                           version
 
-    reset app admin email           resets the e-mail address for the admin user
-                                    of the app
+    reset app admin email                  resets the e-mail address for the admin user
+                                           of the app
 
 
  For help with a specific command, please run:

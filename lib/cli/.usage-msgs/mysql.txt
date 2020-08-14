@@ -2,28 +2,28 @@ Usage: @self_basename@ <command> [args]
 
  MySQL Commands:
 
-    create mysql instance               create a new MySQL instance
-    remove mysql instance               removes (destroys) MySQL instance
-    list mysql instances                show the list of mysql instances
-    show mysql instance info            display information about mysql instance
+    create mysql instance                  create a new MySQL instance
+    remove mysql instance                  removes (destroys) MySQL instance
+    list mysql instances                   show the list of mysql instances
+    show mysql instance info               display information about mysql instance
 
-    ping    mysql instance              pings the mysql instance service
-    start   mysql instance              starts mysql instance
-    stop    mysql instance              stops mysql instance
-    restart mysql instance              restarts mysql instance
+    ping    mysql instance                 pings the mysql instance service
+    start   mysql instance                 starts mysql instance
+    stop    mysql instance                 stops mysql instance
+    restart mysql instance                 restarts mysql instance
 
-    setup vhost on mysql instance       setup vhost credentials and permissions
+    setup vhost on mysql instance          setup vhost credentials and permissions
 
-    run mysql client as root            run the mysql client as mysql root user
-                                        for the specified instance
+    run mysql client as root               run the mysql client as mysql root user
+                                           for the specified instance
 
-    remove vhost from mysql instance    remove credentials and DBs from instance
+    remove vhost from mysql instance       remove credentials and DBs from instance
 
-    add external mysql instance         add config for an external mysql instance
+    add external mysql instance            add config for an external mysql instance
 
-    change mysql root password          change password of MySQL root user
+    change mysql root password             change password of MySQL root user
 
-    change vhost password on mysql      change passwd vhost uses to connect on MySQL
+    change vhost password on mysql         change passwd vhost uses to connect on MySQL
 
 
  For help with a specific command, please run:
