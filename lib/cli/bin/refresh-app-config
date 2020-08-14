@@ -10,7 +10,7 @@ set_usage_msg \
   database credentials, etc.
 "
 
-devpanel_cmd__refresh_config() {
+devpanel_cmd__refresh_app_config() {
 
   local name vhost
   local -a cmd_args=()

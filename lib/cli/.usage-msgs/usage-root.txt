@@ -16,7 +16,7 @@ Usage: @self_basename@ [general_opts] <command> [args]
     add htpasswd user         adds a new user on htpasswd authentication
     configure ssl             configures SSL for the specified site
     enable lets-encrypt       enable Let's Encrypt certificates on the specified vhost
-    refresh config            updates config files of the app with DB credentials
+    refresh app config        updates config files of the app with DB credentials
     clear app cache           clears the cache of the app on the specified vhost
 
  General Options

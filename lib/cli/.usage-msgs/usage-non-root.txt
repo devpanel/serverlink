@@ -2,7 +2,7 @@ Usage: @self_basename@ <command> [args]
 
  Commands
 
-    refresh config           update config files of the app with DB credentials
+    refresh app config       update config files of the app with DB credentials
     list backups             list the backup files available
     extract backup           extracts the contents of a backup file
     clear app cache          clear the cache of the app on the specified vhost
@@ -14,5 +14,5 @@ Usage: @self_basename@ <command> [args]
   @sb@ @self_basename@ COMMAND --help
 
  Example:
-  @sb@ @self_basename@ refresh config --help
+  @sb@ @self_basename@ refresh app config --help
 

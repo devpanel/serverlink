@@ -2,7 +2,7 @@ Usage: @self_basename@ <command> [args]
 
  Application Oriented Commands:
 
-    refresh config                  updates config files of the app with
+    refresh app config              updates config files of the app with
                                     DB credentials
 
     clear app cache                 clears the cache of the app on the
