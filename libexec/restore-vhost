@@ -363,6 +363,6 @@ run_su 'restore_script="$HOME/etc/rc.webenabled.restore";
 run_su 'local_script="$HOME/etc/rc.webenabled.local"
         [ -f "$local_script" -a -x "$local_script" ] && "$local_script"'
 
-devpanel rewrite vhost config --vhost "$vhost"
+devpanel rewrite vhost httpd config --vhost "$vhost"
 
 exit 0

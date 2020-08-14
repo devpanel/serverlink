@@ -10,7 +10,7 @@ set_usage_msg \
   Rewrite the vhost config to apply the configuration updates.
 "
 
-devpanel_cmd__rewrite_vhost_config() {
+devpanel_cmd__rewrite_vhost_httpd_config() {
   [ $# -eq 0 -o -z "$1" ] && usage
 
   local name vhost

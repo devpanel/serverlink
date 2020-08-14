@@ -1137,7 +1137,7 @@ migrate_vhost_configs() {
       chgrp -R "$linux_user" "$vhost_config_dir"
       chmod 640 "$vhost_config_dir/config.ini"
 
-      devpanel rewrite vhost config --vhost "$vhost" --no-restart
+      devpanel rewrite vhost httpd config --vhost "$vhost" --no-restart
     else
       n_err+=1
       echo "$FUNCNAME(): failed to migrate vhost '$vhost'" \

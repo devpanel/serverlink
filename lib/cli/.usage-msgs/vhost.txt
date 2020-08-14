@@ -53,7 +53,7 @@
   Apache httpd commands on vhost:
     enable  fastcgi                 enables FastCGI for the specified vhost
     disable fastcgi                 disables FastCGI for the specified vhost
-    rewrite vhost config            updates the vhost configuration on the web server
+    rewrite vhost httpd config      updates the vhost configuration on the web server
     add vhost include               include custom Apache config lines into vhost
     remove vhost include            remove Apache custom config lines from vhost
 

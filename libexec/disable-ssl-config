@@ -45,7 +45,7 @@ if ! save_opts_in_vhost_config "$vhost" "ssl.enabled = no"; then
   error "unable to update config file for vhost $vhost"
 fi
 
-if devpanel rewrite vhost config --vhost "$vhost"; then
+if devpanel rewrite vhost httpd config --vhost "$vhost"; then
   echo "Successfully disabled SSL configuration for vhost $vhost"
   exit 0
 else

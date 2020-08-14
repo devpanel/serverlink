@@ -413,7 +413,7 @@ devpanel_cmd__create_vhost() {
     echo "Warning: unable to load config for the newly created vhost" 1>&2
   fi
 
-  if ! devpanel_run rewrite vhost config --vhost "$vhost"; then
+  if ! devpanel_run rewrite vhost httpd config --vhost "$vhost"; then
     echo "Warning: vhost created, but failed to write Apache config" 1>&2
     [ -t 0 ] && sleep 2
   fi

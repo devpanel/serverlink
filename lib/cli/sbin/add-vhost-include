@@ -133,7 +133,7 @@ devpanel_cmd__add_vhost_include() {
     return $?
   fi
 
-  if devpanel_run rewrite vhost config --vhost "$vhost" $reload_opt; then
+  if devpanel_run rewrite vhost httpd config --vhost "$vhost" $reload_opt; then
     echo
     echo -n "Successfully added include file."
     if [ -n "$reload" ]; then
@@ -151,7 +151,7 @@ devpanel_cmd__add_vhost_include() {
 
     echo
     if [ -n "$reload" ]; then
-      if devpanel_run rewrite vhost config --vhost "$vhost" $reload_opt; then
+      if devpanel_run rewrite vhost httpd config --vhost "$vhost" $reload_opt; then
         error "failed to add include file. It created an invalid Apache config." -
         return $?
       else

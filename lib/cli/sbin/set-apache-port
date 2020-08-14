@@ -94,7 +94,7 @@ devpanel_cmd__set_apache_port() {
 
   local vhost
   for vhost in "${vhosts_ar[@]}"; do
-    devpanel_run rewrite vhost config --no-restart --vhost "$vhost"
+    devpanel_run rewrite vhost httpd config --no-restart --vhost "$vhost"
   done
 
   reload_or_start_apache

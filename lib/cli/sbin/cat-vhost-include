@@ -8,7 +8,7 @@ set_usage_msg \
 
   Shows the custom Apache configuration lines from the specified vhost.
 
-  NOTE: to see the full vhost config run: $bin_name cat vhost config
+  NOTE: to see the full vhost config run: $bin_name cat vhost httpd config
 "
 
 devpanel_cmd__cat_vhost_include() {

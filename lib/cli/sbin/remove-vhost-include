@@ -61,7 +61,7 @@ devpanel_cmd__remove_vhost_include() {
 
   if save_opts_in_vhost_config "$vhost" "- vhost.user_includes"; then
     rm -f "$v__vhost__user_include_file"
-    if devpanel_run rewrite vhost config --vhost "$vhost" $reload_opt; then
+    if devpanel_run rewrite vhost httpd config --vhost "$vhost" $reload_opt; then
       echo
       echo "Successfully removed user includes for vhost '$vhost'."
     else

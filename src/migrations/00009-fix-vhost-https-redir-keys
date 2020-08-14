@@ -20,7 +20,7 @@ for vhost in $(get_list_of_vhosts); do
   fi
 
   if [ -n "$vhost_changed" ]; then
-    devpanel rewrite vhost config --vhost "$vhost" --no-restart
+    devpanel rewrite vhost httpd config --vhost "$vhost" --no-restart
   fi
 done
 

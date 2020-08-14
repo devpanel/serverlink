@@ -9,7 +9,7 @@ Usage: @self_basename@ <command> [args]
     dump metadata                         shows server metadata
     dump vhost metadata                   shows vhost metadata
     set base hostname                     sets the base hostname for virtual hosts
-    cat vhost config                      shows the apache configuration for the vhost
+    cat vhost httpd config                shows the apache configuration for the vhost
     enable long vhost names               enable long vhost names (up to 30 characters)
 
     enable  webenabled compat             enable backwards compatibility with WE v1

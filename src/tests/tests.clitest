@@ -51,7 +51,7 @@ $ devpanel config app --admin-password $(head -c 1024 /dev/urandom | tr -dc A-Za
 $ devpanel refresh config --vhost d7-test-one              #=> --exit 0
 $ devpanel test http --vhost d7-test-one                   #=> --exit 0
 $ devpanel repair mysql database --vhost d7-test-one       #=> --exit 0
-$ devpanel cat vhost config --vhost d7-test-one            #=> --exit 0
+$ devpanel cat vhost httpd config --vhost d7-test-one      #=> --exit 0
 $ devpanel test http --vhost d7-test-one                   #=> --exit 0
 $ devpanel add domain --vhost d7-test-one --domain my-first-domain.com --domain www.my-first-domain.com   #=> --exit 0
 $ fgrep 'my-first-domain.com www.my-first-domain.com' /etc/devpanel/lamp/vhosts/d7-test-one/config.ini    #=> --exit 0
@@ -98,7 +98,7 @@ $ devpanel change vhost password on mysql --vhost d7-test-one --generate  #=> --
 $ devpanel run mysql client --vhost d7-test-one -- -e "SHOW DATABASES"    #=> --exit 0
 $ devpanel test http --vhost d7-test-one                   #=> --exit 0
 
-$ devpanel rewrite vhost config --vhost d7-test-one        #=> --exit 0
+$ devpanel rewrite vhost httpd config --vhost d7-test-one  #=> --exit 0
 $ devpanel test http --vhost d7-test-one                   #=> --exit 0
 
 # Testing vhost specific PHP version

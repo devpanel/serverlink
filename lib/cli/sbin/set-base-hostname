@@ -145,7 +145,7 @@ ServerName $new_domain
 
     if save_opts_in_vhost_config "$vh" "${vhost_opts_ar[@]}"; then
       # run in a sub-shell not to overwrite vhost variables
-      ( devpanel_run rewrite vhost config --vhost "$vh" --no-restart )
+      ( devpanel_run rewrite vhost httpd config --vhost "$vh" --no-restart )
     fi
   done
 

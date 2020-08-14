@@ -258,7 +258,7 @@ devpanel_cmd__restore_backup() {
 
   # re-enable the vhost in case the user running it is root
   if [ $EUID -eq 0 -a -n "$disable_vhost" ]; then
-    devpanel_run rewrite vhost config --vhost $vhost
+    devpanel_run rewrite vhost httpd config --vhost $vhost
   fi
 
   if [ $st -eq 0 ]; then
