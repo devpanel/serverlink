@@ -201,9 +201,12 @@ $ devpanel get server info               | egrep -x 'Distro Updates: disabled'  
 
 $ devpanel enable webenabled compat --yes                                #=> --exit 0
 $ devpanel get server info | egrep -x 'Webenabled v1 Compatibility: yes' #=> --exit 0
+$ devpanel create lamp vhost --vhost a-bit-longer-than-allowed           #=> --exit 1
 
 $ devpanel disable webenabled compat --yes                        #=> --exit 0
 $ devpanel get server info | egrep 'Webenabled v1 Compatibility:' #=> --exit 1
+$ devpanel create lamp vhost --vhost a-bit-longer-name            #=> --exit 0
+$ devpanel remove      vhost --vhost a-bit-longer-name            #=> --exit 0
 
 $ devpanel dump metadata                            #=> --exit 0
 $ devpanel dump metadata | fgrep null               #=> --exit 1

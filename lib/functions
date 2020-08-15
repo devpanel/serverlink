@@ -1274,6 +1274,28 @@ is_valid_port_number() {
 }
 
 is_valid_vhost_string() {
+  local arg strict_len_check
+  local -i max_len
+  local -i max_len_long=30
+  local -i min_len=2
+  local -i max_len_we=6
+  local vhost_regex='^[a-z0-9]+[a-z0-9-]+$'
+
+  while [ -n "$1" -a "${1:0:1}" == - ]; do
+    arg="$1"
+    case "$arg" in
+      --strict-length-check)
+        strict_len_check=yes
+        shift
+        ;;
+
+      *)
+        echo "$FUNCNAME(): unknown option '$arg'" 1>&2
+        return 1
+        ;;
+    esac
+  done
+
   local string="$1"
 
   if [ -z "$string" ]; then
@@ -1281,9 +1303,18 @@ is_valid_vhost_string() {
     return 1
   fi
 
-  local vhost_regex='^[a-z0-9]+[a-z0-9-]+$'
+  if [ ${#string} -lt $min_len -o ${#string} -gt $max_len_long ]; then
+    return 1
+  fi
 
   if [[ "$string" =~ $vhost_regex ]]; then
+    if is_var_set_to_yes strict_len_check; then
+      if ! is_longer_vhost_names_enabled && [ ${#string} -gt $max_len_we ]; then
+        echo "$FUNCNAME(): length of vhost name should be <= $max_len_we" 1>&2
+        return 1
+      fi
+    fi
+
     return 0
   else
     return 1
@@ -1807,6 +1838,10 @@ get_vhost_key_value() {
 
 enable_long_vhost_names() {
   save_opts_in_lamp_config "apache.enable_long_vhost_names = yes"
+}
+
+disable_long_vhost_names() {
+  save_opts_in_lamp_config "apache.enable_long_vhost_names = no"
 }
 
 is_longer_vhost_names_enabled() {

@@ -65,6 +65,8 @@ r_we:x:\1/}' /etc/shadow
     ln -s . "$sys_dir/current"
   fi
 
+  devpanel_run disable long vhost names --yes || return $?
+
   enable_webenabled_backwards_compat
   if [ $? -eq 0 ]; then
     echo "Successfully enabled Webenabled v1 backwards compatibility."

@@ -204,7 +204,7 @@ devpanel_cmd__create_vhost() {
   [ -z "$vhost" ]  && error_missing_param vhost
   [ -z "$from" ]   && error_missing_param from
 
-  if ! is_valid_vhost_string "$vhost"; then
+  if ! is_valid_vhost_string --strict-length-check "$vhost"; then
     error "invalid string format for vhost name" -
     return $?
   fi

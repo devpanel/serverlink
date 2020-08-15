@@ -144,6 +144,11 @@ devpanel_cmd__create_lamp_vhost() {
 
   [ -z "$vhost" ] && usage
 
+  if ! is_valid_vhost_string --strict-length-check "$vhost"; then
+    error "invalid string format for vhost name" -
+    return $?
+  fi
+
   if vhost_exists "$vhost"; then
     error "vhost already exists." -
     return $?

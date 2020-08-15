@@ -30,6 +30,8 @@ devpanel_cmd__disable_webenabled_compat() {
 
   [ -z "$confirmed" -o "$confirmed" != yes ] && usage
 
+  devpanel_run enable long vhost names --yes || return $?
+
   disable_webenabled_backwards_compat
   if [ $? -eq 0 ]; then
     echo "Successfully disabled Webenabled v1 compatibility."

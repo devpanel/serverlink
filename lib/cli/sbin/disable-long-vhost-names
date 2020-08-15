@@ -4,13 +4,12 @@ set_usage_msg \
   "Usage: $bin_name ${cmd_ar[*]} [opts]
 
   Options:
-    --yes                 confirm enabling of long names
+    --yes                 confirm disabling long names
 
-  Allow creating vhosts with names up to 30 characters
-  (by default it only accepts vhosts with 6 characters).
+  Disallow creating vhosts with names longer than 6 characters.
 "
 
-devpanel_cmd__enable_long_vhost_names() {
+devpanel_cmd__disable_long_vhost_names() {
   local name confirmed
 
   while [ -n "$1" ]; do
@@ -28,9 +27,9 @@ devpanel_cmd__enable_long_vhost_names() {
 
   [ -z "$confirmed" -o "$confirmed" != yes ] && usage
 
-  enable_long_vhost_names
+  disable_long_vhost_names
   if [ $? -eq 0 ]; then
-    echo "Successfully enabled long vhost names."
+    echo "Successfully disabled long vhost names."
   else
     error "failed to update metadata for long vhost names." -
     return $?
