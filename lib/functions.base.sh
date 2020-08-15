@@ -580,7 +580,7 @@ save_opts_in_mysql_instance() {
   instance="$1"
   shift
 
-  file="$lamp__paths__local_config_dir/mysql/instances/$instance/config.ini"
+  file="$lamp__paths__mysql_instances_config_dir/$instance/config.ini"
 
   write_ini_file "$file" "$@"
 }

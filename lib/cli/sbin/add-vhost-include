@@ -82,7 +82,7 @@ devpanel_cmd__add_vhost_include() {
     error "include file is empty"
   fi
 
-  local config_dir="/etc/devpanel/lamp/vhosts/$vhost/apache"
+  local config_dir="$lamp__paths__vhosts_config_dir/$vhost/apache"
   local include_file="$config_dir/user_includes.inc"
   local bkp_file="$include_file.bkp"
 

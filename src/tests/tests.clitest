@@ -35,7 +35,7 @@ $ [ -z "$lamp__mysql__default_instance" ] || devpanel run mysql client as root -
 $ [ -z "$lamp__mysql__default_instance" ] || devpanel change mysql root password --instance $lamp__mysql__default_instance --generate    #=> --exit 0
 $ [ -z "$lamp__mysql__default_instance" ] || echo a\'toughly\'\'quoted_string\" | devpanel change mysql root password --instance $lamp__mysql__default_instance #=> --exit 0
 $ [ -z "$lamp__mysql__default_instance" ] || devpanel run mysql client as root --instance $lamp__mysql__default_instance -- -e "SHOW DATABASES" #=> --exit 0
-$ [ -z "$lamp__mysql__default_instance" ] || stat -c %A /etc/devpanel/lamp/mysql/instances/$lamp__mysql__default_instance/root.client.cnf  #=> -rw-r-----
+$ [ -z "$lamp__mysql__default_instance" ] || stat -c %A $lamp__paths__mysql_instances_config_dir/$lamp__mysql__default_instance/root.client.cnf  #=> -rw-r-----
 $ [ -z "$lamp__mysql__default_instance" ] || devpanel tail mysql log --instance "$lamp__mysql__default_instance" --once             #=> --exit 0
 
 ##########
@@ -43,8 +43,8 @@ $ [ -z "$lamp__mysql__default_instance" ] || devpanel tail mysql log --instance 
 #########
 $ devpanel install seed app --vhost d7-test-one --app drupal-v7 --dedicated-mysql #=> --exit 0
 $ devpanel test http --vhost d7-test-one                   #=> --exit 0
-$ stat -c %A /etc/devpanel/lamp/vhosts/d7-test-one/mysql/my.cnf  #=> -rw-r-----
-$ d=/etc/devpanel/lamp/vhosts/d7-test-one ;  stat -c %G $d/mysql/my.cnf | fgrep -x `egrep '^linux_user=' $d/config.ini | cut -d= -f 2` #=> --exit 0
+$ stat -c %A $lamp__paths__vhosts_config_dir/d7-test-one/mysql/my.cnf  #=> -rw-r-----
+$ d=$lamp__paths__vhosts_config_dir/d7-test-one ;  stat -c %G $d/mysql/my.cnf | fgrep -x `egrep '^linux_user=' $d/config.ini | cut -d= -f 2` #=> --exit 0
 $ devpanel ping mysql instance --vhost d7-test-one       #=> --exit 0
 $ devpanel clear app cache --vhost d7-test-one             #=> --exit 0
 $ devpanel config app --admin-password $(head -c 1024 /dev/urandom | tr -dc A-Za-z0-9_ | cut -b 1-10) --vhost d7-test-one #=> --exit 0
@@ -54,16 +54,16 @@ $ devpanel repair mysql database --vhost d7-test-one       #=> --exit 0
 $ devpanel cat vhost httpd config --vhost d7-test-one      #=> --exit 0
 $ devpanel test http --vhost d7-test-one                   #=> --exit 0
 $ devpanel add domain --vhost d7-test-one --domain my-first-domain.com --domain www.my-first-domain.com   #=> --exit 0
-$ fgrep 'my-first-domain.com www.my-first-domain.com' /etc/devpanel/lamp/vhosts/d7-test-one/config.ini    #=> --exit 0
+$ fgrep 'my-first-domain.com www.my-first-domain.com' $lamp__paths__vhosts_config_dir/d7-test-one/config.ini    #=> --exit 0
 $ devpanel remove domain --vhost d7-test-one --domain www.my-first-domain.com                             #=> --exit 0
-$ fgrep 'www.my-first-domain.com' /etc/devpanel/lamp/vhosts/d7-test-one/config.ini                        #=> --exit 1
+$ fgrep 'www.my-first-domain.com' $lamp__paths__vhosts_config_dir/d7-test-one/config.ini                        #=> --exit 1
 $ devpanel find domain --domain my-first-domain.com                                                       #=> --exit 0
 $ devpanel remove domain --vhost d7-test-one --domain my-first-domain.com  #=> --exit 0
 $ devpanel stop   mysql instance --vhost d7-test-one                #=> --exit 0
 $ devpanel start mysql instance --vhost d7-test-one < /dev/null     #=> --exit 0
 $ sleep 2; devpanel ping mysql instance --vhost d7-test-one       #=> --exit 0
 $ devpanel enable htpasswd --vhost d7-test-one                          #=> --exit 0
-$ fgrep 'htpasswd=yes' /etc/devpanel/lamp/vhosts/d7-test-one/config.ini #=> --exit 0
+$ fgrep 'htpasswd=yes' $lamp__paths__vhosts_config_dir/d7-test-one/config.ini #=> --exit 0
 $ devpanel test http --vhost d7-test-one --http-code 401                #=> --exit 0
 $ echo test_pw | devpanel add htpasswd user --username test --vhost d7-test-one #=> --exit 0
 $ devpanel test http --vhost d7-test-one --http-user-pass test:test_pw   #=> --exit 0
@@ -73,20 +73,20 @@ $ devpanel test http --vhost d7-test-one --http-user-pass test:new_pw    #=> --e
 $ devpanel remove htpasswd user --username test --vhost d7-test-one      #=> --exit 0
 $ devpanel test http --vhost d7-test-one --http-user-pass test:new_pw --http-code 401 #=> --exit 0
 $ devpanel disable htpasswd --vhost d7-test-one            #=> --exit 0
-$ fgrep 'htpasswd=yes' /etc/devpanel/lamp/vhosts/d7-test-one/config.ini #=> --exit 1
+$ fgrep 'htpasswd=yes' $lamp__paths__vhosts_config_dir/d7-test-one/config.ini #=> --exit 1
 $ devpanel test http --vhost d7-test-one  #=> --exit 0
 
 $ devpanel enable fastcgi --vhost d7-test-one              #=> --exit 0
-$ fgrep 'fastcgi=yes' /etc/devpanel/lamp/vhosts/d7-test-one/config.ini #=> --exit 0
+$ fgrep 'fastcgi=yes' $lamp__paths__vhosts_config_dir/d7-test-one/config.ini #=> --exit 0
 $ devpanel test http --vhost d7-test-one                   #=> --exit 0
 $ devpanel disable fastcgi --vhost d7-test-one             #=> --exit 0
-$ fgrep 'fastcgi=yes' /etc/devpanel/lamp/vhosts/d7-test-one/config.ini #=> --exit 1
+$ fgrep 'fastcgi=yes' $lamp__paths__vhosts_config_dir/d7-test-one/config.ini #=> --exit 1
 $ devpanel test http --vhost d7-test-one                   #=> --exit 0
 
 $ devpanel backup vhost --vhost d7-test-one                #=> --exit 0
 $ devpanel list backups --vhost d7-test-one                #=> --exit 0
 $ devpanel disable vhost --vhost d7-test-one               #=> --exit 0
-$ fgrep 'enabled=no' /etc/devpanel/lamp/vhosts/d7-test-one/config.ini #=> --exit 0
+$ fgrep 'enabled=no' $lamp__paths__vhosts_config_dir/d7-test-one/config.ini #=> --exit 0
 $ devpanel test http --vhost d7-test-one --uri /index.php --http-code 404  #=> --exit 0
 $ devpanel enable vhost --vhost d7-test-one                #=> --exit 0
 $ devpanel test http --vhost d7-test-one --uri /index.php  #=> --exit 0

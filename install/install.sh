@@ -191,7 +191,7 @@ install_ce_software() {
   ln -s "$webenabled_install_dir/compat/apache_include/global-includes" \
     "$_apache_base_dir/devpanel-global"
 
-  ln -s /etc/devpanel/lamp/apache/virtwww "$lamp__apache_paths__vhosts_include_dir"
+  ln -s "$lamp__paths__apache_local_virtwww_dir" "$lamp__apache_paths__vhosts_include_dir"
 
   ln -sf "$webenabled_install_dir/compat/apache_include/$_apache_main_include" \
     "$_apache_includes_dir/devpanel.conf"
