@@ -28,6 +28,10 @@ centos_install_distro_packages() {
         echo
         return 1
       fi
+
+      if hash yum-config-manager 2>/dev/null; then
+        yum-config-manager --enable "$repos_name"
+      fi
     else
       echo
       echo "Warning: missing file for repository '$repos_name'" 1>&2
@@ -86,11 +90,32 @@ centos_post_software_install() {
 
 centos_adjust_system_config() {
   local install_dir="$1"
+  local _file _f_basename _mod _mod_fullname _mod_conf
 
-  [ -e "$_apache_includes_dir"/php.conf ] && mv -f "$_apache_includes_dir"/php.conf{,.disabled}
+  for _file in "$lamp__apache_paths__includes_dir"/*.conf ; do
+    [ ! -f "$_file" ] && continue
 
-  echo '# disabled. With devPanel PHP must run as suexec, not as mod_php.' \
-    >"$_apache_includes_dir/php.conf"
+    # remove configuration from Apache modules that conflict with serverlink
+    for _mod in php ssl fcgi fastcgi ; do
+      _f_basename="${_file##*/}"
+      _mod_fullname="${_f_basename%.conf}"
+      if [[ "$_mod_fullname" == "$_mod"* ]]; then
+        mv -f "$_file" "$_file".disabled
+        echo -e "# Disabled\n#\n# This module conflicts with serverlink's configuration.\n#" >"$_file"
+      fi
+    done
+  done
+
+  # disable Apache modules that conflict with serverlink
+  if [ -n "$lamp__apache_paths__module_includes_dir" ]; then
+    for _mod in php ; do
+      for _mod_conf in "$lamp__apache_paths__module_includes_dir"/[0-9]*-${_mod}*.conf ; do
+        [ ! -f "$_mod_conf" ] && continue
+
+        rm -f "$_mod_conf"
+      done
+    done
+  fi
 
   if [ -f /etc/php.ini ]; then
     sed -i 's/^\(session.save_path.\+\)/;\1/' /etc/php.ini
@@ -119,20 +144,29 @@ centos_adjust_system_config() {
   fi
 
   if hash systemctl &>/dev/null; then
+    systemctl disable "$conf__distro_services__mysql_name"
+
     systemctl enable devpanel-bootstrap
     systemctl start  devpanel-bootstrap
-
-    systemctl stop    mysqld
-    systemctl disable mysqld
   elif hash initctl &>/dev/null; then
     initctl start devpanel-bootstrap
   else
+    chkconfig "$conf__distro_services__mysql_name" off
     chkconfig --add devpanel-bootstrap
     /etc/init.d/devpanel-bootstrap start
   fi
 
+  # stop distro's shipped MySQL service
+  service "$conf__distro_services__mysql_name" stop
+
   # start crontab (if it's not running for any reason)
   service "$conf__distro_services__crontab" restart
+
+  if ! fuser -s smtp/tcp; then
+    if [ -n "$conf__distro_services__smtp_name" ]; then
+      service "$conf__distro_services__smtp_name" restart
+    fi
+  fi
 
   return 0
 }

@@ -1,0 +1,20 @@
+/var/log/httpd/virtwww/*/*log {
+    weekly
+    missingok
+    notifempty
+    sharedscripts
+    delaycompress
+    postrotate
+        /bin/systemctl reload httpd.service > /dev/null 2>/dev/null || true ; \
+        /opt/webenabled/libexec/fix-vhost-logs-ownshp-n-perms -y ; \
+    endscript
+}
+
+/var/log/httpd/cgi_log {
+        weekly
+        missingok
+        compress
+        delaycompress
+        notifempty
+        create 640 root apache
+}
