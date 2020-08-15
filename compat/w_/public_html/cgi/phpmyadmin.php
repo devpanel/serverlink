@@ -24,6 +24,7 @@ if($is_logged_in) {
     header('Location: ' . str_replace("/$token", "", $_SERVER['SCRIPT_URI']) . '/index.php');
     exit(0);
   } else {
+    header("{$_SERVER['SERVER_PROTOCOL']} 401 Unauthorized");
     echo "Access denied. Unable to verify app token.\n";
     exit(1);
   }

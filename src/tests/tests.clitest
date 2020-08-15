@@ -92,7 +92,11 @@ $ devpanel enable vhost --vhost d7-test-one                #=> --exit 0
 $ devpanel test http --vhost d7-test-one --uri /index.php  #=> --exit 0
 $ devpanel test http --vhost d7-test-one                   #=> --exit 0
 
-$ devpanel get token --vhost d7-test-one --tool phpmyadmin  #=> --exit 0
+$ token_url=$(devpanel get token --vhost d7-test-one --tool phpmyadmin)   #=> --exit 0
+$ curl -Ls --cookie /dev/null -w '%{http_code}\n' -o /dev/null "$token_url" ; unset token_url #=> 200
+
+$ token_url=$(devpanel get token --vhost d7-test-one --tool extplorer)   #=> --exit 0
+$ curl -Ls --cookie /dev/null -w '%{http_code}\n' -o /dev/null "$token_url" ; unset token_url #=> 200
 
 $ devpanel change vhost password on mysql --vhost d7-test-one --generate  #=> --exit 0
 $ devpanel run mysql client --vhost d7-test-one -- -e "SHOW DATABASES"    #=> --exit 0

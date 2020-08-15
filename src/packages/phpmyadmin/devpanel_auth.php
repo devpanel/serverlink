@@ -10,11 +10,13 @@ session_name("devpanel_$app_name");
 $is_logged_in = dp_is_already_logged_to_app($app_name);
 
 if(!$is_logged_in) {
+  header("{$_SERVER['SERVER_PROTOCOL']} 401 Unauthorized");
   echo "Access denied. Unable to verify app token.\n";
   exit(1);
 }
 
 if(!($mysql_info_ar = devpanel_get_mysql_info_for_vhost())) {
+  header("{$_SERVER['SERVER_PROTOCOL']} 500 Internal Error");
   error_log("unable to read MySQL credentials");
   echo "Error: unable to read MySQL credentials\n";
   exit(1);
