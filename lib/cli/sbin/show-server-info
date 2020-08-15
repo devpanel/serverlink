@@ -6,7 +6,7 @@ set_usage_msg \
   Prints server information.
 "
 
-devpanel_cmd__get_server_info() {
+devpanel_cmd__show_server_info() {
   local info_txt name
 
   while [ -n "$1" ]; do

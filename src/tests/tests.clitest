@@ -2,7 +2,7 @@ $ [ -d /opt/webenabled ] || tar_f=/root/serverlink.tar ; [ -f $tar_f ] && { tar 
 $ [ -d /opt/webenabled ] || { i_f=/root/install.sh ; [ ! -f $i_f -a ! -x $i_f ] && exit 0 ; $i_f ;} #=> --exit 0
 $ [ -d /opt/webenabled ] || { curl -sSL https://get.devpanel.com/install.sh | bash -s -- -3 ;} #=> --exit 0
 $ hash devpanel
-$ devpanel get server info | egrep -q '^Vhosts base domain: [^ ]+$' || devpanel init config --gen-hostname-from-ip #=> --exit 0
+$ devpanel show server info | egrep -q '^Vhosts base domain: [^ ]+$' || devpanel init config --gen-hostname-from-ip #=> --exit 0
 
 $ fuser -v http/tcp                                 #=> --exit 0
 $ fuser -v smtp/tcp                                 #=> --exit 0
@@ -10,17 +10,17 @@ $ fuser -v ssh/tcp                                  #=> --exit 0
 $ pidof cron || pidof crond                         #=> --exit 0
 $ logrotate -d -v /etc/logrotate.conf 2>&1          #=> --egrep ^rotating pattern: /var/log/(httpd|apache2)/virtwww/
 
-$ devpanel get server info                          #=> --exit 0
-$ devpanel get server info                          #=> --egrep ^Linux Distribution: [^ ].+$
-$ devpanel get server info                          #=> --egrep ^Vhosts base domain: [^ ]+$
-$ devpanel get server info                          #=> --egrep ^Apache HTTP  Port: [1-9][0-9]*$
-$ devpanel get server info                          #=> --egrep ^Apache HTTPS Port: [1-9][0-9]*$
-$ devpanel get server info                          #=> --egrep ^HTTP to HTTPS redir: [^ ].+$
-$ devpanel get server info                          #=> --egrep ^Number of vhosts: [0-9]+$
-$ devpanel get server info                          #=> --egrep ^Distro Updates: (en|dis)?abled$
-$ devpanel get server info                          #=> --egrep ^Long vhost names: (en|dis)?abled$
-$ devpanel get server info                          #=> --egrep ^PHP Version: [5-7](\.[0-9])?$
-$ devpanel get server info                          #=> --egrep ^Platform Version: [1-3]$
+$ devpanel show server info                         #=> --exit 0
+$ devpanel show server info                         #=> --egrep ^Linux Distribution: [^ ].+$
+$ devpanel show server info                         #=> --egrep ^Vhosts base domain: [^ ]+$
+$ devpanel show server info                         #=> --egrep ^Apache HTTP  Port: [1-9][0-9]*$
+$ devpanel show server info                         #=> --egrep ^Apache HTTPS Port: [1-9][0-9]*$
+$ devpanel show server info                         #=> --egrep ^HTTP to HTTPS redir: [^ ].+$
+$ devpanel show server info                         #=> --egrep ^Number of vhosts: [0-9]+$
+$ devpanel show server info                         #=> --egrep ^Distro Updates: (en|dis)?abled$
+$ devpanel show server info                         #=> --egrep ^Long vhost names: (en|dis)?abled$
+$ devpanel show server info                         #=> --egrep ^PHP Version: [5-7](\.[0-9])?$
+$ devpanel show server info                         #=> --egrep ^Platform Version: [1-3]$
 
 $ devpanel list seed apps                           #=> --exit 0
 
@@ -191,22 +191,22 @@ $ devpanel ping mysql instance --vhost grav1               #=> --exit 0
 $ devpanel restart  mysql instance --vhost grav1               #=> --exit 0
 $ devpanel ping mysql instance --vhost grav1               #=> --exit 0
 
-$ devpanel enable long vhost names --yes                                 #=> --exit 0
-$ devpanel get server info | egrep -x 'Long vhost names: enabled'        #=> --exit 0
+$ devpanel enable long vhost names --yes                                        #=> --exit 0
+$ devpanel show server info | egrep -x 'Long vhost names: enabled'              #=> --exit 0
 
 $ devpanel enable distro updates   --yes                                        #=> --exit 0
-$ devpanel get server info               | egrep -x 'Distro Updates: enabled'   #=> --exit 0
+$ devpanel show server info               | egrep -x 'Distro Updates: enabled'  #=> --exit 0
 $ devpanel disable distro updates  --yes                                        #=> --exit 0
-$ devpanel get server info               | egrep -x 'Distro Updates: disabled'  #=> --exit 0
+$ devpanel show server info               | egrep -x 'Distro Updates: disabled' #=> --exit 0
 
-$ devpanel enable webenabled compat --yes                                #=> --exit 0
-$ devpanel get server info | egrep -x 'Webenabled v1 Compatibility: yes' #=> --exit 0
-$ devpanel create lamp vhost --vhost a-bit-longer-than-allowed           #=> --exit 1
+$ devpanel enable webenabled compat --yes                                       #=> --exit 0
+$ devpanel show server info | egrep -x 'Webenabled v1 Compatibility: yes'       #=> --exit 0
+$ devpanel create lamp vhost --vhost a-bit-longer-than-allowed                  #=> --exit 1
 
-$ devpanel disable webenabled compat --yes                        #=> --exit 0
-$ devpanel get server info | egrep 'Webenabled v1 Compatibility:' #=> --exit 1
-$ devpanel create lamp vhost --vhost a-bit-longer-name            #=> --exit 0
-$ devpanel remove      vhost --vhost a-bit-longer-name            #=> --exit 0
+$ devpanel disable webenabled compat --yes                                      #=> --exit 0
+$ devpanel show server info | egrep 'Webenabled v1 Compatibility:'              #=> --exit 1
+$ devpanel create lamp vhost --vhost a-bit-longer-name                          #=> --exit 0
+$ devpanel remove      vhost --vhost a-bit-longer-name                          #=> --exit 0
 
-$ devpanel dump metadata                            #=> --exit 0
-$ devpanel dump metadata | fgrep null               #=> --exit 1
+$ devpanel dump metadata                                                        #=> --exit 0
+$ devpanel dump metadata | fgrep null                                           #=> --exit 1

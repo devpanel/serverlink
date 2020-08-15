@@ -5,7 +5,7 @@ Usage: @self_basename@ <command> [args]
     update                                 updates devPanel software
     init config                            initializes the basic configuration of
                                            devPanel
-    get server info                        prints server information
+    show server info                       prints server information
     dump metadata                          shows server metadata
     dump vhost metadata                    shows vhost metadata
     set base hostname                      sets the base hostname for virtual hosts
