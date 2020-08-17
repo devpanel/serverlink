@@ -2087,16 +2087,16 @@ read_devpanel_ini_from_app_archive() {
     return 1
   fi
 
+  if ! tmp_dir=$(mktemp -d); then
+    echo "$FUNCNAME(): unable to create temp dir" 1>&2
+    return 1
+  fi
+
   tst_file_1="./.devpanel/app.ini"
   tst_file_2=".devpanel/app.ini"
   for _tst_file in "$tst_file_1" "$tst_file_2"; do
     if tar -ztf "$archive" --no-recursion "$_tst_file" &>/dev/null; then
       has_ini_file=yes
-
-      if ! tmp_dir=$(mktemp -d); then
-        echo "$FUNCNAME(): unable to create temp dir" 1>&2
-        return 1
-      fi
 
       if tar -zxf "$archive" -C "$tmp_dir" "$_tst_file"; then
         ini_file="$tmp_dir/${_tst_file#./}"
@@ -2110,6 +2110,8 @@ read_devpanel_ini_from_app_archive() {
   done
 
   if [ -z "$has_ini_file" ]; then
+    rm -rf "$tmp_dir"
+
     # archive doesn't have an ini file
     if [ -n "$missing_ok" ]; then
       return 0
@@ -2122,6 +2124,8 @@ read_devpanel_ini_from_app_archive() {
     echo "$FUNCNAME(): failed to read from '$ini_file'" 1>&2
     return 1
   fi
+
+  rm -rf "$tmp_dir"
 
   return 0
 }
