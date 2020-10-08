@@ -72,7 +72,7 @@ devpanel_cmd__disable_vhost() {
     return $?
   fi
 
-  rewrite_vhost_apache_config "$vhost" || return $?
+  rewrite_vhost_apache_config --disable "$vhost" || return $?
 
   save_opts_in_vhost_config "$vhost" "vhost.enabled = no" || return $?
 }

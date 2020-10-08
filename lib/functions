@@ -3774,9 +3774,32 @@ reload_or_start_apache() {
 }
 
 rewrite_vhost_apache_config() {
+  local arg
+  local -a args_ar=()
+
+  while [ -n "$1" -a "${1:0:1}" == - ]; do
+    arg="$1"
+    case "$arg" in
+      --disable)
+        args_ar+=( -D )
+        shift
+        ;;
+
+      *)
+        echo "$FUNCNAME(): unknown option '$arg'" 1>&2
+        return 1
+        ;;
+    esac
+  done
+
+  if [ -z "$1" ]; then
+    echo "$FUNCNAME(): missing vhost name" 1>&2
+    return 1
+  fi
+
   local vhost="$1"
 
-  "$DEVPANEL_HOME/libexec/rewrite-vhost-config" "$vhost"
+  "$DEVPANEL_HOME/libexec/rewrite-vhost-config" "${args_ar[@]}" "$vhost"
 }
 
 reserve_port() {
