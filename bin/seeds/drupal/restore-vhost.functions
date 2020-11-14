@@ -15,7 +15,7 @@ drupal_detect_version_from_dir() {
 
   # looking for a line like: define('VERSION', '7.50');
   # variations like 7.XX-dev are also possible
-  local d7_regex='^[#/]+[[:space:]]*define\(["'\'']VERSION["'\''],[[:space:]]*["'\'']7\.[0-9a-zA-Z.-]+["'\'']\)'
+  local d7_regex='^[[:space:]]*define\(["'\'']VERSION["'\''],[[:space:]]*["'\'']7\.[0-9a-zA-Z.-]+["'\'']\)'
 
   local major_ver
 
