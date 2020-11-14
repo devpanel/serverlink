@@ -78,26 +78,15 @@ else
   fi
 fi
 
-php_home_bin="$HOME/bin/php-cgi"
-if [ -f "$php_home_bin" -a -x "$php_home_bin" ]; then
-  # if the user has a ~/bin/php-cgi link on $HOME
-  if [ -L "$php_home_bin" ]; then
-    real_php_bin=$(readlink -e "$php_home_bin")
-    real_php_dir="${real_php_bin%/*}"
-
-    # check if there's a php-cli and php respectively on the real PHP dir
-    # and use the first one found
-    php_cli="$real_php_dir/php-cli"
-    php_bin="$real_php_dir/php"
-    if [ -f "$php_cli" -a -x "$php_cli" ]; then
-      php_exec_bin="$php_cli"
-    elif [ -f "$php_bin" -a -x "$php_bin" ]; then
-      php_exec_bin="$php_bin"
-    fi
-  else
-    php_exec_bin="$php_home_bin"
+php_home_bin_1="$HOME/bin/php-cli"
+php_home_bin_2="$HOME/bin/php"
+for _php_bin in "$php_home_bin_1" "$php_home_bin_2" ; do
+  if [ -f "$_php_bin" -a -x "$_php_bin" ]; then
+    php_exec_bin="$_php_bin"
+    unset _php_bin
+    break
   fi
-fi
+done
     
 if [ -n "$php_exec_bin" ]; then
   export DRUSH_PHP="$php_exec_bin"
