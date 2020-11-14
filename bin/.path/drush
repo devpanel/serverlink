@@ -62,7 +62,13 @@ else
     . "$devpanel_dir/bin/seeds/drupal/restore-vhost.functions"
     drupal_major_ver=$(drupal_detect_version_from_dir "$public_dir")
     if [ $? -eq 0 ]; then
-      drush_bin="$devpanel_dir/bin/packages/drush-$drupal_major_ver/drush"
+      # temporarily hardcode drush 8 for Drupal 7 and 8 until a better
+      # solution is in place
+      if [[ "$drupal_major_ver" == [78] ]]; then
+        drush_bin="$devpanel_dir/bin/packages/drush-8/drush"
+      else
+        drush_bin="$devpanel_dir/bin/packages/drush-$drupal_major_ver/drush"
+      fi
     fi
   fi
 fi
