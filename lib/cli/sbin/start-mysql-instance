@@ -114,6 +114,16 @@ devpanel_cmd__start_mysql_instance() {
     return $?
   fi
 
+  
+  # grg: warning, won't load vhost config for shared mysql instance!
+  load_vhost_config "$instance"
+  #echo "is_vhost_enabled '$instance' returned $?"
+  if [ -n "$conditional" ] && ! is_vhost_enabled "$instance"; then
+    echo "vhost $instance disabled and conditional=$conditional, not starting"
+    return 0
+  fi
+
+
   mysql_instance_is_running "$instance"
   st=$?
   if [ $st -eq 0 ]; then
