@@ -74,4 +74,6 @@ devpanel_cmd__enable_vhost() {
   save_opts_in_vhost_config "$vhost" "vhost.enabled = yes" || return $?
 
   rewrite_vhost_apache_config "$vhost"
+
+  devpanel_run start mysql instance --vhost "$vhost"
 }
