@@ -70,6 +70,11 @@ else
         drush_bin="$devpanel_dir/bin/packages/drush-$drupal_major_ver/drush"
       fi
     fi
+    # grg
+    if [ "$v__php__version" = 5.3 ]
+    then
+      drush_bin=/opt/webenabled/bin/packages/drush-5.1/drush
+    fi
   fi
 fi
 
@@ -97,5 +102,4 @@ done
 if [ -n "$php_exec_bin" ]; then
   export DRUSH_PHP="$php_exec_bin"
 fi
-
 drush "$@"
