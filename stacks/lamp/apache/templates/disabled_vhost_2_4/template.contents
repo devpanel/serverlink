@@ -4,5 +4,9 @@
 
   DocumentRoot /home/clients/websites/w_/public_html/disabled_vhost
 
-  Redirect 302 /index.html /index-disabled.html
+  SuexecUserGroup @@__VHOST__LINUX_USER__@@ @@__LAMP__APACHE__EXEC_GROUP__@@
+  CustomLog webenabled-logs/virtwww/@@__VHOST__LINUX_USER__@@/@@__VHOST__NAME__@@-access_log combined
+  ErrorLog webenabled-logs/virtwww/@@__VHOST__LINUX_USER__@@/@@__VHOST__NAME__@@-error_log
+
+  RedirectMatch / http://www.webenabled.com/howto-reactivate?domain=@@__VHOST__SERVER_NAME__@@
 </VirtualHost>
