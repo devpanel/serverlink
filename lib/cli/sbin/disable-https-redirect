@@ -67,7 +67,7 @@ devpanel_cmd__disable_https_redirect() {
     return 0
   fi
 
-  opts_ar+=( "- ssl.https_redirect" )
+  opts_ar+=( "ssl.https_redirect = no" )
   opts_ar+=( "- ssl.https_redirect_target_domain" )
 
   if save_opts_in_vhost_config "$vhost" "${opts_ar[@]}"; then
